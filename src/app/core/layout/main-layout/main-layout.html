@@ -1,0 +1,42 @@
+<!-- Fixed 76px header; the active tab shares the stage color so it reads as joined to the page below. -->
+<header class="flex h-19 shrink-0 items-end gap-5 bg-header px-3">
+  <img
+    ngSrc="https://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png"
+    alt="Pokémon Showdown"
+    width="146"
+    height="44"
+    priority
+    class="mb-4 h-11 w-[146px] max-w-none"
+  />
+  <nav aria-label="Navegación principal" class="flex flex-row gap-1">
+    <a
+      class="flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
+      routerLink="/"
+      routerLinkActive
+      ariaCurrentWhenActive="page"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      <svg aria-hidden="true" viewBox="0 0 16 16" class="size-5 fill-white">
+        <path d="M8 1 1 7h2v7h4v-4h2v4h4V7h2z" />
+      </svg>
+      <span>Home</span>
+    </a>
+    <a
+      class="flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
+      routerLink="/teambuilder"
+      routerLinkActive
+      ariaCurrentWhenActive="page"
+    >
+      <svg aria-hidden="true" viewBox="0 0 16 16" class="size-5">
+        <rect x="1.75" y="1.75" width="12.5" height="12.5" rx="1" fill="none" stroke-width="1.5" class="stroke-white" />
+        <rect x="5" y="5" width="6" height="6" class="fill-white" />
+      </svg>
+      <span>Teambuilder</span>
+    </a>
+  </nav>
+</header>
+
+<!-- 644px = 720px stage - 76px header. See styles.css for why sizes are fixed. -->
+<main class="h-[644px] w-[1280px]">
+  <router-outlet />
+</main>

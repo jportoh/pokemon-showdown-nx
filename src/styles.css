@@ -1,1 +1,32 @@
 /* You can add global styles to this file, and also import other style files */
+
+@import 'tailwindcss';
+
+/* App palette: soft blue-grays in the spirit of the original Showdown client. */
+@theme {
+  --color-stage: #34496b;
+  --color-header: #1f2d45;
+  --color-tab: #2a3b58;
+  --color-tab-hover: #3b5176;
+  --color-card: #22304a;
+}
+
+/*
+  The app is a fixed 1280x720 stage: the Brewser console renders at exactly that size, and its
+  engine mis-sizes percentage and flex-grown boxes whose content Angular inserts after load (and
+  loses what's painted below the first viewport when the page scrolls). Layout sizes are therefore
+  fixed pixels, and only inner regions such as the chat scroll.
+*/
+html {
+  height: 720px;
+  background-color: var(--color-stage);
+}
+
+body {
+  width: 1280px;
+  height: 720px;
+  margin: 0 auto;
+  font-family: Roboto, sans-serif;
+  overflow: hidden;
+  background-color: var(--color-stage);
+}

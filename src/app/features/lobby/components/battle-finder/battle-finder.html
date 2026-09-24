@@ -1,0 +1,86 @@
+<!--
+  Fixed 560px card inside its 640px half. Controls are 496px (card width minus padding): Brewser
+  sizes a select whose options are added after creation (as @for does) against the wrong
+  container when its width is a percentage.
+-->
+<form
+  [formRoot]="battleForm"
+  aria-label="Find a battle"
+  class="flex w-[560px] flex-col gap-6 rounded-3xl bg-card p-8 text-white shadow-lg"
+>
+  <div class="flex flex-col gap-2">
+    <label for="battle-format" class="text-xl font-bold">Format:</label>
+    <div class="relative">
+      <select
+        id="battle-format"
+        [formField]="battleForm.format"
+        class="h-14 w-[496px] cursor-pointer appearance-none rounded-md border border-gray-400 bg-linear-to-b from-gray-500 to-gray-700 py-2 pr-10 pl-3 text-xl shadow-inner hover:from-gray-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      >
+        @for (format of formats; track format) {
+          <option [value]="format" class="bg-gray-700">{{ format }}</option>
+        }
+      </select>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 10 6"
+        class="pointer-events-none absolute top-1/2 right-4 size-3 -translate-y-1/2 fill-gray-200"
+      >
+        <path d="M0 0h10L5 6z" />
+      </svg>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <span id="battle-team-label" class="text-xl font-bold">Team:</span>
+    <button
+      type="button"
+      aria-labelledby="battle-team-label battle-team-name"
+      [disabled]="isRandomFormat()"
+      (click)="chooseTeam.emit()"
+      class="relative flex h-[88px] w-[496px] cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-gray-400 bg-linear-to-b from-gray-500 to-gray-700 pr-10 pl-3 enabled:hover:from-gray-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-gray-500 disabled:from-gray-600 disabled:to-gray-600"
+    >
+      <span id="battle-team-name" class="text-lg font-bold text-gray-300">
+        {{ isRandomFormat() ? 'Random team' : 'Select a team' }}
+      </span>
+      <span class="flex gap-3" aria-hidden="true">
+        @for (slot of teamSlots; track $index) {
+          <svg viewBox="0 0 24 24" class="size-9">
+            <circle cx="12" cy="12" r="10" stroke-width="1.5" class="fill-gray-300 stroke-gray-500" />
+            <path d="M2 12h20" stroke-width="2" class="stroke-gray-500" />
+            <circle cx="12" cy="12" r="3.5" stroke-width="1.5" class="fill-gray-100 stroke-gray-500" />
+          </svg>
+        }
+      </span>
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 10 6"
+        class="pointer-events-none absolute top-1/2 right-4 size-3 -translate-y-1/2 fill-gray-400"
+      >
+        <path d="M0 0h10L5 6z" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="flex items-center gap-3 px-1">
+    <input
+      id="battle-no-spectators"
+      type="checkbox"
+      [formField]="battleForm.disallowSpectators"
+      class="size-6 cursor-pointer accent-gray-600"
+    />
+    <label
+      for="battle-no-spectators"
+      class="cursor-pointer text-xl underline decoration-dotted underline-offset-4"
+    >
+      Don't allow spectators
+    </label>
+  </div>
+
+  <button
+    type="submit"
+    class="flex h-[104px] w-[496px] cursor-pointer flex-col items-center justify-center rounded-md border border-blue-300 bg-linear-to-b from-blue-600 to-blue-800 shadow-md hover:from-blue-700 hover:to-blue-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+  >
+    <span class="text-5xl font-bold">Battle!</span>
+    <span class="text-xl">Find a random opponent</span>
+  </button>
+</form>
