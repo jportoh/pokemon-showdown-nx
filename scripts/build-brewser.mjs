@@ -358,10 +358,10 @@ async function buildJs(mainJs, classMap) {
     target: 'es2022',
     write: false,
     logLevel: 'warning',
-    banner: { js: STYLE_POLYFILL + markers.banner },
+    banner: { js: STYLE_POLYFILL + TIMER_POLYFILL + markers.banner },
     footer: { js: markers.footer },
   });
-  let js = result.outputFiles[0].text;
+  let js = patchTextUpdates(result.outputFiles[0].text);
 
   // Angular compiles static template classes into one string literal per class, so a class is
   // replaced only where it is a whole token inside a string.
@@ -407,6 +407,47 @@ const STYLE_POLYFILL = `(function () {
   }
 })();
 `;
+
+// Angular schedules renders with `setTimeout(fn)` (no delay argument). The app stopped refreshing on
+// the Brewser console until a navigation forced a render, which fits an engine that mishandles a
+// missing delay. Per spec a missing delay means 0, so passing 0 explicitly is a no-op everywhere
+// else. The --diag build reports the raw behavior (it measures before this runs).
+const TIMER_POLYFILL = `(function () {
+  try {
+    var wrap = function (original) {
+      return function (handler, delay) {
+        var args = Array.prototype.slice.call(arguments);
+        if (delay === undefined || delay === null) args[1] = 0;
+        return original.apply(window, args);
+      };
+    };
+    window.setTimeout = wrap(window.setTimeout);
+    window.setInterval = wrap(window.setInterval);
+  } catch (error) {}
+})();
+`;
+
+// Angular updates every text binding with `node.nodeValue = value`. On Brewser that edit is often
+// not repainted when other DOM changes happen in the same task (verified on device: the text froze,
+// while replacing an element's children with textContent updated fine). After the edit, the same
+// node is taken out and put back in place: a child-list mutation, which Brewser does repaint, that
+// keeps the node's identity (Angular holds a reference to it).
+const SET_VALUE = /setValue\(([\w$]+),([\w$]+)\)\{\1\.nodeValue=\2\}/g;
+
+function patchTextUpdates(js) {
+  const matches = js.match(SET_VALUE) ?? [];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected Angular's DomRenderer.setValue once in app.js, found ${matches.length}. ` +
+        'Angular may have changed it: update SET_VALUE in scripts/build-brewser.mjs.',
+    );
+  }
+  return js.replace(
+    SET_VALUE,
+    (_, node, value) =>
+      `setValue(${node},${value}){${node}.nodeValue=${value};var p=${node}.parentNode;if(p){var s=${node}.nextSibling;p.removeChild(${node});p.insertBefore(${node},s)}}`,
+  );
+}
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -511,6 +552,19 @@ function diagnosticMarkup() {
       }
       log('User agent: ' + navigator.userAgent);
       log('style polyfill: ' + (window.__bwStylePolyfill || 'app.js not run yet'));
+
+      // Raw timer behavior, measured before app.js (and its timer polyfill) runs. Angular schedules
+      // renders with setTimeout(fn) (no delay) raced against requestAnimationFrame.
+      var started = new Date().getTime();
+      var elapsed = function () { return (new Date().getTime() - started) + ' ms'; };
+      window.setTimeout(function () { log('[timers] setTimeout without delay fired after ' + elapsed()); });
+      window.setTimeout(function () { log('[timers] setTimeout(fn, 0) fired after ' + elapsed()); }, 0);
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(function () { log('[timers] requestAnimationFrame fired after ' + elapsed()); });
+      } else {
+        log('[timers] requestAnimationFrame: not available');
+      }
+      window.setTimeout(function () { log('[timers] check done at ' + elapsed() + ' (a missing line above never fired)'); }, 3000);
 
       // Navigation debugging: what receives each click, whether Angular's RouterLink handled it
       // (defaultPrevented after bubbling), and whether the URL changes.
