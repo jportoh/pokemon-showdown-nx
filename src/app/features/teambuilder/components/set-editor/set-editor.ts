@@ -6,6 +6,7 @@ import { MAX_NICKNAME_LENGTH, NATURES, STAT_IDS, natureLabel } from '@features/t
 import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
+import { typeColor } from '@shared/data/type-colors';
 import { toId } from '@shared/utils/to-id';
 
 /** Fields picked from a list, in the order the chooser walks through them. */
@@ -144,7 +145,7 @@ export class SetEditor {
       { id: '', name: 'No move', detail: '' },
       ...(this.species()?.moves ?? [])
         .filter((move) => !taken.has(move.id))
-        .map((move) => ({ id: move.id, name: move.name, detail: moveDetail(move.type, move.category, move.basePower) })),
+        .map((move) => ({ id: move.id, name: move.name, detail: moveDetail(move.type, move.category, move.basePower), color: typeColor(move.type) })),
     ];
   });
 

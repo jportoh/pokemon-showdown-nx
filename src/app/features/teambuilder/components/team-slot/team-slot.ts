@@ -1,27 +1,33 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { PokemonSet } from '@features/teambuilder/models/team';
+import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
+import { typeColor } from '@shared/data/type-colors';
 
 @Component({
-  imports: [PokemonSprite],
+  imports: [ItemIcon, PokemonSprite],
   selector: 'app-team-slot',
   host: { class: 'block' },
-  // Fixed 424x172 card with absolutely placed parts (Brewser layout rules, seen on device): sprite, a
-  // 3-line summary (name, item/ability, types/nature) and the 4 moves below it. It lives inside a
-  // button, so it only uses phrasing elements (spans shown as blocks).
+  // Fixed 424x172 card with absolutely placed parts (Brewser layout rules, seen on device): sprite, the
+  // item's 48x48 icon centred under it, a
+  // 3-line summary (name, item/ability, types/nature) and the 4 moves below it, each on its type's
+  // colour: 160x19 pills 2px apart, centred between the summary (which ends at 72px) and the bottom
+  // border (8px of space on each side). It lives inside a button, so it only uses phrasing elements
+  // (spans shown as blocks).
   template: `
     <span class="relative block h-[172px] w-[424px] rounded-lg border border-gray-600 bg-card text-left">
       @if (set(); as pokemon) {
         <app-pokemon-sprite class="absolute top-2 left-2" [sprite]="(mega() ?? species())?.sprite ?? ''" [size]="96" />
+        <app-item-icon class="absolute top-[110px] left-8" [item]="itemId()" />
         <span class="absolute top-2 left-[108px] block w-[304px]">
           <span class="block text-lg leading-6 font-bold text-white">{{ title() }}</span>
           <span class="block text-sm leading-5 text-gray-300">{{ details() }}</span>
           <span class="block text-sm leading-5 text-gray-400">{{ typesAndNature() }}</span>
         </span>
-        <span class="absolute top-[84px] left-[108px] block w-[304px] text-sm leading-5 text-gray-200">
-          @for (move of pokemon.moves; track $index) {
-            <span class="block">{{ move }}</span>
+        <span class="absolute top-[80px] left-[108px] block w-[160px] text-sm leading-[19px] text-white">
+          @for (move of moves(); track $index) {
+            <span class="mb-[2px] block h-[19px] w-[160px] overflow-hidden rounded-sm p-[0_8px] whitespace-nowrap" [style.background-color]="move.color || null">{{ move.name }}</span>
           }
         </span>
       } @else {
@@ -45,6 +51,14 @@ export class TeamSlot {
     const set = this.set();
     return set ? this.dex.mega(set.species, set.item) : undefined;
   });
+
+  /** The held item's id when it's a legal one (only those have icons). */
+  protected readonly itemId = computed(() => this.dex.item(this.set()?.item ?? '')?.id ?? '');
+
+  /** Each move with its type's row colour, as in the move chooser. */
+  protected readonly moves = computed(() =>
+    (this.set()?.moves ?? []).map((name) => ({ name, color: typeColor(this.dex.move(name)?.type ?? '') })),
+  );
 
   /** "Big Shark (Garchomp-Mega)", or just the species without a nickname. */
   readonly title = computed(() => {

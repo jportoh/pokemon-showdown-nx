@@ -8,6 +8,8 @@ export interface ChooserOption {
   id: string;
   name: string;
   detail: string;
+  /** Row background (e.g. the move's type colour) while it isn't the current choice. */
+  color?: string;
 }
 
 /** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
@@ -53,6 +55,7 @@ const MAX_RESULTS = 30;
             (click)="picked.emit(option.id)"
             class="block w-[406px] cursor-pointer border-b border-gray-700 p-[6px_12px] text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
             [class.bg-tab-hover]="option.id === selectedId()"
+            [style.background-color]="option.id === selectedId() ? null : option.color || null"
           >
             <span class="block text-base font-bold">{{ option.name }}</span>
             @if (option.detail) {
