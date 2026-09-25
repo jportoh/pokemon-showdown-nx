@@ -13,39 +13,33 @@ const MAX_VISIBLE_USERS = 50;
 @Component({
   imports: [ScrollRegion, UsernameColorPipe],
   selector: 'app-chat-user-list',
-  host: { class: 'flex flex-col bg-[#0f141c]' },
-  // Fixed heights matching the lobby chat panel (28px title + 616px list = 644px): Brewser
-  // mis-sizes percentage and flex-grown boxes whose content is inserted after load. See styles.css.
+  host: { class: 'block bg-[#0f141c]' },
+  // Brewser layout rules this follows (seen on device): fixed heights (28px title + 572px list =
+  // the 600px chat view); plain block rows with no truncation (flex rows inserted dynamically break,
+  // and overflow clipping on the rows is being ruled out); padding as the shorthand (p-* utilities) on the rows
+  // (longhands lose to the preflight's `padding: 0` shorthand on Brewser); no inline svg in a row (it
+  // wrapped), so away users are italic, as in the official client, and labelled for screen readers.
   template: `
-    <h2 id="chat-user-count" class="h-7 py-1 text-center text-gray-200">{{ count() }} users</h2>
+    <h2 id="chat-user-count" class="h-7 p-[4px_0] text-center text-gray-200">{{ count() }} users</h2>
     <ul
       appScrollRegion
       aria-labelledby="chat-user-count"
       tabindex="0"
-      class="h-[616px] overflow-y-auto px-1.5 pb-2 text-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[572px] overflow-y-auto text-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       @for (user of visibleUsers(); track user.id) {
-        <li class="flex items-center leading-relaxed">
-          <span class="w-4 shrink-0 text-center text-gray-300">{{ user.rank }}</span>
-          <span
-            class="truncate"
+        <li class="p-[0_12px] leading-relaxed" [attr.aria-label]="user.away ? user.name + ' (away)' : null">
+          <span class="text-gray-300">{{ user.rank === ' ' ? ' ' : user.rank }}</span
+          ><span
             [class]="user.name | usernameColor"
             [class.font-bold]="isStaff(user)"
             [class.italic]="user.away"
-          >{{ user.name }}</span>
-          @if (user.away) {
-            <!--
-              A flex sibling rather than inline in the name: Brewser wraps an inline svg onto a new
-              line despite nowrap. Labelled icon rather than sr-only text, which Brewser doesn't fully hide.
-            -->
-            <svg role="img" aria-label="(away)" viewBox="0 0 16 16" class="ml-1 size-3.5 shrink-0 fill-gray-300">
-              <path d="M10.5 1.5a6.5 6.5 0 1 0 4 11.6A5.5 5.5 0 0 1 10.5 1.5z" />
-            </svg>
-          }
+            >{{ user.name }}</span
+          >
         </li>
       }
       @if (hiddenCount() > 0) {
-        <li class="py-1 text-base text-gray-400">…and {{ hiddenCount() }} more</li>
+        <li class="p-[4px_12px] text-base text-gray-400">…and {{ hiddenCount() }} more</li>
       }
     </ul>
   `,

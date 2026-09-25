@@ -1,5 +1,5 @@
 <!--
-  Fixed 560px card inside its 640px half. Controls are 496px (card width minus padding): Brewser
+  Fixed 560px card, centered in its 853px (2/3) column. Controls are 496px (card width minus padding): Brewser
   sizes a select whose options are added after creation (as @for does) against the wrong
   container when its width is a percentage.
 -->
@@ -14,7 +14,7 @@
       <select
         id="battle-format"
         [formField]="battleForm.format"
-        class="h-14 w-[496px] cursor-pointer appearance-none rounded-md border border-gray-400 bg-gray-600 py-2 pr-10 pl-3 text-xl hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        class="h-14 w-[496px] cursor-pointer appearance-none rounded-md border border-gray-400 bg-gray-600 p-[8px_40px_8px_12px] text-xl hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         @for (format of formats; track format) {
           <option [value]="format" class="bg-gray-700">{{ format }}</option>
@@ -37,7 +37,7 @@
       aria-labelledby="battle-team-label battle-team-name"
       [disabled]="isRandomFormat()"
       (click)="chooseTeam.emit()"
-      class="relative flex h-[88px] w-[496px] cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-gray-400 bg-gray-600 pr-10 pl-3 enabled:hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-gray-500 disabled:bg-gray-700"
+      class="relative flex h-[88px] w-[496px] cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-gray-400 bg-gray-600 p-[0_40px_0_12px] enabled:hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-gray-500 disabled:bg-gray-700"
     >
       <span id="battle-team-name" class="text-lg font-bold text-gray-300">
         {{ isRandomFormat() ? 'Random team' : 'Select a team' }}
@@ -61,7 +61,7 @@
     </button>
   </div>
 
-  <div class="flex items-center gap-3 px-1">
+  <div class="flex items-center gap-3 p-[0_4px]">
     <input
       id="battle-no-spectators"
       type="checkbox"

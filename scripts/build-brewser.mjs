@@ -138,7 +138,43 @@ function buildCss(source, classMap) {
     minify: false,
     targets: { chrome: 60 << 16 },
   }).code.toString();
-  return splitSelectorLists(postcss.parse(folded)).toString();
+  const finalAst = splitSelectorLists(postcss.parse(folded));
+  convertRemToPx(finalAst);
+  warnAboutPaddingLonghands(finalAst);
+  return finalAst.toString();
+}
+
+// Brewser ignored rem offsets on absolutely positioned elements (`top: .75rem`, `left: .5rem`) while
+// px offsets on the same element worked (seen on device). The app is a fixed 1280x720 stage with the
+// default 16px root font size, so every rem is converted to px: same layout, one less unit to support.
+const ROOT_FONT_SIZE_PX = 16;
+
+function convertRemToPx(ast) {
+  const toPx = (text) =>
+    text.replace(/(-?\d*\.?\d+)rem\b/g, (_, number) => `${Math.round(parseFloat(number) * ROOT_FONT_SIZE_PX * 1000) / 1000}px`);
+  ast.walkDecls((decl) => {
+    if (decl.value.includes('rem')) decl.value = toPx(decl.value);
+  });
+  ast.walkAtRules('media', (atRule) => {
+    if (atRule.params.includes('rem')) atRule.params = toPx(atRule.params);
+  });
+}
+
+// On Brewser a `padding` shorthand beats padding longhands whatever their specificity, so Tailwind's
+// px-*/py-*/pl-*… (longhands) lose to the preflight's `padding: 0` on every element (seen on device;
+// longhands alone work, test-d13). The p-* utilities, including arbitrary values, are shorthands and
+// work. Longhands can't be rewritten here without knowing the other sides an element gets from other
+// classes, so they're reported instead.
+function warnAboutPaddingLonghands(ast) {
+  const selectors = new Set();
+  ast.walkDecls(/^padding-/, (decl) => {
+    if (decl.parent.type === 'rule') selectors.add(decl.parent.selector);
+  });
+  if (selectors.size > 0) {
+    console.warn(
+      `Padding longhands lose to the preflight shorthand on Brewser; use the p-* shorthand utilities instead. Found in: ${[...selectors].join(', ')}`,
+    );
+  }
 }
 
 // One rule per selector: in CSS a single unsupported selector drops the whole list.
