@@ -643,6 +643,13 @@ function diagnosticMarkup() {
             log('[dom +1.5s] ' + total + ' elements; app-*: ' + (names.join(', ') || 'none'));
           }, 1500);
         });
+        // Keyboard navigation debugging: what the console's mapped buttons send (the app reads key,
+        // then code, then keyCode) and what has focus when they arrive.
+        document.addEventListener('keydown', function (event) {
+          log('[key] key=' + event.key + ' code=' + event.code + ' keyCode=' + event.keyCode +
+            '
+  focus: ' + describeNode(document.activeElement));
+        }, true);
         window.addEventListener('hashchange', function () {
           log('[hashchange] ' + window.location.hash);
         });
@@ -655,6 +662,9 @@ function diagnosticMarkup() {
         var count = root && root.children ? root.children.length : 'no app-root';
         var el = document.getElementById('bw-diag-app');
         if (el) el.textContent = 'Angular: app-root has ' + count + ' children after 8 s (0 = did not render) | style polyfill: ' + (window.__bwStylePolyfill || 'unknown');
+        // Spatial navigation needs element boxes; without them it falls back to document order.
+        var rect = document.body.getBoundingClientRect ? document.body.getBoundingClientRect() : null;
+        log('[rects] body: ' + (rect ? rect.left + ',' + rect.top + ' ' + (rect.right - rect.left) + 'x' + (rect.bottom - rect.top) : 'getBoundingClientRect missing'));
       }, 8000);
     })();
   </script>

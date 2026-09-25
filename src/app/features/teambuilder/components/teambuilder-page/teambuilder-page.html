@@ -1,6 +1,7 @@
 <!--
   Fills the layout's 1280x644 content area: a 360px team list and a 920px panel. The panel's views are
   all mounted and only shown or hidden, never inserted later (Brewser layout rules, see styles.css).
+  B (appBack) goes back one step: from a team to the list, from the editor, import or export to the team.
 -->
 <app-team-list
   class="absolute top-0 left-0 h-[644px] w-[360px] border-r border-gray-600"
@@ -21,13 +22,14 @@
   <app-team-detail
     [class.hidden]="view() !== 'team'"
     [team]="selectedTeam()"
+    (appBack)="focusTeamList()"
     (renamed)="renameTeam($event)"
     (formatChanged)="changeFormat($event)"
     (export)="showExport()"
     (deleted)="deleteTeam()"
     (editSlot)="editSlot($event)"
   />
-  <app-set-editor [class.hidden]="view() !== 'edit'" [team]="selectedTeam()" [index]="editIndex()" (closed)="closeEditor()" />
-  <app-team-import [class.hidden]="view() !== 'import'" (imported)="finishImport($event)" (cancelled)="cancelImport()" />
-  <app-team-export [class.hidden]="view() !== 'export'" [team]="selectedTeam()" (back)="closeExport()" />
+  <app-set-editor [class.hidden]="view() !== 'edit'" [team]="selectedTeam()" [index]="editIndex()" (closed)="closeEditor()" (appBack)="closeEditor()" />
+  <app-team-import [class.hidden]="view() !== 'import'" (imported)="finishImport($event)" (cancelled)="cancelImport()" (appBack)="cancelImport()" />
+  <app-team-export [class.hidden]="view() !== 'export'" [team]="selectedTeam()" (back)="closeExport()" (appBack)="closeExport()" />
 </div>

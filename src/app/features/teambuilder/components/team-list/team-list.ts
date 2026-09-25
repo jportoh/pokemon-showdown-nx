@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, input, output, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, inject, input, output, viewChild, viewChildren } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { Team } from '@features/teambuilder/models/team';
 import { formatName } from '@shared/data/formats';
@@ -32,11 +32,13 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
       </button>
     </div>
     <ul appScrollRegion aria-labelledby="team-list-title" class="h-[540px] w-[359px] overflow-y-auto">
-      @for (team of teams(); track team.id) {
+      @for (team of newestFirst(); track team.id) {
         <li>
           <button
+            #teamButton
             type="button"
             [attr.aria-current]="team.id === selectedId() ? 'true' : null"
+            [attr.data-autofocus]="team.id === selectedId() ? '' : null"
             (click)="select.emit(team.id)"
             class="block h-16 w-[359px] cursor-pointer border-b border-gray-700 p-[10px_16px] text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
             [class.bg-tab-hover]="team.id === selectedId()"
@@ -56,7 +58,9 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
 })
 export class TeamList {
   private readonly newTeamButton = viewChild.required<ElementRef<HTMLButtonElement>>('newTeamButton');
+  private readonly teamButtons = viewChildren<ElementRef<HTMLButtonElement>>('teamButton');
 
+  /** In creation order, as stored. */
   readonly teams = input.required<readonly Team[]>();
   readonly selectedId = input<string | null>(null);
   readonly select = output<string>();
@@ -65,11 +69,22 @@ export class TeamList {
   /** A team from Showdown's text format. */
   readonly import = output<void>();
 
+  /** Listed newest first: the team just built is at the top. */
+  protected readonly newestFirst = computed(() => [...this.teams()].reverse());
+
   /** Which game data the teambuilder uses, and how recent it is. */
   protected readonly dataSummary = dataSummary(inject(ChampionsDex));
 
   focusNewTeam(): void {
     this.newTeamButton().nativeElement.focus();
+  }
+
+  /** Focuses the selected team's row (B from the team goes back to it), or New without one. */
+  focusSelected(): void {
+    const index = this.newestFirst().findIndex((team) => team.id === this.selectedId());
+    const row = this.teamButtons()[index]?.nativeElement;
+    if (row) row.focus();
+    else this.focusNewTeam();
   }
 
   /** "4 Pokémon · VGC 2026 Reg M-C": the format without its "[Gen 9 Champions]" prefix, so it fits one line. */

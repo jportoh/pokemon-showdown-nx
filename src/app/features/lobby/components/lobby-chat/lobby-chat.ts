@@ -4,11 +4,12 @@ import { ChatUserList } from '@features/lobby/components/chat-user-list/chat-use
 import { CHAT_ROOMS } from '@features/lobby/data/chat-rooms';
 import { ChatRoom } from '@features/lobby/models/chat';
 import { ChatRoomStore } from '@features/lobby/state/chat-room-store';
+import { BackAction } from '@shared/directives/back-action';
 
 type ChatView = 'chat' | 'users';
 
 @Component({
-  imports: [ChatUserList, ChatMessageList],
+  imports: [ChatUserList, ChatMessageList, BackAction],
   selector: 'app-lobby-chat',
   host: { class: 'block' },
   // Fixed 427x644 panel, 1/3 of the stage (see styles.css): a 426px-wide (+1px border) 600px view area
@@ -56,6 +57,7 @@ type ChatView = 'chat' | 'users';
           [count]="store.userCount()"
           class="h-[564px] w-[426px]"
           [class.hidden]="!usersShown()"
+          (appBack)="backToChat()"
         />
       </div>
       <div class="relative h-11 w-[426px] border-t border-gray-600">
@@ -71,6 +73,7 @@ type ChatView = 'chat' | 'users';
           Join chat
         </button>
         <button
+          #usersButton
           type="button"
           aria-controls="room-users"
           [attr.aria-pressed]="usersShown()"
@@ -92,6 +95,7 @@ export class LobbyChat {
   protected readonly rooms = CHAT_ROOMS;
   private readonly messageList = viewChild.required(ChatMessageList);
   private readonly roomButtons = viewChildren<ElementRef<HTMLButtonElement>>('roomButton');
+  private readonly usersButton = viewChild.required<ElementRef<HTMLButtonElement>>('usersButton');
 
   readonly joinChat = output<void>();
 
@@ -158,5 +162,11 @@ export class LobbyChat {
 
   protected toggleUsers(): void {
     this.view.set(this.view() === 'users' ? 'chat' : 'users');
+  }
+
+  /** B in the user list: back to the chat log, with focus on the button that toggles them. */
+  protected backToChat(): void {
+    this.view.set('chat');
+    this.usersButton().nativeElement.focus();
   }
 }

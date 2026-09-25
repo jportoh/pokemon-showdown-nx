@@ -1,6 +1,6 @@
 <!--
   Fixed 920x644 panel (see styles.css): a 64px header (back, slot title, tabs, remove) over either the
-  Details tab (10 fixed-height field rows on the left, the list chooser on the right) or the
+  Details tab (11 fixed-height field rows on the left, the list chooser on the right) or the
   Stats tab. Every control sits at a fixed absolute position, both tabs and the chooser stay mounted
   and are only shown or hidden, and selects have fixed px sizes (Brewser layout rules, seen on device).
   Lists open in the chooser so picking takes the d-pad (and, for species and items, a few letters)
@@ -70,6 +70,7 @@
           aria-labelledby="field-species species-value"
           aria-controls="set-chooser"
           [attr.aria-expanded]="isActive('species')"
+          data-field="species"
           (click)="openChooser('species')"
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('species')"
@@ -78,25 +79,6 @@
             species()?.name ?? pokemon()?.species ?? 'Choose a species'
           }}</span>
         </button>
-      </div>
-      <div class="relative h-11">
-        <label
-          for="field-nickname"
-          class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Nickname</label
-        >
-        <input
-          #nickname
-          id="field-nickname"
-          type="text"
-          autocomplete="off"
-          [disabled]="!pokemon()"
-          [maxLength]="maxNicknameLength"
-          [value]="pokemon()?.name ?? ''"
-          [attr.placeholder]="'Optional'"
-          (change)="updateNickname(nickname.value)"
-          class="absolute top-1 left-[104px] h-9 w-[336px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:text-gray-400"
-        />
       </div>
       <div class="relative h-11">
         <span id="field-item" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
@@ -108,6 +90,7 @@
           aria-controls="set-chooser"
           [attr.aria-expanded]="isActive('item')"
           [disabled]="!pokemon()"
+          data-field="item"
           (click)="openChooser('item')"
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('item')"
@@ -125,6 +108,7 @@
           aria-controls="set-chooser"
           [attr.aria-expanded]="isActive('ability')"
           [disabled]="!pokemon()"
+          data-field="ability"
           (click)="openChooser('ability')"
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('ability')"
@@ -145,6 +129,7 @@
             aria-controls="set-chooser"
             [attr.aria-expanded]="isActive(field)"
             [disabled]="!pokemon()"
+            [attr.data-field]="field"
             (click)="openChooser(field)"
             [class]="fieldButtonClass"
             [class.bg-tab-hover]="isActive(field)"
@@ -175,14 +160,42 @@
         <label for="field-shiny" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
           >Shiny</label
         >
-        <input
+        <!--
+          A select rather than a checkbox: on the console, a focused checkbox opened the on-screen
+          keyboard (with "true"/"false" in it), while A steps a select through its options.
+        -->
+        <select
           #shiny
           id="field-shiny"
-          type="checkbox"
           [disabled]="!pokemon()"
-          [checked]="pokemon()?.shiny ?? false"
-          (change)="update({ shiny: shiny.checked })"
-          class="absolute top-[10px] left-[104px] size-6 cursor-pointer accent-gray-600 disabled:cursor-not-allowed"
+          (change)="update({ shiny: shiny.value === 'yes' })"
+          [class]="selectClass"
+        >
+          <option value="no" [selected]="!pokemon()?.shiny">No</option>
+          <option value="yes" [selected]="pokemon()?.shiny ?? false">Yes</option>
+        </select>
+      </div>
+      <!--
+        Last, off the d-pad's path through the fields: focusing a text field opens the console's
+        on-screen keyboard.
+      -->
+      <div class="relative h-11">
+        <label
+          for="field-nickname"
+          class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Nickname</label
+        >
+        <input
+          #nickname
+          id="field-nickname"
+          type="text"
+          autocomplete="off"
+          [disabled]="!pokemon()"
+          [maxLength]="maxNicknameLength"
+          [value]="pokemon()?.name ?? ''"
+          [attr.placeholder]="'Optional'"
+          (change)="updateNickname(nickname.value)"
+          class="absolute top-1 left-[104px] h-9 w-[336px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:text-gray-400"
         />
       </div>
     </div>
@@ -191,6 +204,7 @@
     <div class="absolute top-0 left-[488px] w-[408px]">
       <app-dex-chooser
         id="set-chooser"
+        (appBack)="closeChooser()"
         [class.hidden]="!activeField()"
         [title]="chooserTitle()"
         [options]="chooserOptions()"

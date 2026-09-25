@@ -1,5 +1,5 @@
 <!-- Fixed 76px header; the active tab shares the stage color so it reads as joined to the page below. -->
-<header class="flex h-19 shrink-0 items-end gap-5 bg-header p-[0_12px]">
+<header class="relative flex h-19 shrink-0 items-end gap-5 bg-header p-[0_12px]">
   <img
     ngSrc="https://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png"
     alt="Pokémon Showdown"
@@ -34,6 +34,18 @@
       <span>Teambuilder</span>
     </a>
   </nav>
+  <!--
+    What the console's buttons do (see core/input/console-keys). Fixed 150px items at absolute
+    positions: Brewser ignores margins on inline elements, and the header never moves.
+  -->
+  <p aria-label="Controller buttons" class="absolute top-7 left-[668px] h-6 w-[600px] text-sm text-gray-200">
+    @for (item of legend; track item.button; let i = $index) {
+      <span class="absolute top-0 block h-6 w-[150px] leading-6" [style.left.px]="i * 150"
+        ><span class="rounded-sm bg-tab p-[2px_6px] font-bold text-white">{{ item.button }}</span
+        >{{ ' ' + item.legend }}</span
+      >
+    }
+  </p>
 </header>
 
 <!-- 644px = 720px stage - 76px header. See styles.css for why sizes are fixed. -->

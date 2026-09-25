@@ -33,3 +33,30 @@ body {
   overflow: hidden;
   background-color: var(--color-stage);
 }
+
+/*
+  Focus ring while the console's buttons (mapped to keys) are in use: KeyboardNavigation marks the
+  focused control with this attribute. An attribute selector rather than :focus-visible, which hasn't
+  been checked on Brewser (attribute selectors have). Drawn inside the control so scroll regions
+  don't clip it, in yellow so it stands out from the white text and borders.
+*/
+[data-kb-focus] {
+  outline: 3px solid #facc15 !important;
+  outline-offset: -3px !important;
+}
+
+/*
+  A slot card fills its button, so on Brewser it covers the button's outline: the card itself shows
+  the focus with a yellow border and a lighter background.
+*/
+[data-kb-focus] [data-slot-card] {
+  border-color: #facc15 !important;
+  background-color: #3b5176 !important;
+  outline: 3px solid #facc15;
+  outline-offset: -3px;
+}
+
+/* A text field being typed in (A pressed on it): the buttons type instead of navigating. */
+[data-kb-editing][data-kb-focus] {
+  outline-color: #4ade80 !important;
+}

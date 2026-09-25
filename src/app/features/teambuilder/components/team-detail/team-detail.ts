@@ -1,8 +1,9 @@
-import { Component, ElementRef, afterRenderEffect, input, linkedSignal, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
 import { FormField, form, maxLength, required } from '@angular/forms/signals';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
+import { BackAction } from '@shared/directives/back-action';
 
 export const MAX_TEAM_NAME_LENGTH = 30;
 
@@ -17,7 +18,7 @@ const SLOT_POSITIONS = [
 ];
 
 @Component({
-  imports: [TeamSlot, FormField],
+  imports: [TeamSlot, FormField, BackAction],
   selector: 'app-team-detail',
   host: { class: 'block' },
   // Fixed 920x644 panel (see styles.css): an 88px header (name and format select, or the rename form,
@@ -40,7 +41,7 @@ const SLOT_POSITIONS = [
           }
         </select>
         <button type="button" (click)="startRename()" [class]="actionClass" class="left-[520px] w-[112px]">Rename</button>
-        <button type="button" (click)="export.emit()" [class]="actionClass" class="left-[644px] w-[112px]">Export</button>
+        <button #exportButton type="button" (click)="export.emit()" [class]="actionClass" class="left-[644px] w-[112px]">Export</button>
         <button
           type="button"
           (click)="onDelete()"
@@ -57,7 +58,7 @@ const SLOT_POSITIONS = [
         Not a <form> with a submit button: on the console, Save did nothing while the plain click
         buttons worked, so Save and Enter are handled directly and read the text from the input.
       -->
-      <div role="group" aria-label="Rename team" [class.hidden]="!editing()">
+      <div role="group" aria-label="Rename team" [class.hidden]="!editing()" (appBack)="cancelRename()">
         <input
           #nameInput
           type="text"
@@ -77,6 +78,7 @@ const SLOT_POSITIONS = [
       <!-- Every empty slot adds a Pokémon at the end: teams never have gaps. -->
       @for (position of slotPositions; track $index) {
         <button
+          #slotButton
           type="button"
           class="absolute cursor-pointer rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           [class]="position"
@@ -92,6 +94,8 @@ const SLOT_POSITIONS = [
 export class TeamDetail {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly exportButton = viewChild.required<ElementRef<HTMLButtonElement>>('exportButton');
+  private readonly slotButtons = viewChildren<ElementRef<HTMLButtonElement>>('slotButton');
 
   readonly team = input<Team | undefined>(undefined);
   readonly renamed = output<string>();
@@ -140,8 +144,13 @@ export class TeamDetail {
     return `Edit slot ${position + 1}: ${name}`;
   }
 
-  focusHeading(): void {
-    this.heading().nativeElement.focus();
+  focusExport(): void {
+    this.exportButton().nativeElement.focus();
+  }
+
+  /** Focuses a slot card (the "Add a Pokémon" one past the end of the team). Call it once the team has rendered. */
+  focusSlot(index: number): void {
+    this.slotButtons()[this.slotIndex(index)]?.nativeElement.focus();
   }
 
   protected showNameError(): boolean {

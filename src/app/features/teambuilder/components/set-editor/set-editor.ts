@@ -1,4 +1,4 @@
-import { Component, afterRenderEffect, computed, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies, StatTable } from '@core/dex/champions-dex';
 import { ChooserOption, DexChooser } from '@features/teambuilder/components/dex-chooser/dex-chooser';
 import { SetStats } from '@features/teambuilder/components/set-stats/set-stats';
@@ -7,6 +7,7 @@ import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/m
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
+import { BackAction } from '@shared/directives/back-action';
 import { toId } from '@shared/utils/to-id';
 
 /** Fields picked from a list, in the order the chooser walks through them. */
@@ -19,7 +20,7 @@ const MOVE_FIELDS: readonly ChooserField[] = ['move0', 'move1', 'move2', 'move3'
 const MAX_DETAIL_LENGTH = 90;
 
 @Component({
-  imports: [DexChooser, SetStats, PokemonSprite],
+  imports: [DexChooser, SetStats, PokemonSprite, BackAction],
   selector: 'app-set-editor',
   host: { class: 'block' },
   templateUrl: './set-editor.html',
@@ -28,6 +29,7 @@ export class SetEditor {
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser = viewChild.required(DexChooser);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   readonly team = input<Team | undefined>(undefined);
   /** The slot being edited; the team's length for a new Pokémon. */
@@ -182,9 +184,25 @@ export class SetEditor {
     });
   }
 
-  /** Called when the editor is shown: opens the species list right away for a new Pokémon. */
+  /**
+   * Called when the editor is shown: opens the species list right away for a new Pokémon, and
+   * otherwise focuses the Species field (the slot card that had focus is now hidden).
+   */
   opened(): void {
     if (!this.pokemon()) this.openChooser('species');
+    else this.focusField('species');
+  }
+
+  /** B in the list: closes it and returns to its field. */
+  protected closeChooser(): void {
+    const field = this.activeField();
+    this.activeField.set(null);
+    if (field) this.focusField(field);
+  }
+
+  /** Field buttons carry `data-field`, so focus can return to one when its list closes. */
+  private focusField(field: ChooserField): void {
+    this.host.querySelector<HTMLElement>(`[data-field="${field}"]`)?.focus();
   }
 
   protected openChooser(field: ChooserField): void {
@@ -212,7 +230,9 @@ export class SetEditor {
     if (this.abilityOptions().length <= 1) skipped.add('ability');
     const next = CHOOSER_ORDER.slice(CHOOSER_ORDER.indexOf(field) + 1).find((f) => !skipped.has(f)) ?? null;
     this.activeField.set(next);
+    // After the last move the list closes, so focus goes back to that field instead of being lost.
     if (next) this.focusRequest.update((count) => count + 1);
+    else this.focusField(field);
   }
 
   /** A species, or a Mega: its base species with the Mega Stone equipped. */

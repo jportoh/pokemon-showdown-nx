@@ -16,7 +16,7 @@ import { typeColor } from '@shared/data/type-colors';
   // border (8px of space on each side). It lives inside a button, so it only uses phrasing elements
   // (spans shown as blocks).
   template: `
-    <span class="relative block h-[172px] w-[424px] rounded-lg border border-gray-600 bg-card text-left">
+    <span data-slot-card class="relative block h-[172px] w-[424px] rounded-lg border border-gray-600 bg-card text-left">
       @if (set(); as pokemon) {
         <app-pokemon-sprite class="absolute top-2 left-2" [sprite]="(mega() ?? species())?.sprite ?? ''" [size]="96" />
         <app-item-icon class="absolute top-[110px] left-8" [item]="itemId()" />

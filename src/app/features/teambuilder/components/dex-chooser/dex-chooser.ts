@@ -1,5 +1,6 @@
-import { Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { FormField, form } from '@angular/forms/signals';
+import { isEnterKey } from '@core/input/console-keys';
 import { ScrollRegion } from '@shared/directives/scroll-region';
 import { toId } from '@shared/utils/to-id';
 
@@ -21,12 +22,11 @@ const MAX_RESULTS = 30;
   host: { class: 'block' },
   // Fixed 408x564 panel (see styles.css): title, search box and a scrolling list of plain block rows
   // (Brewser layout rules, seen on device). Typing a few letters is the only writing needed; the
-  // arrow keys (which many controllers' d-pads send) move between the box and the results. A list
-  // that isn't searchable hides the box and shows every option in the room it leaves.
+  // d-pad moves between the box and the results (KeyboardNavigation). A list that isn't searchable
+  // hides the box and shows every option in the room it leaves.
   template: `
     <h3 [id]="titleId" class="h-8 text-lg font-bold text-white">{{ title() }}</h3>
     <input
-      #search
       type="search"
       autocomplete="off"
       spellcheck="false"
@@ -43,7 +43,6 @@ const MAX_RESULTS = 30;
       appScrollRegion
       [id]="listId"
       [attr.aria-labelledby]="titleId"
-      (keydown)="onListKey($event)"
       [style.height.px]="searchable() ? 476 : 516"
       class="w-[408px] overflow-y-auto rounded-md border border-gray-600 bg-card"
     >
@@ -68,8 +67,8 @@ const MAX_RESULTS = 30;
   `,
 })
 export class DexChooser {
-  private readonly searchInput = viewChild.required<ElementRef<HTMLInputElement>>('search');
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
+  private readonly injector = inject(Injector);
 
   readonly title = input.required<string>();
   readonly options = input.required<readonly ChooserOption[]>();
@@ -127,34 +126,30 @@ export class DexChooser {
    * has rendered.
    */
   open(): void {
-    this.model.set({ query: '' });
+    // After a pick from a search, the rows on screen are still that search's results: focus waits
+    // for the cleared list to render, or it would land on a row that's about to go. Untracked: the
+    // caller runs this from an effect, which must not rerun (and refocus) whenever the query changes.
+    const searched = untracked(this.model).query !== '';
+    if (searched) this.model.set({ query: '' });
     this.list().nativeElement.scrollTop = 0;
+    if (searched) afterNextRender(() => this.focusCurrent(), { injector: this.injector });
+    else this.focusCurrent();
+  }
+
+  private focusCurrent(): void {
     const buttons = this.resultButtons();
     (buttons.find((button) => button.getAttribute('aria-current') === 'true') ?? buttons[0])?.focus();
   }
 
+  /**
+   * Enter in the search box picks the first result (the A button's letter types while searching).
+   * The d-pad moves focus as everywhere else.
+   */
   protected onSearchKey(event: KeyboardEvent): void {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      const first = this.results()[0];
-      if (first) this.picked.emit(first.id);
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      this.resultButtons()[0]?.focus();
-    }
-  }
-
-  protected onListKey(event: KeyboardEvent): void {
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const buttons = this.resultButtons();
-    const index = buttons.indexOf(event.target as HTMLButtonElement);
-    if (index === -1) return;
+    if (!isEnterKey(event)) return;
     event.preventDefault();
-    if (event.key === 'ArrowDown') buttons[index + 1]?.focus();
-    else if (index === 0) {
-      if (this.searchable()) this.searchInput().nativeElement.focus();
-    }
-    else buttons[index - 1].focus();
+    const first = this.results()[0];
+    if (first) this.picked.emit(first.id);
   }
 
   private resultButtons(): HTMLButtonElement[] {
