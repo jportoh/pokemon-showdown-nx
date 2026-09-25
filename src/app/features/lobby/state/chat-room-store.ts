@@ -2,12 +2,12 @@ import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
-import { LOBBY_ROOM_ID, splitLine } from '@features/connection/showdown-protocol';
-import { ChatMessage, ChatUser } from '@features/lobby/models/chat';
+import { splitLine } from '@features/connection/showdown-protocol';
+import { ChatMessage, ChatRoom, ChatUser } from '@features/lobby/models/chat';
 import { filter } from 'rxjs';
 import { compareUsers, parseUserEntry } from './chat-users';
 
-// Rendering budget for slow devices (the Brewser console): the busy lobby sends many small frames,
+// Rendering budget for slow devices (the Brewser console): busy rooms send many small frames,
 // so server lines are buffered and applied in batches, and the user list is republished less often.
 /** Buffered lines are applied at most this often. */
 const FLUSH_INTERVAL_MS = 150;
@@ -16,12 +16,16 @@ const USERS_PUBLISH_INTERVAL_MS = 1000;
 /** Visible history; older messages are dropped. The log shows ~20 at a time. */
 const MAX_MESSAGES = 50;
 
+/** 'joining' lasts from the request until the server confirms the room with `|init|`. */
+export type RoomJoinState = 'idle' | 'joining' | 'joined';
+
 /**
- * Read-only state of the Showdown lobby room: who is in it and the recent chat. Joins the lobby
- * whenever the server connection (re)opens and applies the room's protocol messages in batches.
+ * Read-only state of the chat room the user is in (one at a time): who is in it and the recent chat.
+ * Nothing connects until `join()` is called (the user picks a room); from then on the room is rejoined
+ * whenever the server connection (re)opens, until `leave()`. Its protocol messages are applied in batches.
  */
 @Service()
-export class LobbyChatStore {
+export class ChatRoomStore {
   private readonly connection = inject(ShowdownConnection);
   private readonly render = inject(RenderScheduler);
 
@@ -36,12 +40,17 @@ export class LobbyChatStore {
   private readonly messagesSignal = signal<ChatMessage[]>([]);
   private nextMessageId = 1;
 
+  private readonly joinStateSignal = signal<RoomJoinState>('idle');
+  private readonly roomSignal = signal<ChatRoom | null>(null);
+  private readonly joinErrorSignal = signal<string | null>(null);
+  private joinRequested = false;
+
   private pendingLines: string[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private usersTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
-   * Everyone in the lobby, sorted by rank then name. A computed is lazy, so the sort only runs while
+   * Everyone in the room, sorted by rank then name. A computed is lazy, so the sort only runs while
    * something displays the list: off the lobby page, joins/leaves cost no sorting at all.
    */
   readonly users = computed(() => {
@@ -52,29 +61,88 @@ export class LobbyChatStore {
   readonly userCount = this.userCountSignal.asReadonly();
   readonly messages = this.messagesSignal.asReadonly();
   readonly connectionState = this.connection.state;
+  readonly joinState = this.joinStateSignal.asReadonly();
+  /** The room joined or being joined. */
+  readonly room = this.roomSignal.asReadonly();
+  /** Why the last join failed (the server refused it), until the next attempt. */
+  readonly joinError = this.joinErrorSignal.asReadonly();
 
   constructor() {
     this.connection.frames
       .pipe(
-        filter((frame) => frame.roomId === LOBBY_ROOM_ID),
+        filter((frame) => frame.roomId === this.roomSignal()?.id),
         takeUntilDestroyed(),
       )
       .subscribe((frame) => this.queue(frame.lines));
 
-    const joinLobby = () => this.connection.send('', `/join ${LOBBY_ROOM_ID}`);
-    this.connection.opened.pipe(takeUntilDestroyed()).subscribe(joinLobby);
-    // Covers a connection some other feature already opened before this store existed.
-    if (this.connection.state().status === 'connected') joinLobby();
-
-    inject(DestroyRef).onDestroy(() => {
-      if (this.flushTimer !== null) clearTimeout(this.flushTimer);
-      if (this.usersTimer !== null) clearTimeout(this.usersTimer);
+    // Rejoin after reconnections, once the user has asked for the room.
+    this.connection.opened.pipe(takeUntilDestroyed()).subscribe(() => {
+      if (this.joinRequested) this.sendJoin();
     });
 
-    this.connection.connect();
+    inject(DestroyRef).onDestroy(() => this.clearTimers());
+  }
+
+  /** Enters `room` as a guest (the server names guests itself), connecting first if needed. */
+  join(room: ChatRoom): void {
+    if (this.joinRequested) return;
+    this.joinRequested = true;
+    this.roomSignal.set(room);
+    this.joinErrorSignal.set(null);
+    this.joinStateSignal.set('joining');
+    this.render.request();
+    if (this.connection.state().status === 'connected') this.sendJoin();
+    else this.connection.connect();
+  }
+
+  /**
+   * Leaves the room and clears its users and messages. The socket is closed as well: the chat is its
+   * only user for now, and an idle socket still costs the console its incoming traffic. (Once other
+   * features share the connection, it should only close when nothing needs it.)
+   */
+  leave(): void {
+    const room = this.roomSignal();
+    if (!this.joinRequested || !room) return;
+    this.connection.send('', `/leave ${room.id}`);
+    this.connection.disconnect();
+    this.reset();
+  }
+
+  private sendJoin(): void {
+    const room = this.roomSignal();
+    if (room) this.connection.send('', `/join ${room.id}`);
+  }
+
+  /** Back to "not in a room", e.g. after leaving or when the server refuses the join. */
+  private reset(): void {
+    this.joinRequested = false;
+    this.roomSignal.set(null);
+    this.clearRoom();
+    this.joinStateSignal.set('idle');
+    this.render.request();
+  }
+
+  private clearRoom(): void {
+    this.clearTimers();
+    this.pendingLines = [];
+    this.usersById.clear();
+    this.userTotal = 0;
+    this.usersDirty = false;
+    this.usersVersion.update((version) => version + 1);
+    this.userCountSignal.set(0);
+    this.messagesSignal.set([]);
+  }
+
+  private clearTimers(): void {
+    if (this.flushTimer !== null) clearTimeout(this.flushTimer);
+    if (this.usersTimer !== null) clearTimeout(this.usersTimer);
+    this.flushTimer = null;
+    this.usersTimer = null;
   }
 
   private queue(lines: string[]): void {
+    // Lines still in flight after leaving (or global lines before joining) aren't room state.
+    if (!this.joinRequested) return;
     for (const line of lines) this.pendingLines.push(line);
     this.flushTimer ??= setTimeout(() => this.flush(), FLUSH_INTERVAL_MS);
   }
@@ -97,12 +165,22 @@ export class LobbyChatStore {
       const [type] = splitLine(line);
       switch (type) {
         case 'init':
+          // The server confirms the room (and follows with its users and recent history).
+          this.joinStateSignal.set('joined');
           reset = true;
           added.length = 0;
           this.usersById.clear();
           this.userTotal = 0;
           this.usersDirty = true;
           break;
+        case 'noinit': {
+          // The server refused the join (e.g. the room doesn't exist or needs permissions).
+          const title = this.roomSignal()?.title ?? 'the room';
+          this.connection.disconnect();
+          this.reset();
+          this.joinErrorSignal.set(`Couldn't join ${title}.`);
+          return;
+        }
         case 'users': {
           const [total, ...entries] = (splitLine(line, 1)[1] ?? '').split(',');
           this.usersById.clear();

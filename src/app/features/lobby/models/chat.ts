@@ -16,3 +16,10 @@ export interface ChatMessage {
   /** A `/me` message, shown as "author text". */
   action: boolean;
 }
+
+/** A Showdown chat room the user can join from the lobby. */
+export interface ChatRoom {
+  /** Room ID on the server (what `/join` takes). */
+  id: string;
+  title: string;
+}

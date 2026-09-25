@@ -14,8 +14,8 @@ const MAX_VISIBLE_USERS = 50;
   imports: [ScrollRegion, UsernameColorPipe],
   selector: 'app-chat-user-list',
   host: { class: 'block bg-[#0f141c]' },
-  // Brewser layout rules this follows (seen on device): fixed heights (28px title + 572px list =
-  // the 600px chat view); plain block rows with no truncation (flex rows inserted dynamically break,
+  // Brewser layout rules this follows (seen on device): fixed heights (28px title + 536px list =
+  // the 564px room view); plain block rows with no truncation (flex rows inserted dynamically break,
   // and overflow clipping on the rows is being ruled out); padding as the shorthand (p-* utilities) on the rows
   // (longhands lose to the preflight's `padding: 0` shorthand on Brewser); no inline svg in a row (it
   // wrapped), so away users are italic, as in the official client, and labelled for screen readers.
@@ -25,7 +25,7 @@ const MAX_VISIBLE_USERS = 50;
       appScrollRegion
       aria-labelledby="chat-user-count"
       tabindex="0"
-      class="h-[572px] overflow-y-auto text-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[536px] overflow-y-auto text-lg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       @for (user of visibleUsers(); track user.id) {
         <li class="p-[0_12px] leading-relaxed" [attr.aria-label]="user.away ? user.name + ' (away)' : null">

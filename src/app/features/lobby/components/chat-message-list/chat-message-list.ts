@@ -23,7 +23,7 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
       role="log"
       aria-label="Chat messages"
       tabindex="0"
-      class="h-[600px] overflow-y-auto text-lg text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[564px] overflow-y-auto text-lg text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       <!--
         Brewser layout rules this follows (seen on device): the padding lives on this inner block and
@@ -61,6 +61,11 @@ export class ChatMessageList {
   constructor() {
     afterRenderEffect(() => {
       const messages = this.messages();
+      // An emptied log (the room was left) behaves like a fresh one when content comes back.
+      if (messages.length === 0) {
+        this.repaintedFirstContent = false;
+        this.stickToBottom = true;
+      }
       if (!this.visible()) return;
       const el = this.log().nativeElement;
 
@@ -103,6 +108,11 @@ export class ChatMessageList {
         if (this.deferredScroll !== null) clearTimeout(this.deferredScroll);
       });
     });
+  }
+
+  /** Moves keyboard focus to the log (it's focusable so it can be scrolled with the keyboard). */
+  focus(): void {
+    this.log().nativeElement.focus();
   }
 
   // The offset is clamped explicitly: browsers clamp `scrollTop = scrollHeight` to the maximum, but an
