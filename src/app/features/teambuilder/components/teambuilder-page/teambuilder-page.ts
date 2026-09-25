@@ -26,8 +26,10 @@ export class TeambuilderPage {
   private readonly exporter = viewChild.required(TeamExport);
   private readonly editor = viewChild.required(SetEditor);
 
-  protected readonly view = signal<PanelView>('empty');
-  protected readonly selectedId = signal<string | null>(null);
+  // Opens on the most recently created team (teams are stored in creation order), if there is one.
+  private readonly lastCreatedId = this.store.teams().at(-1)?.id ?? null;
+  protected readonly view = signal<PanelView>(this.lastCreatedId ? 'team' : 'empty');
+  protected readonly selectedId = signal<string | null>(this.lastCreatedId);
   protected readonly selectedTeam = computed(() => this.store.team(this.selectedId()));
   protected readonly editIndex = signal(0);
 

@@ -1,5 +1,5 @@
 import { Component, ElementRef, output, signal, viewChild } from '@angular/core';
-import { FormField, FormRoot, form, maxLength, required, validate } from '@angular/forms/signals';
+import { FormField, form, maxLength, required, validate } from '@angular/forms/signals';
 import { MAX_TEAM_NAME_LENGTH } from '@features/teambuilder/components/team-detail/team-detail';
 import { parseTeamPaste } from '@features/teambuilder/data/showdown-paste';
 import { PokemonSet } from '@features/teambuilder/models/team';
@@ -23,13 +23,14 @@ Jolly Nature
 - Dragon Tail`;
 
 @Component({
-  imports: [FormRoot, FormField, ScrollRegion],
+  imports: [FormField, ScrollRegion],
   selector: 'app-team-import',
   host: { class: 'block' },
   // Fixed 920x644 panel with plain block content (Brewser layout rules, see styles.css). Spacing uses
-  // fixed-height blocks rather than margins.
+  // fixed-height blocks rather than margins. Not a <form> with a submit button: on the console that
+  // did nothing (plain click buttons work), so Import and Enter are handled directly.
   template: `
-    <form [formRoot]="importForm" class="block h-[644px] w-[920px] p-6">
+    <div role="group" aria-label="Import a team" class="block h-[644px] w-[920px] p-6">
       <h2 class="h-10 text-xl font-bold text-white">Import a team</h2>
 
       <label for="import-name" class="block h-7 text-base text-gray-200">Team name</label>
@@ -40,6 +41,7 @@ Jolly Nature
           type="text"
           [attr.aria-describedby]="fieldError('name') ? 'import-name-error' : null"
           [formField]="importForm.name"
+          (keydown.enter)="submit($event)"
           class="block h-10 w-[400px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-lg text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         />
         @if (fieldError('name'); as error) {
@@ -52,6 +54,7 @@ Jolly Nature
       </label>
       <div class="h-[380px]">
         <textarea
+          #pasteInput
           id="import-paste"
           appScrollRegion
           spellcheck="false"
@@ -67,7 +70,8 @@ Jolly Nature
 
       <div class="relative h-10">
         <button
-          type="submit"
+          type="button"
+          (click)="submit()"
           class="absolute top-0 left-0 h-10 w-[120px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-base text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           Import
@@ -80,11 +84,12 @@ Jolly Nature
           Cancel
         </button>
       </div>
-    </form>
+    </div>
   `,
 })
 export class TeamImport {
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly pasteInput = viewChild.required<ElementRef<HTMLTextAreaElement>>('pasteInput');
 
   readonly imported = output<ImportedTeam>();
   readonly cancelled = output<void>();
@@ -92,30 +97,30 @@ export class TeamImport {
   protected readonly placeholder = PLACEHOLDER;
 
   private readonly model = signal({ name: '', paste: '' });
-  protected readonly importForm = form(
-    this.model,
-    (path) => {
-      required(path.name, { message: 'Give the team a name.' });
-      maxLength(path.name, MAX_TEAM_NAME_LENGTH, { message: `Use at most ${MAX_TEAM_NAME_LENGTH} characters.` });
-      required(path.paste, { message: 'Paste a team exported from Showdown.' });
-      validate(path.paste, ({ value }) =>
-        value().trim() && parseTeamPaste(value()).sets.length === 0
-          ? { kind: 'noPokemon', message: 'No Pokémon found. Paste the text from Showdown\'s Import/Export.' }
-          : undefined,
-      );
-    },
-    {
-      submission: {
-        action: async (field) => {
-          const { name, paste } = field().value();
-          const parsed = parseTeamPaste(paste);
-          this.imported.emit({ name: name.trim(), format: DEFAULT_TEAM_FORMAT, sets: parsed.sets });
-          this.importForm().reset({ name: '', paste: '' });
-          return undefined;
-        },
-      },
-    },
-  );
+  protected readonly importForm = form(this.model, (path) => {
+    required(path.name, { message: 'Give the team a name.' });
+    maxLength(path.name, MAX_TEAM_NAME_LENGTH, { message: `Use at most ${MAX_TEAM_NAME_LENGTH} characters.` });
+    required(path.paste, { message: 'Paste a team exported from Showdown.' });
+    validate(path.paste, ({ value }) =>
+      value().trim() && parseTeamPaste(value()).sets.length === 0
+        ? { kind: 'noPokemon', message: 'No Pokémon found. Paste the text from Showdown\'s Import/Export.' }
+        : undefined,
+    );
+  });
+
+  /**
+   * Takes the text from the controls themselves: the console's on-screen keyboard may fill them in
+   * without the input events that keep the form model up to date.
+   */
+  protected submit(event?: Event): void {
+    event?.preventDefault();
+    this.model.set({ name: this.nameInput().nativeElement.value.trim(), paste: this.pasteInput().nativeElement.value });
+    this.importForm().markAsTouched();
+    if (this.importForm().invalid()) return;
+    const { name, paste } = this.model();
+    this.imported.emit({ name, format: DEFAULT_TEAM_FORMAT, sets: parseTeamPaste(paste).sets });
+    this.importForm().reset({ name: '', paste: '' });
+  }
 
   /** Starts a fresh import: clears the form and focuses the name field. */
   open(): void {

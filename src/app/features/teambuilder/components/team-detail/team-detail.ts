@@ -1,5 +1,5 @@
 import { Component, ElementRef, afterRenderEffect, input, linkedSignal, output, signal, viewChild } from '@angular/core';
-import { FormField, FormRoot, form, maxLength, required } from '@angular/forms/signals';
+import { FormField, form, maxLength, required } from '@angular/forms/signals';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
@@ -17,7 +17,7 @@ const SLOT_POSITIONS = [
 ];
 
 @Component({
-  imports: [TeamSlot, FormRoot, FormField],
+  imports: [TeamSlot, FormField],
   selector: 'app-team-detail',
   host: { class: 'block' },
   // Fixed 920x644 panel (see styles.css): an 88px header (name and format select, or the rename form,
@@ -53,21 +53,26 @@ const SLOT_POSITIONS = [
         </button>
       </div>
 
-      <form [formRoot]="renameForm" [class.hidden]="!editing()">
+      <!--
+        Not a <form> with a submit button: on the console, Save did nothing while the plain click
+        buttons worked, so Save and Enter are handled directly and read the text from the input.
+      -->
+      <div role="group" aria-label="Rename team" [class.hidden]="!editing()">
         <input
           #nameInput
           type="text"
           aria-label="Team name"
           [attr.aria-describedby]="showNameError() ? 'rename-error' : null"
           [formField]="renameForm.name"
+          (keydown.enter)="saveRename($event)"
           class="absolute top-3 left-6 h-10 w-[400px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-lg text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         />
-        <button type="submit" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
+        <button type="button" (click)="saveRename()" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
         <button type="button" (click)="cancelRename()" [class]="actionClass" class="left-[536px] w-[88px]">Cancel</button>
         @if (showNameError()) {
           <p id="rename-error" class="absolute top-[54px] left-6 text-sm text-red-300">{{ renameForm.name().errors()[0]?.message }}</p>
         }
-      </form>
+      </div>
 
       <!-- Every empty slot adds a Pokémon at the end: teams never have gaps. -->
       @for (position of slotPositions; track $index) {
@@ -107,23 +112,10 @@ export class TeamDetail {
   protected readonly confirmingDelete = linkedSignal({ source: () => this.team()?.id, computation: () => false });
 
   private readonly renameModel = signal({ name: '' });
-  protected readonly renameForm = form(
-    this.renameModel,
-    (path) => {
-      required(path.name, { message: 'Give the team a name.' });
-      maxLength(path.name, MAX_TEAM_NAME_LENGTH, { message: `Use at most ${MAX_TEAM_NAME_LENGTH} characters.` });
-    },
-    {
-      submission: {
-        action: async (field) => {
-          this.renamed.emit(field.name().value().trim());
-          this.editing.set(false);
-          this.focusAfterRender = 'heading';
-          return undefined;
-        },
-      },
-    },
-  );
+  protected readonly renameForm = form(this.renameModel, (path) => {
+    required(path.name, { message: 'Give the team a name.' });
+    maxLength(path.name, MAX_TEAM_NAME_LENGTH, { message: `Use at most ${MAX_TEAM_NAME_LENGTH} characters.` });
+  });
 
   // Where focus goes once the next render shows (or hides) the rename form.
   private focusAfterRender: 'heading' | 'input' | null = null;
@@ -163,6 +155,21 @@ export class TeamDetail {
     this.confirmingDelete.set(false);
     this.editing.set(true);
     this.focusAfterRender = 'input';
+  }
+
+  /**
+   * Takes the name from the input itself: the console's on-screen keyboard may fill it in without
+   * the input events that keep the form model up to date.
+   */
+  protected saveRename(event?: Event): void {
+    event?.preventDefault();
+    this.renameModel.set({ name: this.nameInput().nativeElement.value.trim() });
+    const name = this.renameForm.name();
+    name.markAsTouched();
+    if (name.invalid()) return;
+    this.renamed.emit(name.value());
+    this.editing.set(false);
+    this.focusAfterRender = 'heading';
   }
 
   protected cancelRename(): void {

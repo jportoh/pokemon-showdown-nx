@@ -3,8 +3,8 @@
   sizes a select whose options are added after creation (as @for does) against the wrong
   container when its width is a percentage.
 -->
-<form
-  [formRoot]="battleForm"
+<div
+  role="group"
   aria-label="Find a battle"
   class="flex w-[560px] flex-col gap-6 rounded-3xl bg-card p-8 text-white"
 >
@@ -12,6 +12,7 @@
     <label for="battle-format" class="text-xl font-bold">Format:</label>
     <div class="relative">
       <select
+        #formatSelect
         id="battle-format"
         [formField]="battleForm.format"
         class="h-14 w-[496px] cursor-pointer appearance-none rounded-md border border-gray-400 bg-gray-600 p-[8px_40px_8px_12px] text-xl hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
@@ -63,6 +64,7 @@
 
   <div class="flex items-center gap-3 p-[0_4px]">
     <input
+      #spectatorsBox
       id="battle-no-spectators"
       type="checkbox"
       [formField]="battleForm.disallowSpectators"
@@ -77,10 +79,11 @@
   </div>
 
   <button
-    type="submit"
+    type="button"
+    (click)="battle()"
     class="flex h-[104px] w-[496px] cursor-pointer flex-col items-center justify-center rounded-md border border-blue-300 bg-blue-700 hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
   >
     <span class="text-5xl font-bold">Battle!</span>
     <span class="text-xl">Find a random opponent</span>
   </button>
-</form>
+</div>

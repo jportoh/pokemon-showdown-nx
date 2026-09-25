@@ -1,5 +1,5 @@
 import { Service, signal } from '@angular/core';
-import { readJson, writeJson } from '@core/persistence/local-storage';
+import { readJson, writeJson } from '@core/persistence/device-storage';
 import { toStatPoints } from '@features/teambuilder/data/game-rules';
 import { MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { DEFAULT_TEAM_FORMAT, TEAM_FORMATS } from '@shared/data/formats';
@@ -7,7 +7,7 @@ import { DEFAULT_TEAM_FORMAT, TEAM_FORMATS } from '@shared/data/formats';
 /** Versioned so a future change of shape can migrate instead of misreading old data. */
 const STORAGE_KEY = 'psb.teams.v1';
 
-/** The user's teams, kept in localStorage on the device. */
+/** The user's teams, kept on the device (on the console, in a file on the SD card). */
 @Service()
 export class TeamStore {
   private readonly teamsSignal = signal<Team[]>(loadTeams());
