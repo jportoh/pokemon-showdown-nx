@@ -2,6 +2,9 @@
 
 @import 'tailwindcss';
 
+/* Build scripts mention class names in comments; they aren't app markup. */
+@source not "../scripts";
+
 /* App palette: soft blue-grays in the spirit of the original Showdown client. */
 @theme {
   --color-stage: #34496b;

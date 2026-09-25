@@ -1,0 +1,247 @@
+<!--
+  Fixed 920x644 panel (see styles.css): a 64px header (back, slot title, tabs, remove) over either the
+  Details tab (10 fixed-height field rows on the left, the list chooser on the right) or the
+  Stats tab. Every control sits at a fixed absolute position, both tabs and the chooser stay mounted
+  and are only shown or hidden, and selects have fixed px sizes (Brewser layout rules, seen on device).
+  Lists open in the chooser so picking takes the d-pad (and, for species and items, a few letters)
+  instead of typing names.
+-->
+<div class="relative h-16 w-[920px]">
+  <button
+    type="button"
+    (click)="closed.emit()"
+    class="absolute top-[10px] left-6 h-9 w-[132px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+  >
+    ← Team
+  </button>
+  <app-pokemon-sprite
+    class="absolute top-2 left-[168px]"
+    [sprite]="(mega() ?? species())?.sprite ?? ''"
+    [size]="48"
+  />
+  <h2 class="absolute top-[14px] left-[226px] w-[324px] text-xl font-bold text-white">
+    {{ title() }}
+  </h2>
+  <button
+    type="button"
+    [attr.aria-pressed]="tab() === 'details'"
+    (click)="tab.set('details')"
+    class="absolute top-[10px] left-[560px] h-9 w-24 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    [class.bg-tab-hover]="tab() === 'details'"
+  >
+    Details
+  </button>
+  <button
+    type="button"
+    [attr.aria-pressed]="tab() === 'stats'"
+    [disabled]="!pokemon()"
+    (click)="tab.set('stats')"
+    class="absolute top-[10px] left-[664px] h-9 w-24 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
+    [class.bg-tab-hover]="tab() === 'stats'"
+  >
+    Stats
+  </button>
+  <button
+    type="button"
+    (click)="onRemove()"
+    [class.hidden]="!pokemon()"
+    [attr.aria-label]="confirmingRemove() ? 'Confirm removing ' + title() : 'Remove ' + title()"
+    class="absolute top-[10px] left-[776px] h-9 w-[120px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    [class.bg-red-800]="confirmingRemove()"
+  >
+    {{ confirmingRemove() ? 'Confirm' : 'Remove' }}
+  </button>
+</div>
+
+<!--
+  Tabs: toggled blocks in normal flow. On Brewser, an absolutely positioned element that is hidden and
+  shown again loses its positioned descendants (seen on device), so only these plain wrappers toggle.
+-->
+<!-- Details tab: field rows (44px each) on the left. -->
+<div [class.hidden]="tab() !== 'details'">
+  <div class="relative h-[580px] w-[920px]">
+    <div class="absolute top-0 left-6 w-[440px]">
+      <div class="relative h-11">
+        <span id="field-species" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Species</span
+        >
+        <button
+          type="button"
+          aria-labelledby="field-species species-value"
+          aria-controls="set-chooser"
+          [attr.aria-expanded]="isActive('species')"
+          (click)="openChooser('species')"
+          [class]="fieldButtonClass"
+          [class.bg-tab-hover]="isActive('species')"
+        >
+          <span id="species-value">{{
+            species()?.name ?? pokemon()?.species ?? 'Choose a species'
+          }}</span>
+        </button>
+      </div>
+      <div class="relative h-11">
+        <label
+          for="field-nickname"
+          class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Nickname</label
+        >
+        <input
+          #nickname
+          id="field-nickname"
+          type="text"
+          autocomplete="off"
+          [disabled]="!pokemon()"
+          [maxLength]="maxNicknameLength"
+          [value]="pokemon()?.name ?? ''"
+          [attr.placeholder]="'Optional'"
+          (change)="updateNickname(nickname.value)"
+          class="absolute top-1 left-[104px] h-9 w-[336px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:text-gray-400"
+        />
+      </div>
+      <div class="relative h-11">
+        <span id="field-item" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Item</span
+        >
+        <button
+          type="button"
+          aria-labelledby="field-item item-value"
+          aria-controls="set-chooser"
+          [attr.aria-expanded]="isActive('item')"
+          [disabled]="!pokemon()"
+          (click)="openChooser('item')"
+          [class]="fieldButtonClass"
+          [class.bg-tab-hover]="isActive('item')"
+        >
+          <span id="item-value">{{ pokemon()?.item || 'No item' }}</span>
+        </button>
+      </div>
+      <div class="relative h-11">
+        <span id="field-ability" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Ability</span
+        >
+        <button
+          type="button"
+          aria-labelledby="field-ability ability-value"
+          aria-controls="set-chooser"
+          [attr.aria-expanded]="isActive('ability')"
+          [disabled]="!pokemon()"
+          (click)="openChooser('ability')"
+          [class]="fieldButtonClass"
+          [class.bg-tab-hover]="isActive('ability')"
+        >
+          <span id="ability-value">{{ pokemon()?.ability || 'No ability' }}</span>
+        </button>
+      </div>
+      @for (field of moveFields; track field; let i = $index) {
+        <div class="relative h-11">
+          <span
+            [id]="'field-move-' + i"
+            class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+            >Move {{ i + 1 }}</span
+          >
+          <button
+            type="button"
+            [attr.aria-labelledby]="'field-move-' + i + ' move-value-' + i"
+            aria-controls="set-chooser"
+            [attr.aria-expanded]="isActive(field)"
+            [disabled]="!pokemon()"
+            (click)="openChooser(field)"
+            [class]="fieldButtonClass"
+            [class.bg-tab-hover]="isActive(field)"
+          >
+            <span [id]="'move-value-' + i">{{ pokemon()?.moves?.[i] || 'No move' }}</span>
+          </button>
+        </div>
+      }
+      <div class="relative h-11">
+        <label for="field-gender" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Gender</label
+        >
+        <select
+          #gender
+          id="field-gender"
+          [disabled]="!pokemon() || genderOptions().length === 1"
+          (change)="updateGender(gender.value)"
+          [class]="selectClass"
+        >
+          @for (option of genderOptions(); track option.value) {
+            <option [value]="option.value" [selected]="option.value === pokemon()?.gender">
+              {{ option.label }}
+            </option>
+          }
+        </select>
+      </div>
+      <div class="relative h-11">
+        <label for="field-shiny" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
+          >Shiny</label
+        >
+        <input
+          #shiny
+          id="field-shiny"
+          type="checkbox"
+          [disabled]="!pokemon()"
+          [checked]="pokemon()?.shiny ?? false"
+          (change)="update({ shiny: shiny.checked })"
+          class="absolute top-[10px] left-[104px] size-6 cursor-pointer accent-gray-600 disabled:cursor-not-allowed"
+        />
+      </div>
+    </div>
+
+    <!-- The chooser for the active list field, or a hint. -->
+    <div class="absolute top-0 left-[488px] w-[408px]">
+      <app-dex-chooser
+        id="set-chooser"
+        [class.hidden]="!activeField()"
+        [title]="chooserTitle()"
+        [options]="chooserOptions()"
+        [selectedId]="chooserSelectedId()"
+        [searchable]="chooserSearchable()"
+        [suggested]="chooserSuggested()"
+        suggestedLabel="Popular items"
+        [unavailable]="chooserUnavailable()"
+        (picked)="pick($event)"
+      />
+      <p class="text-base leading-7 text-gray-300" [class.hidden]="!!activeField()">
+        Select Species, Item, Ability or a Move to pick it from a list. For species and items,
+        typing a few letters in the search box narrows it down.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Stats tab: nature (next to the stats it changes) and, for a Mega, what it Mega Evolves into. -->
+<div [class.hidden]="tab() !== 'stats'">
+  <div class="relative h-[580px] w-[920px]">
+    <div class="absolute top-0 left-6 w-[872px]">
+      <div class="relative h-[52px] w-[872px]">
+        <label for="field-nature" class="absolute top-[14px] left-0 w-[100px] text-sm text-gray-200"
+          >Nature</label
+        >
+        <select
+          #nature
+          id="field-nature"
+          [disabled]="!pokemon()"
+          (change)="update({ nature: nature.value })"
+          class="absolute top-2 left-[72px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
+        >
+          <option value="" [selected]="!pokemon()?.nature">No nature</option>
+          @for (option of natures; track option.name) {
+            <option [value]="option.name" [selected]="option.name === pokemon()?.nature">
+              {{ option.label }}
+            </option>
+          }
+        </select>
+        <p class="absolute top-[14px] left-[432px] w-[440px] text-sm text-gray-200">
+          {{ megaSummary() }}
+        </p>
+      </div>
+      @if (pokemon(); as current) {
+        <app-set-stats
+          [set]="current"
+          [baseStats]="baseStats()"
+          (pointsChanged)="updateStatPoints($event)"
+        />
+      }
+    </div>
+  </div>
+</div>

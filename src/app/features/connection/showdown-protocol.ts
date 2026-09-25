@@ -30,8 +30,3 @@ export function splitLine(line: string, argCount?: number): string[] {
   if (argCount === undefined || parts.length <= argCount + 1) return parts;
   return [...parts.slice(0, argCount), parts.slice(argCount).join('|')];
 }
-
-/** Showdown's user/room ID: lowercase letters and digits only. */
-export function toId(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '');
-}

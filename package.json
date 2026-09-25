@@ -8,7 +8,8 @@
     "build:brewser": "ng build && node scripts/build-brewser.mjs",
     "build:brewser:diag": "ng build && node scripts/build-brewser.mjs --diag",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "update:champions": "node scripts/update-champions-data.mjs"
   },
   "private": true,
   "packageManager": "npm@10.9.8",

@@ -1,1 +1,33 @@
-<p>Teambuilder page!</p>
+<!--
+  Fills the layout's 1280x644 content area: a 360px team list and a 920px panel. The panel's views are
+  all mounted and only shown or hidden, never inserted later (Brewser layout rules, see styles.css).
+-->
+<app-team-list
+  class="absolute top-0 left-0 h-[644px] w-[360px] border-r border-gray-600"
+  [teams]="store.teams()"
+  [selectedId]="selectedId()"
+  (select)="selectTeam($event)"
+  (create)="createTeam()"
+  (import)="startImport()"
+/>
+
+<div class="absolute top-0 left-[360px] h-[644px] w-[920px]">
+  <div class="h-[644px] w-[920px] p-8" [class.hidden]="view() !== 'empty'">
+    <p class="text-lg text-gray-200">Select a team, or build a new one with New.</p>
+    @if (store.saveFailed()) {
+      <p role="alert" class="text-base leading-8 text-red-300">Your last change couldn't be saved on this device.</p>
+    }
+  </div>
+  <app-team-detail
+    [class.hidden]="view() !== 'team'"
+    [team]="selectedTeam()"
+    (renamed)="renameTeam($event)"
+    (formatChanged)="changeFormat($event)"
+    (export)="showExport()"
+    (deleted)="deleteTeam()"
+    (editSlot)="editSlot($event)"
+  />
+  <app-set-editor [class.hidden]="view() !== 'edit'" [team]="selectedTeam()" [index]="editIndex()" (closed)="closeEditor()" />
+  <app-team-import [class.hidden]="view() !== 'import'" (imported)="finishImport($event)" (cancelled)="cancelImport()" />
+  <app-team-export [class.hidden]="view() !== 'export'" [team]="selectedTeam()" (back)="closeExport()" />
+</div>

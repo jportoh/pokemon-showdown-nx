@@ -1,0 +1,291 @@
+import { Component, afterRenderEffect, computed, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
+import { ChampionsDex, DexMega, DexSpecies, StatTable } from '@core/dex/champions-dex';
+import { ChooserOption, DexChooser } from '@features/teambuilder/components/dex-chooser/dex-chooser';
+import { SetStats } from '@features/teambuilder/components/set-stats/set-stats';
+import { MAX_NICKNAME_LENGTH, NATURES, STAT_IDS, natureLabel } from '@features/teambuilder/data/game-rules';
+import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/models/team';
+import { TeamStore } from '@features/teambuilder/state/team-store';
+import { PokemonSprite } from '@shared/components/pokemon-sprite';
+import { toId } from '@shared/utils/to-id';
+
+/** Fields picked from a list, in the order the chooser walks through them. */
+type ChooserField = 'species' | 'item' | 'ability' | 'move0' | 'move1' | 'move2' | 'move3';
+const CHOOSER_ORDER: readonly ChooserField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
+/** Lists short enough to scroll through whole: no search box, so no on-screen keyboard. */
+const SEARCHABLE_FIELDS: readonly ChooserField[] = ['species', 'item'];
+const MOVE_FIELDS: readonly ChooserField[] = ['move0', 'move1', 'move2', 'move3'];
+
+const MAX_DETAIL_LENGTH = 90;
+
+@Component({
+  imports: [DexChooser, SetStats, PokemonSprite],
+  selector: 'app-set-editor',
+  host: { class: 'block' },
+  templateUrl: './set-editor.html',
+})
+export class SetEditor {
+  private readonly store = inject(TeamStore);
+  private readonly dex = inject(ChampionsDex);
+  private readonly chooser = viewChild.required(DexChooser);
+
+  readonly team = input<Team | undefined>(undefined);
+  /** The slot being edited; the team's length for a new Pokémon. */
+  readonly index = input(0);
+  readonly closed = output<void>();
+
+  protected readonly pokemon = computed(() => this.team()?.sets[this.index()]);
+  protected readonly species = computed(() => {
+    const pokemon = this.pokemon();
+    return pokemon ? this.dex.species(pokemon.species) : undefined;
+  });
+  /** What the Pokémon Mega Evolves into, when it holds its Mega Stone. */
+  protected readonly mega = computed(() => {
+    const pokemon = this.pokemon();
+    return pokemon ? this.dex.mega(pokemon.species, pokemon.item) : undefined;
+  });
+  /** Stats are shown for the form it battles in: the Mega's when it holds its stone. */
+  protected readonly baseStats = computed<StatTable | undefined>(() => (this.mega() ?? this.species())?.baseStats);
+
+  // UI state that starts over whenever another slot is opened (and only then: the Pokémon itself is
+  // read untracked, or creating it would reset the chooser mid-flow). A new slot opens on the species list.
+  private readonly slotKey = computed(() => `${this.team()?.id}:${this.index()}`);
+  protected readonly tab = linkedSignal<string, 'details' | 'stats'>({ source: this.slotKey, computation: () => 'details' });
+  protected readonly activeField = linkedSignal<string, ChooserField | null>({
+    source: this.slotKey,
+    computation: () => (untracked(this.pokemon) ? null : 'species'),
+  });
+  protected readonly confirmingRemove = linkedSignal({ source: this.slotKey, computation: () => false });
+
+  protected readonly moveFields = MOVE_FIELDS;
+  protected readonly natures = NATURES.map((nature) => ({ name: nature.name, label: natureLabel(nature) }));
+  protected readonly maxNicknameLength = MAX_NICKNAME_LENGTH;
+  protected readonly fieldButtonClass =
+    'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_12px] text-left text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
+  protected readonly selectClass =
+    'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
+
+  protected readonly title = computed(
+    () => `Slot ${this.index() + 1} · ${this.mega()?.name ?? this.species()?.name ?? this.pokemon()?.species ?? 'New Pokémon'}`,
+  );
+
+  /** "Mega Evolves into Garchomp-Mega · Dragon / Ground · Sand Force" */
+  protected readonly megaSummary = computed(() => {
+    const mega = this.mega();
+    return mega ? `Mega Evolves into ${mega.name} · ${mega.types.join(' / ')} · ${mega.ability}` : '';
+  });
+
+  protected readonly abilityOptions = computed(() => {
+    const abilities = this.species()?.abilities ?? [];
+    const current = this.pokemon()?.ability;
+    return current && !abilities.includes(current) ? [current, ...abilities] : abilities;
+  });
+
+  /** '' is "either"; single-gender and genderless species only offer what they can be. */
+  protected readonly genderOptions = computed(() => {
+    switch (this.species()?.gender) {
+      case 'N':
+        return [{ value: '', label: 'Genderless' }];
+      case 'M':
+        return [{ value: 'M', label: 'Male' }];
+      case 'F':
+        return [{ value: 'F', label: 'Female' }];
+      default:
+        return [
+          { value: '', label: 'Either' },
+          { value: 'M', label: 'Male' },
+          { value: 'F', label: 'Female' },
+        ];
+    }
+  });
+
+  // Chooser options for the species and item lists, built once: the data only has what the format
+  // allows (typing filters inside the chooser). Megas are listed as species too: picking one picks its
+  // base species holding the Mega Stone.
+  private readonly speciesOptions: readonly ChooserOption[] = [
+    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, detail: speciesDetail(species) })),
+    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, detail: megaDetail(mega, this.dex.item(mega.item)?.name ?? mega.item) })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  private readonly itemOptions: readonly ChooserOption[] = [
+    { id: '', name: 'No item', detail: '' },
+    ...this.dex.allItems.map((item) => ({ id: item.id, name: item.name, detail: shorten(item.desc) })),
+  ];
+  private readonly popularItemIds = new Set(this.dex.popularItems.map((item) => item.id));
+
+  /**
+   * Until something is typed, the item list only shows "No item", the item it holds when that isn't
+   * a popular one (so the current choice is always there to keep) and Showdown's popular items.
+   */
+  protected readonly chooserSuggested = computed<readonly ChooserOption[] | null>(() => {
+    if (this.activeField() !== 'item') return null;
+    const held = toId(this.pokemon()?.item ?? '');
+    return this.itemOptions.filter((option) => option.id === '' || option.id === held || this.popularItemIds.has(option.id));
+  });
+
+  protected readonly chooserTitle = computed(() => {
+    const field = this.activeField();
+    if (field === 'species') return 'Choose a species';
+    if (field === 'item') return 'Choose an item';
+    if (field === 'ability') return 'Choose an ability';
+    return field ? `Choose move ${MOVE_FIELDS.indexOf(field) + 1}` : '';
+  });
+
+  protected readonly chooserOptions = computed<readonly ChooserOption[]>(() => {
+    const field = this.activeField();
+    if (field === 'species') return this.speciesOptions;
+    if (field === 'item') return this.itemOptions;
+    if (field === 'ability') {
+      return this.abilityOptions().map((name) => ({ id: toId(name), name, detail: this.dex.ability(name)?.desc ?? '' }));
+    }
+    if (!field) return [];
+    // A move already in another slot isn't offered again.
+    const slot = MOVE_FIELDS.indexOf(field);
+    const taken = new Set((this.pokemon()?.moves ?? []).filter((_, i) => i !== slot).map(toId));
+    return [
+      { id: '', name: 'No move', detail: '' },
+      ...(this.species()?.moves ?? [])
+        .filter((move) => !taken.has(move.id))
+        .map((move) => ({ id: move.id, name: move.name, detail: moveDetail(move.type, move.category, move.basePower) })),
+    ];
+  });
+
+  protected readonly chooserSelectedId = computed(() => {
+    const field = this.activeField();
+    const pokemon = this.pokemon();
+    if (field === 'species') return this.mega()?.id ?? this.species()?.id ?? '';
+    if (field === 'item') return toId(pokemon?.item ?? '');
+    if (field === 'ability') return toId(pokemon?.ability ?? '');
+    if (!field) return '';
+    return toId(pokemon?.moves[MOVE_FIELDS.indexOf(field)] ?? '');
+  });
+
+  /** Moves come from the species' learnset, so a species the format doesn't allow has none. */
+  protected readonly chooserUnavailable = computed(() => {
+    const field = this.activeField();
+    const choosingMove = field !== null && MOVE_FIELDS.includes(field);
+    return choosingMove && !this.species() ? `${this.pokemon()?.species} isn't allowed in ${this.dex.format.name}: choose another species.` : '';
+  });
+
+  protected readonly chooserSearchable = computed(() => {
+    const field = this.activeField();
+    return field !== null && SEARCHABLE_FIELDS.includes(field);
+  });
+
+  // Bumped to move focus into the chooser's list after the next render. A counter rather
+  // than a flag, so the effect reruns even when the active field hasn't changed (a new slot already
+  // starts on the species list).
+  private readonly focusRequest = signal(0);
+
+  constructor() {
+    afterRenderEffect(() => {
+      if (this.focusRequest() > 0 && this.activeField()) this.chooser().open();
+    });
+  }
+
+  /** Called when the editor is shown: opens the species list right away for a new Pokémon. */
+  opened(): void {
+    if (!this.pokemon()) this.openChooser('species');
+  }
+
+  protected openChooser(field: ChooserField): void {
+    this.tab.set('details');
+    this.activeField.set(field);
+    this.focusRequest.update((count) => count + 1);
+  }
+
+  protected isActive(field: ChooserField): boolean {
+    return this.activeField() === field;
+  }
+
+  protected pick(id: string): void {
+    const field = this.activeField();
+    if (!field) return;
+    if (field === 'species') this.pickSpecies(id);
+    else if (field === 'item') this.update({ item: id ? (this.dex.item(id)?.name ?? id) : '' });
+    else if (field === 'ability') this.update({ ability: this.abilityOptions().find((name) => toId(name) === id) ?? id });
+    else this.pickMove(MOVE_FIELDS.indexOf(field), id);
+
+    // Walks on to the next list, as Showdown's teambuilder does, until the last move. A Mega already
+    // has its item, so it skips the item list, and there's nothing to choose from a single ability.
+    const skipped = new Set<ChooserField>();
+    if (field === 'species' && this.dex.megaById(id)) skipped.add('item');
+    if (this.abilityOptions().length <= 1) skipped.add('ability');
+    const next = CHOOSER_ORDER.slice(CHOOSER_ORDER.indexOf(field) + 1).find((f) => !skipped.has(f)) ?? null;
+    this.activeField.set(next);
+    if (next) this.focusRequest.update((count) => count + 1);
+  }
+
+  /** A species, or a Mega: its base species with the Mega Stone equipped. */
+  private pickSpecies(id: string): void {
+    const mega = this.dex.megaById(id);
+    const species = this.dex.species(mega?.base ?? id);
+    const team = this.team();
+    if (!species || !team) return;
+    const current = this.pokemon() ?? newPokemon();
+    const ability = species.abilities.includes(current.ability) ? current.ability : (species.abilities[0] ?? '');
+    const gender = species.gender === 'N' ? '' : species.gender || current.gender;
+    const item = mega ? (this.dex.item(mega.item)?.name ?? mega.item) : current.item;
+    this.store.setPokemon(team.id, this.index(), { ...current, species: species.name, ability, gender, item });
+  }
+
+  private pickMove(slot: number, id: string): void {
+    const moves = [...(this.pokemon()?.moves ?? [])];
+    const name = id ? (this.dex.move(id)?.name ?? id) : '';
+    if (!name) moves.splice(slot, 1);
+    else if (slot < moves.length) moves[slot] = name;
+    else moves.push(name);
+    this.update({ moves: moves.slice(0, MAX_MOVES) });
+  }
+
+  protected update(changes: Partial<PokemonSet>): void {
+    const team = this.team();
+    const pokemon = this.pokemon();
+    if (team && pokemon) this.store.setPokemon(team.id, this.index(), { ...pokemon, ...changes });
+  }
+
+  protected updateNickname(value: string): void {
+    const name = value.trim().slice(0, MAX_NICKNAME_LENGTH);
+    this.update({ name: name === this.pokemon()?.species ? '' : name });
+  }
+
+  protected updateGender(value: string): void {
+    this.update({ gender: value === 'M' || value === 'F' ? value : '' });
+  }
+
+  protected updateStatPoints(evs: StatSpread): void {
+    this.update({ evs });
+  }
+
+  /** Removing a Pokémon can't be undone, so the first click only asks for confirmation. */
+  protected onRemove(): void {
+    const team = this.team();
+    if (!this.confirmingRemove()) {
+      this.confirmingRemove.set(true);
+      return;
+    }
+    if (team) this.store.removePokemon(team.id, this.index());
+    this.closed.emit();
+  }
+}
+
+function newPokemon(): PokemonSet {
+  return { name: '', species: '', item: '', ability: '', gender: '', shiny: false, evs: {}, nature: '', moves: [] };
+}
+
+/** "Dragon / Ground · BST 600" */
+function speciesDetail(species: DexSpecies | DexMega): string {
+  const total = STAT_IDS.reduce((sum, stat) => sum + species.baseStats[stat], 0);
+  return `${species.types.join(' / ')} · BST ${total}`;
+}
+
+/** "Dragon / Ground · BST 700 · Garchompite" */
+function megaDetail(mega: DexMega, stoneName: string): string {
+  return `${speciesDetail(mega)} · ${stoneName}`;
+}
+
+function moveDetail(type: string, category: string, basePower: number): string {
+  return [type, category, basePower ? `${basePower} BP` : ''].filter(Boolean).join(' · ');
+}
+
+function shorten(text: string): string {
+  return text.length > MAX_DETAIL_LENGTH ? `${text.slice(0, MAX_DETAIL_LENGTH - 1)}…` : text;
+}

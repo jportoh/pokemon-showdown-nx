@@ -1,4 +1,4 @@
-import { toId } from '@features/connection/showdown-protocol';
+import { toId } from '@shared/utils/to-id';
 import { ChatUser } from '@features/lobby/models/chat';
 
 // Display order of ranks in the user list, highest first, as in the official client.
