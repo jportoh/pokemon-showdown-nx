@@ -1,20 +1,19 @@
 import { Component, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
 import { TeamDetail } from '@features/teambuilder/components/team-detail/team-detail';
-import { TeamExport } from '@features/teambuilder/components/team-export/team-export';
-import { ImportedTeam, TeamImport } from '@features/teambuilder/components/team-import/team-import';
 import { SetEditor } from '@features/teambuilder/components/set-editor/set-editor';
 import { TeamList } from '@features/teambuilder/components/team-list/team-list';
+import { TeamValidationPanel } from '@features/teambuilder/components/team-validation-panel/team-validation-panel';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
 
-type PanelView = 'empty' | 'team' | 'import' | 'export' | 'edit';
+type PanelView = 'empty' | 'team' | 'validate' | 'edit';
 
 /** Where focus goes once a panel switch has rendered, so it isn't lost when views swap. */
-type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'exportButton' | 'importForm' | 'exportText' | 'editor';
+type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'validateButton' | 'validationBack' | 'editor';
 
 @Component({
-  imports: [TeamList, TeamDetail, TeamImport, TeamExport, SetEditor, BackAction],
+  imports: [TeamList, TeamDetail, TeamValidationPanel, SetEditor, BackAction],
   selector: 'app-teambuilder-page',
   host: { class: 'relative block h-[644px] w-[1280px]' },
   templateUrl: './teambuilder-page.html',
@@ -23,8 +22,7 @@ export class TeambuilderPage {
   protected readonly store = inject(TeamStore);
   private readonly list = viewChild.required(TeamList);
   private readonly detail = viewChild.required(TeamDetail);
-  private readonly importer = viewChild.required(TeamImport);
-  private readonly exporter = viewChild.required(TeamExport);
+  private readonly validator = viewChild.required(TeamValidationPanel);
   private readonly editor = viewChild.required(SetEditor);
 
   // Opens on the most recently created team (teams are stored in creation order), if there is one.
@@ -48,9 +46,8 @@ export class TeambuilderPage {
       if (target === 'newTeam') this.list().focusNewTeam();
       else if (target === 'teamList') this.list().focusSelected();
       else if (target === 'slot') this.detail().focusSlot(this.focusSlotIndex);
-      else if (target === 'exportButton') this.detail().focusExport();
-      else if (target === 'importForm') this.importer().open();
-      else if (target === 'exportText') this.exporter().focusText();
+      else if (target === 'validateButton') this.detail().focusValidate();
+      else if (target === 'validationBack') this.validator().focusBack();
       else if (target === 'editor') this.editor().opened();
     });
   }
@@ -82,20 +79,6 @@ export class TeambuilderPage {
     this.show(this.view(), 'teamList');
   }
 
-  protected startImport(): void {
-    this.show('import', 'importForm');
-  }
-
-  protected finishImport(team: ImportedTeam): void {
-    const id = this.store.create(team.name, team.format, team.sets);
-    this.selectedId.set(id);
-    this.showSlot(0);
-  }
-
-  protected cancelImport(): void {
-    this.show(this.selectedTeam() ? 'team' : 'empty', 'newTeam');
-  }
-
   protected renameTeam(name: string): void {
     const id = this.selectedId();
     if (id) this.store.rename(id, name);
@@ -114,12 +97,14 @@ export class TeambuilderPage {
     this.show('empty', 'newTeam');
   }
 
-  protected showExport(): void {
-    this.show('export', 'exportText');
+  /** Checks the team against its format on the server; the panel shows the answer when it comes. */
+  protected showValidation(): void {
+    this.validator().validate();
+    this.show('validate', 'validationBack');
   }
 
-  protected closeExport(): void {
-    this.show('team', 'exportButton');
+  protected closeValidation(): void {
+    this.show('team', 'validateButton');
   }
 
   private showSlot(index: number): void {

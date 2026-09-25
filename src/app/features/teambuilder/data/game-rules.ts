@@ -61,6 +61,11 @@ export function calcStat(stat: StatId, base: number, points: number, natureName:
   return value;
 }
 
+/** Stat points spent across all six stats. */
+export function totalStatPoints(spread: StatSpread): number {
+  return STAT_IDS.reduce((sum, stat) => sum + (spread[stat] ?? 0), 0);
+}
+
 /**
  * Stat points kept within Champions' limits. Spreads from other games (EVs, up to 252) are converted
  * first, the way Champions counts them: the first point takes 4 EVs and each further one 8.

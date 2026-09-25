@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from '@angular/core';
 import { StatTable } from '@core/dex/champions-dex';
-import { MAX_STAT_POINTS, MAX_TOTAL_STAT_POINTS, STAT_IDS, STAT_NAMES, calcStat } from '@features/teambuilder/data/game-rules';
+import { MAX_STAT_POINTS, MAX_TOTAL_STAT_POINTS, STAT_IDS, STAT_NAMES, calcStat, totalStatPoints } from '@features/teambuilder/data/game-rules';
 import { PokemonSet, StatId, StatSpread } from '@features/teambuilder/models/team';
 
 interface StatRow {
@@ -113,7 +113,7 @@ export class SetStats {
   protected readonly buttonClass =
     'absolute top-2 h-9 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
 
-  private readonly totalPoints = computed(() => STAT_IDS.reduce((sum, stat) => sum + (this.set().evs[stat] ?? 0), 0));
+  private readonly totalPoints = computed(() => totalStatPoints(this.set().evs));
   protected readonly remaining = computed(() => MAX_TOTAL_STAT_POINTS - this.totalPoints());
 
   protected readonly rows = computed<StatRow[]>(() => {

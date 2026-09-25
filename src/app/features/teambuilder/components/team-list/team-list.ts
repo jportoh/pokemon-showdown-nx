@@ -18,17 +18,9 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
         type="button"
         aria-label="New empty team"
         (click)="create.emit()"
-        class="absolute top-[14px] left-[163px] h-9 w-[88px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-base text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        class="absolute top-[14px] left-[259px] h-9 w-[88px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-base text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         New
-      </button>
-      <button
-        type="button"
-        aria-label="Import a team from text"
-        (click)="import.emit()"
-        class="absolute top-[14px] left-[259px] h-9 w-[88px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-      >
-        Import
       </button>
     </div>
     <ul appScrollRegion aria-labelledby="team-list-title" class="h-[540px] w-[359px] overflow-y-auto">
@@ -48,7 +40,7 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
           </button>
         </li>
       } @empty {
-        <li class="p-4 text-base text-gray-300">No teams yet. Use New to build one, or Import to paste one from Showdown.</li>
+        <li class="p-4 text-base text-gray-300">No teams yet. Use New to build one.</li>
       }
     </ul>
     <div class="relative h-10 w-[359px] border-t border-gray-600">
@@ -66,8 +58,6 @@ export class TeamList {
   readonly select = output<string>();
   /** A new empty team. */
   readonly create = output<void>();
-  /** A team from Showdown's text format. */
-  readonly import = output<void>();
 
   /** Listed newest first: the team just built is at the top. */
   protected readonly newestFirst = computed(() => [...this.teams()].reverse());

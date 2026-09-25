@@ -1,6 +1,7 @@
 import { Component, ElementRef, afterRenderEffect, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
 import { FormField, form, maxLength, required } from '@angular/forms/signals';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
+import { MAX_TOTAL_STAT_POINTS, totalStatPoints } from '@features/teambuilder/data/game-rules';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
@@ -41,7 +42,16 @@ const SLOT_POSITIONS = [
           }
         </select>
         <button type="button" (click)="startRename()" [class]="actionClass" class="left-[520px] w-[112px]">Rename</button>
-        <button #exportButton type="button" (click)="export.emit()" [class]="actionClass" class="left-[644px] w-[112px]">Export</button>
+        <button
+          #validateButton
+          type="button"
+          (click)="validate.emit()"
+          [class]="actionClass"
+          class="left-[644px] w-[112px]"
+          [attr.aria-label]="'Validate ' + team()?.name + ' for its format'"
+        >
+          Validate
+        </button>
         <button
           type="button"
           (click)="onDelete()"
@@ -94,13 +104,14 @@ const SLOT_POSITIONS = [
 export class TeamDetail {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
-  private readonly exportButton = viewChild.required<ElementRef<HTMLButtonElement>>('exportButton');
+  private readonly validateButton = viewChild.required<ElementRef<HTMLButtonElement>>('validateButton');
   private readonly slotButtons = viewChildren<ElementRef<HTMLButtonElement>>('slotButton');
 
   readonly team = input<Team | undefined>(undefined);
   readonly renamed = output<string>();
   readonly formatChanged = output<string>();
-  readonly export = output<void>();
+  /** Check the team against its format. */
+  readonly validate = output<void>();
   /** A slot to edit; the team's length adds a new Pokémon. */
   readonly editSlot = output<number>();
   readonly deleted = output<void>();
@@ -141,11 +152,12 @@ export class TeamDetail {
     const pokemon = this.team()?.sets[position];
     if (!pokemon) return 'Add a Pokémon';
     const name = pokemon.name ? `${pokemon.name} (${pokemon.species})` : pokemon.species;
-    return `Edit slot ${position + 1}: ${name}`;
+    // The card itself isn't read out (the label replaces it), so the EVs are told here.
+    return `Edit slot ${position + 1}: ${name}, ${totalStatPoints(pokemon.evs)} of ${MAX_TOTAL_STAT_POINTS} EVs`;
   }
 
-  focusExport(): void {
-    this.exportButton().nativeElement.focus();
+  focusValidate(): void {
+    this.validateButton().nativeElement.focus();
   }
 
   /** Focuses a slot card (the "Add a Pokémon" one past the end of the team). Call it once the team has rendered. */
