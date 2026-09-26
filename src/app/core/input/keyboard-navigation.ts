@@ -47,6 +47,9 @@ const ON_BREWSER = /Brewser/.test(navigator.userAgent);
 
 type Source = 'keyboard' | 'gamepad';
 
+/** Up/down step through a paged element; first/last jump to its ends. */
+export type PageStep = 'up' | 'down' | 'first' | 'last';
+
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
  * console-keys): the d-pad moves focus to the nearest control in that direction, A presses it, B goes
@@ -75,6 +78,7 @@ export class KeyboardNavigation {
   private readonly renderScheduler = inject(RenderScheduler);
 
   private readonly backHandlers = new Map<Element, () => void>();
+  private readonly pagers = new Map<Element, (step: PageStep) => boolean>();
   private tabSwitcher: ((step: 1 | -1) => void) | null = null;
   /** L/R handlers by page, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
@@ -128,6 +132,15 @@ export class KeyboardNavigation {
   registerBack(element: Element, handler: () => void): () => void {
     this.backHandlers.set(element, handler);
     return () => this.backHandlers.delete(element);
+  }
+
+  /**
+   * An element that pages its own content while focused, like a scroll region scrolls (the battle
+   * log, which can't be a scroll box on Brewser). The pager returns false at that end, letting focus go.
+   */
+  registerPager(element: Element, pager: (step: PageStep) => boolean): () => void {
+    this.pagers.set(element, pager);
+    return () => this.pagers.delete(element);
   }
 
   /** ZL/ZR call this with -1/+1; the layout switches its tabs. */
@@ -323,9 +336,11 @@ export class KeyboardNavigation {
       changeOption(active as HTMLSelectElement, direction === 'right' ? 1 : -1, false);
       return true;
     }
-    // A focused scroll region (the chat log, the user list) scrolls first, then lets focus go.
-    if (active && isScrollRegion(active) && (direction === 'up' || direction === 'down')) {
-      if (scrollRegion(active, direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX)) return true;
+    // A focused scroll region (the chat log, the user list) or paged element scrolls first, then lets focus go.
+    if (active && (direction === 'up' || direction === 'down')) {
+      const pager = this.pagers.get(active);
+      if (pager?.(direction)) return true;
+      if (isScrollRegion(active) && scrollRegion(active, direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX)) return true;
     }
     this.move(direction, active);
     return true;
@@ -371,7 +386,7 @@ export class KeyboardNavigation {
       changeOption(active as HTMLSelectElement, 1, true);
       return true;
     }
-    if (isScrollRegion(active)) return false;
+    if (isScrollRegion(active) || this.pagers.has(active)) return false;
     active.click();
     this.scheduleRecovery();
     return true;
@@ -392,6 +407,8 @@ export class KeyboardNavigation {
   /** Home/End: the first or last control of the list the focus is in (or the top/bottom of a focused scroll region). */
   private onJump(action: 'first' | 'last', active: HTMLElement | null): boolean {
     if (!active) return false;
+    const pager = this.pagers.get(active);
+    if (pager) return pager(action);
     if (isScrollRegion(active)) {
       active.scrollTop = action === 'first' ? 0 : Math.max(0, active.scrollHeight - active.clientHeight);
       return true;

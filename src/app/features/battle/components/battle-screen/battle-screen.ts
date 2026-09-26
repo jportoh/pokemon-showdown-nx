@@ -28,7 +28,7 @@ const FORFEIT_CONFIRM_MS = 4000;
  * command panel (172px tall). On the right, a 283px column mirroring the field: the opponent's team,
  * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
  * side's and the player's team. The battle log shows over the field's right part only on request
- * (kept live, it slowed long battles on the console). The battle itself lives in root services.
+ * (hidden, not removed: see BattleLog). The battle itself lives in root services.
  * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice), ZL or ZR
  * shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
  * controls and has nothing to forfeit.
@@ -69,9 +69,8 @@ const FORFEIT_CONFIRM_MS = 4000;
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
       <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" />
 
-      @if (logOpen()) {
-        <app-battle-log class="absolute top-[48px] left-[582px]" (appBack)="closeLog()" />
-      }
+      <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
+      <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
     </div>
   `,
 })

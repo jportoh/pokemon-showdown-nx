@@ -1,40 +1,42 @@
-import { Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, computed, inject, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, computed, inject, input, linkedSignal, viewChild } from '@angular/core';
+import { KeyboardNavigation, PageStep } from '@core/input/keyboard-navigation';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { fitEnd, fitStart } from '@features/battle/components/battle-log/log-window';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { ScrollRegion } from '@shared/directives/scroll-region';
 
-/** How close to the bottom (px) still counts as "reading the newest entries". */
-const STICK_THRESHOLD_PX = 40;
-/** Delay before repeating the scroll to the bottom, once the engine has laid out new rows. */
-const DEFERRED_SCROLL_MS = 100;
-/** Scroll events this soon after the app's own scrolling are treated as layout, not as the reader. */
-const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
-/** Entries shown: the latest ones, so opening the log late in a long battle stays quick on the console. */
-const MAX_ENTRIES = 150;
+/** Entries the d-pad moves the window by. */
+const PAGE_STEP_ENTRIES = 3;
 
 /**
  * The battle log, Showdown style: a turn header per turn, each message, and minor details (HP lost)
- * in smaller grey text, the latest MAX_ENTRIES of them. Fixed 415x500, shown over the field only on
- * request (a live log slowed long battles on the console). It takes focus when it opens, so the d-pad
- * scrolls it; the d-pad never moves onto it from elsewhere (data-kb-skip). It follows new entries
- * while the reader is at the bottom, with the chat log's Brewser workarounds: block rows, padding on
- * an inner block and a repeated scroll to the bottom. Unlike the chat log, it repaints itself on every
- * new entry (see repaint()).
+ * in smaller grey text. Fixed 415x500, shown over the field only on request (`open`), and hidden with
+ * display:none rather than removed.
+ *
+ * It is NOT a scroll box: on the console, a scroll box shown for the first time stayed blank until a
+ * new row arrived, whatever was done when opening it (test L1: repaints, opacity, resizing, scroll
+ * nudges, repainting the field or the page), while a plain block painted fine. So it shows a window of
+ * entries that fits its height, the newest ones unless the reader has paged back: the d-pad moves the
+ * window (the log registers as a pager, see KeyboardNavigation), and so does the mouse wheel. What
+ * fits is estimated from the entries' text (see log-window), never measured: on the console the
+ * rendered height read short, and a window corrected from it kept spilling out of the box.
+ * It takes focus when it opens; the d-pad never moves onto it from elsewhere (data-kb-skip).
  */
 @Component({
-  imports: [ScrollRegion],
   selector: 'app-battle-log',
-  host: { class: 'block h-[500px] w-[415px] bg-card' },
+  host: {
+    class: 'h-[500px] w-[415px] bg-card',
+    '[style.display]': "open() ? 'block' : 'none'",
+  },
   template: `
     <div
       #log
-      appScrollRegion
       role="log"
       aria-label="Battle log"
       tabindex="0"
       data-kb-skip
-      class="h-[500px] w-[415px] overflow-y-auto text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="block h-[500px] w-[415px] text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
-      <div class="p-[8px_12px_12px]">
+      <div class="block p-[8px_12px_12px]">
         @for (entry of entries(); track entry.id) {
           @switch (entry.kind) {
             @case ('turn') {
@@ -57,70 +59,81 @@ const MAX_ENTRIES = 150;
 })
 export class BattleLog {
   private readonly store = inject(BattleStore);
+  private readonly navigation = inject(KeyboardNavigation);
+  private readonly renderScheduler = inject(RenderScheduler);
 
-  protected readonly entries = computed(() => this.store.log().slice(-MAX_ENTRIES));
+  /** Shown over the field; hidden (not removed) otherwise. */
+  readonly open = input(false);
+
+  /** Where the window ends, or null to follow the newest entries. Opening goes back to the newest. */
+  private readonly end = linkedSignal<boolean, number | null>({ source: this.open, computation: () => null });
+
+  /** The entries shown, [start, end). */
+  private readonly window = computed(() => {
+    const log = this.store.log();
+    const end = this.end();
+    const last = end === null ? log.length : Math.min(end, log.length);
+    return { start: fitStart(log, last), end: last };
+  });
+
+  protected readonly entries = computed(() => {
+    const { start, end } = this.window();
+    return this.store.log().slice(start, end);
+  });
 
   private readonly logElement = viewChild.required<ElementRef<HTMLElement>>('log');
-  private stickToBottom = true;
-  private lastAutoScroll = 0;
-  private deferredScroll: ReturnType<typeof setTimeout> | null = null;
+  private wasOpen = false;
 
   constructor() {
     afterRenderEffect(() => {
-      const log = this.entries();
-      // A new battle (rematch) empties the log: it follows the newest entries again.
-      if (log.length === 0) {
-        this.stickToBottom = true;
-        return;
-      }
-      const el = this.logElement().nativeElement;
-      this.repaint(el);
-      if (!this.stickToBottom) return;
-      this.scrollToBottom(el);
-      if (this.deferredScroll !== null) clearTimeout(this.deferredScroll);
-      this.deferredScroll = setTimeout(() => {
-        this.deferredScroll = null;
-        if (this.stickToBottom) this.scrollToBottom(el);
-      }, DEFERRED_SCROLL_MS);
+      const open = this.open();
+      const opening = open && !this.wasOpen;
+      this.wasOpen = open;
+      if (opening) this.logElement().nativeElement.focus();
     });
 
-    // Native listener: a template (scroll) binding would run change detection on every scroll event.
     const destroyRef = inject(DestroyRef);
     afterNextRender(() => {
       const el = this.logElement().nativeElement;
-      el.focus();
-      const onScroll = () => {
-        if (Date.now() - this.lastAutoScroll < IGNORE_SCROLL_AFTER_AUTO_MS) return;
-        this.stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;
+      const unregister = this.navigation.registerPager(el, (step) => this.page(step));
+      // Browsers: the wheel pages the log as it would scroll it.
+      const onWheel = (event: WheelEvent) => {
+        if (event.deltaY === 0) return;
+        event.preventDefault();
+        if (this.page(event.deltaY > 0 ? 'down' : 'up')) this.renderScheduler.request();
       };
-      el.addEventListener('scroll', onScroll, { passive: true });
+      el.addEventListener('wheel', onWheel, { passive: false });
       destroyRef.onDestroy(() => {
-        el.removeEventListener('scroll', onScroll);
-        if (this.deferredScroll !== null) clearTimeout(this.deferredScroll);
+        unregister();
+        el.removeEventListener('wheel', onWheel);
       });
     });
   }
 
-  /**
-   * Seen on the console: rows appended during a turn only appeared once the turn ended (when the
-   * command panel changed), while the HP bars moved on time. Brewser seems to paint a scroll box on
-   * its own layer and not repaint it for rows added inside it; the chat log got away with it because
-   * it always overflows, and each new message scrolling it repaints it, but a battle log that doesn't
-   * fill the box yet never scrolls. Hiding and showing the box repaints it (the technique that fixed
-   * blank scroll boxes on device); its scroll position is kept, as hiding may reset it.
-   */
-  private repaint(el: HTMLElement): void {
-    const scrollTop = el.scrollTop;
-    this.lastAutoScroll = Date.now();
-    el.style.display = 'none';
-    void el.offsetHeight;
-    el.style.display = '';
-    el.scrollTop = scrollTop;
-  }
-
-  // Clamped explicitly: an engine that doesn't clamp scrollTop would scroll past the content.
-  private scrollToBottom(el: HTMLElement): void {
-    this.lastAutoScroll = Date.now();
-    el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+  /** The d-pad (or the wheel): moves the window a few entries; false when it's already at that end. */
+  private page(step: PageStep): boolean {
+    const log = this.store.log();
+    const { start, end } = this.window();
+    const firstPageEnd = fitEnd(log, 0);
+    switch (step) {
+      case 'up': {
+        if (start === 0) return false;
+        // At least one entry back, even where the first page's estimate disagrees with the rendered window.
+        this.end.set(Math.min(end - 1, Math.max(end - PAGE_STEP_ENTRIES, firstPageEnd)));
+        return true;
+      }
+      case 'down': {
+        if (this.end() === null) return false;
+        const next = end + PAGE_STEP_ENTRIES;
+        this.end.set(next >= log.length ? null : next);
+        return true;
+      }
+      case 'first':
+        this.end.set(Math.min(firstPageEnd, log.length));
+        return true;
+      case 'last':
+        this.end.set(null);
+        return true;
+    }
   }
 }
