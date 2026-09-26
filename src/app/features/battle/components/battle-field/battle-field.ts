@@ -37,26 +37,50 @@ const SHIELD_PULSES = 3;
 const SHIELD_OPACITY = 0.55;
 /** The move banner, placed over its user. */
 const BANNER_WIDTH = 240;
-/** The player's banners stop short of their status boxes (x ≥ 485). */
-const OWN_BANNER_MAX_LEFT = 480 - BANNER_WIDTH;
-const FOE_BANNER_MAX_LEFT = 853 - 8 - BANNER_WIDTH;
+/** The player's banners stop short of their status boxes (x ≥ 600). */
+const OWN_BANNER_MAX_LEFT = 595 - BANNER_WIDTH;
+const FOE_BANNER_MAX_LEFT = 985 - 8 - BANNER_WIDTH;
 /** How long an ability's or item's pop-up stays at normal speed (a log step lasts 1100 ms). */
 const POPUP_MS = 1400;
 /** The "-45%" / "+12%" label over a Pokémon: about the length of the HP step it comes with. */
 const HP_LABEL_MS = 1100;
 const HP_LABEL_WIDTH = 76;
-/**
- * Its top over the sprite: the body's middle for the opponent's, higher on the player's (cut off by the
- * bottom edge); below the ability and item pop-ups either way.
- */
-const FOE_HP_LABEL_TOP = 104;
-const OWN_HP_LABEL_TOP = 296;
 const HP_LOST_COLOR = '#b91c1c';
 const HP_RESTORED_COLOR = '#15803d';
-/** "Burned!", "Badly poisoned!": under the HP label, stays as long as an ability pop-up. */
+/** "Burned!", "Badly poisoned!": this far under the HP label, stays as long as an ability pop-up. */
 const STATUS_LABEL_WIDTH = 150;
-const FOE_STATUS_LABEL_TOP = 140;
-const OWN_STATUS_LABEL_TOP = 332;
+const STATUS_LABEL_DROP = 36;
+
+/**
+ * Sprites are drawn at this multiple of Showdown's 96px (Gen 3 doubled its own); the layout below
+ * follows from it. 3x doesn't fit: the opponent's two would overlap and run off the field.
+ */
+const SPRITE_SCALE = 2.5;
+const SPRITE_SIZE = Math.round(96 * SPRITE_SCALE);
+/** Showdown's sprites have the feet about 10px (of 96) above the bottom of their box. */
+const FEET_GAP = Math.round(10 * SPRITE_SCALE);
+/**
+ * Where each Pokémon stands: its platform's centre (x) and its feet (y). The opponent's first slot is
+ * on the right, as it faces the player; the player's stand below the bottom edge, seen from behind
+ * and cut off as in Gen 3.
+ */
+const STANDS: Record<string, { x: number; y: number }> = {
+  p2a: { x: 850, y: 228 },
+  p2b: { x: 600, y: 228 },
+  p1a: { x: 150, y: 494 },
+  p1b: { x: 420, y: 494 },
+};
+/** The platforms: the opponent's as wide as a sprite, the player's wider (nearer) and cut off. */
+const FOE_PLATFORM = { width: SPRITE_SIZE, height: Math.round(SPRITE_SIZE * 0.27) };
+const OWN_PLATFORM = { width: Math.round(SPRITE_SIZE * 1.25), height: 96, top: 452 };
+/** Protect's shield, centred on the sprite's body (a little below its middle). */
+const SHIELD_SIZE = Math.round(SPRITE_SIZE * 0.83);
+
+/** A slot's sprite box. */
+function spriteBox(slot: SlotKey): { left: number; top: number } {
+  const stand = STANDS[slot];
+  return { left: stand.x - SPRITE_SIZE / 2, top: stand.y + FEET_GAP - SPRITE_SIZE };
+}
 
 const DEFAULT_SKY = '#d8ecc0';
 const DEFAULT_GROUND = { ground: '#b0d890', platform: '#90c070', edge: '#6a9a50' };
@@ -105,8 +129,8 @@ interface FieldSlot {
  * The battlefield, laid out like the third-generation games' double battles: the opponent's two
  * Pokémon on platforms at the back right, with their status boxes top left; the player's two seen
  * from behind at the front left, with their status boxes on the right. The opponent's side faces the
- * player, so its first slot stands on the right. Fixed 853x404 (the left two thirds of the stage, with
- * the battle log on the right), all positions absolute. The terrain colours the ground and the
+ * player, so its first slot stands on the right. Fixed 985x500 (most of the stage, with the teams and
+ * conditions in a column on the right), all positions absolute. The terrain colours the ground and the
  * platforms, the weather the sky, and Trick Room frames the field.
  *
  * Moves animate so it's clear who hit whom without reading the log: the attacker lunges at its
@@ -124,15 +148,22 @@ interface FieldSlot {
 @Component({
   selector: 'app-battle-field',
   imports: [BattleHpBox, ItemIcon, PokemonSprite],
-  host: { class: 'block h-[404px] w-[853px]' },
+  host: { class: 'block h-[500px] w-[985px]' },
   template: `
-    <div class="relative h-[404px] w-[853px] overflow-hidden" [style.background-color]="palette().sky">
-      <div class="absolute top-[236px] left-0 h-[168px] w-[853px]" [style.background-color]="palette().ground"></div>
+    <div class="relative h-[500px] w-[985px] overflow-hidden" [style.background-color]="palette().sky">
+      <div class="absolute top-[300px] left-0 h-[200px] w-[985px]" [style.background-color]="palette().ground"></div>
       <!-- Platforms: the opponent's at the back, the player's cut off by the bottom edge. -->
-      <div class="absolute top-[166px] left-[420px] h-[56px] w-[240px] rounded-[50%] border-[3px]" [style.background-color]="palette().platform" [style.border-color]="palette().edge"></div>
-      <div class="absolute top-[166px] left-[610px] h-[56px] w-[240px] rounded-[50%] border-[3px]" [style.background-color]="palette().platform" [style.border-color]="palette().edge"></div>
-      <div class="absolute top-[356px] left-[10px] h-[84px] w-[280px] rounded-[50%] border-[3px]" [style.background-color]="palette().platform" [style.border-color]="palette().edge"></div>
-      <div class="absolute top-[356px] left-[240px] h-[84px] w-[280px] rounded-[50%] border-[3px]" [style.background-color]="palette().platform" [style.border-color]="palette().edge"></div>
+      @for (platform of platforms; track platform.key) {
+        <div
+          class="absolute rounded-[50%] border-[3px]"
+          [style.left.px]="platform.left"
+          [style.top.px]="platform.top"
+          [style.width.px]="platform.width"
+          [style.height.px]="platform.height"
+          [style.background-color]="palette().platform"
+          [style.border-color]="palette().edge"
+        ></div>
+      }
 
       @for (slot of foeSlots(); track slot.key) {
         @if (slot.pokemon && (!slot.pokemon.fainted || fainting() === slot.key)) {
@@ -183,10 +214,12 @@ interface FieldSlot {
         <!-- Shown (display) only while its pulse plays. -->
         <div
           aria-hidden="true"
-          class="absolute hidden h-[160px] w-[160px] rounded-full border-4 border-[#67e8f9] bg-[#a5f3fc]"
+          class="absolute hidden rounded-full border-4 border-[#67e8f9] bg-[#a5f3fc]"
           [attr.data-shield]="shield.key"
           [style.left.px]="shield.left"
           [style.top.px]="shield.top"
+          [style.width.px]="shieldSize"
+          [style.height.px]="shieldSize"
         ></div>
       }
       @for (popup of popupBanners(); track popup.slot) {
@@ -247,7 +280,7 @@ interface FieldSlot {
       }
       @if (store.intro(); as intro) {
         <!-- The battle's title, before the first Pokémon come out (their sprites download meanwhile). -->
-        <div role="status" class="absolute top-[124px] left-[166px] block h-[132px] w-[520px] rounded-md border-2 border-white bg-[#1f2937] text-white">
+        <div role="status" class="absolute top-[184px] left-[232px] block h-[132px] w-[520px] rounded-md border-2 border-white bg-[#1f2937] text-white">
           <span class="absolute top-[14px] left-0 block h-9 w-[516px] overflow-hidden text-center text-2xl leading-9 font-bold whitespace-nowrap">{{ intro.p1 }}</span>
           <span class="absolute top-[50px] left-0 block h-7 w-[516px] text-center text-lg leading-7 font-bold text-[#fde68a]">vs</span>
           <span class="absolute top-[78px] left-0 block h-9 w-[516px] overflow-hidden text-center text-2xl leading-9 font-bold whitespace-nowrap">{{ intro.p2 }}</span>
@@ -255,7 +288,7 @@ interface FieldSlot {
       }
       @if (trickRoom()) {
         <!-- Trick Room: the field framed in violet, as the move's twisted dimensions. -->
-        <div aria-hidden="true" class="absolute top-0 left-0 h-[404px] w-[853px] border-[6px] border-[#a855f7]"></div>
+        <div aria-hidden="true" class="absolute top-0 left-0 h-[500px] w-[985px] border-[6px] border-[#a855f7]"></div>
       }
     </div>
   `,
@@ -336,18 +369,23 @@ export class BattleField {
         text: `${name[0].toUpperCase()}${name.slice(1)}!`,
         color: info?.color ?? '#374151',
         left: this.centredOver(slot, STATUS_LABEL_WIDTH),
-        top: slot.startsWith('p1') ? OWN_STATUS_LABEL_TOP : FOE_STATUS_LABEL_TOP,
+        top: this.hpLabelPosition(slot).top + STATUS_LABEL_DROP,
       };
     }),
   );
 
-  /** One shield per slot, centred on the sprite. */
-  protected readonly shields = [
-    { key: 'p2a', left: 650, top: 48 },
-    { key: 'p2b', left: 460, top: 48 },
-    { key: 'p1a', left: 70, top: 246 },
-    { key: 'p1b', left: 300, top: 246 },
-  ];
+  protected readonly platforms = Object.entries(STANDS).map(([key, stand]) => {
+    const { width, height } = key.startsWith('p1') ? OWN_PLATFORM : FOE_PLATFORM;
+    const top = key.startsWith('p1') ? OWN_PLATFORM.top : Math.round(stand.y - height / 2);
+    return { key, left: Math.round(stand.x - width / 2), top, width, height };
+  });
+
+  protected readonly shieldSize = SHIELD_SIZE;
+  protected readonly shields = Object.keys(STANDS).map((key) => {
+    const { top } = spriteBox(key);
+    const stand = STANDS[key];
+    return { key, left: Math.round(stand.x - SHIELD_SIZE / 2), top: Math.round(top + SPRITE_SIZE * 0.55 - SHIELD_SIZE / 2) };
+  });
 
   protected readonly palette = computed(() => {
     const { weather, terrain } = this.store.field();
@@ -358,22 +396,20 @@ export class BattleField {
 
   protected readonly trickRoom = computed(() => this.store.field().rooms.some((room) => room.id === 'Trick Room'));
 
-  // Sprites stand on their platform's centre, all doubled (192px) as in Gen 3, where front and back
-  // sprites are the same size: Showdown's 96px sprites have the feet about 10px above the bottom, and
-  // the player's are cut off by the bottom edge.
+  // Front and back sprites are the same size, as in Gen 3.
   protected readonly foeSlots = computed<FieldSlot[]>(() => {
     const [a, b] = this.store.sides().p2.active;
     return [
-      { key: 'p2a', pokemon: a, left: 634, top: 22, size: 192, boxLeft: 16, boxTop: 16 },
-      { key: 'p2b', pokemon: b, left: 444, top: 22, size: 192, boxLeft: 40, boxTop: 108 },
+      { key: 'p2a', pokemon: a, ...spriteBox('p2a'), size: SPRITE_SIZE, boxLeft: 20, boxTop: 30 },
+      { key: 'p2b', pokemon: b, ...spriteBox('p2b'), size: SPRITE_SIZE, boxLeft: 44, boxTop: 126 },
     ];
   });
 
   protected readonly ownSlots = computed<FieldSlot[]>(() => {
     const [a, b] = this.store.sides().p1.active;
     return [
-      { key: 'p1a', pokemon: a, left: 54, top: 226, size: 192, boxLeft: 485, boxTop: 222 },
-      { key: 'p1b', pokemon: b, left: 284, top: 226, size: 192, boxLeft: 501, boxTop: 312 },
+      { key: 'p1a', pokemon: a, ...spriteBox('p1a'), size: SPRITE_SIZE, boxLeft: 600, boxTop: 310 },
+      { key: 'p1b', pokemon: b, ...spriteBox('p1b'), size: SPRITE_SIZE, boxLeft: 616, boxTop: 404 },
     ];
   });
 
@@ -477,7 +513,10 @@ export class BattleField {
 
   /** Over the Pokémon, centred on its sprite. */
   private hpLabelPosition(slot: SlotKey): { left: number; top: number } {
-    return { left: this.centredOver(slot, HP_LABEL_WIDTH), top: slot.startsWith('p1') ? OWN_HP_LABEL_TOP : FOE_HP_LABEL_TOP };
+    // The body's middle for the opponent's, higher on the player's (cut off by the bottom edge); below
+    // the ability and item pop-ups either way.
+    const share = slot.startsWith('p1') ? 0.36 : 0.43;
+    return { left: this.centredOver(slot, HP_LABEL_WIDTH), top: Math.round(spriteBox(slot).top + SPRITE_SIZE * share) };
   }
 
   /** The left of a label `width` wide centred on the slot's sprite. */
@@ -491,7 +530,9 @@ export class BattleField {
     const own = slot.startsWith('p1');
     const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
     const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
-    return { left, top: (own ? 192 : 4) + drop };
+    // Just above the opponent's heads (or the field's top edge), and over the player's own.
+    const top = spriteBox(slot).top;
+    return { left, top: (own ? top - 34 : Math.max(4, top - 18)) + drop };
   }
 
   private pokemonAt(slot: SlotKey): BattlePokemon | null {

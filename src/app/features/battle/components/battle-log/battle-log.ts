@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, inject, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, computed, inject, viewChild } from '@angular/core';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ScrollRegion } from '@shared/directives/scroll-region';
 
@@ -8,20 +8,22 @@ const STICK_THRESHOLD_PX = 40;
 const DEFERRED_SCROLL_MS = 100;
 /** Scroll events this soon after the app's own scrolling are treated as layout, not as the reader. */
 const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
+/** Entries shown: the latest ones, so opening the log late in a long battle stays quick on the console. */
+const MAX_ENTRIES = 150;
 
 /**
- * The whole battle log, Showdown style: a turn header per turn, each message, and minor details
- * (HP lost) in smaller grey text. Fixed 415x596 (the right column of the stage, under the battle bar).
- * It follows new entries while the reader is at the bottom, with the chat log's Brewser workarounds:
- * block rows, padding on an inner block and a repeated scroll to the bottom. Unlike the chat log, it
- * repaints itself on every new entry (see repaint()). The d-pad never focuses it (data-kb-skip):
- * it follows the battle by itself, and a focused log kept the ring after the turn. It stays reachable
- * with the Tab key and scrollable with a mouse.
+ * The battle log, Showdown style: a turn header per turn, each message, and minor details (HP lost)
+ * in smaller grey text, the latest MAX_ENTRIES of them. Fixed 415x500, shown over the field only on
+ * request (a live log slowed long battles on the console). It takes focus when it opens, so the d-pad
+ * scrolls it; the d-pad never moves onto it from elsewhere (data-kb-skip). It follows new entries
+ * while the reader is at the bottom, with the chat log's Brewser workarounds: block rows, padding on
+ * an inner block and a repeated scroll to the bottom. Unlike the chat log, it repaints itself on every
+ * new entry (see repaint()).
  */
 @Component({
   imports: [ScrollRegion],
   selector: 'app-battle-log',
-  host: { class: 'block h-[596px] w-[415px] bg-card' },
+  host: { class: 'block h-[500px] w-[415px] bg-card' },
   template: `
     <div
       #log
@@ -30,10 +32,10 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
       aria-label="Battle log"
       tabindex="0"
       data-kb-skip
-      class="h-[596px] w-[415px] overflow-y-auto text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[500px] w-[415px] overflow-y-auto text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       <div class="p-[8px_12px_12px]">
-        @for (entry of store.log(); track entry.id) {
+        @for (entry of entries(); track entry.id) {
           @switch (entry.kind) {
             @case ('turn') {
               <h2 class="mt-3 mb-1 block rounded-sm bg-stage p-[2px_8px] text-lg leading-7 font-bold text-white">{{ entry.text }}</h2>
@@ -54,7 +56,9 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
   `,
 })
 export class BattleLog {
-  protected readonly store = inject(BattleStore);
+  private readonly store = inject(BattleStore);
+
+  protected readonly entries = computed(() => this.store.log().slice(-MAX_ENTRIES));
 
   private readonly logElement = viewChild.required<ElementRef<HTMLElement>>('log');
   private stickToBottom = true;
@@ -63,7 +67,7 @@ export class BattleLog {
 
   constructor() {
     afterRenderEffect(() => {
-      const log = this.store.log();
+      const log = this.entries();
       // A new battle (rematch) empties the log: it follows the newest entries again.
       if (log.length === 0) {
         this.stickToBottom = true;
@@ -84,6 +88,7 @@ export class BattleLog {
     const destroyRef = inject(DestroyRef);
     afterNextRender(() => {
       const el = this.logElement().nativeElement;
+      el.focus();
       const onScroll = () => {
         if (Date.now() - this.lastAutoScroll < IGNORE_SCROLL_AFTER_AUTO_MS) return;
         this.stickToBottom = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX;

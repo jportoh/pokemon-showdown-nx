@@ -111,6 +111,7 @@ export class BattleStore {
   private readonly statusChangesSignal = signal<readonly StatusChange[]>([]);
   private readonly introSignal = signal<{ p1: string; p2: string } | null>(null);
   private readonly startedSignal = signal(false);
+  private readonly formatSignal = signal('');
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -153,6 +154,8 @@ export class BattleStore {
   readonly intro = this.introSignal.asReadonly();
   /** The battle has begun and its title has gone: the teams at a glance show from then on. */
   readonly started = this.startedSignal.asReadonly();
+  /** The format's name, from the `|tier|` line ("[Gen 9] Champions VGC 2026 Reg M-C"); '' until then. */
+  readonly format = this.formatSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -215,6 +218,7 @@ export class BattleStore {
     this.statusChangesSignal.set([]);
     this.introSignal.set(null);
     this.startedSignal.set(false);
+    this.formatSignal.set('');
     this.withdrawn = null;
     this.blinkedHits.clear();
   }
@@ -338,6 +342,10 @@ export class BattleStore {
         if (side === 'p1' || side === 'p2') this.updateSide(side, (s) => ({ ...s, name }));
         return 0;
       }
+      case 'tier':
+        // The raw text: splitArgs would take "[Gen 9 Champions] …" for a tag like [from].
+        this.formatSignal.set(rest.join('|'));
+        return 0;
       case 'clearpoke':
         this.updateSide('p1', (s) => ({ ...s, preview: [] }));
         this.updateSide('p2', (s) => ({ ...s, preview: [] }));

@@ -23,8 +23,11 @@ export type InputAction =
   | 'first'
   | 'last';
 
-/** The shoulder buttons, whose meaning depends on the page (see KeyboardNavigation.registerButton). */
-export type PageButton = 'buttonL' | 'buttonR';
+/**
+ * The shoulder buttons, whose meaning depends on the page (see KeyboardNavigation.registerButton). ZL
+ * and ZR switch the header's tabs unless the page uses them (the battle, which has no header).
+ */
+export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR';
 
 /**
  * Each button and the key that stands for it on a computer keyboard (the build's button mappings, for
@@ -34,7 +37,7 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
   { button: 'D-pad', key: 'W / A / S / D', action: 'Move focus; left/right change a list box option' },
   { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
   { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
-  { button: 'ZL/ZR', key: 'Z / C', action: 'Previous / next header tab', legend: 'Switch tab' },
+  { button: 'ZL/ZR', key: 'Z / C', action: 'Previous / next header tab (battle: show or hide the battle log)', legend: 'Switch tab' },
   { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit)" },
 ];
 

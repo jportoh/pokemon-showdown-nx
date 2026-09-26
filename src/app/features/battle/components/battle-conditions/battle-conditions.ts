@@ -1,10 +1,8 @@
-import { Component, computed, inject } from '@angular/core';
-import { FieldCondition } from '@features/battle/models/battle';
+import { Component, computed, inject, input } from '@angular/core';
+import { FieldCondition, SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
 
-const GROUP_WIDTH = 279;
-const GROUP_GAP = 8;
 /** Chips per group; past that, the last one becomes "+N". */
 const MAX_CHIPS = 3;
 const CHIP_WIDTH = 81;
@@ -16,7 +14,6 @@ const PIP_GAP = 2;
 const MAX_PIP_WIDTH = 10;
 /** Longer names get their short form ("Psychic" for Psychic Terrain) to fit a chip. */
 const MAX_NAME_CHARS = 11;
-const MAX_LABEL_CHARS = 30;
 
 interface Pip {
   left: number;
@@ -34,57 +31,48 @@ interface Chip {
 }
 
 /**
- * What's in play on the field, over the battle box: three groups, the field's own (weather, terrain,
- * rooms), the opponent's side and the player's (Tailwind, screens, hazards). Each condition is a chip
- * in its colour with a pip per turn: lit for the turns left, dim for the ones gone (Spikes show their
- * layers). Fixed 853x76; groups and chips at fixed positions (Brewser layout rules).
+ * What's in play in one group: the field's own (weather, terrain, rooms) or a side's (Tailwind,
+ * screens, hazards). Each condition is a chip in its colour with a pip per turn: lit for the turns
+ * left, dim for the ones gone (Spikes show their layers). A card fixed at 271x64, stacked with the
+ * others in the battle's right column; chips at fixed positions (Brewser layout rules).
  */
 @Component({
   selector: 'app-battle-conditions',
-  host: { class: 'block h-[76px] w-[853px]' },
+  host: { class: 'block h-[64px] w-[271px]' },
   template: `
-    <div class="relative h-[76px] w-[853px]" role="group" aria-label="Field conditions">
-      @for (group of groups(); track group.key) {
-        <div
-          class="absolute top-[6px] block h-[64px] rounded-md bg-card"
-          role="group"
-          [style.left.px]="group.left"
-          [style.width.px]="groupWidth"
-          [attr.aria-label]="group.ariaLabel"
+    @let info = group();
+    <div class="relative block h-[64px] w-[271px] rounded-md bg-card" role="group" [attr.aria-label]="info.ariaLabel">
+      <span
+        aria-hidden="true"
+        class="absolute top-[4px] left-[10px] block h-4 w-[251px] overflow-hidden text-xs leading-4 font-bold whitespace-nowrap text-gray-300 uppercase"
+        >{{ info.label }}</span
+      >
+      <!-- By position, not by condition: a chip that moved over would leave its text and pips
+           behind on Brewser (absolute children don't follow a container that moves). -->
+      @for (chip of info.chips; track chip.left) {
+        <span
+          aria-hidden="true"
+          class="absolute top-[24px] block h-[34px] rounded-sm text-white"
+          [style.left.px]="chip.left"
+          [style.width.px]="chipWidth"
+          [style.background-color]="chip.color"
         >
           <span
-            aria-hidden="true"
-            class="absolute top-[4px] left-[10px] block h-4 w-[259px] overflow-hidden text-xs leading-4 font-bold whitespace-nowrap text-gray-300 uppercase"
-            >{{ group.label }}</span
+            class="absolute left-[2px] block h-4 w-[77px] overflow-hidden text-center text-xs leading-4 font-bold whitespace-nowrap"
+            [style.top.px]="chip.pips.length > 0 ? 4 : 9"
+            >{{ chip.name }}</span
           >
-          <!-- By position, not by condition: a chip that moved over would leave its text and pips
-               behind on Brewser (absolute children don't follow a container that moves). -->
-          @for (chip of group.chips; track chip.left) {
+          @for (pip of chip.pips; track $index) {
             <span
-              aria-hidden="true"
-              class="absolute top-[24px] block h-[34px] rounded-sm text-white"
-              [style.left.px]="chip.left"
-              [style.width.px]="chipWidth"
-              [style.background-color]="chip.color"
-            >
-              <span
-                class="absolute left-[2px] block h-4 w-[77px] overflow-hidden text-center text-xs leading-4 font-bold whitespace-nowrap"
-                [style.top.px]="chip.pips.length > 0 ? 4 : 9"
-                >{{ chip.name }}</span
-              >
-              @for (pip of chip.pips; track $index) {
-                <span
-                  class="absolute top-[23px] block h-[6px] rounded-[1px]"
-                  [style.left.px]="pip.left"
-                  [style.width.px]="pip.width"
-                  [style.background-color]="pip.on ? '#ffffff' : 'rgba(0, 0, 0, 0.35)'"
-                ></span>
-              }
-            </span>
-          } @empty {
-            <span aria-hidden="true" class="absolute top-[30px] left-[10px] block h-5 text-sm leading-5 text-gray-400">None</span>
+              class="absolute top-[23px] block h-[6px] rounded-[1px]"
+              [style.left.px]="pip.left"
+              [style.width.px]="pip.width"
+              [style.background-color]="pip.on ? '#ffffff' : 'rgba(0, 0, 0, 0.35)'"
+            ></span>
           }
-        </div>
+        </span>
+      } @empty {
+        <span aria-hidden="true" class="absolute top-[30px] left-[10px] block h-5 text-sm leading-5 text-gray-400">None</span>
       }
     </div>
   `,
@@ -92,28 +80,24 @@ interface Chip {
 export class BattleConditions {
   private readonly store = inject(BattleStore);
 
-  protected readonly groupWidth = GROUP_WIDTH;
+  /** The field's conditions, or a side's (next to that side's team, so labelled "Side"). */
+  readonly of = input.required<'field' | SideId>();
+
   protected readonly chipWidth = CHIP_WIDTH;
 
-  protected readonly groups = computed(() => {
+  protected readonly group = computed(() => {
     const field = this.store.field();
-    const sides = this.store.sides();
     const turn = this.store.turn();
-    const global = [field.weather, field.terrain, ...field.rooms].filter((c): c is FieldCondition => !!c);
-    return [
-      { key: 'field', label: 'Field', conditions: global },
-      { key: 'p2', label: shortLabel(sides.p2.name || 'Opponent'), conditions: field.sides.p2 },
-      { key: 'p1', label: shortLabel(sides.p1.name || 'You'), conditions: field.sides.p1 },
-    ].map((group, i) => {
-      const described = group.conditions.map((c) => describe(c, turn)).join(', ');
-      return {
-        key: group.key,
-        label: group.label,
-        left: i * (GROUP_WIDTH + GROUP_GAP),
-        chips: toChips(group.conditions, turn),
-        ariaLabel: `${group.label}: ${described || 'none'}`,
-      };
-    });
+    const of = this.of();
+    const conditions =
+      of === 'field' ? [field.weather, field.terrain, ...field.rooms].filter((c): c is FieldCondition => !!c) : field.sides[of];
+    const owner = of === 'field' ? '' : this.store.sides()[of].name || (of === 'p2' ? 'Opponent' : 'Player');
+    const described = conditions.map((c) => describe(c, turn)).join(', ');
+    return {
+      label: of === 'field' ? 'Field' : 'Side',
+      chips: toChips(conditions, turn),
+      ariaLabel: `${of === 'field' ? 'Field' : `${owner}'s side`}: ${described || 'none'}`,
+    };
   });
 }
 
@@ -162,11 +146,6 @@ function describe(condition: FieldCondition, turn: number): string {
   const turns = conditionTurns(condition, turn);
   if (turns) return `${condition.name}, ${turns.left} ${turns.left === 1 ? 'turn' : 'turns'} left`;
   return condition.layers > 1 ? `${condition.name}, ${condition.layers} layers` : condition.name;
-}
-
-/** A player's name cut to fit the group's label, by hand: text-overflow is untested on Brewser. */
-function shortLabel(name: string): string {
-  return name.length > MAX_LABEL_CHARS ? `${name.slice(0, MAX_LABEL_CHARS - 1)}…` : name;
 }
 
 function shortName(name: string): string {

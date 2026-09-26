@@ -1,25 +1,23 @@
 import { Component, ElementRef, afterNextRender, computed, inject, output } from '@angular/core';
-import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleStore } from '@features/battle/state/battle-store';
 
-const WIDTH = 829;
+const WIDTH = 961;
 const GAP = 12;
 const BUTTON_WIDTH = Math.floor((WIDTH - GAP * 3) / 4);
 const SPEEDS = [1, 2, 4];
 
 /**
- * The command panel while watching a replay, 829x216: play/pause (or watch again once it's over),
- * next turn, speed and back to the replay list, then p1's team (the opponent's is over the battle log)
- * as tiles. Absolutely laid out (Brewser layout rules).
+ * The command panel while watching a replay, 961x148: play/pause (or watch again once it's over),
+ * next turn, speed and back to the replay list (both teams are in the right column). Absolutely laid
+ * out (Brewser layout rules).
  */
 @Component({
   selector: 'app-replay-controls',
-  imports: [BattleTeamPreview],
-  host: { class: 'block h-[216px] w-[829px] text-white' },
+  host: { class: 'block h-[148px] w-[961px] text-white' },
   template: `
-    <div class="relative h-[216px] w-[829px]">
+    <div class="relative h-[148px] w-[961px]">
       <p
-        class="absolute top-0 left-0 block h-7 w-[829px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200"
+        class="absolute top-0 left-0 block h-7 w-[961px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200"
       >
         {{ title() }}
       </p>
@@ -61,14 +59,6 @@ const SPEEDS = [1, 2, 4];
       >
         Other replays
       </button>
-
-      <!-- p1's team; the opponent's is over the battle log. -->
-      <span
-        aria-hidden="true"
-        class="absolute top-[116px] left-0 block h-[64px] w-[140px] overflow-hidden text-sm leading-[64px] font-bold whitespace-nowrap"
-        >{{ store.sides().p1.name }}</span
-      >
-      <app-battle-team-preview class="absolute top-[110px] left-[140px]" side="p1" />
     </div>
   `,
 })
@@ -84,18 +74,10 @@ export class ReplayControls {
   protected readonly finished = computed(() => !!this.store.result() && !this.store.playing());
 
   protected readonly title = computed(() => {
-    const replay = this.store.replay();
-    if (!replay) return '';
-    const status = this.finished()
-      ? this.store.winner()
-        ? `${this.store.winner()} won`
-        : 'Tie'
-      : this.store.paused()
-        ? 'Paused'
-        : this.store.turn() > 0
-          ? `Turn ${this.store.turn()}`
-          : 'Team preview';
-    return `Replay · ${replay.players[0]} vs ${replay.players[1]}${replay.rating ? ` · Rating ${replay.rating}` : ''} · ${status}`;
+    // The players, rating and turn are in the match header.
+    if (this.finished()) return this.store.winner() ? `${this.store.winner()} won` : 'Tie';
+    if (this.store.paused()) return 'Paused';
+    return this.store.turn() > 0 ? 'Playing' : 'Team preview';
   });
 
   constructor() {

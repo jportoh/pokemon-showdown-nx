@@ -5,6 +5,8 @@ import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
+import { BattleHeader } from '@features/battle/components/battle-header/battle-header';
+import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { MockBattleConnection } from '@features/battle/mock/mock-battle-connection';
@@ -20,27 +22,34 @@ const FORFEIT_CONFIRM_MS = 4000;
 
 /**
  * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. It
- * takes the whole 1280x720 stage (no header: a battle can't be left until it's over). Along the top,
- * over the battle box, the field conditions (weather, terrain, Tailwind… with their turns left) and,
- * over the log, the opponent's team. Below, framed by a 12px strip on the left, the battle box: the
- * field (third-generation style) with the command panel under it (853px wide); then the right column
- * (415px) with a bar for the turn and Forfeit, and the battle log, Showdown style. The battle itself
- * lives in root services.
- * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice). A replay
- * swaps the command panel for playback controls and has nothing to forfeit.
+ * takes the whole 1280x720 stage (no app header: a battle can't be left until it's over). Along the
+ * top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
+ * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
+ * command panel (172px tall). On the right, a 283px column mirroring the field: the opponent's team,
+ * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
+ * side's and the player's team. The battle log shows over the field's right part only on request
+ * (kept live, it slowed long battles on the console). The battle itself lives in root services.
+ * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice), ZL or ZR
+ * shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
+ * controls and has nothing to forfeit.
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleTeamPreview, ReplayControls],
+  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleHeader, BattleLog, BattleTeamPreview, ReplayControls],
   host: { class: 'block h-[720px] w-[1280px] bg-header' },
   template: `
     <div class="relative h-[720px] w-[1280px]">
-      <app-battle-conditions class="absolute top-0 left-[12px]" />
-      <app-battle-team-preview class="absolute top-0 left-[865px]" side="p2" />
+      <app-battle-header
+        class="absolute top-0 left-0"
+        [confirmingForfeit]="confirmingForfeit()"
+        [logOpen]="logOpen()"
+        (forfeit)="forfeit()"
+        (toggleLog)="toggleLog()"
+      />
 
-      <app-battle-field class="absolute top-[76px] left-[12px]" />
+      <app-battle-field class="absolute top-[48px] left-[12px]" />
 
-      <div class="absolute top-[480px] left-[12px] h-[240px] w-[853px] bg-[#283040]">
+      <div class="absolute top-[548px] left-[12px] h-[172px] w-[985px] bg-[#283040]">
         @if (store.replay()) {
           <app-replay-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveReplay()" (again)="watchAgain()" (leave)="leaveReplay()" />
         } @else {
@@ -53,29 +62,16 @@ const FORFEIT_CONFIRM_MS = 4000;
         }
       </div>
 
-      <div class="absolute top-[76px] left-[865px] h-[48px] w-[415px] bg-header">
-        <span class="absolute top-[6px] left-[12px] block h-9 w-[160px] text-lg leading-9 font-bold text-white">
-          {{ store.turn() > 0 ? 'Turn ' + store.turn() : 'Starting…' }}
-        </span>
-        @if (store.replay()) {
-          <span class="absolute top-[12px] left-[303px] block h-6 w-[100px] rounded-sm bg-tab text-center text-sm leading-6 font-bold text-white">Replay</span>
-        } @else if (!store.result()) {
-          <!-- R does this on the controller, so the d-pad skips it (data-kb-skip); it's for clicks. -->
-          <button
-            type="button"
-            data-kb-skip
-            class="absolute top-[6px] left-[183px] h-9 w-[220px] rounded-md border text-sm font-bold text-white"
-            [class]="confirmingForfeit() ? 'border-red-300 bg-red-800 hover:bg-red-700' : 'border-gray-400 bg-tab hover:bg-tab-hover'"
-            (click)="forfeit()"
-          >
-            <span class="block h-[34px] text-center leading-[34px]"
-              ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">R</span>{{ confirmingForfeit() ? ' Again to forfeit' : ' Forfeit' }}</span
-            >
-          </button>
-        }
-      </div>
-      <!-- TEST (2026-09-26): the battle log is off, to see whether it slows long battles on the console. -->
-      <div class="absolute top-[124px] left-[865px] block h-[596px] w-[415px] bg-card p-[12px] text-base leading-6 text-gray-300">No log for testing</div>
+      <!-- From 8px under the header to the bottom of the command buttons (708). -->
+      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" />
+      <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
+      <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
+      <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
+      <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" />
+
+      @if (logOpen()) {
+        <app-battle-log class="absolute top-[48px] left-[582px]" (appBack)="closeLog()" />
+      }
     </div>
   `,
 })
@@ -86,18 +82,24 @@ export class BattleScreen {
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
+  private readonly navigation = inject(KeyboardNavigation);
 
   protected readonly confirmingForfeit = signal(false);
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly logOpen = signal(false);
+  /** Where focus was when the log opened (the log takes it), to give it back on closing. */
+  private focusBeforeLog: HTMLElement | null = null;
 
   constructor() {
     // Opened from the lobby's Battle! button: a new battle. From the replay list: the replay it started.
     if (this.session.takeStartRequest()) this.start();
 
-    const navigation = inject(KeyboardNavigation);
     const unregister = [
-      navigation.registerButton('buttonL', () => this.toggleMega()),
-      navigation.registerButton('buttonR', () => this.forfeit()),
+      this.navigation.registerButton('buttonL', () => this.toggleMega()),
+      this.navigation.registerButton('buttonR', () => this.forfeit()),
+      this.navigation.registerButton('buttonZL', () => this.toggleLog()),
+      this.navigation.registerButton('buttonZR', () => this.toggleLog()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
@@ -137,6 +139,25 @@ export class BattleScreen {
     if (this.forfeitTimer !== null) clearTimeout(this.forfeitTimer);
     this.forfeitTimer = null;
     this.confirmingForfeit.set(false);
+  }
+
+  /** ZL, ZR or the button: shows the log (which takes focus) or hides it. */
+  protected toggleLog(): boolean {
+    if (this.logOpen()) {
+      this.closeLog();
+    } else {
+      this.focusBeforeLog = this.navigation.focused();
+      this.logOpen.set(true);
+    }
+    return true;
+  }
+
+  /** Hides the log, giving focus back to where it was if that control is still there. */
+  protected closeLog(): void {
+    this.logOpen.set(false);
+    const previous = this.focusBeforeLog;
+    this.focusBeforeLog = null;
+    if (previous?.isConnected) this.navigation.focus(previous);
   }
 
   /** The same replay again, from the start. */

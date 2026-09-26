@@ -4,15 +4,21 @@ import { BattleChoices, TargetOption } from '@features/battle/state/battle-choic
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
 
-const WIDTH = 829;
+const WIDTH = 961;
 const GAP = 12;
-/** Big buttons (moves, targets, forced switches): two per row. */
+/** Big buttons (targets, the plans while a turn plays, rematch/leave): two per row. */
 const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
+/** The four moves, in one row. */
+const MOVE_WIDTH = Math.floor((WIDTH - GAP * 3) / 4);
+/** Forced switches: three per row, so a full team fits in two. */
+const SWITCH_WIDTH = Math.floor((WIDTH - GAP * 2) / 3);
+/** The two rows of targets or forced switches. */
+const ROW_TOPS = [36, 96];
 
 /**
- * The command panel, 829x216: the four moves (Showdown style, each on its type's colour) and a row
- * to switch to any benched Pokémon; then the target picker when a move needs one (foes on top, as on
- * the field), the forced switch after a faint, and the rematch/leave buttons at the end. While a turn
+ * The command panel, 961x148: the four moves in a row (Showdown style, each on its type's colour) and
+ * a row to switch to any benched Pokémon; then the target picker when a move needs one (foes on top,
+ * as on the field), the forced switch after a faint, and the rematch/leave buttons at the end. While a turn
  * plays (or the opponent chooses) it shows what each Pokémon was told to do and the team's HP, with
  * nothing to press, so the panel never goes blank. Each view is a normal-flow block with absolutely
  * placed parts (Brewser layout rules), swapped with @if. Text rows have fixed heights: on the console
@@ -20,27 +26,27 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
  */
 @Component({
   selector: 'app-battle-controls',
-  host: { class: 'block h-[216px] w-[829px] text-white' },
+  host: { class: 'block h-[148px] w-[961px] text-white' },
   template: `
     @if (store.result(); as result) {
-      <div class="relative h-[216px] w-[829px]">
-        <p class="absolute top-0 left-0 block h-7 w-[829px] text-lg leading-7 font-bold">{{ resultText() }}</p>
-        <button type="button" data-pick class="absolute top-[40px] left-0 h-[60px] w-[408px] rounded-md border border-blue-300 bg-blue-700 text-xl font-bold hover:bg-blue-800" (click)="rematch.emit()">
+      <div class="relative h-[148px] w-[961px]">
+        <p class="absolute top-0 left-0 block h-7 w-[961px] text-lg leading-7 font-bold">{{ resultText() }}</p>
+        <button type="button" data-pick class="absolute top-[40px] left-0 h-[60px] w-[474px] rounded-md border border-blue-300 bg-blue-700 text-xl font-bold hover:bg-blue-800" (click)="rematch.emit()">
           Rematch
         </button>
-        <button type="button" data-pick class="absolute top-[40px] left-[420px] h-[60px] w-[408px] rounded-md border border-gray-400 bg-gray-600 text-xl font-bold hover:bg-gray-500" (click)="leave.emit()">
+        <button type="button" data-pick class="absolute top-[40px] left-[486px] h-[60px] w-[474px] rounded-md border border-gray-400 bg-gray-600 text-xl font-bold hover:bg-gray-500" (click)="leave.emit()">
           Back to Home
         </button>
       </div>
     } @else if (choices.slot() !== null) {
       @if (choices.pendingMove()) {
-        <div class="relative h-[216px] w-[829px]">
+        <div class="relative h-[148px] w-[961px]">
           <p class="absolute top-0 left-0 block h-7 w-[520px] text-base leading-7 text-gray-200">Choose a target</p>
           @for (option of targets(); track option.target) {
             <button
               type="button"
               data-pick
-              class="absolute h-[60px] w-[408px] rounded-md border p-[6px_12px] text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
+              class="absolute h-[52px] w-[474px] rounded-md border p-[4px_12px] text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
               [class]="option.foe ? 'border-red-300 bg-red-900 enabled:hover:bg-red-800' : 'border-blue-300 bg-blue-900 enabled:hover:bg-blue-800'"
               [style.left.px]="option.left"
               [style.top.px]="option.top"
@@ -51,18 +57,18 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
               <span class="block text-sm leading-5">{{ option.detail }}</span>
             </button>
           }
-          <button type="button" class="absolute top-[172px] left-0 h-[44px] w-[160px] rounded-md border border-gray-400 bg-gray-600 text-base font-bold hover:bg-gray-500" (click)="choices.back()">
+          <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
             Back
           </button>
         </div>
       } @else if (choices.forceSwitch()) {
-        <div class="relative h-[216px] w-[829px]">
+        <div class="relative h-[148px] w-[961px]">
           <p class="absolute top-0 left-0 block h-7 w-[520px] text-base leading-7 text-gray-200">Choose a Pokémon to send out</p>
           @for (option of bigSwitches(); track option.index) {
             <button
               type="button"
               data-pick
-              class="absolute h-[52px] w-[408px] rounded-md border border-gray-400 bg-gray-600 p-[4px_12px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
+              class="absolute h-[52px] w-[312px] rounded-md border border-gray-400 bg-gray-600 p-[4px_12px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
               [style.left.px]="option.left"
               [style.top.px]="option.top"
               [disabled]="!option.allowed"
@@ -73,14 +79,14 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
             </button>
           }
           @if (choices.canGoBack()) {
-            <button type="button" class="absolute top-0 left-[689px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
+            <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
               Back
             </button>
           }
         </div>
       } @else {
-        <div class="relative h-[216px] w-[829px]">
-          <p class="absolute top-0 left-0 block h-7 w-[495px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200">
+        <div class="relative h-[148px] w-[961px]">
+          <p class="absolute top-0 left-0 block h-7 w-[627px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200">
             <strong class="text-white">{{ choices.pokemonName() }}</strong>{{ ' — choose a move or switch' }}
           </p>
           @if (choices.canMega()) {
@@ -88,7 +94,7 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
             <button
               type="button"
               data-kb-skip
-              class="absolute top-0 left-[509px] h-7 w-[168px] rounded-md border text-sm font-bold"
+              class="absolute top-0 left-[641px] h-7 w-[168px] rounded-md border text-sm font-bold"
               [class]="choices.mega() ? 'border-fuchsia-300 bg-[#6b2a73]' : 'border-gray-400 bg-gray-700 hover:bg-gray-600'"
               [attr.aria-pressed]="choices.mega()"
               (click)="choices.toggleMega()"
@@ -99,7 +105,7 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
             </button>
           }
           @if (choices.canGoBack()) {
-            <button type="button" class="absolute top-0 left-[689px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
+            <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
               Back
             </button>
           }
@@ -107,22 +113,21 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
             <button
               type="button"
               data-pick
-              class="absolute h-[60px] w-[408px] rounded-md border border-gray-300 p-[6px_12px] text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
+              class="absolute top-[36px] h-[60px] w-[231px] rounded-md border border-gray-300 p-[6px_12px] text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
               [style.left.px]="move.left"
-              [style.top.px]="move.top"
               [style.background-color]="move.disabled ? null : move.color"
               [disabled]="move.disabled"
               (click)="choices.chooseMove($index)"
             >
-              <span class="block text-lg leading-6 font-bold">{{ move.move }}</span>
-              <span class="block text-sm leading-5">{{ move.detail }}</span>
+              <span class="block h-6 overflow-hidden text-lg leading-6 font-bold whitespace-nowrap">{{ move.move }}</span>
+              <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap">{{ move.detail }}</span>
             </button>
           }
           @for (option of smallSwitches(); track option.index) {
             <button
               type="button"
               data-pick
-              class="absolute top-[172px] h-[44px] rounded-md border border-gray-400 bg-gray-600 p-[3px_8px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
+              class="absolute top-[104px] h-[44px] rounded-md border border-gray-400 bg-gray-600 p-[3px_8px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
               [style.left.px]="option.left"
               [style.width.px]="option.width"
               [disabled]="!option.allowed"
@@ -136,22 +141,21 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
         </div>
       }
     } @else {
-      <div class="relative h-[216px] w-[829px]">
-        <p class="absolute top-0 left-0 block h-7 w-[829px] text-base leading-7 text-gray-200">{{ watchingTitle() }}</p>
+      <div class="relative h-[148px] w-[961px]">
+        <p class="absolute top-0 left-0 block h-7 w-[961px] text-base leading-7 text-gray-200">{{ watchingTitle() }}</p>
         @for (plan of plans(); track plan.slot) {
           <div
-            class="absolute top-[36px] block h-[128px] w-[408px] rounded-md border border-gray-500 p-[10px_14px]"
+            class="absolute top-[36px] block h-[60px] w-[474px] rounded-md border border-gray-500 p-[5px_12px]"
             [style.left.px]="plan.left"
             [style.background-color]="plan.color"
           >
-            <span class="block h-6 overflow-hidden text-base leading-6 whitespace-nowrap text-gray-200">{{ plan.name }}</span>
-            <span class="block h-9 overflow-hidden text-2xl leading-9 font-bold whitespace-nowrap">{{ plan.action }}</span>
-            <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-200">{{ plan.detail }}</span>
+            <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-200">{{ plan.name }}{{ plan.detail ? ' · ' + plan.detail : '' }}</span>
+            <span class="block h-7 overflow-hidden text-xl leading-7 font-bold whitespace-nowrap">{{ plan.action }}</span>
           </div>
         }
         @for (member of teamStatus(); track member.name) {
           <div
-            class="absolute top-[172px] block h-[44px] rounded-md border border-gray-600 bg-gray-700 p-[3px_8px]"
+            class="absolute top-[104px] block h-[44px] rounded-md border border-gray-600 bg-gray-700 p-[3px_8px]"
             [style.left.px]="member.left"
             [style.width.px]="member.width"
           >
@@ -191,8 +195,7 @@ export class BattleControls {
         disabled: !!move.disabled || move.pp <= 0,
         color: typeColor(type) || '#4b5563',
         detail: `${type} · PP ${move.pp}/${move.maxpp}`,
-        left: (i % 2) * (BIG_WIDTH + GAP),
-        top: 36 + Math.floor(i / 2) * 68,
+        left: i * (MOVE_WIDTH + GAP),
       };
     }),
   );
@@ -248,8 +251,8 @@ export class BattleControls {
   protected readonly bigSwitches = computed(() =>
     this.choices.switchOptions().map((option, i) => ({
       ...option,
-      left: (i % 2) * (BIG_WIDTH + GAP),
-      top: 36 + Math.floor(i / 2) * 60,
+      left: (i % 3) * (SWITCH_WIDTH + GAP),
+      top: ROW_TOPS[Math.floor(i / 3)] ?? 0,
       detail: option.fainted ? 'Fainted' : `${option.hpPercent}% HP${option.allowed ? '' : ' · in battle'}`,
     })),
   );
@@ -260,7 +263,7 @@ export class BattleControls {
       name: option.pokemon?.name ?? 'Empty',
       detail: targetDetail(option),
       left: (i % 2) * (BIG_WIDTH + GAP),
-      top: 36 + Math.floor(i / 2) * 68,
+      top: ROW_TOPS[Math.floor(i / 2)] ?? 0,
     })),
   );
 

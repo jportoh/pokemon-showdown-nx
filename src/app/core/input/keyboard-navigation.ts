@@ -136,7 +136,7 @@ export class KeyboardNavigation {
   }
 
   /**
-   * What L or R does on a page (its component registers while it's shown). The handler returns
+   * What L, R, ZL or ZR does on a page (its component registers while it's shown). The handler returns
    * whether it used the press. Returns the unregister function.
    */
   registerButton(button: PageButton, handler: () => boolean): () => void {
@@ -146,6 +146,11 @@ export class KeyboardNavigation {
       const index = this.pageButtons.indexOf(entry);
       if (index !== -1) this.pageButtons.splice(index, 1);
     };
+  }
+
+  /** The focused control, or null when focus is lost. */
+  focused(): HTMLElement | null {
+    return this.activeControl();
   }
 
   /** Focuses a control, scrolling its region to show it. */
@@ -289,17 +294,23 @@ export class KeyboardNavigation {
         return this.onBack(active);
       case 'prevTab':
       case 'nextTab':
+        if (this.pressPageButton(action === 'prevTab' ? 'buttonZL' : 'buttonZR')) return true;
         if (!this.tabSwitcher) return false;
         this.focusPageOnNavigation = true;
         this.tabSwitcher(action === 'nextTab' ? 1 : -1);
         return true;
       case 'buttonL':
       case 'buttonR':
-        return this.pageButtons.filter((entry) => entry.button === action).reverse().some((entry) => entry.handler());
+        return this.pressPageButton(action);
       case 'first':
       case 'last':
         return this.onJump(action, active);
     }
+  }
+
+  /** The newest page handler for the button that uses the press. */
+  private pressPageButton(button: PageButton): boolean {
+    return this.pageButtons.filter((entry) => entry.button === button).reverse().some((entry) => entry.handler());
   }
 
   private onDirection(direction: Direction, active: HTMLElement | null, typing: boolean): boolean {
