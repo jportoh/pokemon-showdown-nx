@@ -16,6 +16,7 @@ import {
   BattlePokemon,
   BattleRequest,
   BattleSide,
+  BattleTimer,
   Replay,
   RequestPokemon,
   SideId,
@@ -67,6 +68,22 @@ const SOURCE_OWNS_EFFECT = ['-weather', '-fieldstart', '-damage', '-item', '-end
 const MAX_POPUPS = 8;
 /** Lines that start the next action: a move's own damage lines come before any of these. */
 const ACTION_BOUNDARIES = new Set(['move', 'switch', 'drag', 'cant', 'turn', 'upkeep', 'win', 'tie']);
+/** Lines that aren't the battle itself: chat, joins and leaves, server HTML, timer notices. */
+const ROOM_LINES = new Set(['', 'c', 'c:', 'chat', 'j', 'J', 'l', 'L', 'n', 'N', 'raw', 'html', 'uhtml', 'uhtmlchange', 'inactive', 'inactiveoff', 'error', 'init', 'title']);
+
+function isBattleLine(line: string): boolean {
+  return line.startsWith('|') && !ROOM_LINES.has(line.slice(1).split('|')[0]);
+}
+
+/** Seconds left this turn on the timer at `now`. */
+export function timerSecondsLeft(timer: BattleTimer, now: number): number {
+  const elapsed = timer.since === null ? 0 : Math.max(0, Math.floor((now - timer.since) / 1000));
+  return Math.max(0, timer.turnSeconds - elapsed);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 const emptySide = (id: SideId): BattleSide => ({
   id,
@@ -116,6 +133,8 @@ export class BattleStore {
   private readonly startedSignal = signal(false);
   private readonly formatSignal = signal('');
   private readonly gameTypeSignal = signal<GameType>('doubles');
+  private readonly timerSignal = signal<BattleTimer | null>(null);
+  private readonly canUndoSignal = signal(false);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -162,6 +181,10 @@ export class BattleStore {
   readonly format = this.formatSignal.asReadonly();
   /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */
   readonly gameType = this.gameTypeSignal.asReadonly();
+  /** Our battle timer while it's on; null while it's off. */
+  readonly battleTimer = this.timerSignal.asReadonly();
+  /** The choices sent can still be taken back: the opponent hasn't chosen yet (real battles only). */
+  readonly canUndo = this.canUndoSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -177,6 +200,10 @@ export class BattleStore {
   private afterUpkeep = false;
   /** Slots the current move's lunge has already blinked: their first damage line doesn't blink again. */
   private readonly blinkedHits = new Set<string>();
+  /** Slots a critical hit is about to land on: their next damage line is labelled with it. */
+  private readonly critSlots = new Set<string>();
+  /** The last request shown, to show again when the choices are taken back. */
+  private lastRequest: BattleRequest | null = null;
 
   /** How the log names Pokémon and teams: from p1's side, which is the player's (or the one watched). */
   private readonly names: BattleNames = {
@@ -228,12 +255,31 @@ export class BattleStore {
     this.gameTypeSignal.set('doubles');
     this.withdrawn = null;
     this.blinkedHits.clear();
+    this.critSlots.clear();
+    this.timerSignal.set(null);
+    this.canUndoSignal.set(false);
+    this.lastRequest = null;
   }
 
   /** Sends the turn's choices ("move 1 2, switch 3"); the request is used up. */
   choose(choice: string): void {
     this.requestSignal.set(null);
+    this.canUndoSignal.set(!!this.connection?.undo);
+    this.stopTimer();
     this.connection?.choose(choice);
+  }
+
+  /**
+   * Takes back the choices sent while the opponent is still choosing, as Showdown's Cancel does: the
+   * same request comes back to choose again. If the server says it's too late, the turn goes on.
+   */
+  undo(): void {
+    if (!this.canUndoSignal() || !this.lastRequest) return;
+    this.canUndoSignal.set(false);
+    this.connection?.undo?.();
+    this.showRequestAgain();
+    this.timerSignal.update((timer) => (timer ? { ...timer, since: Date.now() } : timer));
+    this.renderScheduler.request();
   }
 
   forfeit(): void {
@@ -286,9 +332,21 @@ export class BattleStore {
         hasRequest = !!json;
         continue;
       }
+      // Timer and choice errors concern the present, not the log being played back: applied at once.
+      if (line.startsWith('|inactive|') || line.startsWith('|inactiveoff|')) {
+        this.updateTimer(line);
+        continue;
+      }
+      if (line.startsWith('|error|')) {
+        this.onChoiceError(line.slice('|error|'.length));
+        continue;
+      }
       this.queue.push(line);
       hasLog = true;
     }
+    // The opponent has chosen (the turn's log is here) or there's something new to choose. Chat and
+    // players joining don't count.
+    if (hasRequest || frame.split('\n').some(isBattleLine)) this.canUndoSignal.set(false);
     if (hasLog) this.stopWaitingForLog();
     // Showdown sends a request just BEFORE the log that leads up to it: wait for that log first.
     else if (hasRequest) {
@@ -299,6 +357,66 @@ export class BattleStore {
       }, LOG_WAIT_MS);
     }
     if (this.timer === null) this.step();
+  }
+
+  /**
+   * Showdown's timer notices (`|inactive|…`, `|inactiveoff|…`). Ours: "Time left: 150 sec this turn |
+   * 280 sec total" with each request, and "Brewser1234 has 20 seconds left." as it runs low. Turning it
+   * on or off also goes to the log.
+   */
+  private updateTimer(line: string): void {
+    const off = line.startsWith('|inactiveoff|');
+    const text = line.slice(line.indexOf('|', 1) + 1);
+    if (off) {
+      if (text.includes('OFF')) {
+        this.timerSignal.set(null);
+        this.addEntry('message', text);
+      }
+    } else if (text.startsWith('Battle timer is ON')) {
+      this.addEntry('message', 'The battle timer is on: inactive players will automatically lose when time is up.');
+    } else {
+      const own = /^Time left: (\d+) sec this turn \| (\d+) sec total/.exec(text);
+      const low = new RegExp(`^${escapeRegExp(this.sidesSignal().p1.name)} has (\\d+) seconds left`).exec(text);
+      if (own) this.timerSignal.set({ turnSeconds: Number(own[1]), totalSeconds: Number(own[2]), since: Date.now() });
+      else if (low && this.sidesSignal().p1.name) {
+        this.timerSignal.update((timer) => ({
+          turnSeconds: Number(low[1]),
+          totalSeconds: timer?.totalSeconds ?? null,
+          // A stopped clock (we've chosen) stays stopped.
+          since: timer && timer.since === null ? null : Date.now(),
+        }));
+      }
+    }
+    this.renderScheduler.request();
+  }
+
+  /** Stops our clock where it is: we've chosen (the server doesn't count the time we wait). */
+  private stopTimer(): void {
+    this.timerSignal.update((timer) => (timer?.since == null ? timer : { ...timer, turnSeconds: timerSecondsLeft(timer, Date.now()), since: null }));
+  }
+
+  /**
+   * `|error|[Invalid choice] …`. Too late to cancel (the opponent chose meanwhile) or not allowed to
+   * (a trapping move would give information away): the turn goes on as chosen. Any other refused
+   * choice: the request comes back to choose again.
+   */
+  private onChoiceError(error: string): void {
+    if (!error.startsWith('[Invalid choice]')) return;
+    const message = error.slice('[Invalid choice]'.length).trim();
+    if (/too late to cancel|Can't undo/.test(message)) {
+      // Only the request shown again by undo() goes: a newer one stays.
+      if (this.requestSignal()?.rqid === this.lastRequest?.rqid) this.requestSignal.set(null);
+      this.stopTimer();
+    } else if (!message.includes('nothing to cancel')) {
+      this.showRequestAgain();
+    }
+    this.addEntry('message', message);
+    this.renderScheduler.request();
+  }
+
+  /** The last request again, as a new object so the choices for it start over. */
+  private showRequestAgain(): void {
+    if (this.lastRequest) this.requestSignal.set({ ...this.lastRequest });
   }
 
   private stopWaitingForLog(): void {
@@ -326,6 +444,7 @@ export class BattleStore {
     this.playingSignal.set(false);
     if (this.pendingRequest && this.logWait === null && !this.resultSignal()) {
       this.requestSignal.set(this.pendingRequest);
+      this.lastRequest = this.pendingRequest;
       this.teamSignal.set(this.pendingRequest.side.pokemon);
       this.pendingRequest = null;
     }
@@ -406,6 +525,7 @@ export class BattleStore {
         this.emit('tera', args[0]);
         return this.say(`${this.label(args[0])} has Terastallized into the ${args[1]}-type!`);
       case 'move':
+        this.critSlots.clear();
         this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
         return this.say(`${this.label(args[0])} used ${args[1]}!`);
       case 'cant':
@@ -481,8 +601,11 @@ export class BattleStore {
         return this.say(`It's super effective on ${this.label(args[0], false)}!`);
       case '-resisted':
         return this.say(`It's not very effective on ${this.label(args[0], false)}...`);
-      case '-crit':
+      case '-crit': {
+        const slot = this.slotOf(args[0]);
+        if (slot) this.critSlots.add(slot);
         return this.say(`A critical hit on ${this.label(args[0], false)}!`);
+      }
       case '-immune':
         return this.say(`It doesn't affect ${this.label(args[0], false)}...`);
       case '-miss':
@@ -736,7 +859,8 @@ export class BattleStore {
     this.addEntry('minor', `(${this.label(ident)} ${verb} ${Math.abs(change)}% of its health!)`);
     const slot = this.slotOf(ident);
     if (slot) {
-      const hpChange = { id: this.nextEventId++, slot, change };
+      const crit = change < 0 && this.critSlots.delete(slot);
+      const hpChange = { id: this.nextEventId++, slot, change, crit };
       this.hpChangesSignal.update((changes) => [...changes, hpChange].slice(-MAX_POPUPS));
     }
   }

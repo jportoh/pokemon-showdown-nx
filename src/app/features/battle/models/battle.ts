@@ -147,6 +147,8 @@ export interface HpChange {
   slot: SlotKey;
   /** Percentage points of its HP, negative when lost. */
   change: number;
+  /** The move landed a critical hit (the `|-crit|` line before the damage), shown beside the change. */
+  crit?: boolean;
 }
 
 /** A status condition just inflicted ("brn", "par"…), shown as "Burned!" over the Pokémon. */
@@ -203,5 +205,17 @@ export interface BattleConnection {
   start(onMessage: (frame: string) => void): void;
   choose(choice: string): void;
   forfeit(): void;
+  /** Takes back the choices sent while the opponent is still choosing; absent where that can't happen. */
+  undo?(): void;
   stop(): void;
+}
+
+/**
+ * The battle timer while it's on (either player can turn it on): our time left this turn and in total,
+ * as of `since`. It only runs while we have something to choose; `since` is null while it's stopped.
+ */
+export interface BattleTimer {
+  turnSeconds: number;
+  totalSeconds: number | null;
+  since: number | null;
 }

@@ -1,5 +1,9 @@
-import { Component, computed, inject, input, output } from '@angular/core';
-import { BattleStore } from '@features/battle/state/battle-store';
+import { Component, DestroyRef, computed, inject, input, output, signal } from '@angular/core';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { BattleStore, timerSecondsLeft } from '@features/battle/state/battle-store';
+
+/** The timer turns red with this little left of the turn. */
+const LOW_SECONDS = 30;
 
 /** Names are cut by hand: text-overflow is untested on Brewser. */
 const MAX_NAME_CHARS = 20;
@@ -7,8 +11,8 @@ const MAX_NAME_CHARS = 20;
 /**
  * The match header across the top of the battle, 1280x48, laid out like a scoreboard over the stage
  * below it: the format on the left; "p1 VS p2" centred over the field, each name in its side's colour
- * (blue the near side, red the far one, as the team cards and the target buttons); the turn at the
- * field's right edge; and over the right column, Forfeit (R) and the battle log (ZR) as button hints.
+ * (blue the near side, red the far one, as the team cards and the target buttons); our battle timer (while
+ * it's on) and the turn at the field's right edge; and over the right column, Forfeit (R) and the battle log (ZR) as button hints.
  * A replay shows a "Replay" badge where Forfeit goes. The hints are for clicks: the controller has
  * its own buttons for them, so the d-pad skips them (data-kb-skip). Absolutely laid out (Brewser
  * layout rules).
@@ -33,6 +37,22 @@ const MAX_NAME_CHARS = 20;
         <span class="absolute top-0 left-[532px] block h-[46px] w-[204px] overflow-hidden text-lg leading-[46px] font-bold whitespace-nowrap text-red-300">
           {{ p.p2 }}
         </span>
+      }
+
+      @if (timerView(); as t) {
+        <!-- Icon and time placed apart: an inline svg next to text wraps on Brewser. -->
+        <div
+          role="timer"
+          class="absolute top-[9px] left-[759px] block h-7 w-[110px] rounded-full text-white"
+          [class]="t.low ? 'bg-red-800' : 'bg-tab'"
+          [attr.aria-label]="t.label"
+        >
+          <svg aria-hidden="true" viewBox="0 0 16 16" class="absolute top-[6px] left-[22px] size-4">
+            <circle cx="8" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8" />
+            <path d="M8 5.5V9l2.2 1.6M6 1.5h4" fill="none" stroke="currentColor" stroke-width="1.8" />
+          </svg>
+          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-7 w-[50px] text-sm leading-7 font-bold">{{ t.text }}</span>
+        </div>
       }
 
       <span class="absolute top-[9px] left-[877px] block h-7 w-[110px] rounded-full bg-tab text-center text-sm leading-7 font-bold uppercase">
@@ -78,6 +98,32 @@ export class BattleHeader {
 
   readonly forfeit = output<void>();
   readonly toggleLog = output<void>();
+
+  /** The clock's "now", moved on every second while the timer runs. */
+  private readonly now = signal(Date.now());
+
+  /**
+   * Our time left this turn while the battle timer is on ("2:30"), red when it's running low. It stands
+   * still while we wait for the opponent (the server doesn't count that time).
+   */
+  protected readonly timerView = computed(() => {
+    const timer = this.store.battleTimer();
+    if (!timer || this.store.result()) return null;
+    const seconds = timerSecondsLeft(timer, this.now());
+    const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    const total = timer.totalSeconds === null ? '' : `, ${timer.totalSeconds} in total`;
+    return { text, low: seconds <= LOW_SECONDS, label: `Time left this turn: ${seconds} seconds${total}` };
+  });
+
+  constructor() {
+    const render = inject(RenderScheduler);
+    const clock = setInterval(() => {
+      if (this.store.battleTimer()?.since == null) return;
+      this.now.set(Date.now());
+      render.request();
+    }, 1000);
+    inject(DestroyRef).onDestroy(() => clearInterval(clock));
+  }
 
   /** Both names once the server has sent them. */
   protected readonly players = computed(() => {

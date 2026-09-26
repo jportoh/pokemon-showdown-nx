@@ -161,6 +161,18 @@ const ROW_TOPS = [36, 96];
     } @else {
       <div class="relative h-[148px] w-[961px]">
         <p class="absolute top-0 left-0 block h-7 w-[961px] text-base leading-7 text-gray-200">{{ watchingTitle() }}</p>
+        @if (store.canUndo()) {
+          <!-- Showdown's Cancel: while the opponent is still choosing, the choices can be made again (B too). -->
+          <button
+            type="button"
+            data-pick
+            class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500"
+            aria-label="Cancel: choose again"
+            (click)="store.undo()"
+          >
+            <span class="rounded-sm bg-header p-[1px_6px]">B</span> Cancel
+          </button>
+        }
         @for (plan of plans(); track plan.slot) {
           <div
             class="absolute top-[36px] block h-[60px] w-[474px] rounded-md border border-gray-500 p-[5px_12px]"
@@ -292,7 +304,7 @@ export class BattleControls {
   /** Changes whenever a new set of buttons appears, so focus can move to it. */
   private readonly view = computed(() => {
     const request = this.store.request();
-    return [this.store.result(), request?.rqid, this.choices.slot(), !!this.choices.pendingMove()].join('|');
+    return [this.store.result(), request?.rqid, this.choices.slot(), !!this.choices.pendingMove(), this.store.canUndo()].join('|');
   });
 
   constructor() {

@@ -29,6 +29,11 @@ export class ShowdownBattleConnection implements BattleConnection {
     this.rooms.send(this.roomId, this.rqid === null ? `/choose ${choice}` : `/choose ${choice}|${this.rqid}`);
   }
 
+  /** Showdown's Cancel: the server answers with an error if the opponent has already chosen. */
+  undo(): void {
+    this.rooms.send(this.roomId, '/undo');
+  }
+
   forfeit(): void {
     this.rooms.send(this.roomId, '/forfeit');
   }

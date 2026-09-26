@@ -60,7 +60,7 @@ const FORFEIT_CONFIRM_MS = 4000;
         } @else {
           <app-battle-controls
             class="absolute top-[12px] left-[12px]"
-            (appBack)="choices.back()"
+            (appBack)="back()"
             [canRematch]="!live()"
             (rematch)="start()"
             (leave)="leave()"
@@ -139,6 +139,12 @@ export class BattleScreen {
     const team = format.randomTeams ? undefined : this.teams.teams().find((t) => t.sets.length > 0);
     this.cancelForfeit();
     this.store.start(new MockBattleConnection(this.dex, format, 'Player', team?.sets ?? []));
+  }
+
+  /** B: takes back the choices sent while the opponent is still choosing, or steps back while choosing. */
+  protected back(): void {
+    if (this.store.canUndo()) this.store.undo();
+    else this.choices.back();
   }
 
   /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */

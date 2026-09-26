@@ -48,6 +48,10 @@ const HP_LABEL_MS = 1100;
 const HP_LABEL_WIDTH = 76;
 const HP_LOST_COLOR = '#b91c1c';
 const HP_RESTORED_COLOR = '#15803d';
+/** "Critical hit!" beside the HP label, the pair centred over the Pokémon. */
+const CRIT_LABEL_WIDTH = 128;
+const CRIT_LABEL_GAP = 6;
+const CRIT_COLOR = '#b45309';
 /** "Burned!", "Badly poisoned!": this far under the HP label, stays as long as an ability pop-up. */
 const STATUS_LABEL_WIDTH = 150;
 const STATUS_LABEL_DROP = 36;
@@ -284,6 +288,16 @@ interface FieldSlot {
           [style.background-color]="label.color"
           >{{ label.text }}</span
         >
+        @if (label.crit) {
+          <span
+            aria-hidden="true"
+            class="absolute block h-[32px] w-[128px] rounded-md border-2 border-white text-center text-base leading-7 font-bold text-white"
+            [style.left.px]="label.critLeft"
+            [style.top.px]="label.top"
+            [style.background-color]="critColor"
+            >Critical hit!</span
+          >
+        }
       }
       <!-- A status just inflicted ("Burned!"), in its colour, under the HP label; the log says it too. -->
       @for (label of statusLabels(); track label.slot) {
@@ -377,16 +391,25 @@ export class BattleField {
     })),
   );
 
+  protected readonly critColor = CRIT_COLOR;
+
   /** The HP labels being shown, one per slot at most; each goes after HP_LABEL_MS. */
   private readonly shownHpChanges = signal<readonly HpChange[]>([]);
 
   protected readonly hpLabels = computed(() =>
-    this.shownHpChanges().map(({ slot, change }) => ({
-      slot,
-      text: `${change > 0 ? '+' : ''}${change}%`,
-      color: change < 0 ? HP_LOST_COLOR : HP_RESTORED_COLOR,
-      ...this.hpLabelPosition(slot),
-    })),
+    this.shownHpChanges().map(({ slot, change, crit }) => {
+      const { top } = this.hpLabelPosition(slot);
+      const left = crit ? this.centredOver(slot, HP_LABEL_WIDTH + CRIT_LABEL_GAP + CRIT_LABEL_WIDTH) : this.centredOver(slot, HP_LABEL_WIDTH);
+      return {
+        slot,
+        text: `${change > 0 ? '+' : ''}${change}%`,
+        color: change < 0 ? HP_LOST_COLOR : HP_RESTORED_COLOR,
+        crit: !!crit,
+        left,
+        top,
+        critLeft: left + HP_LABEL_WIDTH + CRIT_LABEL_GAP,
+      };
+    }),
   );
 
   /** The status labels being shown, one per slot at most; each goes after POPUP_MS. */
