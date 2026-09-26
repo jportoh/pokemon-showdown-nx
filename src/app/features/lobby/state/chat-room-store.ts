@@ -96,15 +96,13 @@ export class ChatRoomStore {
   }
 
   /**
-   * Leaves the room and clears its users and messages. The socket is closed as well: the chat is its
-   * only user for now, and an idle socket still costs the console its incoming traffic. (Once other
-   * features share the connection, it should only close when nothing needs it.)
+   * Leaves the room and clears its users and messages. The socket stays open: challenges and battles
+   * use it too.
    */
   leave(): void {
     const room = this.roomSignal();
     if (!this.joinRequested || !room) return;
     this.connection.send('', `/leave ${room.id}`);
-    this.connection.disconnect();
     this.reset();
   }
 
@@ -176,7 +174,6 @@ export class ChatRoomStore {
         case 'noinit': {
           // The server refused the join (e.g. the room doesn't exist or needs permissions).
           const title = this.roomSignal()?.title ?? 'the room';
-          this.connection.disconnect();
           this.reset();
           this.joinErrorSignal.set(`Couldn't join ${title}.`);
           return;

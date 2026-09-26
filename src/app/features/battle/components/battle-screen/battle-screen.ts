@@ -9,11 +9,14 @@ import { BattleHeader } from '@features/battle/components/battle-header/battle-h
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
+import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
 import { MockBattleConnection, mockFormat } from '@features/battle/mock/mock-battle-connection';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
+import { BattleRooms } from '@features/connection/battle-rooms';
+import { ShowdownLogin } from '@features/connection/showdown-login';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
@@ -22,7 +25,8 @@ import { BackAction } from '@shared/directives/back-action';
 const FORFEIT_CONFIRM_MS = 4000;
 
 /**
- * A battle (doubles, or singles with one Pokémon a side), for now against the mock server, or a replay
+ * A battle (doubles, or singles with one Pokémon a side) against the mock server or a real player on
+ * Showdown (a challenge we accepted), or a replay
  * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
  * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
  * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
@@ -57,6 +61,7 @@ const FORFEIT_CONFIRM_MS = 4000;
           <app-battle-controls
             class="absolute top-[12px] left-[12px]"
             (appBack)="choices.back()"
+            [canRematch]="!live()"
             (rematch)="start()"
             (leave)="leave()"
           />
@@ -83,9 +88,14 @@ export class BattleScreen {
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
+  private readonly rooms = inject(BattleRooms);
+  private readonly login = inject(ShowdownLogin);
 
   /** The format of the battles this page starts (the lobby's pick). */
   private format = DEFAULT_TEAM_FORMAT;
+
+  /** A real battle on the server (accepted challenge): no rematch against the mock at the end. */
+  protected readonly live = signal(false);
 
   protected readonly confirmingForfeit = signal(false);
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,12 +105,17 @@ export class BattleScreen {
   private focusBeforeLog: HTMLElement | null = null;
 
   constructor() {
-    // Opened from the lobby's Battle! button: a new battle in the format picked there. From the replay
-    // list: the replay it started.
-    const format = this.session.takeStartRequest();
-    if (format) {
-      this.format = format;
+    // Opened from the lobby's Battle! button: a new battle against the mock in the format picked there.
+    // After accepting a challenge: the real battle in its server room. From the replay list: the replay
+    // it started.
+    const request = this.session.takeStartRequest();
+    if (request?.kind === 'mock') {
+      this.format = request.format;
       this.start();
+    } else if (request?.kind === 'live') {
+      this.live.set(true);
+      this.cancelForfeit();
+      this.store.start(new ShowdownBattleConnection(this.rooms, request.roomId, this.login.userId()));
     }
 
     const unregister = [

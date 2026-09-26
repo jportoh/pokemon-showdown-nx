@@ -1,4 +1,4 @@
-import { Component, ElementRef, afterRenderEffect, computed, inject, output } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input, output } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
@@ -31,10 +31,13 @@ const ROW_TOPS = [36, 96];
     @if (store.result(); as result) {
       <div class="relative h-[148px] w-[961px]">
         <p class="absolute top-0 left-0 block h-7 w-[961px] text-lg leading-7 font-bold">{{ resultText() }}</p>
-        <button type="button" data-pick class="absolute top-[40px] left-0 h-[60px] w-[474px] rounded-md border border-blue-300 bg-blue-700 text-xl font-bold hover:bg-blue-800" (click)="rematch.emit()">
-          Rematch
-        </button>
-        <button type="button" data-pick class="absolute top-[40px] left-[486px] h-[60px] w-[474px] rounded-md border border-gray-400 bg-gray-600 text-xl font-bold hover:bg-gray-500" (click)="leave.emit()">
+        @if (canRematch()) {
+          <button type="button" data-pick class="absolute top-[40px] left-0 h-[60px] w-[474px] rounded-md border border-blue-300 bg-blue-700 text-xl font-bold hover:bg-blue-800" (click)="rematch.emit()">
+            Rematch
+          </button>
+        }
+        <button type="button" data-pick class="absolute top-[40px] h-[60px] rounded-md border border-gray-400 bg-gray-600 text-xl font-bold hover:bg-gray-500"
+          [style.left.px]="canRematch() ? 486 : 0" [style.width.px]="canRematch() ? 474 : 961" (click)="leave.emit()">
           Back to Home
         </button>
       </div>
@@ -188,6 +191,8 @@ export class BattleControls {
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
 
+  /** Another battle against the mock at the end; a real battle only has Back to Home. */
+  readonly canRematch = input(true);
   readonly rematch = output<void>();
   readonly leave = output<void>();
 
