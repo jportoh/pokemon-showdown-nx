@@ -2,6 +2,7 @@ import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
@@ -18,16 +19,17 @@ import { BackAction } from '@shared/directives/back-action';
 const FORFEIT_CONFIRM_MS = 4000;
 
 /**
- * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. The left two thirds (853px) hold the field
- * (third-generation style) with the command panel below it; the right third (427px) holds the
- * battle log, Showdown style, under a bar with the turn and Forfeit. Fills the layout's 1280x644
- * content area. The battle itself lives in root services, so leaving this page doesn't end it.
+ * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. The
+ * left two thirds (853px) hold the field (third-generation style) with the command panel below it;
+ * the right third (427px) holds a bar with the turn and Forfeit, the field conditions (weather,
+ * terrain, Tailwind… with their turns left) and the battle log, Showdown style. Fills the layout's
+ * 1280x644 content area. The battle itself lives in root services, so leaving this page doesn't end it.
  * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice). A replay
  * swaps the command panel for playback controls and has nothing to forfeit.
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [BackAction, BattleControls, BattleField, BattleLog, ReplayControls],
+  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleLog, ReplayControls],
   host: { class: 'block h-[644px] w-[1280px]' },
   template: `
     <div class="relative h-[644px] w-[1280px]">
@@ -67,7 +69,8 @@ const FORFEIT_CONFIRM_MS = 4000;
           </button>
         }
       </div>
-      <app-battle-log class="absolute top-[48px] left-[853px]" />
+      <app-battle-conditions class="absolute top-[48px] left-[853px]" />
+      <app-battle-log class="absolute top-[144px] left-[853px]" />
     </div>
   `,
 })

@@ -3,6 +3,8 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import {
   BattleConnection,
+  BattleFieldState,
+  FieldCondition,
   BattleLogEntry,
   BattlePokemon,
   BattleRequest,
@@ -13,6 +15,7 @@ import {
 } from '@features/battle/models/battle';
 import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
+import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
 import {
   BattleNames,
   abilityText,
@@ -81,6 +84,7 @@ export class BattleStore {
   private readonly replaySignal = signal<Replay | null>(null);
   private readonly pausedSignal = signal(false);
   private readonly speedSignal = signal(1);
+  private readonly fieldSignal = signal<BattleFieldState>(emptyField());
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -104,6 +108,8 @@ export class BattleStore {
   readonly paused = this.pausedSignal.asReadonly();
   /** Playback speed: 1 (normal), 2 or 4. */
   readonly speed = this.speedSignal.asReadonly();
+  /** Weather, terrain, rooms and each side's conditions in play. */
+  readonly field = this.fieldSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -112,8 +118,8 @@ export class BattleStore {
   private nextLogId = 0;
   /** Set while a request waits for the log that should follow it. */
   private logWait: ReturnType<typeof setTimeout> | null = null;
-  /** The weather in play, so its end can be worded ("The rain stopped."). */
-  private weather = '';
+  /** Set once the turn's end-of-turn effects have run: what starts now counts from the next turn. */
+  private afterUpkeep = false;
 
   /** How the log names Pokémon and teams: from p1's side, which is the player's (or the one watched). */
   private readonly names: BattleNames = {
@@ -152,7 +158,8 @@ export class BattleStore {
     this.requestSignal.set(null);
     this.teamSignal.set([]);
     this.pausedSignal.set(false);
-    this.weather = '';
+    this.fieldSignal.set(emptyField());
+    this.afterUpkeep = false;
   }
 
   /** Sends the turn's choices ("move 1 2, switch 3"); the request is used up. */
@@ -329,12 +336,40 @@ export class BattleStore {
         this.updatePokemon(args[0], (p) => ({ ...p, status: '' }));
         return this.say(cureText(args[0], args[1], names));
       case '-boost':
-      case '-unboost':
-        return this.say(boostText(args[0], args[1], Number(args[2]), command === '-boost', names));
+      case '-unboost': {
+        const amount = Number(args[2]) || 0;
+        this.changeBoost(args[0], args[1], (stage) => stage + (command === '-boost' ? amount : -amount));
+        return this.say(boostText(args[0], args[1], amount, command === '-boost', names));
+      }
+      case '-setboost':
+        this.changeBoost(args[0], args[1], () => Number(args[2]) || 0);
+        return 0;
       case '-clearallboost':
+        for (const side of ['p1', 'p2'] as const) {
+          this.updateSide(side, (s) => ({ ...s, active: s.active.map((p) => (p ? { ...p, boosts: {} } : p)) }));
+        }
         return this.say('All stat changes were eliminated!');
       case '-clearboost':
+        this.updatePokemon(args[0], (p) => ({ ...p, boosts: {} }));
         return this.say(`${this.label(args[0])}'s stat changes were removed!`);
+      case '-clearnegativeboost':
+        this.updatePokemon(args[0], (p) => ({
+          ...p,
+          boosts: Object.fromEntries(Object.entries(p.boosts).filter(([, stage]) => stage > 0)),
+        }));
+        return 0;
+      case '-invertboost':
+        this.updatePokemon(args[0], (p) => ({
+          ...p,
+          boosts: Object.fromEntries(Object.entries(p.boosts).map(([stat, stage]) => [stat, -stage])),
+        }));
+        return 0;
+      case '-copyboost': {
+        // |-copyboost|SOURCE|TARGET: the source (Psych Up's user) copies the target's stages.
+        const boosts = this.findPokemon(args[1])?.boosts ?? {};
+        this.updatePokemon(args[0], (p) => ({ ...p, boosts: { ...boosts } }));
+        return 0;
+      }
       case '-supereffective':
         return this.say(`It's super effective on ${this.label(args[0], false)}!`);
       case '-resisted':
@@ -374,15 +409,24 @@ export class BattleStore {
         return this.changeWeather(args[0], tags);
       case '-fieldstart':
       case '-fieldend':
+        this.changeFieldCondition(effectName(args[0]), command === '-fieldstart');
         this.abilityFrom(tags);
         return this.say(fieldText(args[0], command === '-fieldend', names, tags));
       case '-sidestart':
       case '-sideend':
+        this.changeSideCondition(args[0], effectName(args[1]), command === '-sidestart');
         return this.say(sideText(args[0], args[1], command === '-sideend', names));
+      case '-swapsideconditions':
+        this.fieldSignal.update((f) => ({ ...f, sides: { p1: f.sides.p2, p2: f.sides.p1 } }));
+        return this.say('The effects on both sides of the field were swapped!');
+      case 'upkeep':
+        this.afterUpkeep = true;
+        return 0;
       case 'faint':
         this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true }));
         return this.say(`${this.label(args[0])} fainted!`);
       case 'turn':
+        this.afterUpkeep = false;
         this.turnSignal.set(Number(args[0]));
         this.addEntry('turn', `Turn ${args[0]}`);
         return 0;
@@ -426,13 +470,57 @@ export class BattleStore {
   private changeWeather(weather: string, tags: Record<string, string>): number {
     if ('upkeep' in tags) return 0;
     if (weather === 'none') {
-      const ended = this.weather;
-      this.weather = '';
-      return ended ? this.say(weatherText(ended, true)) : 0;
+      const ended = this.fieldSignal().weather;
+      this.fieldSignal.update((f) => ({ ...f, weather: null }));
+      return ended ? this.say(weatherText(ended.id, true)) : 0;
     }
-    this.weather = weather;
+    this.fieldSignal.update((f) => ({ ...f, weather: weatherCondition(weather, this.startTurn()) }));
     this.abilityFrom(tags);
     return this.say(weatherText(weather, false));
+  }
+
+  /**
+   * The first turn a condition starting now counts for: this one, or the next once the turn's
+   * end-of-turn effects have run (a weather set by a Pokémon switched in after a faint). Before
+   * turn 1 (leads' abilities), turn 1.
+   */
+  private startTurn(): number {
+    const turn = this.turnSignal();
+    return turn === 0 || this.afterUpkeep ? turn + 1 : turn;
+  }
+
+  /** Terrains replace each other; rooms (Trick Room, Gravity…) sit side by side. */
+  private changeFieldCondition(id: string, starting: boolean): void {
+    this.fieldSignal.update((f) => {
+      if (isTerrain(id)) return { ...f, terrain: starting ? namedCondition(id, this.startTurn()) : null };
+      const rooms = f.rooms.filter((room) => room.id !== id);
+      return { ...f, rooms: starting ? [...rooms, namedCondition(id, this.startTurn())] : rooms };
+    });
+  }
+
+  /** "p1: Name" + "Tailwind"; a second layer of Spikes stacks on the first. */
+  private changeSideCondition(sideArg: string, id: string, starting: boolean): void {
+    const side = sideArg.slice(0, 2);
+    if (side !== 'p1' && side !== 'p2') return;
+    this.fieldSignal.update((f) => {
+      const current = f.sides[side];
+      const existing = current.find((c) => c.id === id);
+      let next: FieldCondition[];
+      if (!starting) next = current.filter((c) => c.id !== id);
+      else if (existing) next = current.map((c) => (c.id === id ? { ...c, layers: c.layers + 1 } : c));
+      else next = [...current, namedCondition(id, this.startTurn())];
+      return { ...f, sides: { ...f.sides, [side]: next } };
+    });
+  }
+
+  /** A stat stage, kept between -6 and +6; stages back at 0 are dropped. */
+  private changeBoost(ident: string, stat: string, change: (stage: number) => number): void {
+    this.updatePokemon(ident, (p) => {
+      const stage = Math.max(-6, Math.min(6, change(p.boosts[stat] ?? 0)));
+      const boosts = { ...p.boosts, [stat]: stage };
+      if (stage === 0) delete boosts[stat];
+      return { ...p, boosts };
+    });
   }
 
   /** Showdown's "(The opposing Garchomp lost 45% of its health!)", as a minor log line. */
@@ -475,6 +563,7 @@ export class BattleStore {
       maxHp: 100,
       status: '',
       fainted: false,
+      boosts: {},
     };
     const leaving = this.sidesSignal()[side].active[slot];
     if (leaving && !leaving.fainted && leaving.ident !== key) {
@@ -486,10 +575,12 @@ export class BattleStore {
           : `${player} withdrew ${leaving.name}!`,
       );
     }
+    // Stat stages go with switching out.
     const pokemon = {
       ...base,
       ...parseDetails(details, this.dex),
       ...parseCondition(condition, base.maxHp),
+      boosts: {},
     };
     this.updateSide(side, (s) => ({
       ...s,

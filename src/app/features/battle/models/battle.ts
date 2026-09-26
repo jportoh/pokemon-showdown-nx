@@ -61,6 +61,32 @@ export interface BattlePokemon {
   maxHp: number;
   status: string;
   fainted: boolean;
+  /** Stat stages from -6 to +6 ('atk', 'spe', 'accuracy'…); only the changed ones. Reset on switching out. */
+  boosts: Record<string, number>;
+}
+
+/** A weather, terrain, room (Trick Room…) or side condition (Tailwind, Reflect…) in play. */
+export interface FieldCondition {
+  /** Showdown's name: "RainDance", "Grassy Terrain", "Tailwind". */
+  id: string;
+  /** How it's shown: "Rain", "Grassy Terrain", "Tailwind". */
+  name: string;
+  /** The first turn it counts for. */
+  start: number;
+  /** How many turns it lasts; none for the ones that stay (hazards, primal weather). */
+  duration?: number;
+  /** An item can make it last 3 turns more (Light Clay, Damp Rock, Terrain Extender…). */
+  extendable?: boolean;
+  /** Spikes and Toxic Spikes stack. */
+  layers: number;
+}
+
+export interface BattleFieldState {
+  weather: FieldCondition | null;
+  terrain: FieldCondition | null;
+  /** Trick Room, Gravity, Magic Room, Wonder Room. */
+  rooms: FieldCondition[];
+  sides: Record<SideId, FieldCondition[]>;
 }
 
 export interface BattleSide {
