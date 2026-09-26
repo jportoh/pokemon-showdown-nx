@@ -49,6 +49,8 @@ type Source = 'keyboard' | 'gamepad';
 
 /** Up/down step through a paged element; first/last jump to its ends. */
 export type PageStep = 'up' | 'down' | 'first' | 'last';
+/** Pages an element for the focused control inside it (or itself); false leaves the press to normal navigation. */
+export type Pager = (step: PageStep, focused: HTMLElement) => boolean;
 
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
@@ -78,7 +80,7 @@ export class KeyboardNavigation {
   private readonly renderScheduler = inject(RenderScheduler);
 
   private readonly backHandlers = new Map<Element, () => void>();
-  private readonly pagers = new Map<Element, (step: PageStep) => boolean>();
+  private readonly pagers = new Map<Element, Pager>();
   private tabSwitcher: ((step: 1 | -1) => void) | null = null;
   /** L/R handlers by page, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
@@ -135,10 +137,12 @@ export class KeyboardNavigation {
   }
 
   /**
-   * An element that pages its own content while focused, like a scroll region scrolls (the battle
-   * log, which can't be a scroll box on Brewser). The pager returns false at that end, letting focus go.
+   * An element that pages its own content, like a scroll region scrolls (scroll boxes shown after
+   * load stay blank on Brewser): the battle log while focused, or the replay list while one of its
+   * rows is. The pager of the nearest element around focus gets the press first; it returns false to
+   * let focus move as usual (the log at its end, a row that isn't at the list's edge).
    */
-  registerPager(element: Element, pager: (step: PageStep) => boolean): () => void {
+  registerPager(element: Element, pager: Pager): () => void {
     this.pagers.set(element, pager);
     return () => this.pagers.delete(element);
   }
@@ -338,8 +342,7 @@ export class KeyboardNavigation {
     }
     // A focused scroll region (the chat log, the user list) or paged element scrolls first, then lets focus go.
     if (active && (direction === 'up' || direction === 'down')) {
-      const pager = this.pagers.get(active);
-      if (pager?.(direction)) return true;
+      if (this.pagerFor(active)?.(direction, active)) return true;
       if (isScrollRegion(active) && scrollRegion(active, direction === 'down' ? SCROLL_STEP_PX : -SCROLL_STEP_PX)) return true;
     }
     this.move(direction, active);
@@ -404,11 +407,19 @@ export class KeyboardNavigation {
     return false;
   }
 
+  /** The pager of the nearest element around `active` (itself included). */
+  private pagerFor(active: HTMLElement): Pager | null {
+    for (let node: Element | null = active; node; node = node.parentElement) {
+      const pager = this.pagers.get(node);
+      if (pager) return pager;
+    }
+    return null;
+  }
+
   /** Home/End: the first or last control of the list the focus is in (or the top/bottom of a focused scroll region). */
   private onJump(action: 'first' | 'last', active: HTMLElement | null): boolean {
     if (!active) return false;
-    const pager = this.pagers.get(active);
-    if (pager) return pager(action);
+    if (this.pagerFor(active)?.(action, active)) return true;
     if (isScrollRegion(active)) {
       active.scrollTop = action === 'first' ? 0 : Math.max(0, active.scrollHeight - active.clientHeight);
       return true;
