@@ -75,7 +75,7 @@
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('species')"
         >
-          <span id="species-value">{{
+          <span id="species-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{
             species()?.name ?? pokemon()?.species ?? 'Choose a species'
           }}</span>
         </button>
@@ -95,7 +95,7 @@
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('item')"
         >
-          <span id="item-value">{{ pokemon()?.item || 'No item' }}</span>
+          <span id="item-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.item || 'No item' }}</span>
         </button>
       </div>
       <div class="relative h-11">
@@ -113,7 +113,7 @@
           [class]="fieldButtonClass"
           [class.bg-tab-hover]="isActive('ability')"
         >
-          <span id="ability-value">{{ pokemon()?.ability || 'No ability' }}</span>
+          <span id="ability-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.ability || 'No ability' }}</span>
         </button>
       </div>
       @for (field of moveFields; track field; let i = $index) {
@@ -134,7 +134,7 @@
             [class]="fieldButtonClass"
             [class.bg-tab-hover]="isActive(field)"
           >
-            <span [id]="'move-value-' + i">{{ pokemon()?.moves?.[i] || 'No move' }}</span>
+            <span [id]="'move-value-' + i" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.moves?.[i] || 'No move' }}</span>
           </button>
         </div>
       }

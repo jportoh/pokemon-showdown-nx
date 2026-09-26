@@ -92,7 +92,9 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
               [attr.aria-pressed]="choices.mega()"
               (click)="choices.toggleMega()"
             >
-              <span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ choices.mega() ? ' Mega Evolving' : ' Mega Evolve' }}
+              <span class="block h-[26px] text-center leading-[26px]"
+                ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ choices.mega() ? ' Mega Evolving' : ' Mega Evolve' }}</span
+              >
             </button>
           }
           @if (choices.canGoBack()) {

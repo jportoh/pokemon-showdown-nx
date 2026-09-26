@@ -52,7 +52,9 @@ const FORFEIT_CONFIRM_MS = 4000;
             [class]="confirmingForfeit() ? 'border-red-300 bg-red-800 hover:bg-red-700' : 'border-gray-400 bg-tab hover:bg-tab-hover'"
             (click)="forfeit()"
           >
-            <span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">R</span>{{ confirmingForfeit() ? ' Again to forfeit' : ' Forfeit' }}
+            <span class="block h-[34px] text-center leading-[34px]"
+              ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">R</span>{{ confirmingForfeit() ? ' Again to forfeit' : ' Forfeit' }}</span
+            >
           </button>
         }
       </div>
