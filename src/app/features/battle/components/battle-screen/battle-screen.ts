@@ -5,6 +5,7 @@ import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
+import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { MockBattleConnection } from '@features/battle/mock/mock-battle-connection';
@@ -19,23 +20,28 @@ import { BackAction } from '@shared/directives/back-action';
 const FORFEIT_CONFIRM_MS = 4000;
 
 /**
- * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. The
- * left two thirds (853px) hold the field (third-generation style) with the command panel below it;
- * the right third (427px) holds a bar with the turn and Forfeit, the field conditions (weather,
- * terrain, Tailwind… with their turns left) and the battle log, Showdown style. Fills the layout's
- * 1280x644 content area. The battle itself lives in root services, so leaving this page doesn't end it.
+ * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. It
+ * takes the whole 1280x720 stage (no header: a battle can't be left until it's over). Along the top,
+ * over the battle box, the field conditions (weather, terrain, Tailwind… with their turns left) and,
+ * over the log, the opponent's team. Below, framed by a 12px strip on the left, the battle box: the
+ * field (third-generation style) with the command panel under it (853px wide); then the right column
+ * (415px) with a bar for the turn and Forfeit, and the battle log, Showdown style. The battle itself
+ * lives in root services.
  * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice). A replay
  * swaps the command panel for playback controls and has nothing to forfeit.
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleLog, ReplayControls],
-  host: { class: 'block h-[644px] w-[1280px]' },
+  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleLog, BattleTeamPreview, ReplayControls],
+  host: { class: 'block h-[720px] w-[1280px] bg-header' },
   template: `
-    <div class="relative h-[644px] w-[1280px]">
-      <app-battle-field class="absolute top-0 left-0" />
+    <div class="relative h-[720px] w-[1280px]">
+      <app-battle-conditions class="absolute top-0 left-[12px]" />
+      <app-battle-team-preview class="absolute top-0 left-[865px]" side="p2" />
 
-      <div class="absolute top-[404px] left-0 h-[240px] w-[853px] bg-[#283040]">
+      <app-battle-field class="absolute top-[76px] left-[12px]" />
+
+      <div class="absolute top-[480px] left-[12px] h-[240px] w-[853px] bg-[#283040]">
         @if (store.replay()) {
           <app-replay-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveReplay()" (again)="watchAgain()" (leave)="leaveReplay()" />
         } @else {
@@ -48,18 +54,18 @@ const FORFEIT_CONFIRM_MS = 4000;
         }
       </div>
 
-      <div class="absolute top-0 left-[853px] h-[48px] w-[427px] bg-header">
+      <div class="absolute top-[76px] left-[865px] h-[48px] w-[415px] bg-header">
         <span class="absolute top-[6px] left-[12px] block h-9 w-[160px] text-lg leading-9 font-bold text-white">
           {{ store.turn() > 0 ? 'Turn ' + store.turn() : 'Starting…' }}
         </span>
         @if (store.replay()) {
-          <span class="absolute top-[12px] left-[315px] block h-6 w-[100px] rounded-sm bg-tab text-center text-sm leading-6 font-bold text-white">Replay</span>
+          <span class="absolute top-[12px] left-[303px] block h-6 w-[100px] rounded-sm bg-tab text-center text-sm leading-6 font-bold text-white">Replay</span>
         } @else if (!store.result()) {
           <!-- R does this on the controller, so the d-pad skips it (data-kb-skip); it's for clicks. -->
           <button
             type="button"
             data-kb-skip
-            class="absolute top-[6px] left-[195px] h-9 w-[220px] rounded-md border text-sm font-bold text-white"
+            class="absolute top-[6px] left-[183px] h-9 w-[220px] rounded-md border text-sm font-bold text-white"
             [class]="confirmingForfeit() ? 'border-red-300 bg-red-800 hover:bg-red-700' : 'border-gray-400 bg-tab hover:bg-tab-hover'"
             (click)="forfeit()"
           >
@@ -69,8 +75,7 @@ const FORFEIT_CONFIRM_MS = 4000;
           </button>
         }
       </div>
-      <app-battle-conditions class="absolute top-[48px] left-[853px]" />
-      <app-battle-log class="absolute top-[144px] left-[853px]" />
+      <app-battle-log class="absolute top-[124px] left-[865px]" />
     </div>
   `,
 })
@@ -86,7 +91,7 @@ export class BattleScreen {
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    // Opened from the lobby's Battle! button: a new battle. From the Battle tab: the one in progress.
+    // Opened from the lobby's Battle! button: a new battle. From the replay list: the replay it started.
     if (this.session.takeStartRequest()) this.start();
 
     const navigation = inject(KeyboardNavigation);
@@ -140,13 +145,13 @@ export class BattleScreen {
     if (replay) this.store.start(new ReplayBattleConnection(replay));
   }
 
-  /** Closes the replay (its tab goes away) and goes back to the list. */
+  /** Closes the replay (so the page can be left) and goes back to the list. */
   protected leaveReplay(): void {
     this.store.close();
     void this.router.navigateByUrl('/replays');
   }
 
-  /** Closes the finished battle (its tab goes away) and goes home. */
+  /** Closes the finished battle (so the page can be left) and goes home. */
   protected leave(): void {
     this.store.close();
     void this.router.navigateByUrl('/');

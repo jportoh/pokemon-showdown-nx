@@ -2,6 +2,7 @@ import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject,
 import { stepAnimation } from '@features/battle/animation/step-animation';
 import { BattlePokemon } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
+import { STATUS } from '@features/battle/state/status-conditions';
 
 /** How a box stands out while a move plays: its user, or one of its targets. */
 export type HpBoxEmphasis = 'attacker' | 'target';
@@ -27,15 +28,6 @@ const STATS: [string, string][] = [
   ['accuracy', 'Acc'],
   ['evasion', 'Eva'],
 ];
-
-const STATUS: Record<string, { text: string; name: string; color: string }> = {
-  brn: { text: 'BRN', name: 'burned', color: '#c2410c' },
-  par: { text: 'PAR', name: 'paralyzed', color: '#a16207' },
-  psn: { text: 'PSN', name: 'poisoned', color: '#7e22ce' },
-  tox: { text: 'TOX', name: 'badly poisoned', color: '#7e22ce' },
-  slp: { text: 'SLP', name: 'asleep', color: '#4b5563' },
-  frz: { text: 'FRZ', name: 'frozen', color: '#0369a1' },
-};
 
 const RAISED_COLOR = '#15803d';
 const LOWERED_COLOR = '#b91c1c';
@@ -183,6 +175,6 @@ export class BattleHpBox {
 }
 
 /** Green, then yellow under half, red under a fifth, as in the games. */
-function barColor(fraction: number): string {
+export function barColor(fraction: number): string {
   return fraction > 0.5 ? '#38c060' : fraction > 0.2 ? '#e0b020' : '#e04030';
 }

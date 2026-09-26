@@ -84,6 +84,11 @@ export class MockBattleConnection implements BattleConnection {
       '|gametype|doubles',
       '|gen|9',
       `|tier|${this.dex.format.name}`,
+      // Team preview, as Showdown shows it in VGC: both teams' species before the battle starts.
+      '|clearpoke',
+      ...[this.player, this.rival].flatMap((side) =>
+        side.team.map((pokemon) => `|poke|${side.id}|${this.details(pokemon)}|`),
+      ),
       '|start',
     ];
     for (const side of [this.player, this.rival]) {

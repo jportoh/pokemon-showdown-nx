@@ -1,8 +1,8 @@
 import { Service, signal } from '@angular/core';
 
 /**
- * Whether there's a battle to go back to, for the header's Battle tab and the /battle route. Kept
- * apart from BattleStore (which needs the game data) so the header and the lobby stay light: the
+ * Whether a battle is open, for the /battle route (which can't be left while one is). Kept
+ * apart from BattleStore (which needs the game data) so the router and the lobby stay light: the
  * battle code only loads with the battle page.
  */
 @Service()

@@ -79,9 +79,13 @@ export function turnsLeft(condition: FieldCondition, turn: number): number | nul
   return Math.max(1, left);
 }
 
-/** "Rain · 3", "Spikes ×2", "Stealth Rock". */
-export function conditionLabel(condition: FieldCondition, turn: number): string {
+/**
+ * Turns left out of the condition's length (3 more once an item has made it last longer), for the
+ * turn counters; null for conditions that stay until removed.
+ */
+export function conditionTurns(condition: FieldCondition, turn: number): { left: number; total: number } | null {
   const left = turnsLeft(condition, turn);
-  const layers = condition.layers > 1 ? ` ×${condition.layers}` : '';
-  return left === null ? `${condition.name}${layers}` : `${condition.name} · ${left}`;
+  if (left === null || !condition.duration) return null;
+  const extended = !!condition.extendable && condition.start + condition.duration - Math.max(1, turn) <= 0;
+  return { left, total: condition.duration + (extended ? 3 : 0) };
 }

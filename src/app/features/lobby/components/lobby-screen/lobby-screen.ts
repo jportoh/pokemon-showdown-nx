@@ -14,10 +14,7 @@ export class LobbyScreen {
   private readonly router = inject(Router);
   private readonly battle = inject(BattleSession);
 
-  /**
-   * Battles run against the mock server for now, with the first team. One battle at a time: with one
-   * open, this goes back to it.
-   */
+  /** Battles run against the mock server for now, with the first team. */
   protected startBattle(): void {
     if (!this.battle.active()) this.battle.requestStart();
     void this.router.navigateByUrl('/battle');

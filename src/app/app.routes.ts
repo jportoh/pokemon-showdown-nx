@@ -5,6 +5,16 @@ import { MainLayout } from '@core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
   {
+    // A battle takes the whole stage, without the header: once it starts there's no leaving it until
+    // it's over (the screen closes it before navigating away, as the replay controls do).
+    path: 'battle',
+    // Only while there's a battle to show (a reload, or a battle closed, lands on home).
+    canActivate: [() => inject(BattleSession).canOpen() || inject(Router).parseUrl('/')],
+    canDeactivate: [() => !inject(BattleSession).active()],
+    loadComponent: () =>
+      import('@features/battle/components/battle-screen/battle-screen').then((c) => c.BattleScreen),
+  },
+  {
     // The layout (header and tabs) stays mounted; navigation only swaps the child page.
     path: '',
     component: MainLayout,
@@ -26,15 +36,6 @@ export const routes: Routes = [
         path: 'replays',
         loadComponent: () =>
           import('@features/replays/components/replay-list/replay-list').then((c) => c.ReplayList),
-      },
-      {
-        path: 'battle',
-        // Only while there's a battle to show (a reload, or a battle closed, lands on home).
-        canActivate: [() => inject(BattleSession).canOpen() || inject(Router).parseUrl('/')],
-        loadComponent: () =>
-          import('@features/battle/components/battle-screen/battle-screen').then(
-            (c) => c.BattleScreen,
-          ),
       },
     ],
   },

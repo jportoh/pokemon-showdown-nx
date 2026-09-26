@@ -132,6 +132,21 @@ export interface EffectPopup {
   name: string;
 }
 
+/** HP lost or restored, shown as "-45%" or "+12%" by the Pokémon's status box as its bar moves. */
+export interface HpChange {
+  id: number;
+  slot: SlotKey;
+  /** Percentage points of its HP, negative when lost. */
+  change: number;
+}
+
+/** A status condition just inflicted ("brn", "par"…), shown as "Burned!" over the Pokémon. */
+export interface StatusChange {
+  id: number;
+  slot: SlotKey;
+  status: string;
+}
+
 /**
  * Something the field animates on a slot: a direct hit (the Pokémon blinks), a faint (it sinks out of
  * sight), a withdrawal (it leaves towards its trainer's side), a send-out (the new one comes in), a

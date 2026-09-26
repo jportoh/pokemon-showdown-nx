@@ -1,51 +1,87 @@
 import { Component, computed, inject } from '@angular/core';
 import { FieldCondition } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { conditionColor, conditionLabel } from '@features/battle/state/field-conditions';
+import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
 
-const ROW_HEIGHT = 30;
-const CHIP_LEFT = 84;
-const ROW_END = 419;
+const GROUP_WIDTH = 279;
+const GROUP_GAP = 8;
+/** Chips per group; past that, the last one becomes "+N". */
+const MAX_CHIPS = 3;
+const CHIP_WIDTH = 81;
 const CHIP_GAP = 6;
-/** Chip width from its text: about this much per character (bold 12px) plus the padding. */
-const CHAR_PX = 6.8;
-const CHIP_PADDING = 14;
-const MORE_WIDTH = 64;
-/** Characters of a player's name that fit the label column. */
-const MAX_LABEL_CHARS = 8;
+const CHIP_LEFT = 8;
+/** The pips' row inside a chip. */
+const PIPS_WIDTH = 69;
+const PIP_GAP = 2;
+const MAX_PIP_WIDTH = 10;
+/** Longer names get their short form ("Psychic" for Psychic Terrain) to fit a chip. */
+const MAX_NAME_CHARS = 11;
+const MAX_LABEL_CHARS = 30;
+
+interface Pip {
+  left: number;
+  width: number;
+  /** A turn still to come (or a layer). */
+  on: boolean;
+}
 
 interface Chip {
   key: string;
-  text: string;
+  name: string;
   color: string;
   left: number;
-  width: number;
+  /** Turns left out of its length, or its layers (Spikes); none for the ones that simply stay. */
+  pips: Pip[];
 }
 
 /**
- * What's in play on the field, at a glance, with the turns left: weather, terrain and rooms (Trick
- * Room…) on the first row, then each side's conditions (Tailwind, screens, hazards), the opponent's
- * first as on the field. Fixed 427x96 under the battle bar; chips at fixed positions (Brewser
- * layout rules).
+ * What's in play on the field, over the battle box: three groups, the field's own (weather, terrain,
+ * rooms), the opponent's side and the player's (Tailwind, screens, hazards). Each condition is a chip
+ * in its colour with a pip per turn: lit for the turns left, dim for the ones gone (Spikes show their
+ * layers). Fixed 853x76; groups and chips at fixed positions (Brewser layout rules).
  */
 @Component({
   selector: 'app-battle-conditions',
-  host: { class: 'block h-[96px] w-[427px] bg-[#283040]' },
+  host: { class: 'block h-[76px] w-[853px]' },
   template: `
-    <div class="relative h-[96px] w-[427px]" role="group" aria-label="Field conditions">
-      @for (row of rows(); track row.key) {
-        <div class="absolute left-0 block h-[26px] w-[427px]" [style.top.px]="row.top" [attr.aria-label]="row.ariaLabel" role="group">
-          <span class="absolute top-0 left-[12px] block h-[26px] w-[66px] overflow-hidden text-sm leading-[26px] font-bold whitespace-nowrap text-gray-200">{{ row.label }}</span>
-          @for (chip of row.chips; track chip.key) {
+    <div class="relative h-[76px] w-[853px]" role="group" aria-label="Field conditions">
+      @for (group of groups(); track group.key) {
+        <div
+          class="absolute top-[6px] block h-[64px] rounded-md bg-card"
+          role="group"
+          [style.left.px]="group.left"
+          [style.width.px]="groupWidth"
+          [attr.aria-label]="group.ariaLabel"
+        >
+          <span
+            aria-hidden="true"
+            class="absolute top-[4px] left-[10px] block h-4 w-[259px] overflow-hidden text-xs leading-4 font-bold whitespace-nowrap text-gray-300 uppercase"
+            >{{ group.label }}</span
+          >
+          @for (chip of group.chips; track chip.key) {
             <span
-              class="absolute top-[1px] block h-6 overflow-hidden rounded-sm text-center text-xs leading-6 font-bold whitespace-nowrap text-white"
+              aria-hidden="true"
+              class="absolute top-[24px] block h-[34px] rounded-sm text-white"
               [style.left.px]="chip.left"
-              [style.width.px]="chip.width"
+              [style.width.px]="chipWidth"
               [style.background-color]="chip.color"
-              >{{ chip.text }}</span
             >
+              <span
+                class="absolute left-[2px] block h-4 w-[77px] overflow-hidden text-center text-xs leading-4 font-bold whitespace-nowrap"
+                [style.top.px]="chip.pips.length > 0 ? 4 : 9"
+                >{{ chip.name }}</span
+              >
+              @for (pip of chip.pips; track $index) {
+                <span
+                  class="absolute top-[23px] block h-[6px] rounded-[1px]"
+                  [style.left.px]="pip.left"
+                  [style.width.px]="pip.width"
+                  [style.background-color]="pip.on ? '#ffffff' : 'rgba(0, 0, 0, 0.35)'"
+                ></span>
+              }
+            </span>
           } @empty {
-            <span class="absolute top-0 left-[84px] block h-[26px] text-sm leading-[26px] text-gray-400">None</span>
+            <span aria-hidden="true" class="absolute top-[30px] left-[10px] block h-5 text-sm leading-5 text-gray-400">None</span>
           }
         </div>
       }
@@ -55,7 +91,10 @@ interface Chip {
 export class BattleConditions {
   private readonly store = inject(BattleStore);
 
-  protected readonly rows = computed(() => {
+  protected readonly groupWidth = GROUP_WIDTH;
+  protected readonly chipWidth = CHIP_WIDTH;
+
+  protected readonly groups = computed(() => {
     const field = this.store.field();
     const sides = this.store.sides();
     const turn = this.store.turn();
@@ -64,47 +103,78 @@ export class BattleConditions {
       { key: 'field', label: 'Field', conditions: global },
       { key: 'p2', label: shortLabel(sides.p2.name || 'Opponent'), conditions: field.sides.p2 },
       { key: 'p1', label: shortLabel(sides.p1.name || 'You'), conditions: field.sides.p1 },
-    ].map((row, i) => {
-      const chips = toChips(row.conditions, turn);
-      const ariaLabel = `${row.label}: ${chips.length > 0 ? chips.map((c) => c.text).join(', ') : 'none'}`;
-      return { key: row.key, label: row.label, top: 6 + i * ROW_HEIGHT, chips, ariaLabel };
+    ].map((group, i) => {
+      const described = group.conditions.map((c) => describe(c, turn)).join(', ');
+      return {
+        key: group.key,
+        label: group.label,
+        left: i * (GROUP_WIDTH + GROUP_GAP),
+        chips: toChips(group.conditions, turn),
+        ariaLabel: `${group.label}: ${described || 'none'}`,
+      };
     });
   });
 }
 
-/**
- * Chips as wide as their text, one after the other. When they don't fit, shorter names ("Psychic ·
- * 3" for Psychic Terrain), and past that a "+N" chip for the rest.
- */
+/** Up to three chips; with more conditions, two and a "+N" chip for the rest. */
 function toChips(conditions: readonly FieldCondition[], turn: number): Chip[] {
-  const full = layout(conditions, (c) => conditionLabel(c, turn));
-  if (full.length === conditions.length) return full;
-  const short = layout(conditions, (c) => conditionLabel({ ...c, name: shortName(c.name) }, turn));
-  if (short.length === conditions.length) return short;
-  const shown = layout(conditions, (c) => conditionLabel({ ...c, name: shortName(c.name) }, turn), MORE_WIDTH + CHIP_GAP);
-  const left = shown.length > 0 ? shown[shown.length - 1].left + shown[shown.length - 1].width + CHIP_GAP : CHIP_LEFT;
-  return [...shown, { key: 'more', text: `+${conditions.length - shown.length}`, color: '#374151', left, width: MORE_WIDTH }];
+  const fits = conditions.length <= MAX_CHIPS;
+  const shown = fits ? conditions : conditions.slice(0, MAX_CHIPS - 1);
+  const chips = shown.map((condition, i) => toChip(condition, turn, i));
+  if (fits) return chips;
+  const more = conditions.length - shown.length;
+  return [
+    ...chips,
+    { key: 'more', name: `+${more}`, color: '#374151', left: chipLeft(shown.length), pips: [] },
+  ];
 }
 
-/** As many chips as fit before the row's end (less the space kept for a "+N" chip). */
-function layout(conditions: readonly FieldCondition[], text: (c: FieldCondition) => string, reserve = 0): Chip[] {
-  const chips: Chip[] = [];
-  let left = CHIP_LEFT;
-  for (const condition of conditions) {
-    const label = text(condition);
-    const width = Math.round(label.length * CHAR_PX + CHIP_PADDING);
-    if (left + width > ROW_END - reserve) break;
-    chips.push({ key: condition.id, text: label, color: conditionColor(condition), left, width });
-    left += width + CHIP_GAP;
-  }
-  return chips;
+function toChip(condition: FieldCondition, turn: number, index: number): Chip {
+  const turns = conditionTurns(condition, turn);
+  const pips = turns
+    ? toPips(turns.total, turns.left)
+    : condition.layers > 1
+      ? toPips(condition.layers, condition.layers)
+      : [];
+  return {
+    key: condition.id,
+    name: condition.name.length > MAX_NAME_CHARS ? shortName(condition.name) : condition.name,
+    color: conditionColor(condition),
+    left: chipLeft(index),
+    pips,
+  };
 }
 
-/** A player's name cut to fit the 66px label column, by hand: text-overflow is untested on Brewser. */
+function chipLeft(index: number): number {
+  return CHIP_LEFT + index * (CHIP_WIDTH + CHIP_GAP);
+}
+
+/** `count` pips centred in the chip, the first `on` of them lit. */
+function toPips(count: number, on: number): Pip[] {
+  const width = Math.min(MAX_PIP_WIDTH, Math.floor((PIPS_WIDTH - PIP_GAP * (count - 1)) / count));
+  const rowWidth = width * count + PIP_GAP * (count - 1);
+  const start = 6 + Math.floor((PIPS_WIDTH - rowWidth) / 2);
+  return Array.from({ length: count }, (_, i) => ({ left: start + i * (width + PIP_GAP), width, on: i < on }));
+}
+
+/** "Tailwind, 3 turns left", "Spikes, 2 layers", "Stealth Rock": what screen readers hear. */
+function describe(condition: FieldCondition, turn: number): string {
+  const turns = conditionTurns(condition, turn);
+  if (turns) return `${condition.name}, ${turns.left} ${turns.left === 1 ? 'turn' : 'turns'} left`;
+  return condition.layers > 1 ? `${condition.name}, ${condition.layers} layers` : condition.name;
+}
+
+/** A player's name cut to fit the group's label, by hand: text-overflow is untested on Brewser. */
 function shortLabel(name: string): string {
   return name.length > MAX_LABEL_CHARS ? `${name.slice(0, MAX_LABEL_CHARS - 1)}…` : name;
 }
 
 function shortName(name: string): string {
-  return name.replace(/ Terrain$/, '').replace('Light Screen', 'Screen').replace('Aurora Veil', 'Veil').replace('Stealth Rock', 'Rocks');
+  return name
+    .replace(/ Terrain$/, '')
+    .replace('Light Screen', 'Screen')
+    .replace('Aurora Veil', 'Veil')
+    .replace('Stealth Rock', 'Rocks')
+    .replace('Toxic Spikes', 'T. Spikes')
+    .replace('Strong winds', 'Winds');
 }

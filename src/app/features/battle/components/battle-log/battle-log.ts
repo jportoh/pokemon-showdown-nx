@@ -11,8 +11,8 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
 
 /**
  * The whole battle log, Showdown style: a turn header per turn, each message, and minor details
- * (HP lost) in smaller grey text. Fixed 427x500 (the right third of the stage, under the battle bar
- * and the field conditions). It follows new entries while the reader is at the bottom, with the chat log's Brewser workarounds:
+ * (HP lost) in smaller grey text. Fixed 415x596 (the right column of the stage, under the battle bar).
+ * It follows new entries while the reader is at the bottom, with the chat log's Brewser workarounds:
  * block rows, padding on an inner block and a repeated scroll to the bottom. Unlike the chat log, it
  * repaints itself on every new entry (see repaint()). The d-pad never focuses it (data-kb-skip):
  * it follows the battle by itself, and a focused log kept the ring after the turn. It stays reachable
@@ -21,7 +21,7 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
 @Component({
   imports: [ScrollRegion],
   selector: 'app-battle-log',
-  host: { class: 'block h-[500px] w-[427px] bg-card' },
+  host: { class: 'block h-[596px] w-[415px] bg-card' },
   template: `
     <div
       #log
@@ -30,7 +30,7 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
       aria-label="Battle log"
       tabindex="0"
       data-kb-skip
-      class="h-[500px] w-[427px] overflow-y-auto text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[596px] w-[415px] overflow-y-auto text-base text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       <div class="p-[8px_12px_12px]">
         @for (entry of store.log(); track entry.id) {

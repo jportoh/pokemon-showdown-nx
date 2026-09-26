@@ -1,10 +1,11 @@
-import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
 import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
-import { BattlePokemon, EffectPopup, FieldEvent, MoveAction, SlotKey } from '@features/battle/models/battle';
+import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SlotKey, StatusChange } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleStore } from '@features/battle/state/battle-store';
+import { STATUS } from '@features/battle/state/status-conditions';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite, spriteUrl } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
@@ -41,6 +42,21 @@ const OWN_BANNER_MAX_LEFT = 480 - BANNER_WIDTH;
 const FOE_BANNER_MAX_LEFT = 853 - 8 - BANNER_WIDTH;
 /** How long an ability's or item's pop-up stays at normal speed (a log step lasts 1100 ms). */
 const POPUP_MS = 1400;
+/** The "-45%" / "+12%" label over a Pokémon: about the length of the HP step it comes with. */
+const HP_LABEL_MS = 1100;
+const HP_LABEL_WIDTH = 76;
+/**
+ * Its top over the sprite: the body's middle for the opponent's, higher on the player's (cut off by the
+ * bottom edge); below the ability and item pop-ups either way.
+ */
+const FOE_HP_LABEL_TOP = 104;
+const OWN_HP_LABEL_TOP = 296;
+const HP_LOST_COLOR = '#b91c1c';
+const HP_RESTORED_COLOR = '#15803d';
+/** "Burned!", "Badly poisoned!": under the HP label, stays as long as an ability pop-up. */
+const STATUS_LABEL_WIDTH = 150;
+const FOE_STATUS_LABEL_TOP = 140;
+const OWN_STATUS_LABEL_TOP = 332;
 
 const DEFAULT_SKY = '#d8ecc0';
 const DEFAULT_GROUND = { ground: '#b0d890', platform: '#90c070', edge: '#6a9a50' };
@@ -195,6 +211,28 @@ interface FieldSlot {
           }
         </div>
       }
+      <!-- HP lost or restored, over the Pokémon while its bar moves; the log says the same. -->
+      @for (label of hpLabels(); track label.slot) {
+        <span
+          aria-hidden="true"
+          class="absolute block h-[32px] w-[76px] rounded-md border-2 border-white text-center text-lg leading-7 font-bold text-white"
+          [style.left.px]="label.left"
+          [style.top.px]="label.top"
+          [style.background-color]="label.color"
+          >{{ label.text }}</span
+        >
+      }
+      <!-- A status just inflicted ("Burned!"), in its colour, under the HP label; the log says it too. -->
+      @for (label of statusLabels(); track label.slot) {
+        <span
+          aria-hidden="true"
+          class="absolute block h-[32px] w-[150px] rounded-md border-2 border-white text-center text-base leading-7 font-bold text-white"
+          [style.left.px]="label.left"
+          [style.top.px]="label.top"
+          [style.background-color]="label.color"
+          >{{ label.text }}</span
+        >
+      }
       @if (banner(); as b) {
         <div
           role="status"
@@ -218,6 +256,7 @@ export class BattleField {
   protected readonly store = inject(BattleStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly renderScheduler = inject(RenderScheduler);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly dex = inject(ChampionsDex);
   /** Sprites already asked for, so team preview's are fetched once. */
   private readonly preloaded = new Set<string>();
@@ -253,7 +292,7 @@ export class BattleField {
     return { move: action.move, detail, color: typeColor(action.type) || '#374151', ...this.bannerPosition(action.attacker, 0) };
   });
 
-  /** The pop-ups being shown, one per slot at most; each goes after POPUP_MS (see the constructor). */
+  /** The pop-ups being shown, one per slot at most; each goes after POPUP_MS (see showBySlot). */
   private readonly shownPopups = signal<readonly EffectPopup[]>([]);
 
   protected readonly popupBanners = computed(() =>
@@ -263,6 +302,35 @@ export class BattleField {
       owner: this.pokemonAt(popup.slot)?.name ?? '',
       ...this.bannerPosition(popup.slot, 46),
     })),
+  );
+
+  /** The HP labels being shown, one per slot at most; each goes after HP_LABEL_MS. */
+  private readonly shownHpChanges = signal<readonly HpChange[]>([]);
+
+  protected readonly hpLabels = computed(() =>
+    this.shownHpChanges().map(({ slot, change }) => ({
+      slot,
+      text: `${change > 0 ? '+' : ''}${change}%`,
+      color: change < 0 ? HP_LOST_COLOR : HP_RESTORED_COLOR,
+      ...this.hpLabelPosition(slot),
+    })),
+  );
+
+  /** The status labels being shown, one per slot at most; each goes after POPUP_MS. */
+  private readonly shownStatusChanges = signal<readonly StatusChange[]>([]);
+
+  protected readonly statusLabels = computed(() =>
+    this.shownStatusChanges().map(({ slot, status }) => {
+      const info = STATUS[status];
+      const name = info?.name ?? status;
+      return {
+        slot,
+        text: `${name[0].toUpperCase()}${name.slice(1)}!`,
+        color: info?.color ?? '#374151',
+        left: this.centredOver(slot, STATUS_LABEL_WIDTH),
+        top: slot.startsWith('p1') ? OWN_STATUS_LABEL_TOP : FOE_STATUS_LABEL_TOP,
+      };
+    }),
   );
 
   /** One shield per slot, centred on the sprite. */
@@ -318,35 +386,9 @@ export class BattleField {
         else this.slide(event);
       });
     });
-    // Each new pop-up replaces its slot's current one, stays for a while, then goes.
-    let lastSeen = -1;
-    const popupTimers = new Map<SlotKey, ReturnType<typeof setTimeout>>();
-    effect(() => {
-      const popups = this.store.popups();
-      untracked(() => {
-        // A new battle empties the list: its pop-ups go with it.
-        if (popups.length === 0) {
-          popupTimers.forEach((timer) => clearTimeout(timer));
-          popupTimers.clear();
-          this.shownPopups.set([]);
-          return;
-        }
-        for (const popup of popups.filter((p) => p.id > lastSeen)) {
-          lastSeen = popup.id;
-          clearTimeout(popupTimers.get(popup.slot));
-          this.shownPopups.update((shown) => [...shown.filter((p) => p.slot !== popup.slot), popup]);
-          popupTimers.set(
-            popup.slot,
-            setTimeout(() => {
-              popupTimers.delete(popup.slot);
-              this.shownPopups.update((shown) => shown.filter((p) => p.id !== popup.id));
-              this.renderScheduler.request();
-            }, POPUP_MS / this.store.speed()),
-          );
-        }
-      });
-    });
-    inject(DestroyRef).onDestroy(() => popupTimers.forEach((timer) => clearTimeout(timer)));
+    this.showBySlot(this.store.popups, this.shownPopups, POPUP_MS);
+    this.showBySlot(this.store.hpChanges, this.shownHpChanges, HP_LABEL_MS);
+    this.showBySlot(this.store.statusChanges, this.shownStatusChanges, POPUP_MS);
 
     // Team preview lists every Pokémon that may come out: their sprites are fetched ahead, so a
     // send-out doesn't wait for the download (the player's side is seen from behind).
@@ -357,7 +399,7 @@ export class BattleField {
         p2.preview.forEach((species) => this.preload(species, false));
       });
     });
-    inject(DestroyRef).onDestroy(() => this.running.forEach((stop) => stop()));
+    this.destroyRef.onDestroy(() => this.running.forEach((stop) => stop()));
   }
 
   private preload(species: string, back: boolean): void {
@@ -372,6 +414,56 @@ export class BattleField {
    * player's own (short of their status boxes). `drop` lowers it, so an ability's pop-up clears
    * the move banner.
    */
+  /**
+   * Shows the store's latest pop-ups (or HP labels), one per slot: each new one replaces its slot's
+   * current one, stays for `ms` (at normal speed), then goes. A new battle empties the list, and its
+   * pop-ups go with it.
+   */
+  private showBySlot<T extends { id: number; slot: SlotKey }>(
+    source: () => readonly T[],
+    shown: WritableSignal<readonly T[]>,
+    ms: number,
+  ): void {
+    let lastSeen = -1;
+    const timers = new Map<SlotKey, ReturnType<typeof setTimeout>>();
+    effect(() => {
+      const items = source();
+      untracked(() => {
+        if (items.length === 0) {
+          timers.forEach((timer) => clearTimeout(timer));
+          timers.clear();
+          shown.set([]);
+          return;
+        }
+        for (const item of items.filter((i) => i.id > lastSeen)) {
+          lastSeen = item.id;
+          clearTimeout(timers.get(item.slot));
+          shown.update((current) => [...current.filter((i) => i.slot !== item.slot), item]);
+          timers.set(
+            item.slot,
+            setTimeout(() => {
+              timers.delete(item.slot);
+              shown.update((current) => current.filter((i) => i.id !== item.id));
+              this.renderScheduler.request();
+            }, ms / this.store.speed()),
+          );
+        }
+      });
+    });
+    this.destroyRef.onDestroy(() => timers.forEach((timer) => clearTimeout(timer)));
+  }
+
+  /** Over the Pokémon, centred on its sprite. */
+  private hpLabelPosition(slot: SlotKey): { left: number; top: number } {
+    return { left: this.centredOver(slot, HP_LABEL_WIDTH), top: slot.startsWith('p1') ? OWN_HP_LABEL_TOP : FOE_HP_LABEL_TOP };
+  }
+
+  /** The left of a label `width` wide centred on the slot's sprite. */
+  private centredOver(slot: SlotKey, width: number): number {
+    const from = this.slotData(slot);
+    return Math.round((from?.left ?? 0) + (from?.size ?? 0) / 2 - width / 2);
+  }
+
   private bannerPosition(slot: SlotKey, drop: number): { left: number; top: number } {
     const from = this.slotData(slot);
     const own = slot.startsWith('p1');

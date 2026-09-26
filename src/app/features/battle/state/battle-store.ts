@@ -6,6 +6,8 @@ import {
   BattleFieldState,
   FieldCondition,
   EffectPopup,
+  HpChange,
+  StatusChange,
   FieldEvent,
   MoveAction,
   BattleLogEntry,
@@ -72,8 +74,8 @@ const emptySide = (id: SideId): BattleSide => ({
  * play back one step at a time: each step updates the field and adds its entry to the battle log,
  * then waits. The server's request is held until the log leading up to it has played.
  * A replay is watched from p1's side, with the same playback plus pause, speed and skip to next turn.
- * A root service, so the battle carries on (and can be returned to from the header's Battle tab)
- * while the player visits other pages.
+ * A root service, so the battle page's components share it; the page can't be left while a battle
+ * is open (see app.routes).
  */
 @Service()
 export class BattleStore {
@@ -100,6 +102,8 @@ export class BattleStore {
   private readonly actionSignal = signal<MoveAction | null>(null);
   private readonly fieldEventSignal = signal<FieldEvent | null>(null);
   private readonly popupsSignal = signal<readonly EffectPopup[]>([]);
+  private readonly hpChangesSignal = signal<readonly HpChange[]>([]);
+  private readonly statusChangesSignal = signal<readonly StatusChange[]>([]);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -134,6 +138,10 @@ export class BattleStore {
    * lines with nothing to wait for play in one go and may bring several.
    */
   readonly popups = this.popupsSignal.asReadonly();
+  /** The latest HP changes (a few), for the field's "-45%" / "+12%" labels. */
+  readonly hpChanges = this.hpChangesSignal.asReadonly();
+  /** The latest status conditions inflicted (a few), for the field's "Burned!" labels. */
+  readonly statusChanges = this.statusChangesSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -170,7 +178,7 @@ export class BattleStore {
     connection.start((frame) => this.receive(frame));
   }
 
-  /** Leaves the battle for good: the Battle tab goes away. */
+  /** Leaves the battle for good: the battle page can be left again. */
   close(): void {
     this.reset();
     this.replaySignal.set(null);
@@ -192,6 +200,8 @@ export class BattleStore {
     this.actionSignal.set(null);
     this.fieldEventSignal.set(null);
     this.popupsSignal.set([]);
+    this.hpChangesSignal.set([]);
+    this.statusChangesSignal.set([]);
     this.withdrawn = null;
     this.blinkedHits.clear();
   }
@@ -380,6 +390,7 @@ export class BattleStore {
         return HP_MS;
       case '-status':
         this.updatePokemon(args[0], (p) => ({ ...p, status: args[1] }));
+        this.showStatus(args[0], args[1]);
         return this.say(statusText(args[0], args[1], names));
       case '-curestatus':
         this.updatePokemon(args[0], (p) => ({ ...p, status: '' }));
@@ -666,13 +677,29 @@ export class BattleStore {
     });
   }
 
-  /** Showdown's "(The opposing Garchomp lost 45% of its health!)", as a minor log line. */
+  /**
+   * Showdown's "(The opposing Garchomp lost 45% of its health!)", as a minor log line, and the same
+   * change for the field's label over the Pokémon.
+   */
   private logHpChange(ident: string, before: BattlePokemon, after: BattlePokemon): void {
     const percent = (p: BattlePokemon) => (p.maxHp > 0 ? (p.hp / p.maxHp) * 100 : 0);
     const change = Math.round(percent(after) - percent(before));
     if (change === 0) return;
     const verb = change < 0 ? 'lost' : 'restored';
     this.addEntry('minor', `(${this.label(ident)} ${verb} ${Math.abs(change)}% of its health!)`);
+    const slot = this.slotOf(ident);
+    if (slot) {
+      const hpChange = { id: this.nextEventId++, slot, change };
+      this.hpChangesSignal.update((changes) => [...changes, hpChange].slice(-MAX_POPUPS));
+    }
+  }
+
+  /** A status just inflicted, for the field's label over the Pokémon ("Burned!"). */
+  private showStatus(ident: string, status: string | undefined): void {
+    const slot = this.slotOf(ident);
+    if (!slot || !status) return;
+    const change = { id: this.nextEventId++, slot, status };
+    this.statusChangesSignal.update((changes) => [...changes, change].slice(-MAX_POPUPS));
   }
 
   private findPokemon(ident: string): BattlePokemon | undefined {
