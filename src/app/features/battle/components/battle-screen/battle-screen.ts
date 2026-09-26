@@ -6,7 +6,6 @@ import { BattleConditions } from '@features/battle/components/battle-conditions/
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
-import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { MockBattleConnection } from '@features/battle/mock/mock-battle-connection';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
@@ -32,7 +31,7 @@ const FORFEIT_CONFIRM_MS = 4000;
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleLog, BattleTeamPreview, ReplayControls],
+  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleTeamPreview, ReplayControls],
   host: { class: 'block h-[720px] w-[1280px] bg-header' },
   template: `
     <div class="relative h-[720px] w-[1280px]">
@@ -75,7 +74,8 @@ const FORFEIT_CONFIRM_MS = 4000;
           </button>
         }
       </div>
-      <app-battle-log class="absolute top-[124px] left-[865px]" />
+      <!-- TEST (2026-09-26): the battle log is off, to see whether it slows long battles on the console. -->
+      <div class="absolute top-[124px] left-[865px] block h-[596px] w-[415px] bg-card p-[12px] text-base leading-6 text-gray-300">No log for testing</div>
     </div>
   `,
 })
