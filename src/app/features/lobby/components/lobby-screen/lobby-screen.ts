@@ -1,7 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { BattleSession } from '@features/battle/state/battle-session';
-import { BattleFinder } from '@features/lobby/components/battle-finder/battle-finder';
+import { BattleFinder, BattleRequest } from '@features/lobby/components/battle-finder/battle-finder';
 import { LobbyChat } from '@features/lobby/components/lobby-chat/lobby-chat';
 
 @Component({
@@ -14,9 +14,9 @@ export class LobbyScreen {
   private readonly router = inject(Router);
   private readonly battle = inject(BattleSession);
 
-  /** Battles run against the mock server for now, with the first team. */
-  protected startBattle(): void {
-    if (!this.battle.active()) this.battle.requestStart();
+  /** Battles run against the mock server for now, in the format picked (VGC with the first team, or Random Battle). */
+  protected startBattle(request: BattleRequest): void {
+    if (!this.battle.active()) this.battle.requestStart(request.format);
     void this.router.navigateByUrl('/battle');
   }
 

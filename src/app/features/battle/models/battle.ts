@@ -21,6 +21,8 @@ export interface RequestMove {
 export interface RequestActive {
   moves: RequestMove[];
   canMegaEvo?: boolean;
+  /** The Tera type it can Terastallize into this turn (once per battle, Gen 9). */
+  canTerastallize?: string;
 }
 
 /** One of the player's Pokémon in a request. */
@@ -174,7 +176,7 @@ export interface BattleLogEntry {
 
 /** One slot's choice while the player picks the turn's actions. */
 export type SlotChoice =
-  | { kind: 'move'; move: number; target?: number; mega?: boolean }
+  | { kind: 'move'; move: number; target?: number; mega?: boolean; tera?: boolean }
   | { kind: 'switch'; slot: number }
   | { kind: 'pass' };
 

@@ -9,12 +9,13 @@ import { BattleHeader } from '@features/battle/components/battle-header/battle-h
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
-import { MockBattleConnection } from '@features/battle/mock/mock-battle-connection';
+import { MockBattleConnection, mockFormat } from '@features/battle/mock/mock-battle-connection';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { TeamStore } from '@features/teambuilder/state/team-store';
+import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
 
 /** How long the forfeit confirmation waits for the second press. */
@@ -29,7 +30,7 @@ const FORFEIT_CONFIRM_MS = 4000;
  * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
  * side's and the player's team. The battle log shows over the field's right part only on request
  * (hidden, not removed: see BattleLog). The battle itself lives in root services.
- * Controller: L toggles Mega Evolution while choosing a move, R forfeits (pressed twice), ZL or ZR
+ * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL or ZR
  * shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
  * controls and has nothing to forfeit.
  */
@@ -83,6 +84,9 @@ export class BattleScreen {
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
 
+  /** The format of the battles this page starts (the lobby's pick). */
+  private format = DEFAULT_TEAM_FORMAT;
+
   protected readonly confirmingForfeit = signal(false);
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,11 +95,16 @@ export class BattleScreen {
   private focusBeforeLog: HTMLElement | null = null;
 
   constructor() {
-    // Opened from the lobby's Battle! button: a new battle. From the replay list: the replay it started.
-    if (this.session.takeStartRequest()) this.start();
+    // Opened from the lobby's Battle! button: a new battle in the format picked there. From the replay
+    // list: the replay it started.
+    const format = this.session.takeStartRequest();
+    if (format) {
+      this.format = format;
+      this.start();
+    }
 
     const unregister = [
-      this.navigation.registerButton('buttonL', () => this.toggleMega()),
+      this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
       this.navigation.registerButton('buttonZL', () => this.toggleLog()),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
@@ -106,18 +115,24 @@ export class BattleScreen {
     });
   }
 
-  /** A new battle with the first team that has Pokémon (random Pokémon fill the rest). */
+  /**
+   * A new battle against the mock server, in the format picked in the lobby (again for a rematch): VGC
+   * with the first team that has Pokémon (random Pokémon fill the rest), or a Random Battle.
+   */
   protected start(): void {
-    const team = this.teams.teams().find((t) => t.sets.length > 0);
+    const format = mockFormat(this.format);
+    const team = format.randomTeams ? undefined : this.teams.teams().find((t) => t.sets.length > 0);
     this.cancelForfeit();
-    this.store.start(new MockBattleConnection(this.dex, 'Player', team?.sets ?? []));
+    this.store.start(new MockBattleConnection(this.dex, format, 'Player', team?.sets ?? []));
   }
 
-  /** L: only while the move buttons are shown and this Pokémon can Mega Evolve. */
-  private toggleMega(): boolean {
+  /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */
+  private toggleMegaOrTera(): boolean {
     const choosingMove = this.choices.slot() !== null && !this.choices.pendingMove() && !this.choices.forceSwitch();
-    if (!choosingMove || !this.choices.canMega()) return false;
-    this.choices.toggleMega();
+    if (!choosingMove) return false;
+    if (this.choices.canMega()) this.choices.toggleMega();
+    else if (this.choices.teraType()) this.choices.toggleTera();
+    else return false;
     return true;
   }
 

@@ -17,13 +17,13 @@ import { ReplaySummary } from '@features/battle/models/battle';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
-import { REPLAY_FORMATS, ReplayFormat } from '@features/replays/data/replay-formats';
+import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
 
 /** Rows shown at once: 64px each in the 579px under the bar. */
 const VISIBLE_ROWS = 9;
 
 /** The format last picked, so coming back from a replay lists the same one. */
-let lastFormat: ReplayFormat = REPLAY_FORMATS[0];
+let lastFormat: PlayableFormat = PLAYABLE_FORMATS[0];
 
 interface ReplayRow extends ReplaySummary {
   title: string;
@@ -114,7 +114,7 @@ export class ReplayList {
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
 
   protected readonly visibleRows = VISIBLE_ROWS;
-  protected readonly formats = REPLAY_FORMATS;
+  protected readonly formats = PLAYABLE_FORMATS;
   protected readonly format = signal(lastFormat);
   /** Counts searches, so an answer for a format no longer picked is dropped. */
   private searchId = 0;
@@ -163,7 +163,7 @@ export class ReplayList {
   }
 
   /** Lists another format's replays (the list empties while they load). */
-  protected pickFormat(format: ReplayFormat): void {
+  protected pickFormat(format: PlayableFormat): void {
     if (format.id === this.format().id) return;
     lastFormat = format;
     this.format.set(format);

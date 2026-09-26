@@ -15,7 +15,26 @@ export const TEAM_FORMATS: readonly BattleFormat[] = [{ id: 'gen9championsvgc202
 /** The format of new and imported teams. */
 export const DEFAULT_TEAM_FORMAT = TEAM_FORMATS[0].id;
 
+/** A format battles can be played (against the mock server for now) and watched in. */
+export interface PlayableFormat extends BattleFormat {
+  /** Short, for buttons and the format picker. */
+  label: string;
+  /** Teams are handed out at random: no team of the player's is needed. */
+  randomTeams: boolean;
+}
+
+export const RANDOM_BATTLE_FORMAT = 'gen9randombattle';
+
+/**
+ * The formats the Battle Finder and the replay list offer: the teambuilder's VGC format (doubles) and
+ * Random Battle (singles).
+ */
+export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
+  { id: DEFAULT_TEAM_FORMAT, name: TEAM_FORMATS[0].name, label: 'VGC 2026 Reg M-C', randomTeams: false },
+  { id: RANDOM_BATTLE_FORMAT, name: '[Gen 9] Random Battle', label: 'Gen 9 Random Battle', randomTeams: true },
+];
+
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */
 export function formatName(id: string): string {
-  return TEAM_FORMATS.find((format) => format.id === id)?.name ?? id;
+  return [...TEAM_FORMATS, ...PLAYABLE_FORMATS].find((format) => format.id === id)?.name ?? id;
 }

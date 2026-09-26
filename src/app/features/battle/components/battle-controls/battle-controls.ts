@@ -103,6 +103,21 @@ const ROW_TOPS = [36, 96];
                 ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ choices.mega() ? ' Mega Evolving' : ' Mega Evolve' }}</span
               >
             </button>
+          } @else if (choices.teraType(); as teraType) {
+            <!-- Terastallize, as Mega Evolve: L on the controller. Its type is named, on its colour once chosen. -->
+            <button
+              type="button"
+              data-kb-skip
+              class="absolute top-0 left-[641px] h-7 w-[168px] rounded-md border text-sm font-bold"
+              [class]="choices.tera() ? 'border-cyan-200' : 'border-gray-400 bg-gray-700 hover:bg-gray-600'"
+              [style.background-color]="choices.tera() ? teraColor() : null"
+              [attr.aria-pressed]="choices.tera()"
+              (click)="choices.toggleTera()"
+            >
+              <span class="block h-[26px] text-center leading-[26px]"
+                ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ ' Tera ' + teraType }}</span
+              >
+            </button>
           }
           @if (choices.canGoBack()) {
             <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
@@ -199,6 +214,8 @@ export class BattleControls {
       };
     }),
   );
+
+  protected readonly teraColor = computed(() => typeColor(this.choices.teraType()) || '#374151');
 
   protected readonly watchingTitle = computed(() => {
     if (this.store.playing()) return this.store.turn() > 0 ? `Turn ${this.store.turn()} in progress…` : 'The battle is starting…';

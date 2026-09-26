@@ -52,7 +52,7 @@ export interface SwitchOption {
 /**
  * The turn's choices, built one active slot at a time from the store's request: a move (and its
  * target, when there's one to pick) or a switch for each slot, then sent together as Showdown's
- * choice string ("move 1 2 mega, switch 3"). `back()` undoes one step. A root service like the
+ * choice string ("move 1 2 mega, switch 3", "move 3 terastallize"). `back()` undoes one step. A root service like the
  * store, so half-made choices survive a visit to another page.
  */
 @Service()
@@ -66,12 +66,14 @@ export class BattleChoices {
     computation: () => [],
   });
   /** The move waiting for its target to be picked. */
-  readonly pendingMove = linkedSignal<unknown, { move: number; mega: boolean } | null>({
+  readonly pendingMove = linkedSignal<unknown, { move: number; mega: boolean; tera: boolean } | null>({
     source: this.choices,
     computation: () => null,
   });
   /** Whether the slot being chosen for will Mega Evolve. */
   readonly mega = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
+  /** Whether the slot being chosen for will Terastallize. */
+  readonly tera = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
 
   private readonly request = this.store.request;
 
@@ -119,6 +121,13 @@ export class BattleChoices {
     return !this.choices().some((choice) => choice.kind === 'move' && choice.mega);
   });
 
+  /** The Tera type the slot being chosen for can Terastallize into; '' when it can't (once per battle). */
+  readonly teraType = computed(() => {
+    const slot = this.slot();
+    const type = slot === null ? '' : (this.request()?.active?.[slot]?.canTerastallize ?? '');
+    return type && !this.choices().some((choice) => choice.kind === 'move' && choice.tera) ? type : '';
+  });
+
   /** Whether there's an earlier step to go back to. */
   readonly canGoBack = computed(() => this.pendingMove() !== null || this.choices().some((choice) => choice.kind !== 'pass'));
 
@@ -157,11 +166,12 @@ export class BattleChoices {
     const move = this.moves()[index];
     if (!move || move.disabled) return;
     const mega = this.canMega() && this.mega();
+    const tera = !!this.teraType() && this.tera();
     if (!CHOSEN_TARGETS.includes(move.target) || this.slotCount() < 2) {
-      this.add({ kind: 'move', move: index + 1, mega });
+      this.add({ kind: 'move', move: index + 1, mega, tera });
       return;
     }
-    this.pendingMove.set({ move: index, mega });
+    this.pendingMove.set({ move: index, mega, tera });
     // Nothing to pick when only one Pokémon can be targeted.
     const allowed = this.targetOptions().filter((option) => option.allowed);
     if (allowed.length === 1) this.chooseTarget(allowed[0].target);
@@ -170,7 +180,7 @@ export class BattleChoices {
   chooseTarget(target: number): void {
     const pending = this.pendingMove();
     if (!pending) return;
-    this.add({ kind: 'move', move: pending.move + 1, target, mega: pending.mega });
+    this.add({ kind: 'move', move: pending.move + 1, target, mega: pending.mega, tera: pending.tera });
   }
 
   chooseSwitch(index: number): void {
@@ -180,6 +190,10 @@ export class BattleChoices {
 
   toggleMega(): void {
     this.mega.update((mega) => !mega);
+  }
+
+  toggleTera(): void {
+    this.tera.update((tera) => !tera);
   }
 
   /** Cancels the target picker, or the previous slot's choice. */
@@ -222,7 +236,9 @@ export class BattleChoices {
         const move = request.active?.[slot]?.moves[choice.move - 1];
         const type = this.dex.move(move?.id ?? '')?.type ?? '';
         const target = choice.target === undefined ? TARGET_LABELS[move?.target ?? ''] ?? '' : `→ ${this.targetName(choice.target)}`;
-        const detail = [type, target, choice.mega ? 'Mega Evolving' : ''].filter(Boolean).join(' · ');
+        const teraType = request.active?.[slot]?.canTerastallize;
+        const special = choice.mega ? 'Mega Evolving' : choice.tera ? `Terastallizing into ${teraType}` : '';
+        const detail = [type, target, special].filter(Boolean).join(' · ');
         return { slot, name, action: move?.move ?? 'Move', detail, type };
       }
       case 'pass':
@@ -263,7 +279,9 @@ function targetAllowed(type: string, foe: boolean, self: boolean): boolean {
 function toChoiceString(choice: SlotChoice): string {
   switch (choice.kind) {
     case 'move':
-      return ['move', choice.move, choice.target, choice.mega ? 'mega' : undefined].filter((part) => part !== undefined).join(' ');
+      return ['move', choice.move, choice.target, choice.mega ? 'mega' : undefined, choice.tera ? 'terastallize' : undefined]
+        .filter((part) => part !== undefined)
+        .join(' ');
     case 'switch':
       return `switch ${choice.slot}`;
     case 'pass':

@@ -32,3 +32,6 @@ export function effectiveness(type: string, defender: readonly string[]): number
     return total;
   }, 1);
 }
+
+/** Every type, in the chart's order (Tera types are picked from these). */
+export const TYPES: readonly string[] = Object.keys(CHART);

@@ -8,26 +8,27 @@ import { Service, signal } from '@angular/core';
 @Service()
 export class BattleSession {
   private readonly activeSignal = signal(false);
-  private startRequested = false;
+  /** The format of the battle the page should start; null when none was asked for. */
+  private startRequested: string | null = null;
 
   /** A battle is open (in progress or finished but not closed yet). */
   readonly active = this.activeSignal.asReadonly();
 
-  /** Asks the battle page to start a new battle when it opens. */
-  requestStart(): void {
-    this.startRequested = true;
+  /** Asks the battle page to start a new battle in a format (its ID) when it opens. */
+  requestStart(format: string): void {
+    this.startRequested = format;
   }
 
-  /** Whether the page should start a battle (used once). */
-  takeStartRequest(): boolean {
+  /** The format of the battle the page should start, if any (used once). */
+  takeStartRequest(): string | null {
     const requested = this.startRequested;
-    this.startRequested = false;
+    this.startRequested = null;
     return requested;
   }
 
   /** Whether /battle has anything to show. */
   canOpen(): boolean {
-    return this.activeSignal() || this.startRequested;
+    return this.activeSignal() || this.startRequested !== null;
   }
 
   setActive(active: boolean): void {
