@@ -23,11 +23,18 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'replays',
+        loadComponent: () =>
+          import('@features/replays/components/replay-list/replay-list').then((c) => c.ReplayList),
+      },
+      {
         path: 'battle',
         // Only while there's a battle to show (a reload, or a battle closed, lands on home).
         canActivate: [() => inject(BattleSession).canOpen() || inject(Router).parseUrl('/')],
         loadComponent: () =>
-          import('@features/battle/components/battle-screen/battle-screen').then((c) => c.BattleScreen),
+          import('@features/battle/components/battle-screen/battle-screen').then(
+            (c) => c.BattleScreen,
+          ),
       },
     ],
   },

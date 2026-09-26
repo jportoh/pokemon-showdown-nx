@@ -1,4 +1,4 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, linkedSignal } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 
 const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
@@ -7,7 +7,8 @@ const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
  * A Pokémon's sprite from Showdown (96x96 PNGs; play.pokemonshowdown.com is allow-listed in the
  * Brewser submission). One plain image per Pokémon: Brewser doesn't cut icons out of a sprite sheet
  * correctly (it ignores background-position and scales the sheet, seen on device). Decorative: the
- * name is always shown next to it.
+ * name is always shown next to it. Some sprites have no back view (the Megas new in Champions, such as
+ * Golisopod-Mega): those fall back to the front one.
  */
 @Component({
   selector: 'app-pokemon-sprite',
@@ -15,7 +16,7 @@ const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
   host: { class: 'block' },
   template: `
     @if (url(); as src) {
-      <img [ngSrc]="src" [width]="size()" [height]="size()" alt="" class="block" />
+      <img [ngSrc]="src" [width]="size()" [height]="size()" alt="" class="block" (error)="backMissing.set(true)" />
     }
   `,
 })
@@ -27,8 +28,11 @@ export class PokemonSprite {
   /** Seen from behind, as the player's own Pokémon in battle. */
   readonly back = input(false);
 
+  /** The back sprite failed to load; starts over with every sprite. */
+  protected readonly backMissing = linkedSignal({ source: this.sprite, computation: () => false });
+
   protected readonly url = computed(() => {
-    const folder = this.back() ? 'gen5-back' : 'gen5';
+    const folder = this.back() && !this.backMissing() ? 'gen5-back' : 'gen5';
     return this.sprite() ? `${SPRITES_URL}/${folder}/${this.sprite()}.png` : '';
   });
 }

@@ -70,6 +70,8 @@ export interface BattleSide {
   active: (BattlePokemon | null)[];
   /** Every Pokémon seen on this side, in the order they appeared. */
   pokemon: BattlePokemon[];
+  /** The species shown at team preview (`|poke|`), in order. */
+  preview: string[];
 }
 
 /** A line of the battle log: a turn header, a message, a minor detail (HP lost) or the result. */
@@ -85,8 +87,26 @@ export type SlotChoice =
   | { kind: 'switch'; slot: number }
   | { kind: 'pass' };
 
+/** A battle saved on Showdown's replay server, as its search lists it. */
+export interface ReplaySummary {
+  /** "gen9championsvgc2026regmc-2687994581" */
+  id: string;
+  format: string;
+  players: [string, string];
+  /** Seconds since the epoch. */
+  uploadtime: number;
+  rating?: number;
+}
+
+/** A replay with its log: the protocol lines a spectator saw, with no requests. */
+export interface Replay extends ReplaySummary {
+  log: string;
+}
+
 /** Sends the player's choices and delivers the server's messages (Showdown frames: lines joined with \n). */
 export interface BattleConnection {
+  /** Set when the battle is a replay: it's watched, with no choices to make. */
+  readonly replay?: Replay;
   start(onMessage: (frame: string) => void): void;
   choose(choice: string): void;
   forfeit(): void;

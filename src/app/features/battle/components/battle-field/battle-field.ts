@@ -58,14 +58,14 @@ interface FieldSlot {
             [size]="slot.size"
             [back]="true"
           />
-          <app-battle-hp-box class="absolute" [style.left.px]="slot.boxLeft" [style.top.px]="slot.boxTop" [pokemon]="slot.pokemon" [own]="true" />
+          <app-battle-hp-box class="absolute" [style.left.px]="slot.boxLeft" [style.top.px]="slot.boxTop" [pokemon]="slot.pokemon" [own]="true" [exact]="!store.replay()" />
         }
       }
     </div>
   `,
 })
 export class BattleField {
-  private readonly store = inject(BattleStore);
+  protected readonly store = inject(BattleStore);
 
   // Sprites stand on their platform's centre, all doubled (192px) as in Gen 3, where front and back
   // sprites are the same size: Showdown's 96px sprites have the feet about 10px above the bottom, and

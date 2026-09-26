@@ -22,4 +22,9 @@ export class LobbyScreen {
     if (!this.battle.active()) this.battle.requestStart();
     void this.router.navigateByUrl('/battle');
   }
+
+  /** Showdown's saved battles, played back on the battle screen. */
+  protected watchReplays(): void {
+    void this.router.navigateByUrl('/replays');
+  }
 }

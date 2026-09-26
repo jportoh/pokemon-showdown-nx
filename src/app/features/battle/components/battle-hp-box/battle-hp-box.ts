@@ -30,7 +30,7 @@ const BAR_WIDTH = 268;
           <span class="block h-2 rounded-sm transition-[width] duration-500" [style.width.px]="barWidth()" [style.background-color]="barColor()"></span>
         </span>
         @if (own()) {
-          <span class="absolute top-[52px] left-[160px] block h-6 w-[160px] text-right text-lg leading-6 font-bold">{{ p.hp }}/{{ p.maxHp }}</span>
+          <span class="absolute top-[52px] left-[160px] block h-6 w-[160px] text-right text-lg leading-6 font-bold">{{ exact() ? p.hp + '/' + p.maxHp : percentLabel() }}</span>
         }
       </div>
     }
@@ -40,6 +40,8 @@ export class BattleHpBox {
   readonly pokemon = input<BattlePokemon | null>(null);
   /** The player's own Pokémon: shows its HP numbers. */
   readonly own = input(false);
+  /** Whether HP is known exactly (the player's own team); in a replay every HP is out of 100. */
+  readonly exact = input(true);
 
   private readonly percent = computed(() => {
     const p = this.pokemon();
@@ -64,6 +66,6 @@ export class BattleHpBox {
   protected readonly label = computed(() => {
     const p = this.pokemon();
     if (!p) return '';
-    return this.own() ? `${p.name}, level ${p.level}, ${p.hp} of ${p.maxHp} HP` : `${p.name}, ${this.percentLabel()} HP`;
+    return this.own() && this.exact() ? `${p.name}, level ${p.level}, ${p.hp} of ${p.maxHp} HP` : `${p.name}, ${this.percentLabel()} HP`;
   });
 }
