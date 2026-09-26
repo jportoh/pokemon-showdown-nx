@@ -4,6 +4,9 @@
 
 export type SideId = 'p1' | 'p2';
 
+/** One Pokémon per side (Random Battle) or two (VGC), from the `|gametype|` line. */
+export type GameType = 'singles' | 'doubles';
+
 /** One move in a request, as Showdown sends it. */
 export interface RequestMove {
   move: string;
@@ -61,6 +64,8 @@ export interface BattlePokemon {
   maxHp: number;
   status: string;
   fainted: boolean;
+  /** The type it has Terastallized into, if it has. */
+  tera?: string;
   /** Stat stages from -6 to +6 ('atk', 'spe', 'accuracy'…); only the changed ones. Reset on switching out. */
   boosts: Record<string, number>;
 }
@@ -98,6 +103,8 @@ export interface BattleSide {
   pokemon: BattlePokemon[];
   /** The species shown at team preview (`|poke|`), in order. */
   preview: string[];
+  /** How many Pokémon it brought (`|teamsize|`); 0 until known. Without a team preview, the unseen ones count too. */
+  teamSize: number;
 }
 
 /** "p1a", "p2b": an active slot, as the protocol names it. */
@@ -150,11 +157,11 @@ export interface StatusChange {
 /**
  * Something the field animates on a slot: a direct hit (the Pokémon blinks), a faint (it sinks out of
  * sight), a withdrawal (it leaves towards its trainer's side), a send-out (the new one comes in), a
- * Mega Evolution (it flashes) or a protection (a shield pulses around it).
+ * Mega Evolution or Terastallization (it flashes) or a protection (a shield pulses around it).
  */
 export interface FieldEvent {
   id: number;
-  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'protect';
+  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'tera' | 'protect';
   slot: SlotKey;
 }
 

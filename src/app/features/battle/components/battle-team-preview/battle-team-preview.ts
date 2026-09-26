@@ -5,7 +5,7 @@ import { SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { previewTeam } from '@features/battle/state/team-preview';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
-import { toId } from '@shared/utils/to-id';
+import { spriteId } from '@shared/utils/sprite-id';
 
 /** Two rows of three tiles, centred in the card under the owner's name. */
 const PER_ROW = 3;
@@ -16,6 +16,7 @@ const FIRST_TOP = 26;
 const ROW_GAP = 8;
 const BAR_WIDTH = 56;
 const MAX_NAME_CHARS = 30;
+const MAX_TEAM = PER_ROW * 2;
 
 interface Tile {
   key: string;
@@ -30,7 +31,9 @@ interface Tile {
 
 /**
  * A side's team at a glance, under its owner's name: its Pokémon as shown at team preview, the ones on
- * the field framed, the ones sent out with their HP bar and the fainted ones faded. Both sides' sit in
+ * the field framed, the ones sent out with their HP bar and the fainted ones faded. Without a team
+ * preview (Random Battle), the Pokémon seen so far, then an empty tile for each one still unseen.
+ * Both sides' sit in
  * the battle's right column, the opponent's on top. A card fixed at 271x188, tiles at fixed positions
  * (Brewser layout rules). The tiles show once the battle's opening title has gone: by then the sprites, fetched from team
  * preview on, have had time to download (they popped in late on the console).
@@ -79,20 +82,31 @@ export class BattleTeamPreview {
 
   private readonly team = computed(() => previewTeam(this.store.sides()[this.side()]));
 
-  protected readonly tiles = computed<Tile[]>(() =>
-    (this.store.started() ? this.team() : []).map(({ species, seen, active }, i) => {
+  /** Pokémon brought but not seen yet (only without a team preview: it shows them all). */
+  private readonly unseen = computed(() => {
+    const side = this.store.sides()[this.side()];
+    return side.preview.length > 0 ? 0 : Math.max(0, Math.min(MAX_TEAM, side.teamSize) - this.team().length);
+  });
+
+  protected readonly tiles = computed<Tile[]>(() => {
+    if (!this.store.started()) return [];
+    const members = this.team().map(({ species, seen, active }, i) => {
       const fraction = seen && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
       return {
         key: `${i}-${species}`,
-        sprite: seen?.sprite || (this.dex.species(species)?.sprite ?? toId(species)),
-        left: FIRST_LEFT + (i % PER_ROW) * (TILE_SIZE + TILE_GAP),
-        top: FIRST_TOP + Math.floor(i / PER_ROW) * (TILE_SIZE + ROW_GAP),
+        sprite: seen?.sprite || (this.dex.species(species)?.sprite ?? spriteId(species)),
+        ...this.tilePosition(i),
         bar: seen && !seen.fainted ? { width: Math.max(1, Math.round(fraction * BAR_WIDTH)), color: barColor(fraction) } : null,
         fainted: !!seen?.fainted,
         active,
       };
-    }),
-  );
+    });
+    const empty = Array.from({ length: this.unseen() }, (_, n) => {
+      const i = members.length + n;
+      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false };
+    });
+    return [...members, ...empty];
+  });
 
   private readonly owner = computed(() => this.store.sides()[this.side()].name || (this.side() === 'p2' ? 'Opponent' : 'Player'));
 
@@ -111,6 +125,14 @@ export class BattleTeamPreview {
       const percent = seen.maxHp > 0 ? Math.max(1, Math.round((seen.hp / seen.maxHp) * 100)) : 0;
       return `${seen.name} ${percent}%${active ? ', in battle' : ''}`;
     });
-    return `${owner}'s team: ${members.join('; ') || 'unknown'}`;
+    const unseen = this.unseen() > 0 ? [`${this.unseen()} not seen yet`] : [];
+    return `${owner}'s team: ${[...members, ...unseen].join('; ') || 'unknown'}`;
   });
+
+  private tilePosition(i: number): { left: number; top: number } {
+    return {
+      left: FIRST_LEFT + (i % PER_ROW) * (TILE_SIZE + TILE_GAP),
+      top: FIRST_TOP + Math.floor(i / PER_ROW) * (TILE_SIZE + ROW_GAP),
+    };
+  }
 }

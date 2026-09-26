@@ -77,7 +77,8 @@ export class ReplayControls {
     // The players, rating and turn are in the match header.
     if (this.finished()) return this.store.winner() ? `${this.store.winner()} won` : 'Tie';
     if (this.store.paused()) return 'Paused';
-    return this.store.turn() > 0 ? 'Playing' : 'Team preview';
+    if (this.store.turn() > 0) return 'Playing';
+    return this.store.sides().p1.preview.length > 0 ? 'Team preview' : 'Starting';
   });
 
   constructor() {

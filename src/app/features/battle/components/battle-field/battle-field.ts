@@ -9,6 +9,7 @@ import { STATUS } from '@features/battle/state/status-conditions';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite, spriteUrl } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
+import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
 // Animation lengths at normal speed; the replay speed divides them, as it does the log's steps
@@ -52,34 +53,62 @@ const STATUS_LABEL_WIDTH = 150;
 const STATUS_LABEL_DROP = 36;
 
 /**
- * Sprites are drawn at this multiple of Showdown's 96px (Gen 3 doubled its own); the layout below
- * follows from it. 3x doesn't fit: the opponent's two would overlap and run off the field.
+ * Where each Pokémon stands: its platform's centre (x) and its feet (y), and where its status box
+ * goes. The player's stand below the bottom edge, seen from behind and cut off as in Gen 3.
  */
-const SPRITE_SCALE = 2.5;
-const SPRITE_SIZE = Math.round(96 * SPRITE_SCALE);
-/** Showdown's sprites have the feet about 10px (of 96) above the bottom of their box. */
-const FEET_GAP = Math.round(10 * SPRITE_SCALE);
-/**
- * Where each Pokémon stands: its platform's centre (x) and its feet (y). The opponent's first slot is
- * on the right, as it faces the player; the player's stand below the bottom edge, seen from behind
- * and cut off as in Gen 3.
- */
-const STANDS: Record<string, { x: number; y: number }> = {
-  p2a: { x: 850, y: 228 },
-  p2b: { x: 600, y: 228 },
-  p1a: { x: 150, y: 494 },
-  p1b: { x: 420, y: 494 },
-};
-/** The platforms: the opponent's as wide as a sprite, the player's wider (nearer) and cut off. */
-const FOE_PLATFORM = { width: SPRITE_SIZE, height: Math.round(SPRITE_SIZE * 0.27) };
-const OWN_PLATFORM = { width: Math.round(SPRITE_SIZE * 1.25), height: 96, top: 452 };
-/** Protect's shield, centred on the sprite's body (a little below its middle). */
-const SHIELD_SIZE = Math.round(SPRITE_SIZE * 0.83);
+interface Stand {
+  x: number;
+  y: number;
+  boxLeft: number;
+  boxTop: number;
+}
 
-/** A slot's sprite box. */
-function spriteBox(slot: SlotKey): { left: number; top: number } {
-  const stand = STANDS[slot];
-  return { left: stand.x - SPRITE_SIZE / 2, top: stand.y + FEET_GAP - SPRITE_SIZE };
+/**
+ * A field layout: the sprites' size (a multiple of Showdown's 96px; Gen 3 doubled its own) and where
+ * each Pokémon stands. Platforms, shields, labels and banners follow from them.
+ */
+interface FieldLayout {
+  spriteSize: number;
+  stands: Record<SlotKey, Stand>;
+}
+
+/**
+ * Doubles at 2.5x (3x doesn't fit: the opponent's two would overlap and run off the field). The
+ * opponent's first slot is on the right, as it faces the player. Their status boxes top left, the
+ * player's bottom right.
+ */
+const DOUBLES: FieldLayout = {
+  spriteSize: Math.round(96 * 2.5),
+  stands: {
+    p2a: { x: 850, y: 228, boxLeft: 20, boxTop: 30 },
+    p2b: { x: 600, y: 228, boxLeft: 44, boxTop: 126 },
+    p1a: { x: 150, y: 494, boxLeft: 600, boxTop: 310 },
+    p1b: { x: 420, y: 494, boxLeft: 616, boxTop: 404 },
+  },
+};
+
+/**
+ * Singles at 3x, as the third-generation games lay them out: the opponent's Pokémon back right, the
+ * player's front left, each status box on the other side of the field from its Pokémon. The
+ * opponent stands a little lower than in doubles, so its bigger sprite isn't cut by the top edge.
+ */
+const SINGLES: FieldLayout = {
+  spriteSize: 96 * 3,
+  stands: {
+    p2a: { x: 720, y: 250, boxLeft: 40, boxTop: 60 },
+    p1a: { x: 260, y: 494, boxLeft: 608, boxTop: 356 },
+  },
+};
+
+/** The player's platforms are cut off by the bottom edge: this tall, from here. */
+const OWN_PLATFORM_HEIGHT = 96;
+const OWN_PLATFORM_TOP = 452;
+
+/** The sprite box of a Pokémon standing there. */
+function spriteBox(stand: Stand, size: number): { left: number; top: number } {
+  // Showdown's sprites have the feet about 10px (of 96) above the bottom of their box.
+  const feetGap = Math.round((10 * size) / 96);
+  return { left: stand.x - size / 2, top: stand.y + feetGap - size };
 }
 
 const DEFAULT_SKY = '#d8ecc0';
@@ -129,7 +158,8 @@ interface FieldSlot {
  * The battlefield, laid out like the third-generation games' double battles: the opponent's two
  * Pokémon on platforms at the back right, with their status boxes top left; the player's two seen
  * from behind at the front left, with their status boxes on the right. The opponent's side faces the
- * player, so its first slot stands on the right. Fixed 985x500 (most of the stage, with the teams and
+ * player, so its first slot stands on the right. A single battle has one Pokémon a side, in the
+ * same places as the games' single battles, with everything else as in doubles. Fixed 985x500 (most of the stage, with the teams and
  * conditions in a column on the right), all positions absolute. The terrain colours the ground and the
  * platforms, the weather the sky, and Trick Room frames the field.
  *
@@ -153,7 +183,7 @@ interface FieldSlot {
     <div class="relative h-[500px] w-[985px] overflow-hidden" [style.background-color]="palette().sky">
       <div class="absolute top-[300px] left-0 h-[200px] w-[985px]" [style.background-color]="palette().ground"></div>
       <!-- Platforms: the opponent's at the back, the player's cut off by the bottom edge. -->
-      @for (platform of platforms; track platform.key) {
+      @for (platform of platforms(); track platform.key) {
         <div
           class="absolute rounded-[50%] border-[3px]"
           [style.left.px]="platform.left"
@@ -210,7 +240,7 @@ interface FieldSlot {
           />
         }
       }
-      @for (shield of shields; track shield.key) {
+      @for (shield of shields(); track shield.key) {
         <!-- Shown (display) only while its pulse plays. -->
         <div
           aria-hidden="true"
@@ -218,8 +248,8 @@ interface FieldSlot {
           [attr.data-shield]="shield.key"
           [style.left.px]="shield.left"
           [style.top.px]="shield.top"
-          [style.width.px]="shieldSize"
-          [style.height.px]="shieldSize"
+          [style.width.px]="shield.size"
+          [style.height.px]="shield.size"
         ></div>
       }
       @for (popup of popupBanners(); track popup.slot) {
@@ -306,6 +336,8 @@ export class BattleField {
   private readonly running = new Map<SlotKey, () => void>();
   /** The last faint whose animation has finished (its sprite can go). */
   private readonly faintDone = signal(-1);
+  /** The Pokémon each slot's sprite showed at the last render. */
+  private readonly shownIdents = new Map<SlotKey, string>();
 
   /** The slot whose Pokémon is fainting right now: its sprite stays until it has dropped out. */
   protected readonly fainting = computed(() => {
@@ -374,17 +406,29 @@ export class BattleField {
     }),
   );
 
-  protected readonly platforms = Object.entries(STANDS).map(([key, stand]) => {
-    const { width, height } = key.startsWith('p1') ? OWN_PLATFORM : FOE_PLATFORM;
-    const top = key.startsWith('p1') ? OWN_PLATFORM.top : Math.round(stand.y - height / 2);
-    return { key, left: Math.round(stand.x - width / 2), top, width, height };
+  /** One Pokémon per side in singles (bigger), two in doubles. */
+  private readonly layout = computed(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
+
+  /** The opponent's as wide as a sprite, the player's wider (nearer) and cut off. */
+  protected readonly platforms = computed(() => {
+    const { spriteSize, stands } = this.layout();
+    return Object.entries(stands).map(([key, stand]) => {
+      const own = key.startsWith('p1');
+      const width = Math.round(own ? spriteSize * 1.25 : spriteSize);
+      const height = own ? OWN_PLATFORM_HEIGHT : Math.round(spriteSize * 0.27);
+      const top = own ? OWN_PLATFORM_TOP : Math.round(stand.y - height / 2);
+      return { key, left: Math.round(stand.x - width / 2), top, width, height };
+    });
   });
 
-  protected readonly shieldSize = SHIELD_SIZE;
-  protected readonly shields = Object.keys(STANDS).map((key) => {
-    const { top } = spriteBox(key);
-    const stand = STANDS[key];
-    return { key, left: Math.round(stand.x - SHIELD_SIZE / 2), top: Math.round(top + SPRITE_SIZE * 0.55 - SHIELD_SIZE / 2) };
+  /** Protect's shields, centred on the sprite's body (a little below its middle). */
+  protected readonly shields = computed(() => {
+    const { spriteSize, stands } = this.layout();
+    const size = Math.round(spriteSize * 0.83);
+    return Object.entries(stands).map(([key, stand]) => {
+      const { top } = spriteBox(stand, spriteSize);
+      return { key, size, left: Math.round(stand.x - size / 2), top: Math.round(top + spriteSize * 0.55 - size / 2) };
+    });
   });
 
   protected readonly palette = computed(() => {
@@ -397,23 +441,27 @@ export class BattleField {
   protected readonly trickRoom = computed(() => this.store.field().rooms.some((room) => room.id === 'Trick Room'));
 
   // Front and back sprites are the same size, as in Gen 3.
-  protected readonly foeSlots = computed<FieldSlot[]>(() => {
-    const [a, b] = this.store.sides().p2.active;
-    return [
-      { key: 'p2a', pokemon: a, ...spriteBox('p2a'), size: SPRITE_SIZE, boxLeft: 20, boxTop: 30 },
-      { key: 'p2b', pokemon: b, ...spriteBox('p2b'), size: SPRITE_SIZE, boxLeft: 44, boxTop: 126 },
-    ];
-  });
-
-  protected readonly ownSlots = computed<FieldSlot[]>(() => {
-    const [a, b] = this.store.sides().p1.active;
-    return [
-      { key: 'p1a', pokemon: a, ...spriteBox('p1a'), size: SPRITE_SIZE, boxLeft: 600, boxTop: 310 },
-      { key: 'p1b', pokemon: b, ...spriteBox('p1b'), size: SPRITE_SIZE, boxLeft: 616, boxTop: 404 },
-    ];
-  });
+  protected readonly foeSlots = computed(() => this.slotsOf('p2'));
+  protected readonly ownSlots = computed(() => this.slotsOf('p1'));
 
   constructor() {
+    // A new Pokémon in a slot starts from its place, fully shown, whatever the one before was doing:
+    // Next turn plays a whole turn at once, so a withdrawal may still be running (or have left the
+    // sprite hidden, off to the side) with no send-out to follow, as only the turn's last event
+    // renders. First, so a send-out in the same render animates from there.
+    afterRenderEffect(() => {
+      const slots = [...this.foeSlots(), ...this.ownSlots()];
+      untracked(() => {
+        for (const slot of slots) {
+          const ident = slot.pokemon?.ident ?? '';
+          if (this.shownIdents.get(slot.key) === ident) continue;
+          this.shownIdents.set(slot.key, ident);
+          this.running.get(slot.key)?.();
+          const el = this.sprite(slot.key);
+          if (el) resetSprite(el, slot);
+        }
+      });
+    });
     // After rendering, so the sprites the animations move are in place.
     afterRenderEffect(() => {
       const action = this.store.action();
@@ -425,7 +473,7 @@ export class BattleField {
       untracked(() => {
         if (event.kind === 'hit') this.blink(event.slot);
         else if (event.kind === 'faint') this.faint(event);
-        else if (event.kind === 'mega') this.megaFlash(event);
+        else if (event.kind === 'mega' || event.kind === 'tera') this.megaFlash(event);
         else if (event.kind === 'protect') this.shieldPulse(event);
         else this.slide(event);
       });
@@ -450,7 +498,7 @@ export class BattleField {
   }
 
   private preloadWithMegas(species: string, back: boolean): void {
-    const sprite = this.dex.species(species)?.sprite ?? toId(species);
+    const sprite = this.dex.species(species)?.sprite ?? spriteId(species);
     this.preload(sprite, false);
     if (back) this.preload(sprite, true);
     const id = toId(species);
@@ -516,7 +564,8 @@ export class BattleField {
     // The body's middle for the opponent's, higher on the player's (cut off by the bottom edge); below
     // the ability and item pop-ups either way.
     const share = slot.startsWith('p1') ? 0.36 : 0.43;
-    return { left: this.centredOver(slot, HP_LABEL_WIDTH), top: Math.round(spriteBox(slot).top + SPRITE_SIZE * share) };
+    const from = this.slotData(slot);
+    return { left: this.centredOver(slot, HP_LABEL_WIDTH), top: Math.round((from?.top ?? 0) + (from?.size ?? 0) * share) };
   }
 
   /** The left of a label `width` wide centred on the slot's sprite. */
@@ -531,13 +580,29 @@ export class BattleField {
     const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
     const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
     // Just above the opponent's heads (or the field's top edge), and over the player's own.
-    const top = spriteBox(slot).top;
+    const top = from?.top ?? 0;
     return { left, top: (own ? top - 34 : Math.max(4, top - 18)) + drop };
   }
 
   private pokemonAt(slot: SlotKey): BattlePokemon | null {
     const side = this.store.sides()[slot.slice(0, 2) as 'p1' | 'p2'];
     return side?.active[slot[2] === 'b' ? 1 : 0] ?? null;
+  }
+
+  /** A side's slots in the current game type, in its stands' order. */
+  private slotsOf(side: 'p1' | 'p2'): FieldSlot[] {
+    const active = this.store.sides()[side].active;
+    const { spriteSize, stands } = this.layout();
+    return Object.entries(stands)
+      .filter(([key]) => key.startsWith(side))
+      .map(([key, stand]) => ({
+        key,
+        pokemon: active[key[2] === 'b' ? 1 : 0] ?? null,
+        ...spriteBox(stand, spriteSize),
+        size: spriteSize,
+        boxLeft: stand.boxLeft,
+        boxTop: stand.boxTop,
+      }));
   }
 
   private slotData(slot: SlotKey): FieldSlot | undefined {
@@ -564,12 +629,7 @@ export class BattleField {
     const el = this.sprite(slot);
     const base = this.slotData(slot);
     if (!el || !base) return;
-    const reset = () => {
-      el.style.left = `${base.left}px`;
-      el.style.top = `${base.top}px`;
-      el.style.opacity = '1';
-      el.style.filter = '';
-    };
+    const reset = () => resetSprite(el, base);
     reset();
     let stopWaiting: () => void = () => undefined;
     let stopAnimation: () => void = () => undefined;
@@ -651,7 +711,7 @@ export class BattleField {
     );
   }
 
-  /** The Mega Evolved sprite starts white and pulses back to its colours. */
+  /** The Mega Evolved (or Terastallized) sprite starts white and pulses back to its colours. */
   private megaFlash(event: FieldEvent): void {
     this.animate(
       event.slot,
@@ -712,6 +772,14 @@ export class BattleField {
       },
     );
   }
+}
+
+/** Puts a sprite back in its place, fully shown, as no animation has touched it. */
+function resetSprite(el: HTMLElement, base: FieldSlot): void {
+  el.style.left = `${base.left}px`;
+  el.style.top = `${base.top}px`;
+  el.style.opacity = '1';
+  el.style.filter = '';
 }
 
 /**

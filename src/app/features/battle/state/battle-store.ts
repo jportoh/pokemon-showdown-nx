@@ -1,5 +1,6 @@
 import { Service, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { moveType } from '@core/dex/move-types';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import {
   BattleConnection,
@@ -9,6 +10,7 @@ import {
   HpChange,
   StatusChange,
   FieldEvent,
+  GameType,
   MoveAction,
   BattleLogEntry,
   BattlePokemon,
@@ -18,7 +20,7 @@ import {
   RequestPokemon,
   SideId,
 } from '@features/battle/models/battle';
-import { toId } from '@shared/utils/to-id';
+import { spriteId } from '@shared/utils/sprite-id';
 import { BattleSession } from './battle-session';
 import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
 import {
@@ -72,6 +74,7 @@ const emptySide = (id: SideId): BattleSide => ({
   active: [null, null],
   pokemon: [],
   preview: [],
+  teamSize: 0,
 });
 
 /**
@@ -112,6 +115,7 @@ export class BattleStore {
   private readonly introSignal = signal<{ p1: string; p2: string } | null>(null);
   private readonly startedSignal = signal(false);
   private readonly formatSignal = signal('');
+  private readonly gameTypeSignal = signal<GameType>('doubles');
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -156,6 +160,8 @@ export class BattleStore {
   readonly started = this.startedSignal.asReadonly();
   /** The format's name, from the `|tier|` line ("[Gen 9] Champions VGC 2026 Reg M-C"); '' until then. */
   readonly format = this.formatSignal.asReadonly();
+  /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */
+  readonly gameType = this.gameTypeSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -219,6 +225,7 @@ export class BattleStore {
     this.introSignal.set(null);
     this.startedSignal.set(false);
     this.formatSignal.set('');
+    this.gameTypeSignal.set('doubles');
     this.withdrawn = null;
     this.blinkedHits.clear();
   }
@@ -342,6 +349,14 @@ export class BattleStore {
         if (side === 'p1' || side === 'p2') this.updateSide(side, (s) => ({ ...s, name }));
         return 0;
       }
+      case 'gametype':
+        this.gameTypeSignal.set(args[0] === 'singles' ? 'singles' : 'doubles');
+        return 0;
+      case 'teamsize': {
+        const [side, size] = args;
+        if (side === 'p1' || side === 'p2') this.updateSide(side, (s) => ({ ...s, teamSize: Number(size) || 0 }));
+        return 0;
+      }
       case 'tier':
         // The raw text: splitArgs would take "[Gen 9 Champions] …" for a tag like [from].
         this.formatSignal.set(rest.join('|'));
@@ -386,6 +401,10 @@ export class BattleStore {
         return this.say(
           `${this.label(args[0])} has Mega Evolved into ${megaName(this.findPokemon(args[0])?.species, args[1])}!`,
         );
+      case '-terastallize':
+        this.updatePokemon(args[0], (p) => ({ ...p, tera: args[1] }));
+        this.emit('tera', args[0]);
+        return this.say(`${this.label(args[0])} has Terastallized into the ${args[1]}-type!`);
       case 'move':
         this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
         return this.say(`${this.label(args[0])} used ${args[1]}!`);
@@ -567,7 +586,7 @@ export class BattleStore {
     if (tags['spread']) targets = tags['spread'].split(',').filter((slot) => /^p[12][ab]$/.test(slot));
     else if ('notarget' in tags || !target) targets = [];
     else targets = [this.slotOf(target)].filter((slot): slot is string => !!slot);
-    const type = this.dex.move(move)?.type ?? '';
+    const type = this.dex.move(move)?.type ?? moveType(move);
     const hits = this.upcomingHits().filter((slot) => slot !== from);
     hits.forEach((slot) => this.blinkedHits.add(slot));
     return { id: this.nextEventId++, attacker: from, targets, hits, move, type };
@@ -851,16 +870,21 @@ export function parseIdent(ident: string): { side?: SideId; slot?: number; name:
   };
 }
 
-/** "Garchomp-Mega, L50, M" → species, level, gender and its sprite. */
+/**
+ * "Garchomp-Mega, L50, M" (or "Eiscue-Noice, L88, M, tera:Ground") → species, level, gender, its
+ * sprite and its Tera type once Terastallized.
+ */
 export function parseDetails(
   details: string,
   dex: ChampionsDex,
-): Pick<BattlePokemon, 'species' | 'sprite' | 'level' | 'gender'> {
+): Pick<BattlePokemon, 'species' | 'sprite' | 'level' | 'gender' | 'tera'> {
   const [species, ...parts] = details.split(', ');
   const level = parts.find((part) => /^L\d+$/.test(part));
   const gender = parts.find((part) => part === 'M' || part === 'F') ?? '';
-  const sprite = dex.species(species)?.sprite ?? dex.megaById(species)?.sprite ?? toId(species);
-  return { species, sprite, level: level ? Number(level.slice(1)) : 100, gender };
+  const tera = parts.find((part) => part.startsWith('tera:'))?.slice('tera:'.length);
+  const sprite = dex.species(species)?.sprite ?? dex.megaById(species)?.sprite ?? spriteId(species);
+  // Details without a Tera type don't undo a Terastallization already seen.
+  return { species, sprite, level: level ? Number(level.slice(1)) : 100, gender, ...(tera ? { tera } : {}) };
 }
 
 /** "143/180 par" or "0 fnt" → HP, max HP, status and whether it fainted. */

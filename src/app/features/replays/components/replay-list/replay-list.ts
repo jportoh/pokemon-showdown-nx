@@ -17,10 +17,13 @@ import { ReplaySummary } from '@features/battle/models/battle';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
-import { DEFAULT_TEAM_FORMAT, formatName } from '@shared/data/formats';
+import { REPLAY_FORMATS, ReplayFormat } from '@features/replays/data/replay-formats';
 
 /** Rows shown at once: 64px each in the 579px under the bar. */
 const VISIBLE_ROWS = 9;
+
+/** The format last picked, so coming back from a replay lists the same one. */
+let lastFormat: ReplayFormat = REPLAY_FORMATS[0];
 
 interface ReplayRow extends ReplaySummary {
   title: string;
@@ -28,9 +31,10 @@ interface ReplayRow extends ReplaySummary {
 }
 
 /**
- * The latest public replays of the teambuilder's format, from Showdown's replay server. Picking one
- * plays it on the battle screen, watched from the first player's side. Fixed 1280x644: a 64px bar
- * and a 579px list of plain block rows (Brewser layout rules).
+ * The latest public replays of a format, from Showdown's replay server: the teambuilder's VGC format
+ * (doubles) or Random Battle (singles), picked with the buttons in the bar. Picking a replay plays it
+ * on the battle screen, watched from the first player's side. Fixed 1280x644: a 64px bar and a 579px
+ * list of plain block rows (Brewser layout rules).
  *
  * The list is NOT a scroll box: on the console, a scroll box that first appears after load stays
  * blank (the battle log's test L1), and this list never showed. It shows VISIBLE_ROWS rows at a time;
@@ -48,9 +52,23 @@ interface ReplayRow extends ReplaySummary {
       >
         Replays
       </h2>
-      <p class="absolute top-[36px] left-6 block h-5 w-[900px] text-sm leading-5 text-gray-300">
+      <p class="absolute top-[36px] left-6 block h-5 w-[440px] overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-300">
         {{ subtitle() }}
       </p>
+      <div role="group" aria-label="Format">
+        @for (option of formats; track option.id; let i = $index) {
+          <button
+            type="button"
+            class="absolute top-[14px] h-9 w-[200px] rounded-md border text-base"
+            [class]="option.id === format().id ? 'border-sky-300 bg-[#2c4a78] font-bold hover:bg-[#35598f]' : 'border-gray-400 bg-gray-700 hover:bg-gray-600'"
+            [style.left.px]="480 + i * 212"
+            [attr.aria-pressed]="option.id === format().id"
+            (click)="pickFormat(option)"
+          >
+            {{ option.label }}
+          </button>
+        }
+      </div>
       @if (replays().length > visibleRows) {
         <p class="absolute top-[20px] left-[916px] block h-6 w-[200px] text-right text-sm leading-6 text-gray-300">{{ range() }}</p>
       }
@@ -96,7 +114,10 @@ export class ReplayList {
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
 
   protected readonly visibleRows = VISIBLE_ROWS;
-  private readonly format = DEFAULT_TEAM_FORMAT;
+  protected readonly formats = REPLAY_FORMATS;
+  protected readonly format = signal(lastFormat);
+  /** Counts searches, so an answer for a format no longer picked is dropped. */
+  private searchId = 0;
   protected readonly status = signal<'loading' | 'ready' | 'error'>('loading');
   protected readonly replays = signal<readonly ReplayRow[]>([]);
   /** The replay being downloaded. */
@@ -141,22 +162,35 @@ export class ReplayList {
     void this.refresh();
   }
 
+  /** Lists another format's replays (the list empties while they load). */
+  protected pickFormat(format: ReplayFormat): void {
+    if (format.id === this.format().id) return;
+    lastFormat = format;
+    this.format.set(format);
+    this.replays.set([]);
+    this.start.set(0);
+    void this.refresh();
+  }
+
   protected async refresh(): Promise<void> {
+    const search = ++this.searchId;
+    const format = this.format();
     this.status.set('loading');
-    this.subtitle.set(`Loading the latest ${formatName(this.format)} replays…`);
+    this.subtitle.set('Loading the latest replays…');
+    this.renderScheduler.request();
     try {
       const now = Date.now() / 1000;
-      const replays = await this.api.search(this.format);
+      const replays = await this.api.search(format.id);
+      if (search !== this.searchId) return;
       this.replays.set(replays.map((replay) => toRow(replay, now)));
       this.start.set(0);
       this.status.set('ready');
       this.subtitle.set(
-        replays.length > 0
-          ? `The latest ${replays.length} public ${formatName(this.format)} replays`
-          : `No public ${formatName(this.format)} replays yet`,
+        replays.length > 0 ? `The latest ${replays.length} public replays` : `No public replays of ${format.label} yet`,
       );
       this.focusRow = 0;
     } catch (error) {
+      if (search !== this.searchId) return;
       this.status.set('error');
       this.subtitle.set(`Couldn't reach the replay server: ${errorText(error)}`);
     }

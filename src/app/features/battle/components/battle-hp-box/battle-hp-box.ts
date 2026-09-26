@@ -3,6 +3,7 @@ import { stepAnimation } from '@features/battle/animation/step-animation';
 import { BattlePokemon } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { STATUS } from '@features/battle/state/status-conditions';
+import { typeColor } from '@shared/data/type-colors';
 
 /** How a box stands out while a move plays: its user, or one of its targets. */
 export type HpBoxEmphasis = 'attacker' | 'target';
@@ -14,7 +15,7 @@ const BORDER_COLORS: Record<HpBoxEmphasis | 'none', string> = { attacker: '#eab3
 const CHIP_LEFT = 12;
 const CHIP_WIDTH = 48;
 const CHIP_GAP = 4;
-/** Chips that fit on the bottom row: next to the HP numbers on the player's boxes, the whole row on the opponent's. */
+/** Chips that fit on the bottom row: next to the HP shown there, or the whole row when it isn't. */
 const OWN_CHIPS = 4;
 const FOE_CHIPS = 6;
 
@@ -44,9 +45,11 @@ interface Chip {
  * with the HP left as a percentage for the opponent's Pokémon (all that's known of them) and as
  * numbers under the bar for the player's own (a percentage again in a replay, where that's all the log
  * gives). The bottom row shows its status (BRN, PAR…) and stat stages ("Atk -1", "Spe +2"). The
- * opponent's box shows no level: every Pokémon in the format is level 50. Fixed 336x84, absolutely
- * laid out (Brewser layout rules). While a move plays, the border turns yellow on its user and red on
- * its targets. The HP bar slides to its new width in steps (Brewser doesn't animate CSS transitions).
+ * opponent's box shows no level at level 50 (every Pokémon in VGC); at any other (Random Battle) it
+ * shows it, with the percentage moving under the bar as on the player's. A Mega Evolved Pokémon is
+ * marked MEGA; a Terastallized one TERA, next to its Tera type (named, on its colour). Fixed 336x84,
+ * absolutely laid out (Brewser layout rules). While a move plays, the border turns yellow on its user
+ * and red on its targets. The HP bar slides to its new width in steps (Brewser doesn't animate CSS transitions).
  */
 @Component({
   selector: 'app-battle-hp-box',
@@ -59,11 +62,19 @@ interface Chip {
         class="relative h-[84px] w-[336px] rounded-[10px] border-[3px] bg-[#f8f8d8] text-[#303030]"
         [style.border-color]="borderColor()"
       >
-        <span class="absolute top-[4px] left-[12px] block h-6 w-[210px] overflow-hidden text-lg leading-6 font-bold whitespace-nowrap">{{ p.name }}</span>
+        <span class="absolute top-[4px] left-[12px] block h-6 overflow-hidden text-lg leading-6 font-bold whitespace-nowrap" [style.width.px]="nameWidth()">{{ p.name }}</span>
         @if (isMega()) {
           <span class="absolute top-[7px] left-[222px] block h-[18px] w-[44px] rounded-sm bg-[#6b2a73] text-center text-xs leading-[18px] font-bold text-white">MEGA</span>
+        } @else if (p.tera) {
+          <!-- A generic TERA mark (the games show it as a rainbow), and the type itself by name: its colour alone could be mistaken. -->
+          <span class="absolute top-[7px] left-[150px] block h-[18px] w-[44px] rounded-sm bg-[#1e293b] text-center text-xs leading-[18px] font-bold text-[#a5f3fc]">TERA</span>
+          <span
+            class="absolute top-[7px] left-[198px] block h-[18px] w-[64px] overflow-hidden rounded-full text-center text-xs leading-[18px] font-bold whitespace-nowrap text-white"
+            [style.background-color]="teraColor()"
+            >{{ p.tera }}</span
+          >
         }
-        <span class="absolute top-[4px] left-[266px] block h-6 w-[58px] text-right text-base leading-6 font-bold">{{ own() ? 'Lv' + p.level : percentLabel() }}</span>
+        <span class="absolute top-[4px] left-[266px] block h-6 w-[58px] text-right text-base leading-6 font-bold">{{ showLevel() ? 'Lv' + p.level : percentLabel() }}</span>
         <span aria-hidden="true" class="absolute top-[33px] left-[12px] block h-4 w-[30px] rounded-sm bg-[#e8a020] text-center text-[11px] leading-4 font-bold">HP</span>
         <span aria-hidden="true" class="absolute top-[35px] left-[48px] block h-3 w-[272px] rounded-sm bg-[#506858] p-[2px]">
           <span #bar class="block h-2 rounded-sm"></span>
@@ -78,8 +89,8 @@ interface Chip {
             >{{ chip.text }}</span
           >
         }
-        @if (own()) {
-          <span class="absolute top-[52px] left-[230px] block h-6 w-[90px] text-right text-lg leading-6 font-bold">{{ exact() ? p.hp + '/' + p.maxHp : percentLabel() }}</span>
+        @if (hpText(); as hp) {
+          <span class="absolute top-[52px] left-[230px] block h-6 w-[90px] text-right text-lg leading-6 font-bold">{{ hp }}</span>
         }
       </div>
     }
@@ -115,6 +126,22 @@ export class BattleHpBox {
     return `${p && p.hp > 0 ? Math.max(1, percent) : 0}%`;
   });
   protected readonly borderColor = computed(() => BORDER_COLORS[this.emphasis() ?? 'none']);
+
+  /** The player's own always; the opponent's unless it's level 50 (all of them in VGC). */
+  protected readonly showLevel = computed(() => this.own() || (this.pokemon()?.level ?? 50) !== 50);
+
+  /** The HP under the bar: numbers on the player's own, else the percentage when the level took its place. */
+  protected readonly hpText = computed(() => {
+    const p = this.pokemon();
+    if (!p) return null;
+    if (this.own()) return this.exact() ? `${p.hp}/${p.maxHp}` : this.percentLabel();
+    return this.showLevel() ? this.percentLabel() : null;
+  });
+
+  /** Shorter when the TERA mark and its type sit after the name. */
+  protected readonly nameWidth = computed(() => (this.pokemon()?.tera && !this.isMega() ? 136 : 210));
+
+  protected readonly teraColor = computed(() => typeColor(this.pokemon()?.tera ?? '') || '#374151');
 
   constructor() {
     afterRenderEffect(() => {
@@ -159,7 +186,7 @@ export class BattleHpBox {
         return { key: stat, text: `${short} ${stage > 0 ? '+' : ''}${stage}`, color: stage > 0 ? RAISED_COLOR : LOWERED_COLOR };
       }),
     ];
-    const max = this.own() ? OWN_CHIPS : FOE_CHIPS;
+    const max = this.hpText() !== null ? OWN_CHIPS : FOE_CHIPS;
     const shown = all.length > max ? [...all.slice(0, max - 1), { key: 'more', text: `+${all.length - max + 1}`, color: '#4b5563' }] : all;
     return shown.map((chip, i) => ({ ...chip, left: CHIP_LEFT + i * (CHIP_WIDTH + CHIP_GAP) }));
   });
@@ -167,10 +194,12 @@ export class BattleHpBox {
   protected readonly label = computed(() => {
     const p = this.pokemon();
     if (!p) return '';
-    const hp = this.own() && this.exact() ? `level ${p.level}, ${p.hp} of ${p.maxHp} HP` : `${this.percentLabel()} HP`;
+    const level = this.showLevel() ? `level ${p.level}, ` : '';
+    const hp = this.own() && this.exact() ? `${level}${p.hp} of ${p.maxHp} HP` : `${level}${this.percentLabel()} HP`;
     const status = STATUS[p.status]?.name;
+    const tera = p.tera ? [`Terastallized, ${p.tera} type`] : [];
     const stages = STATS.filter(([stat]) => p.boosts[stat]).map(([stat, short]) => `${short} ${p.boosts[stat] > 0 ? '+' : ''}${p.boosts[stat]}`);
-    return [p.name, hp, ...(status ? [status] : []), ...stages].join(', ');
+    return [p.name, hp, ...tera, ...(status ? [status] : []), ...stages].join(', ');
   });
 }
 

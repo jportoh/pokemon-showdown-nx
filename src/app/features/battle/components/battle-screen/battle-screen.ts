@@ -21,9 +21,9 @@ import { BackAction } from '@shared/directives/back-action';
 const FORFEIT_CONFIRM_MS = 4000;
 
 /**
- * A doubles battle, for now against the mock server, or a replay from Showdown's replay server. It
- * takes the whole 1280x720 stage (no app header: a battle can't be left until it's over). Along the
- * top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
+ * A battle (doubles, or singles with one Pokémon a side), for now against the mock server, or a replay
+ * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
+ * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
  * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
  * command panel (172px tall). On the right, a 283px column mirroring the field: the opponent's team,
  * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
