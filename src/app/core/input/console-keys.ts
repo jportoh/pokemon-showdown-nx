@@ -3,11 +3,28 @@
  *
  * On the console (test K1, 2026-09-25) the buttons reach the page through the Gamepad API: A, B,
  * ZL and ZR only there; the d-pad there and also as key events (both its arrow key and the letter the
- * build maps to it). L, R, X and Y belong to Brewser (restart, exit), so ZL/ZR switch tabs. The build's
+ * build maps to it). X and Y belong to Brewser (restart, exit), and so did L and R in test K1, which is
+ * why ZL/ZR switch tabs; later the user found L and R free, and pages use them for their own actions
+ * (in battle: L Mega Evolves, R forfeits). The build's
  * "button mappings" go the other way: they let a computer keyboard drive the Switch controls in the web
  * version, with these letters. Arrows, Enter and Escape also work, for computer keyboards.
  */
-export type InputAction = 'up' | 'down' | 'left' | 'right' | 'accept' | 'back' | 'prevTab' | 'nextTab' | 'first' | 'last';
+export type InputAction =
+  | 'up'
+  | 'down'
+  | 'left'
+  | 'right'
+  | 'accept'
+  | 'back'
+  | 'prevTab'
+  | 'nextTab'
+  | 'buttonL'
+  | 'buttonR'
+  | 'first'
+  | 'last';
+
+/** The shoulder buttons, whose meaning depends on the page (see KeyboardNavigation.registerButton). */
+export type PageButton = 'buttonL' | 'buttonR';
 
 /**
  * Each button and the key that stands for it on a computer keyboard (the build's button mappings, for
@@ -18,17 +35,21 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
   { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
   { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
   { button: 'ZL/ZR', key: 'Z / C', action: 'Previous / next header tab', legend: 'Switch tab' },
+  { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit)" },
 ];
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
- * 12–15, the standard mapping's positions for those labels).
+ * 12–15, the standard mapping's positions for those labels). L=4 and R=5 are the standard mapping's
+ * too, not yet seen on device.
  */
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [0, 'accept'],
   [1, 'back'],
   [6, 'prevTab'],
   [7, 'nextTab'],
+  [4, 'buttonL'],
+  [5, 'buttonR'],
   [12, 'up'],
   [13, 'down'],
   [14, 'left'],
@@ -44,8 +65,8 @@ const BY_KEY: Record<string, InputAction> = {
   d: 'right',
   j: 'accept',
   k: 'back',
-  q: 'prevTab',
-  e: 'nextTab',
+  q: 'buttonL',
+  e: 'buttonR',
   z: 'prevTab',
   c: 'nextTab',
   ArrowUp: 'up',
@@ -71,8 +92,8 @@ const BY_CODE: Record<string, InputAction> = {
   KeyD: 'right',
   KeyJ: 'accept',
   KeyK: 'back',
-  KeyQ: 'prevTab',
-  KeyE: 'nextTab',
+  KeyQ: 'buttonL',
+  KeyE: 'buttonR',
   KeyZ: 'prevTab',
   KeyC: 'nextTab',
 };
@@ -84,8 +105,8 @@ const BY_KEY_CODE: Record<number, InputAction> = {
   68: 'right',
   74: 'accept',
   75: 'back',
-  81: 'prevTab',
-  69: 'nextTab',
+  81: 'buttonL',
+  69: 'buttonR',
   90: 'prevTab',
   67: 'nextTab',
   38: 'up',

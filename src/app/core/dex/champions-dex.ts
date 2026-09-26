@@ -13,6 +13,12 @@ export interface DexMove {
   type: string;
   category: string;
   basePower: number;
+  /** 0 when it never misses. */
+  accuracy: number;
+  pp: number;
+  priority: number;
+  /** Showdown's target type: 'normal', 'allAdjacentFoes', 'self'… */
+  target: string;
 }
 
 export interface DexItem {

@@ -8,9 +8,13 @@
     priority
     class="mb-4 h-11 w-[146px] max-w-none"
   />
-  <nav aria-label="Navegación principal" class="flex flex-row gap-1">
+  <!--
+    Tabs at fixed absolute positions (116px apart) rather than a flex row: the Battle tab comes and
+    goes, and on Brewser a flex container whose content changes loses its gap.
+  -->
+  <nav aria-label="Navegación principal" class="relative h-[52px] w-[344px]">
     <a
-      class="flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
+      class="absolute top-0 left-0 flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
       routerLink="/"
       routerLinkActive
       ariaCurrentWhenActive="page"
@@ -22,7 +26,7 @@
       <span>Home</span>
     </a>
     <a
-      class="flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
+      class="absolute top-0 left-[116px] flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
       routerLink="/teambuilder"
       routerLinkActive
       ariaCurrentWhenActive="page"
@@ -33,6 +37,19 @@
       </svg>
       <span>Teambuilder</span>
     </a>
+    @if (battleOpen()) {
+      <a
+        class="absolute top-0 left-[232px] flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
+        routerLink="/battle"
+        routerLinkActive
+        ariaCurrentWhenActive="page"
+      >
+        <svg aria-hidden="true" viewBox="0 0 16 16" class="size-5">
+          <path d="M2.5 2.5 11 11M13.5 2.5 5 11M9.5 13.5l4-4M2.5 9.5l4 4" fill="none" stroke-width="1.6" stroke-linecap="round" class="stroke-white" />
+        </svg>
+        <span>Battle</span>
+      </a>
+    }
   </nav>
   <!--
     What the console's buttons do (see core/input/console-keys). Fixed 150px items at absolute

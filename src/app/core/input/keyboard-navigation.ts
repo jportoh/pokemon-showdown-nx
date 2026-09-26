@@ -1,6 +1,6 @@
 import { Injector, Service, afterNextRender, inject } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
-import { GAMEPAD_BUTTONS, InputAction, inputAction, isTypingKey } from '@core/input/console-keys';
+import { GAMEPAD_BUTTONS, InputAction, PageButton, inputAction, isTypingKey } from '@core/input/console-keys';
 import {
   Box,
   Direction,
@@ -76,6 +76,8 @@ export class KeyboardNavigation {
 
   private readonly backHandlers = new Map<Element, () => void>();
   private tabSwitcher: ((step: 1 | -1) => void) | null = null;
+  /** L/R handlers by page, newest last: the newest one that uses the press wins. */
+  private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
 
   /** The focused control (virtual focus: see the class comment). */
   private current: HTMLElement | null = null;
@@ -131,6 +133,19 @@ export class KeyboardNavigation {
   /** ZL/ZR call this with -1/+1; the layout switches its tabs. */
   registerTabSwitcher(switcher: (step: 1 | -1) => void): void {
     this.tabSwitcher = switcher;
+  }
+
+  /**
+   * What L or R does on a page (its component registers while it's shown). The handler returns
+   * whether it used the press. Returns the unregister function.
+   */
+  registerButton(button: PageButton, handler: () => boolean): () => void {
+    const entry = { button, handler };
+    this.pageButtons.push(entry);
+    return () => {
+      const index = this.pageButtons.indexOf(entry);
+      if (index !== -1) this.pageButtons.splice(index, 1);
+    };
   }
 
   /** Focuses a control, scrolling its region to show it. */
@@ -278,6 +293,9 @@ export class KeyboardNavigation {
         this.focusPageOnNavigation = true;
         this.tabSwitcher(action === 'nextTab' ? 1 : -1);
         return true;
+      case 'buttonL':
+      case 'buttonR':
+        return this.pageButtons.filter((entry) => entry.button === action).reverse().some((entry) => entry.handler());
       case 'first':
       case 'last':
         return this.onJump(action, active);

@@ -115,7 +115,17 @@ function moveRef(id) {
   if (!moveIndex.has(id)) {
     const move = { ...moves[id], ...champions.overrideMoveData[id] };
     moveIndex.set(id, moveList.length);
-    moveList.push({ id, name: move.name, type: move.type, category: move.category, basePower: move.basePower ?? 0 });
+    moveList.push({
+      id,
+      name: move.name,
+      type: move.type,
+      category: move.category,
+      basePower: move.basePower ?? 0,
+      accuracy: move.accuracy === true ? 0 : (move.accuracy ?? 0),
+      pp: move.pp ?? 5,
+      priority: move.priority ?? 0,
+      target: move.target ?? 'normal',
+    });
   }
   return moveIndex.get(id);
 }

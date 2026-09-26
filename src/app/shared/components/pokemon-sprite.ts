@@ -1,7 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { NgOptimizedImage } from '@angular/common';
 
-const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites/gen5';
+const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
 
 /**
  * A Pokémon's sprite from Showdown (96x96 PNGs; play.pokemonshowdown.com is allow-listed in the
@@ -24,6 +24,11 @@ export class PokemonSprite {
   readonly sprite = input('');
   /** Shown size in px: 96 is the sprites' own size, 48 exactly half. */
   readonly size = input(96);
+  /** Seen from behind, as the player's own Pokémon in battle. */
+  readonly back = input(false);
 
-  protected readonly url = computed(() => (this.sprite() ? `${SPRITES_URL}/${this.sprite()}.png` : ''));
+  protected readonly url = computed(() => {
+    const folder = this.back() ? 'gen5-back' : 'gen5';
+    return this.sprite() ? `${SPRITES_URL}/${folder}/${this.sprite()}.png` : '';
+  });
 }

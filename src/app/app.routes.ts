@@ -1,4 +1,6 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
+import { BattleSession } from '@features/battle/state/battle-session';
 import { MainLayout } from '@core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
@@ -19,6 +21,13 @@ export const routes: Routes = [
           import('@features/teambuilder/components/teambuilder-page/teambuilder-page').then(
             (c) => c.TeambuilderPage,
           ),
+      },
+      {
+        path: 'battle',
+        // Only while there's a battle to show (a reload, or a battle closed, lands on home).
+        canActivate: [() => inject(BattleSession).canOpen() || inject(Router).parseUrl('/')],
+        loadComponent: () =>
+          import('@features/battle/components/battle-screen/battle-screen').then((c) => c.BattleScreen),
       },
     ],
   },

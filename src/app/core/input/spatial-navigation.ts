@@ -35,7 +35,15 @@ export function isTextField(element: Element | null): element is HTMLInputElemen
   return tag === 'INPUT' && TEXT_INPUT_TYPES.has(((element as HTMLInputElement).type || '').toLowerCase());
 }
 
+/**
+ * Marks a control the d-pad never lands on, because a dedicated button does its job (Forfeit is R)
+ * or it's only there for mice and computer keyboards (the battle log's scrolling). It still works
+ * with a click or the Tab key.
+ */
+export const SKIP_ATTRIBUTE = 'data-kb-skip';
+
 export function isFocusable(element: Element): element is HTMLElement {
+  if (element.getAttribute(SKIP_ATTRIBUTE) !== null) return false;
   const tag = element.tagName;
   if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'TEXTAREA') return !(element as HTMLButtonElement).disabled;
   if (tag === 'INPUT') return !(element as HTMLInputElement).disabled && (element as HTMLInputElement).type !== 'hidden';
