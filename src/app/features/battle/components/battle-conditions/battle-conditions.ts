@@ -26,7 +26,6 @@ interface Pip {
 }
 
 interface Chip {
-  key: string;
   name: string;
   color: string;
   left: number;
@@ -58,7 +57,9 @@ interface Chip {
             class="absolute top-[4px] left-[10px] block h-4 w-[259px] overflow-hidden text-xs leading-4 font-bold whitespace-nowrap text-gray-300 uppercase"
             >{{ group.label }}</span
           >
-          @for (chip of group.chips; track chip.key) {
+          <!-- By position, not by condition: a chip that moved over would leave its text and pips
+               behind on Brewser (absolute children don't follow a container that moves). -->
+          @for (chip of group.chips; track chip.left) {
             <span
               aria-hidden="true"
               class="absolute top-[24px] block h-[34px] rounded-sm text-white"
@@ -125,7 +126,7 @@ function toChips(conditions: readonly FieldCondition[], turn: number): Chip[] {
   const more = conditions.length - shown.length;
   return [
     ...chips,
-    { key: 'more', name: `+${more}`, color: '#374151', left: chipLeft(shown.length), pips: [] },
+    { name: `+${more}`, color: '#374151', left: chipLeft(shown.length), pips: [] },
   ];
 }
 
@@ -137,7 +138,6 @@ function toChip(condition: FieldCondition, turn: number, index: number): Chip {
       ? toPips(condition.layers, condition.layers)
       : [];
   return {
-    key: condition.id,
     name: condition.name.length > MAX_NAME_CHARS ? shortName(condition.name) : condition.name,
     color: conditionColor(condition),
     left: chipLeft(index),

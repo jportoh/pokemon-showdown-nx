@@ -49,6 +49,11 @@ const MESSAGE_MS = 1100;
 const HP_MS = 600;
 /** A Pokémon being withdrawn, before the next one comes out. */
 const WITHDRAW_MS = 600;
+/**
+ * The "p1 vs p2" title at the start, before the first Pokémon come out: time for their sprites to
+ * download (they're fetched from team preview on), as they came out late on the console.
+ */
+const INTRO_MS = 4000;
 /** Log entries kept (a whole battle, usually), to keep the DOM small on the console. */
 const MAX_LOG_ENTRIES = 250;
 /** How long a request waits for its log before it's shown anyway (a request may come alone). */
@@ -104,6 +109,8 @@ export class BattleStore {
   private readonly popupsSignal = signal<readonly EffectPopup[]>([]);
   private readonly hpChangesSignal = signal<readonly HpChange[]>([]);
   private readonly statusChangesSignal = signal<readonly StatusChange[]>([]);
+  private readonly introSignal = signal<{ p1: string; p2: string } | null>(null);
+  private readonly startedSignal = signal(false);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -142,6 +149,10 @@ export class BattleStore {
   readonly hpChanges = this.hpChangesSignal.asReadonly();
   /** The latest status conditions inflicted (a few), for the field's "Burned!" labels. */
   readonly statusChanges = this.statusChangesSignal.asReadonly();
+  /** The players' names while the battle's title shows, at its start; null otherwise. */
+  readonly intro = this.introSignal.asReadonly();
+  /** The battle has begun and its title has gone: the teams at a glance show from then on. */
+  readonly started = this.startedSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -202,6 +213,8 @@ export class BattleStore {
     this.popupsSignal.set([]);
     this.hpChangesSignal.set([]);
     this.statusChangesSignal.set([]);
+    this.introSignal.set(null);
+    this.startedSignal.set(false);
     this.withdrawn = null;
     this.blinkedHits.clear();
   }
@@ -314,6 +327,11 @@ export class BattleStore {
     const { args, tags } = splitArgs(rest);
     const names = this.names;
     this.announceEffects(command, args, tags);
+    // The title stays until the line after the one that starts the battle.
+    if (command !== 'start' && this.introSignal()) {
+      this.introSignal.set(null);
+      this.startedSignal.set(true);
+    }
     switch (command) {
       case 'player': {
         const [side, name] = args;
@@ -331,10 +349,12 @@ export class BattleStore {
           this.updateSide(side, (s) => ({ ...s, preview: [...s.preview, species] }));
         return 0;
       }
-      case 'start':
-        return this.say(
-          `Battle started between ${this.sidesSignal().p1.name} and ${this.sidesSignal().p2.name}!`,
-        );
+      case 'start': {
+        const { p1, p2 } = this.sidesSignal();
+        this.introSignal.set({ p1: p1.name, p2: p2.name });
+        this.say(`Battle started between ${p1.name} and ${p2.name}!`);
+        return INTRO_MS;
+      }
       case 'switch':
       case 'drag':
       case 'replace': {

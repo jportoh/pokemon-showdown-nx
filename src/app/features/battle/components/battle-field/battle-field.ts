@@ -1,6 +1,6 @@
 import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, computed, effect, inject, signal, untracked } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
-import { outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
+import { nextFrame, outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
 import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
 import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SlotKey, StatusChange } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
@@ -245,6 +245,14 @@ interface FieldSlot {
           <span class="absolute top-[21px] left-0 block h-4 w-[236px] overflow-hidden text-center text-xs leading-4 whitespace-nowrap">{{ b.detail }}</span>
         </div>
       }
+      @if (store.intro(); as intro) {
+        <!-- The battle's title, before the first Pokémon come out (their sprites download meanwhile). -->
+        <div role="status" class="absolute top-[124px] left-[166px] block h-[132px] w-[520px] rounded-md border-2 border-white bg-[#1f2937] text-white">
+          <span class="absolute top-[14px] left-0 block h-9 w-[516px] overflow-hidden text-center text-2xl leading-9 font-bold whitespace-nowrap">{{ intro.p1 }}</span>
+          <span class="absolute top-[50px] left-0 block h-7 w-[516px] text-center text-lg leading-7 font-bold text-[#fde68a]">vs</span>
+          <span class="absolute top-[78px] left-0 block h-9 w-[516px] overflow-hidden text-center text-2xl leading-9 font-bold whitespace-nowrap">{{ intro.p2 }}</span>
+        </div>
+      }
       @if (trickRoom()) {
         <!-- Trick Room: the field framed in violet, as the move's twisted dimensions. -->
         <div aria-hidden="true" class="absolute top-0 left-0 h-[404px] w-[853px] border-[6px] border-[#a855f7]"></div>
@@ -391,19 +399,33 @@ export class BattleField {
     this.showBySlot(this.store.statusChanges, this.shownStatusChanges, POPUP_MS);
 
     // Team preview lists every Pokémon that may come out: their sprites are fetched ahead, so a
-    // send-out doesn't wait for the download (the player's side is seen from behind).
+    // send-out doesn't wait for the download (the player's side is seen from behind). So are their
+    // Megas', since it isn't known which one holds its stone: a Mega Evolution flashes the new
+    // sprite straight away. Front sprites are fetched for both sides: the teams at a glance show them,
+    // and some Megas have no back sprite and show the front one instead.
     afterRenderEffect(() => {
       const { p1, p2 } = this.store.sides();
       untracked(() => {
-        p1.preview.forEach((species) => this.preload(species, true));
-        p2.preview.forEach((species) => this.preload(species, false));
+        p1.preview.forEach((species) => this.preloadWithMegas(species, true));
+        p2.preview.forEach((species) => this.preloadWithMegas(species, false));
       });
     });
     this.destroyRef.onDestroy(() => this.running.forEach((stop) => stop()));
   }
 
-  private preload(species: string, back: boolean): void {
-    const url = spriteUrl(this.dex.species(species)?.sprite ?? toId(species), back);
+  private preloadWithMegas(species: string, back: boolean): void {
+    const sprite = this.dex.species(species)?.sprite ?? toId(species);
+    this.preload(sprite, false);
+    if (back) this.preload(sprite, true);
+    const id = toId(species);
+    for (const mega of this.dex.allMegas.filter((m) => m.base === id)) {
+      this.preload(mega.sprite, false);
+      if (back) this.preload(mega.sprite, true);
+    }
+  }
+
+  private preload(sprite: string, back: boolean): void {
+    const url = spriteUrl(sprite, back);
     if (this.preloaded.has(url)) return;
     this.preloaded.add(url);
     new Image().src = url;
@@ -487,8 +509,9 @@ export class BattleField {
 
   /**
    * Runs one animation on a slot's sprite, first putting back whatever an unfinished one left. With
-   * `waitForImage`, the first frame holds until the sprite's image has loaded: a sprite still
-   * downloading when its animation ran popped in at the end on the console.
+   * `waitForImage`, it starts once the sprite's new image has loaded and is shown: a sprite still
+   * downloading when its animation ran popped in at the end on the console. Meanwhile it holds the
+   * first frame (a send-out stays hidden).
    */
   private animate(
     slot: SlotKey,
@@ -507,9 +530,10 @@ export class BattleField {
       el.style.filter = '';
     };
     reset();
-    let stop: () => void = () => undefined;
+    let stopWaiting: () => void = () => undefined;
+    let stopAnimation: () => void = () => undefined;
     const run = () => {
-      stop = stepAnimation(
+      stopAnimation = stepAnimation(
         durationMs / this.store.speed(),
         (progress) => frame(el, base, progress),
         () => {
@@ -518,17 +542,18 @@ export class BattleField {
         },
       );
     };
-    if (options.waitForImage) {
-      frame(el, base, 0);
-      stop = whenImageLoaded(el, run);
-    } else {
-      run();
-    }
     this.running.set(slot, () => {
-      stop();
+      stopWaiting();
+      stopAnimation();
       reset();
       this.running.delete(slot);
     });
+    if (options.waitForImage) {
+      frame(el, base, 0);
+      stopWaiting = whenSpriteShown(el, run);
+    } else {
+      run();
+    }
   }
 
   /** The attacker lunges at its targets (their middle, for a spread move) and comes back. */
@@ -649,25 +674,18 @@ export class BattleField {
 }
 
 /**
- * Calls `ready` once the sprite's image has loaded, or after IMAGE_WAIT_MS at most.
- * Returns a function that cancels the wait.
+ * Calls `ready` once the sprite shows its new image, or after IMAGE_WAIT_MS at most. PokemonSprite
+ * marks its box `data-pending` while the new image downloads and drops the mark once it has loaded,
+ * so checking every frame starts the animation exactly on the new image (a missing back sprite
+ * stays pending while its front one loads). Returns a function that cancels the wait.
  */
-function whenImageLoaded(el: HTMLElement, ready: () => void): () => void {
-  const img = el.querySelector('img');
-  if (!img || (img.complete && img.naturalWidth > 0)) {
-    ready();
-    return () => undefined;
-  }
-  // Only 'load': a missing back sprite fails first and is swapped for the front one, which then loads.
-  const cancel = () => {
-    img.removeEventListener('load', finish);
-    clearTimeout(timer);
+function whenSpriteShown(el: HTMLElement, ready: () => void): () => void {
+  const start = Date.now();
+  let cancel: () => void = () => undefined;
+  const check = () => {
+    if (!el.querySelector('[data-pending]') || Date.now() - start >= IMAGE_WAIT_MS) ready();
+    else cancel = nextFrame(check);
   };
-  const finish = () => {
-    cancel();
-    ready();
-  };
-  img.addEventListener('load', finish);
-  const timer = setTimeout(finish, IMAGE_WAIT_MS);
-  return cancel;
+  check();
+  return () => cancel();
 }

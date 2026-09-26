@@ -26,7 +26,8 @@ interface Tile {
  * A side's team at a glance: its Pokémon as shown at team preview, the ones on the field framed, the
  * ones sent out with their HP bar and the fainted ones faded. The opponent's sits over the battle log;
  * a replay also shows p1's in its controls. Fixed 415x76, tiles at fixed positions (Brewser layout
- * rules).
+ * rules). The tiles show once the battle's opening title has gone: by then the sprites, fetched from team
+ * preview on, have had time to download (they popped in late on the console).
  */
 @Component({
   selector: 'app-battle-team-preview',
@@ -66,7 +67,7 @@ export class BattleTeamPreview {
   private readonly team = computed(() => previewTeam(this.store.sides()[this.side()]));
 
   protected readonly tiles = computed<Tile[]>(() =>
-    this.team().map(({ species, seen, active }, i) => {
+    (this.store.started() ? this.team() : []).map(({ species, seen, active }, i) => {
       const fraction = seen && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
       return {
         key: `${i}-${species}`,

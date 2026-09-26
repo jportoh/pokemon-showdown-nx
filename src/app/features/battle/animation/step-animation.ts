@@ -12,27 +12,32 @@ const hasAnimationFrame = typeof requestAnimationFrame === 'function';
  */
 export function stepAnimation(durationMs: number, frame: (progress: number) => void, done?: () => void): () => void {
   const start = Date.now();
-  let handle: number | ReturnType<typeof setTimeout> | null = null;
-  const schedule = () => {
-    handle = hasAnimationFrame ? requestAnimationFrame(tick) : setTimeout(tick, FALLBACK_FRAME_MS);
-  };
+  let cancel: (() => void) | null = null;
   const tick = () => {
     const progress = durationMs > 0 ? Math.min(1, (Date.now() - start) / durationMs) : 1;
     frame(progress);
     if (progress < 1) {
-      schedule();
+      cancel = nextFrame(tick);
     } else {
-      handle = null;
+      cancel = null;
       done?.();
     }
   };
   tick();
   return () => {
-    if (handle === null) return;
-    if (hasAnimationFrame) cancelAnimationFrame(handle as number);
-    else clearTimeout(handle);
-    handle = null;
+    cancel?.();
+    cancel = null;
   };
+}
+
+/** Calls `fn` on the next animation frame; returns a function that cancels it. */
+export function nextFrame(fn: () => void): () => void {
+  if (hasAnimationFrame) {
+    const handle = requestAnimationFrame(fn);
+    return () => cancelAnimationFrame(handle);
+  }
+  const handle = setTimeout(fn, FALLBACK_FRAME_MS);
+  return () => clearTimeout(handle);
 }
 
 /** Out and back: 0 → 1 at the middle → 0. */
