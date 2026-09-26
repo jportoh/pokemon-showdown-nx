@@ -100,6 +100,49 @@ export interface BattleSide {
   preview: string[];
 }
 
+/** "p1a", "p2b": an active slot, as the protocol names it. */
+export type SlotKey = string;
+
+/** A move being used, for the field's animations and highlights: who used it on whom. */
+export interface MoveAction {
+  /** Changes with every move, so the same move twice still animates. */
+  id: number;
+  attacker: SlotKey;
+  /** Where it's aimed: the target, both foes for a spread move, none for a move with no target. */
+  targets: SlotKey[];
+  /**
+   * The slots its damage lands on (read ahead in the log), which blink as the attacker's lunge
+   * reaches them rather than a step later when their HP drops.
+   */
+  hits: SlotKey[];
+  move: string;
+  /** The move's type, for its colour; '' when unknown. */
+  type: string;
+}
+
+/**
+ * An ability (Intimidate, Drizzle, Stamina…) or a held item (Sitrus Berry, Leftovers, Eject Button…)
+ * taking effect, shown over the Pokémon it belongs to; or a move missing, over the Pokémon that
+ * avoided it.
+ */
+export interface EffectPopup {
+  id: number;
+  slot: SlotKey;
+  kind: 'ability' | 'item' | 'miss';
+  name: string;
+}
+
+/**
+ * Something the field animates on a slot: a direct hit (the Pokémon blinks), a faint (it sinks out of
+ * sight), a withdrawal (it leaves towards its trainer's side), a send-out (the new one comes in), a
+ * Mega Evolution (it flashes) or a protection (a shield pulses around it).
+ */
+export interface FieldEvent {
+  id: number;
+  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'protect';
+  slot: SlotKey;
+}
+
 /** A line of the battle log: a turn header, a message, a minor detail (HP lost) or the result. */
 export interface BattleLogEntry {
   id: number;

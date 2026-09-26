@@ -62,22 +62,6 @@
     </button>
   </div>
 
-  <div class="flex items-center gap-3 p-[0_4px]">
-    <input
-      #spectatorsBox
-      id="battle-no-spectators"
-      type="checkbox"
-      [formField]="battleForm.disallowSpectators"
-      class="size-6 cursor-pointer accent-gray-600"
-    />
-    <label
-      for="battle-no-spectators"
-      class="cursor-pointer text-xl underline decoration-dotted underline-offset-4"
-    >
-      Don't allow spectators
-    </label>
-  </div>
-
   <button
     type="button"
     (click)="battle()"

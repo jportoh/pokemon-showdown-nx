@@ -3,7 +3,6 @@ import { form, FormField } from '@angular/forms/signals';
 
 export interface BattleRequest {
   format: string;
-  disallowSpectators: boolean;
 }
 
 const FORMATS = ['Random Battle', 'Gen 9 OU', 'Gen 9 UU', 'Gen 9 Ubers', 'Gen 9 Doubles OU'];
@@ -15,7 +14,6 @@ const FORMATS = ['Random Battle', 'Gen 9 OU', 'Gen 9 UU', 'Gen 9 Ubers', 'Gen 9 
 })
 export class BattleFinder {
   private readonly formatSelect = viewChild.required<ElementRef<HTMLSelectElement>>('formatSelect');
-  private readonly spectatorsBox = viewChild.required<ElementRef<HTMLInputElement>>('spectatorsBox');
 
   readonly findBattle = output<BattleRequest>();
   readonly chooseTeam = output<void>();
@@ -23,10 +21,7 @@ export class BattleFinder {
   protected readonly formats = FORMATS;
   protected readonly teamSlots = Array.from({ length: 6 });
 
-  private readonly request = signal<BattleRequest>({
-    format: FORMATS[0],
-    disallowSpectators: false,
-  });
+  private readonly request = signal<BattleRequest>({ format: FORMATS[0] });
 
   protected readonly battleForm = form(this.request);
 
@@ -34,13 +29,10 @@ export class BattleFinder {
 
   /**
    * Not a form submit: on the console a submit button did nothing (plain click buttons work), so
-   * this reads the controls themselves in case the events that update the form model were missed.
+   * this reads the select itself in case the events that update the form model were missed.
    */
   protected battle(): void {
-    this.request.set({
-      format: this.formatSelect().nativeElement.value,
-      disallowSpectators: this.spectatorsBox().nativeElement.checked,
-    });
+    this.request.set({ format: this.formatSelect().nativeElement.value });
     this.findBattle.emit(this.request());
   }
 }

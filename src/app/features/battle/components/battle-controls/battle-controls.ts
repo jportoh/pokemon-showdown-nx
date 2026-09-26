@@ -15,7 +15,8 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
  * the field), the forced switch after a faint, and the rematch/leave buttons at the end. While a turn
  * plays (or the opponent chooses) it shows what each Pokémon was told to do and the team's HP, with
  * nothing to press, so the panel never goes blank. Each view is a normal-flow block with absolutely
- * placed parts (Brewser layout rules), swapped with @if.
+ * placed parts (Brewser layout rules), swapped with @if. Text rows have fixed heights: on the console
+ * a row that starts empty (a slot's name before its Pokémon is out) overlapped the next once filled.
  */
 @Component({
   selector: 'app-battle-controls',
@@ -143,9 +144,9 @@ const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
             [style.left.px]="plan.left"
             [style.background-color]="plan.color"
           >
-            <span class="block text-base leading-6 text-gray-200">{{ plan.name }}</span>
-            <span class="block text-2xl leading-9 font-bold">{{ plan.action }}</span>
-            <span class="block text-sm leading-5 text-gray-200">{{ plan.detail }}</span>
+            <span class="block h-6 overflow-hidden text-base leading-6 whitespace-nowrap text-gray-200">{{ plan.name }}</span>
+            <span class="block h-9 overflow-hidden text-2xl leading-9 font-bold whitespace-nowrap">{{ plan.action }}</span>
+            <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-200">{{ plan.detail }}</span>
           </div>
         }
         @for (member of teamStatus(); track member.name) {

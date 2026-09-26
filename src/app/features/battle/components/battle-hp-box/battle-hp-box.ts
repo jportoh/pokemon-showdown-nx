@@ -1,7 +1,15 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, untracked, viewChild } from '@angular/core';
+import { stepAnimation } from '@features/battle/animation/step-animation';
 import { BattlePokemon } from '@features/battle/models/battle';
+import { BattleStore } from '@features/battle/state/battle-store';
+
+/** How a box stands out while a move plays: its user, or one of its targets. */
+export type HpBoxEmphasis = 'attacker' | 'target';
 
 const BAR_WIDTH = 268;
+/** How long the bar takes to reach its new width at normal speed (an HP step lasts 600 ms). */
+const BAR_MS = 500;
+const BORDER_COLORS: Record<HpBoxEmphasis | 'none', string> = { attacker: '#eab308', target: '#dc2626', none: '#404040' };
 const CHIP_LEFT = 12;
 const CHIP_WIDTH = 48;
 const CHIP_GAP = 4;
@@ -45,7 +53,8 @@ interface Chip {
  * numbers under the bar for the player's own (a percentage again in a replay, where that's all the log
  * gives). The bottom row shows its status (BRN, PAR…) and stat stages ("Atk -1", "Spe +2"). The
  * opponent's box shows no level: every Pokémon in the format is level 50. Fixed 336x84, absolutely
- * laid out (Brewser layout rules).
+ * laid out (Brewser layout rules). While a move plays, the border turns yellow on its user and red on
+ * its targets. The HP bar slides to its new width in steps (Brewser doesn't animate CSS transitions).
  */
 @Component({
   selector: 'app-battle-hp-box',
@@ -55,7 +64,8 @@ interface Chip {
       <div
         role="group"
         [attr.aria-label]="label()"
-        class="relative h-[84px] w-[336px] rounded-[10px] border-[3px] border-[#404040] bg-[#f8f8d8] text-[#303030]"
+        class="relative h-[84px] w-[336px] rounded-[10px] border-[3px] bg-[#f8f8d8] text-[#303030]"
+        [style.border-color]="borderColor()"
       >
         <span class="absolute top-[4px] left-[12px] block h-6 w-[210px] overflow-hidden text-lg leading-6 font-bold whitespace-nowrap">{{ p.name }}</span>
         @if (isMega()) {
@@ -64,7 +74,7 @@ interface Chip {
         <span class="absolute top-[4px] left-[266px] block h-6 w-[58px] text-right text-base leading-6 font-bold">{{ own() ? 'Lv' + p.level : percentLabel() }}</span>
         <span aria-hidden="true" class="absolute top-[33px] left-[12px] block h-4 w-[30px] rounded-sm bg-[#e8a020] text-center text-[11px] leading-4 font-bold">HP</span>
         <span aria-hidden="true" class="absolute top-[35px] left-[48px] block h-3 w-[272px] rounded-sm bg-[#506858] p-[2px]">
-          <span class="block h-2 rounded-sm transition-[width] duration-500" [style.width.px]="barWidth()" [style.background-color]="barColor()"></span>
+          <span #bar class="block h-2 rounded-sm"></span>
         </span>
         @for (chip of chips(); track chip.key) {
           <span
@@ -89,6 +99,14 @@ export class BattleHpBox {
   readonly own = input(false);
   /** Whether HP is known exactly (the player's own team); in a replay every HP is out of 100. */
   readonly exact = input(true);
+  readonly emphasis = input<HpBoxEmphasis | null>(null);
+
+  private readonly store = inject(BattleStore);
+  private readonly bar = viewChild<ElementRef<HTMLElement>>('bar');
+  /** The width the bar shows now (-1 before it's first drawn) and whose HP it is. */
+  private shownWidth = -1;
+  private shownIdent = '';
+  private stopBar: (() => void) | null = null;
 
   protected readonly chipWidth = CHIP_WIDTH;
 
@@ -104,11 +122,36 @@ export class BattleHpBox {
     const percent = Math.round(this.percent() * 100);
     return `${p && p.hp > 0 ? Math.max(1, percent) : 0}%`;
   });
-  /** Green, then yellow under half, red under a fifth, as in the games. */
-  protected readonly barColor = computed(() => {
-    const percent = this.percent();
-    return percent > 0.5 ? '#38c060' : percent > 0.2 ? '#e0b020' : '#e04030';
-  });
+  protected readonly borderColor = computed(() => BORDER_COLORS[this.emphasis() ?? 'none']);
+
+  constructor() {
+    afterRenderEffect(() => {
+      const el = this.bar()?.nativeElement;
+      const width = this.barWidth();
+      const ident = this.pokemon()?.ident ?? '';
+      untracked(() => this.moveBar(el, width, ident));
+    });
+    inject(DestroyRef).onDestroy(() => this.stopBar?.());
+  }
+
+  /** Slides the bar from what it shows to the new width; a new Pokémon's bar is drawn at once. */
+  private moveBar(el: HTMLElement | undefined, width: number, ident: string): void {
+    if (!el) return;
+    this.stopBar?.();
+    this.stopBar = null;
+    const from = this.shownWidth;
+    const paint = (w: number) => {
+      el.style.width = `${w}px`;
+      el.style.backgroundColor = barColor(w / BAR_WIDTH);
+      this.shownWidth = w;
+    };
+    if (from < 0 || ident !== this.shownIdent || from === width) {
+      this.shownIdent = ident;
+      paint(width);
+      return;
+    }
+    this.stopBar = stepAnimation(BAR_MS / this.store.speed(), (progress) => paint(Math.round(from + (width - from) * progress)));
+  }
 
   protected readonly isMega = computed(() => /-Mega/.test(this.pokemon()?.species ?? ''));
 
@@ -137,4 +180,9 @@ export class BattleHpBox {
     const stages = STATS.filter(([stat]) => p.boosts[stat]).map(([stat, short]) => `${short} ${p.boosts[stat] > 0 ? '+' : ''}${p.boosts[stat]}`);
     return [p.name, hp, ...(status ? [status] : []), ...stages].join(', ');
   });
+}
+
+/** Green, then yellow under half, red under a fifth, as in the games. */
+function barColor(fraction: number): string {
+  return fraction > 0.5 ? '#38c060' : fraction > 0.2 ? '#e0b020' : '#e04030';
 }

@@ -1,8 +1,46 @@
-import { Component, computed, inject } from '@angular/core';
-import { BattlePokemon } from '@features/battle/models/battle';
+import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, effect, inject, signal, untracked } from '@angular/core';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
+import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
+import { BattlePokemon, EffectPopup, FieldEvent, MoveAction, SlotKey } from '@features/battle/models/battle';
+import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { BattleHpBox } from '@features/battle/components/battle-hp-box/battle-hp-box';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
+import { ItemIcon } from '@shared/components/item-icon';
+import { PokemonSprite, spriteUrl } from '@shared/components/pokemon-sprite';
+import { typeColor } from '@shared/data/type-colors';
+import { toId } from '@shared/utils/to-id';
+
+// Animation lengths at normal speed; the replay speed divides them, as it does the log's steps
+// (a move's step lasts 1100 ms, an HP change 600 ms).
+const LUNGE_MS = 500;
+const LUNGE_PX = 56;
+/** A move with no target (or aimed at itself): a hop in place. */
+const HOP_PX = 24;
+const BLINK_MS = 540;
+const BLINKS = 6;
+/** Blinks dim the sprite: Brewser ignores visibility changes, but opacity works (probe N1). */
+const BLINK_OPACITY = '0.2';
+const FAINT_MS = 500;
+const FAINT_DROP_PX = 64;
+/** Withdrawals and send-outs: sideways towards (or from) the trainer's side, fading. */
+const SWITCH_MS = 450;
+const SWITCH_PX = 140;
+/** Longest wait for a sprite that's still downloading before it animates in anyway. */
+const IMAGE_WAIT_MS = 1500;
+/** Mega Evolution: the new sprite starts white and pulses back to its colours. */
+const MEGA_MS = 900;
+const MEGA_BRIGHTNESS = 4;
+/** Protect: a shield pulses around the Pokémon, three times. */
+const SHIELD_MS = 900;
+const SHIELD_PULSES = 3;
+const SHIELD_OPACITY = 0.55;
+/** The move banner, placed over its user. */
+const BANNER_WIDTH = 240;
+/** The player's banners stop short of their status boxes (x ≥ 485). */
+const OWN_BANNER_MAX_LEFT = 480 - BANNER_WIDTH;
+const FOE_BANNER_MAX_LEFT = 853 - 8 - BANNER_WIDTH;
+/** How long an ability's or item's pop-up stays at normal speed (a log step lasts 1100 ms). */
+const POPUP_MS = 1400;
 
 const DEFAULT_SKY = '#d8ecc0';
 const DEFAULT_GROUND = { ground: '#b0d890', platform: '#90c070', edge: '#6a9a50' };
@@ -54,10 +92,22 @@ interface FieldSlot {
  * player, so its first slot stands on the right. Fixed 853x404 (the left two thirds of the stage, with
  * the battle log on the right), all positions absolute. The terrain colours the ground and the
  * platforms, the weather the sky, and Trick Room frames the field.
+ *
+ * Moves animate so it's clear who hit whom without reading the log: the attacker lunges at its
+ * target (a hop when it has none), a banner names the move on its type's colour, the status boxes of
+ * the attacker (yellow) and its targets (red) stand out, each target it damages blinks as the lunge
+ * reaches it (its HP drops a step later), and a fainted Pokémon sinks and fades out. A withdrawn Pokémon slides away towards its trainer's side
+ * (left for the player's, right for the opponent's) and fades; the next one slides in from there,
+ * once its sprite has loaded (preloaded from team preview). Mega Evolution flashes the new sprite
+ * white, and Protect pulses a shield around the Pokémon. Abilities (Intimidate, Drizzle, Stamina…)
+ * and held items (Sitrus Berry, Leftovers, Eject Button…) taking effect pop up over their Pokémon a
+ * little below where moves show: gold-edged for abilities, teal with the item's icon for items. A
+ * move that misses shows "Missed!" over the Pokémon that avoided it, grey-edged. Frames step on requestAnimationFrame over the sprites' inline
+ * styles (see stepAnimation).
  */
 @Component({
   selector: 'app-battle-field',
-  imports: [BattleHpBox, PokemonSprite],
+  imports: [BattleHpBox, ItemIcon, PokemonSprite],
   host: { class: 'block h-[404px] w-[853px]' },
   template: `
     <div class="relative h-[404px] w-[853px] overflow-hidden" [style.background-color]="palette().sky">
@@ -69,29 +119,93 @@ interface FieldSlot {
       <div class="absolute top-[356px] left-[240px] h-[84px] w-[280px] rounded-[50%] border-[3px]" [style.background-color]="palette().platform" [style.border-color]="palette().edge"></div>
 
       @for (slot of foeSlots(); track slot.key) {
-        @if (slot.pokemon && !slot.pokemon.fainted) {
+        @if (slot.pokemon && (!slot.pokemon.fainted || fainting() === slot.key)) {
           <app-pokemon-sprite
             class="absolute [image-rendering:pixelated]"
+            [attr.data-slot]="slot.key"
             [style.left.px]="slot.left"
             [style.top.px]="slot.top"
             [sprite]="slot.pokemon.sprite"
             [size]="slot.size"
           />
-          <app-battle-hp-box class="absolute" [style.left.px]="slot.boxLeft" [style.top.px]="slot.boxTop" [pokemon]="slot.pokemon" />
+        }
+        @if (slot.pokemon && !slot.pokemon.fainted) {
+          <app-battle-hp-box
+            class="absolute"
+            [style.left.px]="slot.boxLeft"
+            [style.top.px]="slot.boxTop"
+            [pokemon]="slot.pokemon"
+            [emphasis]="emphasis()[slot.key] ?? null"
+          />
         }
       }
       @for (slot of ownSlots(); track slot.key) {
-        @if (slot.pokemon && !slot.pokemon.fainted) {
+        @if (slot.pokemon && (!slot.pokemon.fainted || fainting() === slot.key)) {
           <app-pokemon-sprite
             class="absolute [image-rendering:pixelated]"
+            [attr.data-slot]="slot.key"
             [style.left.px]="slot.left"
             [style.top.px]="slot.top"
             [sprite]="slot.pokemon.sprite"
             [size]="slot.size"
             [back]="true"
           />
-          <app-battle-hp-box class="absolute" [style.left.px]="slot.boxLeft" [style.top.px]="slot.boxTop" [pokemon]="slot.pokemon" [own]="true" [exact]="!store.replay()" />
         }
+        @if (slot.pokemon && !slot.pokemon.fainted) {
+          <app-battle-hp-box
+            class="absolute"
+            [style.left.px]="slot.boxLeft"
+            [style.top.px]="slot.boxTop"
+            [pokemon]="slot.pokemon"
+            [own]="true"
+            [exact]="!store.replay()"
+            [emphasis]="emphasis()[slot.key] ?? null"
+          />
+        }
+      }
+      @for (shield of shields; track shield.key) {
+        <!-- Shown (display) only while its pulse plays. -->
+        <div
+          aria-hidden="true"
+          class="absolute hidden h-[160px] w-[160px] rounded-full border-4 border-[#67e8f9] bg-[#a5f3fc]"
+          [attr.data-shield]="shield.key"
+          [style.left.px]="shield.left"
+          [style.top.px]="shield.top"
+        ></div>
+      }
+      @for (popup of popupBanners(); track popup.slot) {
+        <div
+          role="status"
+          class="absolute block h-[42px] w-[240px] rounded-md border-2 bg-[#1f2937] text-white"
+          [class]="popup.kind === 'item' ? 'border-[#2dd4bf]' : popup.kind === 'miss' ? 'border-[#9ca3af]' : 'border-[#facc15]'"
+          [style.left.px]="popup.left"
+          [style.top.px]="popup.top"
+        >
+          @if (popup.kind === 'item') {
+            <app-item-icon class="absolute top-[3px] left-[4px]" [item]="popup.itemId" [size]="32" />
+            <span class="absolute top-[1px] left-[40px] block h-5 w-[192px] overflow-hidden text-center text-base leading-5 font-bold whitespace-nowrap text-[#99f6e4]">{{ popup.name }}</span>
+            <span class="absolute top-[21px] left-[40px] block h-4 w-[192px] overflow-hidden text-center text-xs leading-4 whitespace-nowrap">{{ popup.owner }}</span>
+          } @else {
+            <span
+              class="absolute top-[1px] left-0 block h-5 w-[236px] overflow-hidden text-center text-base leading-5 font-bold whitespace-nowrap"
+              [class]="popup.kind === 'miss' ? 'text-white' : 'text-[#fde68a]'"
+              >{{ popup.name }}</span
+            >
+            <span class="absolute top-[21px] left-0 block h-4 w-[236px] overflow-hidden text-center text-xs leading-4 whitespace-nowrap">{{ popup.owner }}</span>
+          }
+        </div>
+      }
+      @if (banner(); as b) {
+        <div
+          role="status"
+          class="absolute block h-[42px] w-[240px] rounded-md border-2 border-white text-white"
+          [style.left.px]="b.left"
+          [style.top.px]="b.top"
+          [style.background-color]="b.color"
+        >
+          <span class="absolute top-[1px] left-0 block h-5 w-[236px] overflow-hidden text-center text-base leading-5 font-bold whitespace-nowrap">{{ b.move }}</span>
+          <span class="absolute top-[21px] left-0 block h-4 w-[236px] overflow-hidden text-center text-xs leading-4 whitespace-nowrap">{{ b.detail }}</span>
+        </div>
       }
       @if (trickRoom()) {
         <!-- Trick Room: the field framed in violet, as the move's twisted dimensions. -->
@@ -102,6 +216,62 @@ interface FieldSlot {
 })
 export class BattleField {
   protected readonly store = inject(BattleStore);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly renderScheduler = inject(RenderScheduler);
+  private readonly dex = inject(ChampionsDex);
+  /** Sprites already asked for, so team preview's are fetched once. */
+  private readonly preloaded = new Set<string>();
+
+  /** Running animations by slot, so a new one on the same sprite replaces the old. */
+  private readonly running = new Map<SlotKey, () => void>();
+  /** The last faint whose animation has finished (its sprite can go). */
+  private readonly faintDone = signal(-1);
+
+  /** The slot whose Pokémon is fainting right now: its sprite stays until it has dropped out. */
+  protected readonly fainting = computed(() => {
+    const event = this.store.fieldEvent();
+    return event?.kind === 'faint' && event.id !== this.faintDone() ? event.slot : null;
+  });
+
+  /** The move's attacker (yellow) and targets (red), for their status boxes. */
+  protected readonly emphasis = computed(() => {
+    const action = this.store.action();
+    const emphasis: Record<SlotKey, HpBoxEmphasis> = {};
+    if (!action) return emphasis;
+    for (const target of action.targets) emphasis[target] = 'target';
+    emphasis[action.attacker] = 'attacker';
+    return emphasis;
+  });
+
+  /** "Heat Wave" on Fire's colour, "Charizard → Farigiraf & Sylveon". */
+  protected readonly banner = computed(() => {
+    const action = this.store.action();
+    if (!action) return null;
+    const name = (slot: SlotKey) => this.pokemonAt(slot)?.name ?? '';
+    const targets = action.targets.filter((t) => t !== action.attacker).map(name).filter(Boolean);
+    const detail = targets.length > 0 ? `${name(action.attacker)} → ${targets.join(' & ')}` : name(action.attacker);
+    return { move: action.move, detail, color: typeColor(action.type) || '#374151', ...this.bannerPosition(action.attacker, 0) };
+  });
+
+  /** The pop-ups being shown, one per slot at most; each goes after POPUP_MS (see the constructor). */
+  private readonly shownPopups = signal<readonly EffectPopup[]>([]);
+
+  protected readonly popupBanners = computed(() =>
+    this.shownPopups().map((popup) => ({
+      ...popup,
+      itemId: toId(popup.name),
+      owner: this.pokemonAt(popup.slot)?.name ?? '',
+      ...this.bannerPosition(popup.slot, 46),
+    })),
+  );
+
+  /** One shield per slot, centred on the sprite. */
+  protected readonly shields = [
+    { key: 'p2a', left: 650, top: 48 },
+    { key: 'p2b', left: 460, top: 48 },
+    { key: 'p1a', left: 70, top: 246 },
+    { key: 'p1b', left: 300, top: 246 },
+  ];
 
   protected readonly palette = computed(() => {
     const { weather, terrain } = this.store.field();
@@ -130,4 +300,282 @@ export class BattleField {
       { key: 'p1b', pokemon: b, left: 284, top: 226, size: 192, boxLeft: 501, boxTop: 312 },
     ];
   });
+
+  constructor() {
+    // After rendering, so the sprites the animations move are in place.
+    afterRenderEffect(() => {
+      const action = this.store.action();
+      if (action) untracked(() => this.lunge(action));
+    });
+    afterRenderEffect(() => {
+      const event = this.store.fieldEvent();
+      if (!event) return;
+      untracked(() => {
+        if (event.kind === 'hit') this.blink(event.slot);
+        else if (event.kind === 'faint') this.faint(event);
+        else if (event.kind === 'mega') this.megaFlash(event);
+        else if (event.kind === 'protect') this.shieldPulse(event);
+        else this.slide(event);
+      });
+    });
+    // Each new pop-up replaces its slot's current one, stays for a while, then goes.
+    let lastSeen = -1;
+    const popupTimers = new Map<SlotKey, ReturnType<typeof setTimeout>>();
+    effect(() => {
+      const popups = this.store.popups();
+      untracked(() => {
+        // A new battle empties the list: its pop-ups go with it.
+        if (popups.length === 0) {
+          popupTimers.forEach((timer) => clearTimeout(timer));
+          popupTimers.clear();
+          this.shownPopups.set([]);
+          return;
+        }
+        for (const popup of popups.filter((p) => p.id > lastSeen)) {
+          lastSeen = popup.id;
+          clearTimeout(popupTimers.get(popup.slot));
+          this.shownPopups.update((shown) => [...shown.filter((p) => p.slot !== popup.slot), popup]);
+          popupTimers.set(
+            popup.slot,
+            setTimeout(() => {
+              popupTimers.delete(popup.slot);
+              this.shownPopups.update((shown) => shown.filter((p) => p.id !== popup.id));
+              this.renderScheduler.request();
+            }, POPUP_MS / this.store.speed()),
+          );
+        }
+      });
+    });
+    inject(DestroyRef).onDestroy(() => popupTimers.forEach((timer) => clearTimeout(timer)));
+
+    // Team preview lists every Pokémon that may come out: their sprites are fetched ahead, so a
+    // send-out doesn't wait for the download (the player's side is seen from behind).
+    afterRenderEffect(() => {
+      const { p1, p2 } = this.store.sides();
+      untracked(() => {
+        p1.preview.forEach((species) => this.preload(species, true));
+        p2.preview.forEach((species) => this.preload(species, false));
+      });
+    });
+    inject(DestroyRef).onDestroy(() => this.running.forEach((stop) => stop()));
+  }
+
+  private preload(species: string, back: boolean): void {
+    const url = spriteUrl(this.dex.species(species)?.sprite ?? toId(species), back);
+    if (this.preloaded.has(url)) return;
+    this.preloaded.add(url);
+    new Image().src = url;
+  }
+
+  /**
+   * Where a banner goes over a slot's Pokémon: above the opponent's heads, or just over the
+   * player's own (short of their status boxes). `drop` lowers it, so an ability's pop-up clears
+   * the move banner.
+   */
+  private bannerPosition(slot: SlotKey, drop: number): { left: number; top: number } {
+    const from = this.slotData(slot);
+    const own = slot.startsWith('p1');
+    const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
+    const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
+    return { left, top: (own ? 192 : 4) + drop };
+  }
+
+  private pokemonAt(slot: SlotKey): BattlePokemon | null {
+    const side = this.store.sides()[slot.slice(0, 2) as 'p1' | 'p2'];
+    return side?.active[slot[2] === 'b' ? 1 : 0] ?? null;
+  }
+
+  private slotData(slot: SlotKey): FieldSlot | undefined {
+    return [...this.foeSlots(), ...this.ownSlots()].find((s) => s.key === slot);
+  }
+
+  private sprite(slot: SlotKey): HTMLElement | null {
+    return this.host.querySelector<HTMLElement>(`[data-slot="${slot}"]`);
+  }
+
+  /**
+   * Runs one animation on a slot's sprite, first putting back whatever an unfinished one left. With
+   * `waitForImage`, the first frame holds until the sprite's image has loaded: a sprite still
+   * downloading when its animation ran popped in at the end on the console.
+   */
+  private animate(
+    slot: SlotKey,
+    durationMs: number,
+    frame: (el: HTMLElement, base: FieldSlot, progress: number) => void,
+    options: { done?: () => void; waitForImage?: boolean } = {},
+  ): void {
+    this.running.get(slot)?.();
+    const el = this.sprite(slot);
+    const base = this.slotData(slot);
+    if (!el || !base) return;
+    const reset = () => {
+      el.style.left = `${base.left}px`;
+      el.style.top = `${base.top}px`;
+      el.style.opacity = '1';
+      el.style.filter = '';
+    };
+    reset();
+    let stop: () => void = () => undefined;
+    const run = () => {
+      stop = stepAnimation(
+        durationMs / this.store.speed(),
+        (progress) => frame(el, base, progress),
+        () => {
+          this.running.delete(slot);
+          options.done?.();
+        },
+      );
+    };
+    if (options.waitForImage) {
+      frame(el, base, 0);
+      stop = whenImageLoaded(el, run);
+    } else {
+      run();
+    }
+    this.running.set(slot, () => {
+      stop();
+      reset();
+      this.running.delete(slot);
+    });
+  }
+
+  /** The attacker lunges at its targets (their middle, for a spread move) and comes back. */
+  private lunge(action: MoveAction): void {
+    const from = this.slotData(action.attacker);
+    if (!from) return;
+    const targets = action.targets.filter((t) => t !== action.attacker).map((t) => this.slotData(t)).filter((t): t is FieldSlot => !!t);
+    let dx = 0;
+    let dy = -HOP_PX;
+    if (targets.length > 0) {
+      const x = targets.reduce((sum, t) => sum + t.left, 0) / targets.length - from.left;
+      const y = targets.reduce((sum, t) => sum + t.top, 0) / targets.length - from.top;
+      const length = Math.hypot(x, y) || 1;
+      dx = (x / length) * LUNGE_PX;
+      dy = (y / length) * LUNGE_PX;
+    }
+    // Whoever the move damages blinks as the lunge reaches them, not a log step later with their HP.
+    let struck = false;
+    this.animate(action.attacker, LUNGE_MS, (el, base, progress) => {
+      const amount = outAndBack(progress);
+      el.style.left = `${Math.round(base.left + dx * amount)}px`;
+      el.style.top = `${Math.round(base.top + dy * amount)}px`;
+      if (!struck && progress >= 0.5) {
+        struck = true;
+        action.hits.forEach((slot) => this.blink(slot));
+      }
+    });
+  }
+
+  /** The target blinks as it takes the hit. */
+  private blink(slot: SlotKey): void {
+    this.animate(slot, BLINK_MS, (el, _base, progress) => {
+      const phase = Math.min(BLINKS - 1, Math.floor(progress * BLINKS));
+      el.style.opacity = progress < 1 && phase % 2 === 0 ? BLINK_OPACITY : '1';
+    });
+  }
+
+  /**
+   * Withdrawn: slides towards its trainer's side and fades out, staying hidden until the next one
+   * replaces it. Sent out: slides in from there, fading in.
+   */
+  private slide(event: FieldEvent): void {
+    const away = event.slot.startsWith('p1') ? -SWITCH_PX : SWITCH_PX;
+    const leaving = event.kind === 'withdraw';
+    this.animate(
+      event.slot,
+      SWITCH_MS,
+      (el, base, progress) => {
+        const out = leaving ? progress : 1 - progress;
+        el.style.left = `${Math.round(base.left + away * out)}px`;
+        el.style.opacity = String(Math.round((1 - out) * 100) / 100);
+      },
+      { waitForImage: !leaving },
+    );
+  }
+
+  /** The Mega Evolved sprite starts white and pulses back to its colours. */
+  private megaFlash(event: FieldEvent): void {
+    this.animate(
+      event.slot,
+      MEGA_MS,
+      (el, _base, progress) => {
+        const glow = (1 - progress) * (0.5 + 0.5 * Math.cos(progress * 4 * Math.PI));
+        const brightness = Math.round((1 + (MEGA_BRIGHTNESS - 1) * glow) * 100) / 100;
+        el.style.filter = progress < 1 ? `brightness(${brightness})` : '';
+      },
+      { waitForImage: true },
+    );
+  }
+
+  /** A shield pulses around the Pokémon, then hides again. */
+  private shieldPulse(event: FieldEvent): void {
+    const key = `shield-${event.slot}`;
+    this.running.get(key)?.();
+    const el = this.host.querySelector<HTMLElement>(`[data-shield="${event.slot}"]`);
+    if (!el) return;
+    const hide = () => {
+      el.style.display = '';
+      el.style.opacity = '';
+    };
+    el.style.display = 'block';
+    const stop = stepAnimation(
+      SHIELD_MS / this.store.speed(),
+      (progress) => {
+        const pulse = Math.sin(progress * SHIELD_PULSES * Math.PI);
+        el.style.opacity = String(Math.round(Math.abs(pulse) * SHIELD_OPACITY * 100) / 100);
+      },
+      () => {
+        hide();
+        this.running.delete(key);
+      },
+    );
+    this.running.set(key, () => {
+      stop();
+      hide();
+      this.running.delete(key);
+    });
+  }
+
+  /** The fainted Pokémon sinks and disappears; then its sprite is removed. */
+  private faint(event: FieldEvent): void {
+    this.animate(
+      event.slot,
+      FAINT_MS,
+      (el, base, progress) => {
+        el.style.top = `${Math.round(base.top + FAINT_DROP_PX * progress)}px`;
+        // Fading as it sinks (visibility doesn't take effect on Brewser; opacity does).
+        el.style.opacity = String(Math.round((1 - progress) * 100) / 100);
+      },
+      {
+        done: () => {
+          this.faintDone.set(event.id);
+          this.renderScheduler.request();
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Calls `ready` once the sprite's image has loaded, or after IMAGE_WAIT_MS at most.
+ * Returns a function that cancels the wait.
+ */
+function whenImageLoaded(el: HTMLElement, ready: () => void): () => void {
+  const img = el.querySelector('img');
+  if (!img || (img.complete && img.naturalWidth > 0)) {
+    ready();
+    return () => undefined;
+  }
+  // Only 'load': a missing back sprite fails first and is swapped for the front one, which then loads.
+  const cancel = () => {
+    img.removeEventListener('load', finish);
+    clearTimeout(timer);
+  };
+  const finish = () => {
+    cancel();
+    ready();
+  };
+  img.addEventListener('load', finish);
+  const timer = setTimeout(finish, IMAGE_WAIT_MS);
+  return cancel;
 }

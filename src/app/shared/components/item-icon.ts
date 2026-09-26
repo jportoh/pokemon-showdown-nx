@@ -12,13 +12,15 @@ import { NgOptimizedImage } from '@angular/common';
   host: { class: 'block' },
   template: `
     @if (url(); as src) {
-      <img [ngSrc]="src" width="48" height="48" alt="" class="block" />
+      <img [ngSrc]="src" [width]="size()" [height]="size()" alt="" class="block" />
     }
   `,
 })
 export class ItemIcon {
   /** A legal item's id ("leftovers"); empty shows nothing. */
   readonly item = input('');
+  /** Shown size in px (the icons are 48x48). */
+  readonly size = input(48);
 
   protected readonly url = computed(() => (this.item() ? `items/${this.item()}.png` : ''));
 }

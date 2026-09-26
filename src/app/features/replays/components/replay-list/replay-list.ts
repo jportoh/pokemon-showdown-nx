@@ -1,5 +1,6 @@
 import {
   Component,
+  DestroyRef,
   ElementRef,
   afterRenderEffect,
   inject,
@@ -14,6 +15,9 @@ import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
 import { DEFAULT_TEAM_FORMAT, formatName } from '@shared/data/formats';
 import { ScrollRegion } from '@shared/directives/scroll-region';
+
+/** Long enough for Brewser to paint the hidden list before it is shown. */
+const SHOW_LIST_DELAY_MS = 50;
 
 interface ReplayRow extends ReplaySummary {
   title: string;
@@ -49,31 +53,33 @@ interface ReplayRow extends ReplaySummary {
         Refresh
       </button>
     </div>
-    <ul
-      appScrollRegion
-      aria-labelledby="replay-list-title"
-      class="h-[579px] w-[1280px] overflow-y-auto"
-    >
-      @for (replay of replays(); track replay.id) {
-        <li>
-          <button
-            #replayButton
-            type="button"
-            class="block h-16 w-[1280px] border-b border-gray-700 p-[10px_24px] text-left hover:bg-tab-hover disabled:text-gray-400"
-            [disabled]="opening() !== null"
-            (click)="open(replay)"
-          >
-            <span
-              class="block h-6 overflow-hidden text-base leading-6 font-bold whitespace-nowrap"
-              >{{ replay.title }}</span
+    <div class="h-[579px] w-[1280px]" [style.display]="listShown() ? 'block' : 'none'">
+      <ul
+        appScrollRegion
+        aria-labelledby="replay-list-title"
+        class="h-[579px] w-[1280px] overflow-y-auto"
+      >
+        @for (replay of replays(); track replay.id) {
+          <li>
+            <button
+              #replayButton
+              type="button"
+              class="block h-16 w-[1280px] border-b border-gray-700 p-[10px_24px] text-left hover:bg-tab-hover disabled:text-gray-400"
+              [disabled]="opening() !== null"
+              (click)="open(replay)"
             >
-            <span class="block h-5 text-sm leading-5 text-gray-300">{{
-              opening() === replay.id ? 'Loading the replay…' : replay.detail
-            }}</span>
-          </button>
-        </li>
-      }
-    </ul>
+              <span
+                class="block h-6 overflow-hidden text-base leading-6 font-bold whitespace-nowrap"
+                >{{ replay.title }}</span
+              >
+              <span class="block h-5 text-sm leading-5 text-gray-300">{{
+                opening() === replay.id ? 'Loading the replay…' : replay.detail
+              }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
   `,
 })
 export class ReplayList {
@@ -89,22 +95,45 @@ export class ReplayList {
   /** The replay being downloaded. */
   protected readonly opening = signal<string | null>(null);
   protected readonly subtitle = signal('');
+  /**
+   * On the console the list sometimes stayed blank when its rows arrived after it was drawn empty
+   * (they could still be pressed), even when it was hidden and shown again in the same task. So it
+   * stays hidden while it loads and is shown from a later task, once its rows are in the DOM: the
+   * pattern that works for the chat's user list (filled while hidden, shown later).
+   */
+  protected readonly listShown = signal(false);
+  private showTimer: ReturnType<typeof setTimeout> | null = null;
   /** The list focuses its first row once per load. */
   private focusPending = false;
 
   constructor() {
     afterRenderEffect(() => {
+      if (this.status() === 'loading' || this.replays().length === 0) return;
+      if (this.listShown() || this.showTimer !== null) return;
+      this.showTimer = setTimeout(() => {
+        this.showTimer = null;
+        this.listShown.set(true);
+        this.renderScheduler.request();
+      }, SHOW_LIST_DELAY_MS);
+    });
+    afterRenderEffect(() => {
       const first = this.rows()[0]?.nativeElement;
-      if (first && this.focusPending) {
+      if (first && this.listShown() && this.focusPending) {
         this.focusPending = false;
         first.focus();
       }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (this.showTimer !== null) clearTimeout(this.showTimer);
     });
     void this.refresh();
   }
 
   protected async refresh(): Promise<void> {
     this.status.set('loading');
+    this.listShown.set(false);
+    if (this.showTimer !== null) clearTimeout(this.showTimer);
+    this.showTimer = null;
     this.subtitle.set(`Loading the latest ${formatName(this.format)} replays…`);
     try {
       const now = Date.now() / 1000;

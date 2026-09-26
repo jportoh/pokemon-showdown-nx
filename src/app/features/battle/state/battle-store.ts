@@ -5,6 +5,9 @@ import {
   BattleConnection,
   BattleFieldState,
   FieldCondition,
+  EffectPopup,
+  FieldEvent,
+  MoveAction,
   BattleLogEntry,
   BattlePokemon,
   BattleRequest,
@@ -28,6 +31,7 @@ import {
   endItemText,
   fieldText,
   healReason,
+  isProtection,
   itemText,
   sideText,
   singleTurnText,
@@ -41,11 +45,19 @@ import {
 const MESSAGE_MS = 1100;
 /** A damage or heal step: long enough to see the HP bar move. */
 const HP_MS = 600;
+/** A Pokémon being withdrawn, before the next one comes out. */
+const WITHDRAW_MS = 600;
 /** Log entries kept (a whole battle, usually), to keep the DOM small on the console. */
 const MAX_LOG_ENTRIES = 250;
 /** How long a request waits for its log before it's shown anyway (a request may come alone). */
 const LOG_WAIT_MS = 1000;
 const SLOT_INDEX: Record<string, number> = { a: 0, b: 1 };
+/** Lines whose `[from]` ability or item belongs to the `[of]` Pokémon (the one causing the effect). */
+const SOURCE_OWNS_EFFECT = ['-weather', '-fieldstart', '-damage', '-item', '-enditem', '-sidestart'];
+/** Pop-ups kept for the field to pick up (it only shows the ones it hasn't seen). */
+const MAX_POPUPS = 8;
+/** Lines that start the next action: a move's own damage lines come before any of these. */
+const ACTION_BOUNDARIES = new Set(['move', 'switch', 'drag', 'cant', 'turn', 'upkeep', 'win', 'tie']);
 
 const emptySide = (id: SideId): BattleSide => ({
   id,
@@ -85,6 +97,9 @@ export class BattleStore {
   private readonly pausedSignal = signal(false);
   private readonly speedSignal = signal(1);
   private readonly fieldSignal = signal<BattleFieldState>(emptyField());
+  private readonly actionSignal = signal<MoveAction | null>(null);
+  private readonly fieldEventSignal = signal<FieldEvent | null>(null);
+  private readonly popupsSignal = signal<readonly EffectPopup[]>([]);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -110,16 +125,30 @@ export class BattleStore {
   readonly speed = this.speedSignal.asReadonly();
   /** Weather, terrain, rooms and each side's conditions in play. */
   readonly field = this.fieldSignal.asReadonly();
+  /** The move being used, while its effects play; null between moves. */
+  readonly action = this.actionSignal.asReadonly();
+  /** The latest hit or faint, for the field to animate. */
+  readonly fieldEvent = this.fieldEventSignal.asReadonly();
+  /**
+   * The latest abilities and items to take effect, newest last, for the field's pop-ups. A list, as
+   * lines with nothing to wait for play in one go and may bring several.
+   */
+  readonly popups = this.popupsSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
   private pendingRequest: BattleRequest | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private nextLogId = 0;
+  private nextEventId = 0;
+  /** The switch line whose withdrawal has just played, so applying it again brings the new Pokémon. */
+  private withdrawn: string | null = null;
   /** Set while a request waits for the log that should follow it. */
   private logWait: ReturnType<typeof setTimeout> | null = null;
   /** Set once the turn's end-of-turn effects have run: what starts now counts from the next turn. */
   private afterUpkeep = false;
+  /** Slots the current move's lunge has already blinked: their first damage line doesn't blink again. */
+  private readonly blinkedHits = new Set<string>();
 
   /** How the log names Pokémon and teams: from p1's side, which is the player's (or the one watched). */
   private readonly names: BattleNames = {
@@ -160,6 +189,11 @@ export class BattleStore {
     this.pausedSignal.set(false);
     this.fieldSignal.set(emptyField());
     this.afterUpkeep = false;
+    this.actionSignal.set(null);
+    this.fieldEventSignal.set(null);
+    this.popupsSignal.set([]);
+    this.withdrawn = null;
+    this.blinkedHits.clear();
   }
 
   /** Sends the turn's choices ("move 1 2, switch 3"); the request is used up. */
@@ -269,6 +303,7 @@ export class BattleStore {
     const [command, ...rest] = line.slice(1).split('|');
     const { args, tags } = splitArgs(rest);
     const names = this.names;
+    this.announceEffects(command, args, tags);
     switch (command) {
       case 'player': {
         const [side, name] = args;
@@ -293,8 +328,11 @@ export class BattleStore {
       case 'switch':
       case 'drag':
       case 'replace': {
+        this.actionSignal.set(null);
+        if (command !== 'replace' && this.withdrawFirst(args[0], line)) return WITHDRAW_MS;
         const pokemon = this.switchIn(args[0], args[1], args[2]);
         if (!pokemon || command === 'replace') return 0;
+        this.emit('send-out', args[0]);
         if (command === 'drag') return this.say(`${this.label(args[0])} was dragged out!`);
         if (pokemon.side === 'p1' && !this.replaySignal()) return this.say(`Go! ${pokemon.name}!`);
         return this.say(`${this.sidesSignal()[pokemon.side].name} sent out ${pokemon.name}!`);
@@ -306,18 +344,29 @@ export class BattleStore {
         this.updatePokemon(args[0], (p) => ({ ...p, ...parseDetails(args[1], this.dex) }));
         return 0;
       case '-mega':
+        this.emit('mega', args[0]);
         return this.say(
           `${this.label(args[0])} has Mega Evolved into ${megaName(this.findPokemon(args[0])?.species, args[1])}!`,
         );
       case 'move':
+        this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
         return this.say(`${this.label(args[0])} used ${args[1]}!`);
       case 'cant':
+        this.actionSignal.set(null);
         return this.say(cantText(args[0], args[1], args[2], names));
       case '-damage':
       case '-heal': {
         const before = this.findPokemon(args[0]);
-        this.updatePokemon(args[0], (p) => ({ ...p, ...parseCondition(args[1], p.maxHp) }));
+        // A Pokémon brought to 0 HP stays on the field until its |faint| line, which animates it out.
+        this.updatePokemon(args[0], (p) => ({ ...p, ...parseCondition(args[1], p.maxHp), fainted: p.fainted }));
         const after = this.findPokemon(args[0]);
+        // The move's first hit on each target already blinked with the attacker's lunge; later hits
+        // of a multi-hit move blink as their HP drops.
+        if (command === '-damage' && !tags['from']) {
+          const slot = this.slotOf(args[0]);
+          if (slot && this.blinkedHits.has(slot)) this.blinkedHits.delete(slot);
+          else this.emit('hit', args[0]);
+        }
         const reason =
           command === '-damage'
             ? damageReason(args[0], tags, names)
@@ -393,8 +442,11 @@ export class BattleStore {
       case '-transform':
         return this.say(`${this.label(args[0])} transformed into ${this.label(args[1], false)}!`);
       case '-singleturn':
+        if (isProtection(args[1])) this.emit('protect', args[0]);
         return this.sayIf(singleTurnText(args[0], args[1], names, tags));
       case '-activate':
+        // Protect (and the like) blocking a move shows its shield again.
+        if (isProtection(args[1])) this.emit('protect', args[0]);
         return this.sayIf(activateText(args[0], args[1], names));
       case '-start':
       case '-end':
@@ -421,20 +473,25 @@ export class BattleStore {
         return this.say('The effects on both sides of the field were swapped!');
       case 'upkeep':
         this.afterUpkeep = true;
+        this.actionSignal.set(null);
         return 0;
       case 'faint':
+        this.emit('faint', args[0]);
         this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true }));
         return this.say(`${this.label(args[0])} fainted!`);
       case 'turn':
         this.afterUpkeep = false;
+        this.actionSignal.set(null);
         this.turnSignal.set(Number(args[0]));
         this.addEntry('turn', `Turn ${args[0]}`);
         return 0;
       case 'win':
+        this.actionSignal.set(null);
         this.winnerSignal.set(args[0]);
         this.resultSignal.set(args[0] === this.sidesSignal().p1.name ? 'win' : 'loss');
         return this.say(`${args[0]} won the battle!`, 'result');
       case 'tie':
+        this.actionSignal.set(null);
         this.resultSignal.set('tie');
         return this.say('The battle ended in a tie!', 'result');
       case '-message':
@@ -457,6 +514,92 @@ export class BattleStore {
   private addEntry(kind: BattleLogEntry['kind'], text: string): void {
     const entry = { id: this.nextLogId++, kind, text };
     this.logSignal.update((log) => [...log, entry].slice(-MAX_LOG_ENTRIES));
+  }
+
+  /**
+   * `|move|p2a: Charizard|Heat Wave|p1b: Farigiraf|[spread] p1a,p1b`: the attacker's slot and every
+   * slot it's aimed at (all of them for a spread move; none for [still] moves with no target).
+   */
+  private moveAction(attacker: string, move: string, target: string | undefined, tags: Record<string, string>): MoveAction | null {
+    this.blinkedHits.clear();
+    const from = this.slotOf(attacker);
+    if (!from) return null;
+    let targets: string[];
+    if (tags['spread']) targets = tags['spread'].split(',').filter((slot) => /^p[12][ab]$/.test(slot));
+    else if ('notarget' in tags || !target) targets = [];
+    else targets = [this.slotOf(target)].filter((slot): slot is string => !!slot);
+    const type = this.dex.move(move)?.type ?? '';
+    const hits = this.upcomingHits().filter((slot) => slot !== from);
+    hits.forEach((slot) => this.blinkedHits.add(slot));
+    return { id: this.nextEventId++, attacker: from, targets, hits, move, type };
+  }
+
+  /**
+   * The slots a move's own damage lands on: the `|-damage|` lines without a [from] that follow it in
+   * the queue, before the next action. A turn's log arrives in one frame, so they're already queued.
+   */
+  private upcomingHits(): string[] {
+    const hits = new Set<string>();
+    for (const line of this.queue) {
+      const [command, ...rest] = line.slice(1).split('|');
+      if (ACTION_BOUNDARIES.has(command)) break;
+      if (command !== '-damage') continue;
+      const { args, tags } = splitArgs(rest);
+      const slot = !tags['from'] && args[0] ? this.slotOf(args[0]) : null;
+      if (slot) hits.add(slot);
+    }
+    return [...hits];
+  }
+
+  /**
+   * Spots abilities and held items taking effect, for the pop-ups over their Pokémon. Whose they
+   * are depends on the line: `|-ability|`, `|-enditem|`, `|-item|` and `|-activate|…|ability: X`
+   * (or item: X) name the Pokémon first; a `[from] ability:` or `[from] item:` tag belongs to the
+   * `[of]` Pokémon for effects it causes on others (weather, terrain, Rough Skin, Rocky Helmet) and
+   * to the first Pokémon otherwise (Stamina, Leftovers, Life Orb; for Water Absorb's heal `[of]` is
+   * the attacker).
+   */
+  private announceEffects(command: string, args: string[], tags: Record<string, string>): void {
+    const from = tags['from'] ?? '';
+    const owner = SOURCE_OWNS_EFFECT.includes(command) && tags['of'] ? tags['of'] : args[0];
+    if (command === '-ability') {
+      // Trace shows as Trace, not as the ability it copied.
+      this.popup(args[0], 'ability', from.startsWith('ability: ') ? effectName(from) : args[1]);
+    } else if (command === '-activate' && /^(ability|item): /.test(args[1] ?? '')) {
+      this.popup(args[0], args[1].startsWith('item: ') ? 'item' : 'ability', effectName(args[1]));
+    } else if (from.startsWith('ability: ')) {
+      this.popup(SOURCE_OWNS_EFFECT.includes(command) ? tags['of'] : args[0], 'ability', effectName(from));
+    }
+    // |-miss|ATTACKER|TARGET: the target avoided it (a miss with no target has nobody to show it on).
+    if (command === '-miss' && args[1]) this.popup(args[1], 'miss', 'Missed!');
+    // A Frisk reveal isn't the item doing anything.
+    if ((command === '-enditem' || command === '-item') && from !== 'ability: Frisk') {
+      this.popup(args[0], 'item', args[1]);
+    } else if (from.startsWith('item: ')) {
+      this.popup(owner, 'item', effectName(from));
+    }
+  }
+
+  private popup(ident: string | undefined, kind: EffectPopup['kind'], name: string | undefined): void {
+    const slot = ident && this.slotOf(ident);
+    if (!slot || !name) return;
+    const popup = { id: this.nextEventId++, slot, kind, name };
+    this.popupsSignal.update((popups) => [...popups, popup].slice(-MAX_POPUPS));
+  }
+
+  private emit(kind: FieldEvent['kind'], ident: string): void {
+    const slot = this.slotOf(ident);
+    if (slot) this.fieldEventSignal.set({ id: this.nextEventId++, kind, slot });
+  }
+
+  /** "p2a: Charizard" → "p2a"; "p2: Charizard" (no slot) → the slot it's active in, if any. */
+  private slotOf(ident: string): string | null {
+    const { side, slot } = parseIdent(ident);
+    if (!side) return null;
+    if (slot !== undefined) return `${side}${'ab'[slot]}`;
+    const pokemon = this.findPokemon(ident);
+    const index = this.sidesSignal()[side].active.findIndex((p) => !!pokemon && p?.ident === pokemon.ident);
+    return index >= 0 ? `${side}${'ab'[index]}` : null;
   }
 
   /** "[The opposing Charizard's Drought]" before the effect an ability caused. */
@@ -565,16 +708,6 @@ export class BattleStore {
       fainted: false,
       boosts: {},
     };
-    const leaving = this.sidesSignal()[side].active[slot];
-    if (leaving && !leaving.fainted && leaving.ident !== key) {
-      const player = this.sidesSignal()[side].name;
-      this.addEntry(
-        'message',
-        side === 'p1' && !this.replaySignal()
-          ? `${leaving.name}, come back!`
-          : `${player} withdrew ${leaving.name}!`,
-      );
-    }
     // Stat stages go with switching out.
     const pokemon = {
       ...base,
@@ -590,6 +723,31 @@ export class BattleStore {
         : [...s.pokemon, pokemon],
     }));
     return pokemon;
+  }
+
+  /**
+   * A switch into a slot whose Pokémon is still standing plays in two steps: first it's withdrawn
+   * ("Garchomp, come back!", animated), then the same line is applied again to bring out the new one.
+   * Returns true when it has queued the line again after the withdrawal.
+   */
+  private withdrawFirst(ident: string, line: string): boolean {
+    if (this.withdrawn === line) {
+      this.withdrawn = null;
+      return false;
+    }
+    const { side, slot, name } = parseIdent(ident);
+    if (!side || slot === undefined) return false;
+    const leaving = this.sidesSignal()[side].active[slot];
+    if (!leaving || leaving.fainted || leaving.ident === `${side}: ${name}`) return false;
+    const player = this.sidesSignal()[side].name;
+    this.addEntry(
+      'message',
+      side === 'p1' && !this.replaySignal() ? `${leaving.name}, come back!` : `${player} withdrew ${leaving.name}!`,
+    );
+    this.emit('withdraw', ident);
+    this.withdrawn = line;
+    this.queue.unshift(line);
+    return true;
   }
 
   /** `|swap|p1a: Indeedee|1`: the two active Pokémon trade places (Ally Switch). */

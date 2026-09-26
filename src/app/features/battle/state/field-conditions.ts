@@ -72,7 +72,8 @@ export function conditionColor(condition: FieldCondition): string {
 /** Turns left, counting the current one; null for conditions that stay until removed. */
 export function turnsLeft(condition: FieldCondition, turn: number): number | null {
   if (!condition.duration) return null;
-  let left = condition.start + condition.duration - turn;
+  // Before turn 1 (leads' abilities) the count is as of turn 1.
+  let left = condition.start + condition.duration - Math.max(1, turn);
   // Still up after its usual length: an item made it last longer.
   if (left <= 0 && condition.extendable) left += 3;
   return Math.max(1, left);
