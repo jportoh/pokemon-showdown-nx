@@ -14,8 +14,14 @@ import { toId } from '@shared/utils/to-id';
 
 // Animation lengths at normal speed; the replay speed divides them, as it does the log's steps
 // (a move's step lasts 1100 ms, an HP change 600 ms).
-const LUNGE_MS = 500;
-const LUNGE_PX = 56;
+const LUNGE_MS = 600;
+/**
+ * How far the attacker lunges: a share of the way to its target, within bounds (a foe across the
+ * field is ~750px away in doubles, an ally beside it ~270px).
+ */
+const LUNGE_SHARE = 0.25;
+const LUNGE_MIN_PX = 72;
+const LUNGE_MAX_PX = 180;
 /** A move with no target (or aimed at itself): a hop in place. */
 const HOP_PX = 24;
 const BLINK_MS = 540;
@@ -175,8 +181,10 @@ interface FieldSlot {
  * once its sprite has loaded (preloaded from team preview). Mega Evolution flashes the new sprite
  * white, and Protect pulses a shield around the Pokémon. Abilities (Intimidate, Drizzle, Stamina…)
  * and held items (Sitrus Berry, Leftovers, Eject Button…) taking effect pop up over their Pokémon a
- * little below where moves show: gold-edged for abilities, teal with the item's icon for items. A
- * move that misses shows "Missed!" over the Pokémon that avoided it, grey-edged. Frames step on requestAnimationFrame over the sprites' inline
+ * little below where moves show: gold-edged for abilities, teal with the item's icon for items.
+ * Notices show the same way, grey-edged: "Missed!" or "No effect!" over the Pokémon a move didn't
+ * touch, "Taunted!" over one that couldn't use its move, "Perish in 2 turns" over each Pokémon
+ * counting down. Frames step on requestAnimationFrame over the sprites' inline
  * styles (see stepAnimation).
  */
 @Component({
@@ -260,7 +268,7 @@ interface FieldSlot {
         <div
           role="status"
           class="absolute block h-[42px] w-[240px] rounded-md border-2 bg-[#1f2937] text-white"
-          [class]="popup.kind === 'item' ? 'border-[#2dd4bf]' : popup.kind === 'miss' ? 'border-[#9ca3af]' : 'border-[#facc15]'"
+          [class]="popup.kind === 'item' ? 'border-[#2dd4bf]' : popup.kind === 'notice' ? 'border-[#9ca3af]' : 'border-[#facc15]'"
           [style.left.px]="popup.left"
           [style.top.px]="popup.top"
         >
@@ -271,7 +279,7 @@ interface FieldSlot {
           } @else {
             <span
               class="absolute top-[1px] left-0 block h-5 w-[236px] overflow-hidden text-center text-base leading-5 font-bold whitespace-nowrap"
-              [class]="popup.kind === 'miss' ? 'text-white' : 'text-[#fde68a]'"
+              [class]="popup.kind === 'notice' ? 'text-white' : 'text-[#fde68a]'"
               >{{ popup.name }}</span
             >
             <span class="absolute top-[21px] left-0 block h-4 w-[236px] overflow-hidden text-center text-xs leading-4 whitespace-nowrap">{{ popup.owner }}</span>
@@ -691,8 +699,9 @@ export class BattleField {
       const x = targets.reduce((sum, t) => sum + t.left, 0) / targets.length - from.left;
       const y = targets.reduce((sum, t) => sum + t.top, 0) / targets.length - from.top;
       const length = Math.hypot(x, y) || 1;
-      dx = (x / length) * LUNGE_PX;
-      dy = (y / length) * LUNGE_PX;
+      const distance = Math.max(LUNGE_MIN_PX, Math.min(LUNGE_MAX_PX, length * LUNGE_SHARE));
+      dx = (x / length) * distance;
+      dy = (y / length) * distance;
     }
     // Whoever the move damages blinks as the lunge reaches them, not a log step later with their HP.
     let struck = false;

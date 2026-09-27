@@ -189,9 +189,45 @@ export function cantText(
       return `${who} can't use ${move ?? 'that move'} after the taunt!`;
     case 'Disable':
       return `${who}'s ${move ?? 'move'} is disabled!`;
+    case 'Imprison':
+      return `${who} can't use its sealed ${move ?? 'move'}!`;
+    case 'Heal Block':
+      return `${who} can't use ${move ?? 'that move'} because of Heal Block!`;
+    case 'Throat Chop':
+      return `The effects of Throat Chop prevent ${names.pokemon(ident, false)} from using certain moves!`;
+    case 'Gravity':
+      return `${who} can't use ${move ?? 'that move'} because of gravity!`;
+    case 'nopp':
+      return `${who} has no PP left for ${move ?? 'that move'}!`;
     default:
       return `${who} can't move!`;
   }
+}
+
+const CANT_LABELS: Record<string, string> = {
+  slp: 'Fast asleep',
+  par: 'Fully paralyzed!',
+  frz: 'Frozen solid!',
+  flinch: 'Flinched!',
+  recharge: 'Must recharge!',
+  Taunt: 'Taunted!',
+  Disable: 'Move disabled!',
+  Imprison: 'Move sealed!',
+  'Heal Block': 'Heal blocked!',
+  'Throat Chop': 'Throat Chopped!',
+  Gravity: 'Blocked by Gravity!',
+  nopp: 'No PP left!',
+};
+
+/** `|cant|` as the short notice over the Pokémon: "Taunted!", "Move disabled!". */
+export function cantLabel(reason: string): string {
+  return CANT_LABELS[effectName(reason)] ?? "Can't move!";
+}
+
+/** `|-start|…|perish2`: the count as a number (0-3); null for any other effect. */
+export function perishCount(effect: string): number | null {
+  const match = /^perish(\d)$/.exec(effect);
+  return match ? Number(match[1]) : null;
 }
 
 /** Moves that shield a Pokémon (or its side) for the turn. */
@@ -265,6 +301,8 @@ export function volatileText(
 ): string | null {
   const who = names.pokemon(ident);
   const name = effectName(effect);
+  const perish = perishCount(name);
+  if (perish !== null) return `${who}'s perish count fell to ${perish}.`;
   if (ending) {
     switch (name) {
       case 'confusion':

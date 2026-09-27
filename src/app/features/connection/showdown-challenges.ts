@@ -18,14 +18,24 @@ export interface Challenge {
   needsTeam: boolean;
 }
 
-/** How long a popup after accepting or rejecting is taken as the server's answer to it. */
+/** A challenge we sent (a rematch), until it's accepted, rejected or cancelled. */
+export interface OutgoingChallenge {
+  /** Their name as shown. */
+  to: string;
+  toId: string;
+  /** The format's ID ("gen9randombattle"). */
+  format: string;
+}
+
+/** How long a popup after accepting, rejecting or challenging is taken as the server's answer to it. */
 const ANSWER_WINDOW_MS = 5000;
 
 /**
  * Challenges other players send us. Showdown sends them as private messages:
  * `|pm| ffenrix|!Brewser1234|/challenge gen9randombattle|gen9randombattle|||`, and the same with an
  * empty `/challenge` when it's withdrawn (or, from our side, once we've answered). Accepting starts a
- * battle room, which BattleRooms picks up.
+ * battle room, which BattleRooms picks up. Ours (rematches, random formats only) go out as
+ * `/challenge ffenrix, gen9randombattle`, and the server echoes them the same way with us as sender.
  */
 @Service()
 export class ShowdownChallenges {
@@ -34,24 +44,61 @@ export class ShowdownChallenges {
   private readonly render = inject(RenderScheduler);
   private readonly incomingSignal = signal<readonly Challenge[]>([]);
   private readonly errorSignal = signal<string | null>(null);
-  /** When we last accepted or rejected: a popup soon after is the server's answer. */
+  private readonly outgoingSignal = signal<OutgoingChallenge | null>(null);
+  /** When we last accepted, rejected or challenged: a popup soon after is the server's answer. */
   private answeredAt = 0;
+  /** The server has echoed our challenge back: it went out. */
+  private outgoingConfirmed = false;
+  private confirmTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Pending challenges, oldest first. */
   readonly incoming = this.incomingSignal.asReadonly();
-  /** Why the last accept failed (a popup from the server), until the next answer. */
+  /** Why the last accept or challenge failed (a popup from the server, a rejection), until the next one. */
   readonly error = this.errorSignal.asReadonly();
+  /** The challenge we sent, while it waits for an answer. */
+  readonly outgoing = this.outgoingSignal.asReadonly();
 
   constructor() {
     this.connection.frames.subscribe((frame) => {
       for (const line of frame.lines) {
         const [type, ...args] = splitLine(line, 3);
         if (type === 'pm') this.onPm(args[0] ?? '', args[1] ?? '', args[2] ?? '');
-        else if (type === 'popup' && Date.now() - this.answeredAt < ANSWER_WINDOW_MS) this.setError(args.join('|'));
+        // Errors in battle rooms (`|error|[Invalid choice]…`) aren't answers to challenges.
+        else if ((type === 'popup' || (type === 'error' && !frame.roomId)) && Date.now() - this.answeredAt < ANSWER_WINDOW_MS)
+          this.onPopup(args.join('|'));
       }
     });
     // Challenges don't survive a new connection.
-    this.connection.opened.subscribe(() => this.setIncoming([]));
+    this.connection.opened.subscribe(() => {
+      this.setIncoming([]);
+      this.setOutgoing(null);
+    });
+  }
+
+  /** Challenges a player to a random format (no team to send): `/utm null` clears any team sent before. */
+  challenge(to: string, format: string): void {
+    if (this.outgoingSignal()) return;
+    this.answeredAt = Date.now();
+    this.errorSignal.set(null);
+    const id = toId(to);
+    this.connection.send('', '/utm null');
+    this.connection.send('', `/challenge ${id}, ${format}`);
+    this.setOutgoing({ to, toId: id, format });
+    // Silence isn't an answer either: said, so it shows (the challenge may still go out).
+    this.confirmTimer = setTimeout(() => {
+      this.confirmTimer = null;
+      if (this.outgoingSignal() && !this.outgoingConfirmed && !this.errorSignal()) {
+        this.setError('The server has not confirmed the challenge.');
+      }
+    }, ANSWER_WINDOW_MS);
+  }
+
+  /** Withdraws the challenge we sent, if any. */
+  cancelChallenge(): void {
+    const outgoing = this.outgoingSignal();
+    if (!outgoing) return;
+    this.connection.send('', `/cancelchallenge ${outgoing.toId}`);
+    this.setOutgoing(null);
   }
 
   /** Random formats need no team: `/utm null` clears any team sent before. */
@@ -74,11 +121,31 @@ export class ShowdownChallenges {
 
   /** `|pm|SENDER|RECEIVER|MESSAGE`, each name with a leading rank character. */
   private onPm(sender: string, receiver: string, message: string): void {
-    if (!message.startsWith('/challenge')) return;
+    const outgoing = this.outgoingSignal();
+    // The rejection comes as a message ("ffenrix rejected the challenge."), after or before the empty
+    // `/challenge` that ends it.
+    if (!message.startsWith('/challenge')) {
+      if (/rejected the challenge/.test(message)) {
+        this.setError(plainText(message));
+        this.setOutgoing(null);
+      } else if (outgoing && Date.now() - this.answeredAt < ANSWER_WINDOW_MS && (message.startsWith('/error') || !toId(sender))) {
+        // Soon after challenging, an error or a message from the server itself ("~") is its answer:
+        // some refusals come this way rather than as a popup.
+        this.onPopup(plainText(message));
+      }
+      return;
+    }
     const me = this.login.userId();
     const fromId = toId(sender);
-    if (toId(receiver) !== me || fromId === me) return;
     const format = message.slice('/challenge'.length).trim().split('|')[0];
+    // Ours, echoed: gone when empty (accepted, rejected or cancelled; an accepted one starts a battle).
+    if (fromId === me) {
+      if (outgoing?.toId !== toId(receiver)) return;
+      if (format) this.outgoingConfirmed = true;
+      else this.setOutgoing(null);
+      return;
+    }
+    if (toId(receiver) !== me) return;
     const others = this.incomingSignal().filter((c) => c.fromId !== fromId);
     if (!format) {
       this.setIncoming(others);
@@ -99,8 +166,38 @@ export class ShowdownChallenges {
     this.render.request();
   }
 
+  /** An error after challenging ("The user 'ffenrix' was not found.") means the challenge didn't go out. */
+  private onPopup(error: string): void {
+    this.setOutgoing(null);
+    // A popup's "||" is a line break.
+    this.setError(error.replace(/\|\|/g, ' ').trim());
+  }
+
+  private setOutgoing(challenge: OutgoingChallenge | null): void {
+    this.outgoingConfirmed = false;
+    if (!challenge && this.confirmTimer !== null) {
+      clearTimeout(this.confirmTimer);
+      this.confirmTimer = null;
+    }
+    this.outgoingSignal.set(challenge);
+    this.render.request();
+  }
+
   private setError(error: string): void {
     this.errorSignal.set(error);
     this.render.request();
   }
+}
+
+/** A PM's text as it reads: "/error You can't…" or "/raw <b>…</b>" → the words alone. */
+function plainText(message: string): string {
+  return message
+    .replace(/^\/\w+\s+/, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .trim();
 }

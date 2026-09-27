@@ -29,7 +29,7 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
  * choosing (item, ability, Tera type, stats). Switching is done on the team tiles in the right column
  * (BattleTeamPreview): the card follows the tile pointed at, to see what comes in. Then the target
  * picker when a move needs one (foes on top, as on the field), the forced switch after a faint (on the
- * tiles too), and the rematch/leave buttons at the end. While a turn plays (or the opponent chooses)
+ * tiles too), and the rematch/leave buttons at the end (with a line on the rematch's progress). While a turn plays (or the opponent chooses)
  * it shows what each Pokémon was told to do beside the card, so the panel never goes blank. Each view
  * is a normal-flow block with absolutely placed parts (Brewser layout rules), swapped with @if. Text
  * rows have fixed heights: on the console a row that starts empty (a slot's name before its Pokémon
@@ -45,13 +45,15 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
         <p class="absolute top-0 left-0 block h-7 w-[961px] text-lg leading-7 font-bold">{{ resultText() }}</p>
         @if (canRematch()) {
           <button type="button" data-pick class="absolute top-[40px] left-0 h-[60px] w-[474px] rounded-md border border-blue-300 bg-blue-700 text-xl font-bold hover:bg-blue-800" (click)="rematch.emit()">
-            Rematch
+            {{ rematchLabel() }}
           </button>
         }
         <button type="button" data-pick class="absolute top-[40px] h-[60px] rounded-md border border-gray-400 bg-gray-600 text-xl font-bold hover:bg-gray-500"
           [style.left.px]="canRematch() ? 486 : 0" [style.width.px]="canRematch() ? 474 : 961" (click)="leave.emit()">
           Back to Home
         </button>
+        <!-- Always there (fixed height), so a note appearing doesn't move anything on the console. -->
+        <p role="status" class="absolute top-[106px] left-0 block h-10 w-[961px] overflow-hidden text-sm leading-5 text-gray-200">{{ rematchNote() }}</p>
       </div>
     } @else if (choices.slot() !== null) {
       @if (choices.pendingMove()) {
@@ -201,8 +203,12 @@ export class BattleControls {
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
 
-  /** Another battle against the mock at the end; a real battle only has Back to Home. */
+  /** Another battle at the end: against the mock, or the same player again (random formats). */
   readonly canRematch = input(true);
+  /** "Rematch", "Accept rematch" or "Cancel rematch" (while ours waits for an answer). */
+  readonly rematchLabel = input('Rematch');
+  /** Under the buttons: the rematch waiting for an answer, or why it didn't happen. */
+  readonly rematchNote = input('');
   readonly rematch = output<void>();
   readonly leave = output<void>();
 

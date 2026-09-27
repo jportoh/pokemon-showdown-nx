@@ -1,11 +1,11 @@
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
-import { BattleHeader } from '@features/battle/components/battle-header/battle-header';
+import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
@@ -16,10 +16,12 @@ import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { BattleRooms } from '@features/connection/battle-rooms';
+import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
+import { toId } from '@shared/utils/to-id';
 
 /** How long the forfeit confirmation waits for the second press. */
 const FORFEIT_CONFIRM_MS = 4000;
@@ -34,8 +36,8 @@ const FORFEIT_CONFIRM_MS = 4000;
  * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
  * side's and the player's team. The battle log shows over the field's right part only on request
  * (hidden, not removed: see BattleLog). The battle itself lives in root services.
- * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL or ZR
- * shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
+ * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL
+ * turns the battle timer on or off (real battles), ZR shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
  * controls and has nothing to forfeit.
  */
 @Component({
@@ -46,10 +48,11 @@ const FORFEIT_CONFIRM_MS = 4000;
     <div class="relative h-[720px] w-[1280px]">
       <app-battle-header
         class="absolute top-0 left-0"
-        [confirmingForfeit]="confirmingForfeit()"
+        [forfeitState]="forfeitState()"
         [logOpen]="logOpen()"
         (forfeit)="forfeit()"
         (toggleLog)="toggleLog()"
+        (toggleTimer)="toggleTimer()"
       />
 
       <app-battle-field class="absolute top-[48px] left-[12px]" />
@@ -61,8 +64,10 @@ const FORFEIT_CONFIRM_MS = 4000;
           <app-battle-controls
             class="absolute top-[12px] left-[12px]"
             (appBack)="back()"
-            [canRematch]="!live()"
-            (rematch)="start()"
+            [canRematch]="rematchView().can"
+            [rematchLabel]="rematchView().label"
+            [rematchNote]="rematchView().note"
+            (rematch)="rematch()"
             (leave)="leave()"
           />
         }
@@ -91,14 +96,44 @@ export class BattleScreen {
   private readonly navigation = inject(KeyboardNavigation);
   private readonly rooms = inject(BattleRooms);
   private readonly login = inject(ShowdownLogin);
+  private readonly challenges = inject(ShowdownChallenges);
 
   /** The format of the battles this page starts (the lobby's pick). */
   private format = DEFAULT_TEAM_FORMAT;
 
-  /** A real battle on the server (accepted challenge): no rematch against the mock at the end. */
-  protected readonly live = signal(false);
+  /** The real battle's server room (an accepted challenge); null against the mock. */
+  private readonly liveRoom = signal<string | null>(null);
+  /** A rematch was asked for since this battle started: only then do challenge errors show here. */
+  private readonly rematchAsked = signal(false);
 
-  protected readonly confirmingForfeit = signal(false);
+  /**
+   * The end's Rematch button. Against the mock: another battle. In a real battle (random formats only:
+   * a challenge can't carry a team yet): a challenge to the same player in the same format, or
+   * accepting theirs if they asked first; while ours waits, the button cancels it.
+   */
+  protected readonly rematchView = computed(() => {
+    const room = this.liveRoom();
+    if (!room) return { can: true, label: 'Rematch', note: '' };
+    const format = roomFormat(room);
+    const opponent = this.store.sides().p2.name;
+    if (!format?.includes('random') || !opponent) return { can: false, label: '', note: '' };
+    if (this.challenges.outgoing()?.toId === toId(opponent)) {
+      return { can: true, label: 'Cancel rematch', note: this.challenges.error() ?? `Waiting for ${opponent} to accept the rematch…` };
+    }
+    if (this.theirRematch()) return { can: true, label: 'Accept rematch', note: `${opponent} wants a rematch!` };
+    const error = this.rematchAsked() ? this.challenges.error() : null;
+    return { can: true, label: 'Rematch', note: error ?? '' };
+  });
+
+  /** The opponent's challenge to a rematch in this battle's format, if they've sent one. */
+  private readonly theirRematch = computed(() => {
+    const room = this.liveRoom();
+    const opponent = toId(this.store.sides().p2.name);
+    const format = room && roomFormat(room);
+    return this.challenges.incoming().find((c) => c.fromId === opponent && c.format === format && !c.needsTeam) ?? null;
+  });
+
+  protected readonly forfeitState = signal<ForfeitState>('idle');
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly logOpen = signal(false);
@@ -114,21 +149,52 @@ export class BattleScreen {
       this.format = request.format;
       this.start();
     } else if (request?.kind === 'live') {
-      this.live.set(true);
-      this.cancelForfeit();
-      this.store.start(new ShowdownBattleConnection(this.rooms, request.roomId, this.login.userId()));
+      this.startLive(request.roomId);
     }
+    // A rematch accepted (theirs or ours) opens its room while this battle is still on screen (App only
+    // opens battles when none is): it takes this one's place.
+    const rematches = this.rooms.started.subscribe((roomId) => {
+      if (this.liveRoom() && this.store.result()) this.startLive(roomId);
+    });
 
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
-      this.navigation.registerButton('buttonZL', () => this.toggleLog()),
+      this.navigation.registerButton('buttonZL', () => this.toggleTimer()),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
+      rematches.unsubscribe();
       this.cancelForfeit();
     });
+  }
+
+  /** The real battle in a server room (an accepted challenge or rematch). */
+  private startLive(roomId: string): void {
+    this.liveRoom.set(roomId);
+    this.rematchAsked.set(false);
+    this.cancelForfeit();
+    this.store.start(new ShowdownBattleConnection(this.rooms, roomId, this.login.userId()));
+  }
+
+  /** The end's Rematch button (see rematchView). */
+  protected rematch(): void {
+    const room = this.liveRoom();
+    if (!room) {
+      this.start();
+      return;
+    }
+    const format = roomFormat(room);
+    const opponent = this.store.sides().p2.name;
+    const theirs = this.theirRematch();
+    if (!format || !opponent) return;
+    if (this.challenges.outgoing()) this.challenges.cancelChallenge();
+    else if (theirs) this.challenges.accept(theirs);
+    else {
+      this.rematchAsked.set(true);
+      this.challenges.challenge(opponent, format);
+    }
   }
 
   /**
@@ -142,9 +208,13 @@ export class BattleScreen {
     this.store.start(new MockBattleConnection(this.dex, format, 'Player', team?.sets ?? []));
   }
 
-  /** B: takes back the choices sent while the opponent is still choosing, or steps back while choosing. */
+  /**
+   * B: takes back the choices sent while the opponent is still choosing, or steps back while choosing.
+   * At the end, it withdraws the rematch waiting for an answer.
+   */
   protected back(): void {
-    if (this.store.canUndo()) this.store.undo();
+    if (this.store.result()) this.challenges.cancelChallenge();
+    else if (this.store.canUndo()) this.store.undo();
     else this.choices.back();
   }
 
@@ -158,15 +228,20 @@ export class BattleScreen {
     return true;
   }
 
-  /** The first press (R or a click) asks for confirmation, which lapses after a few seconds; the second forfeits. */
+  /**
+   * The first press (R or a click) asks for confirmation, which lapses after a few seconds; the second
+   * forfeits. Further presses do nothing while the server ends the battle.
+   */
   protected forfeit(): boolean {
     if (this.store.result() || this.store.replay()) return false;
-    if (!this.confirmingForfeit()) {
-      this.confirmingForfeit.set(true);
+    if (this.forfeitState() === 'forfeiting') return true;
+    if (this.forfeitState() === 'idle') {
+      this.forfeitState.set('confirming');
       this.forfeitTimer = setTimeout(() => this.cancelForfeit(), FORFEIT_CONFIRM_MS);
       return true;
     }
     this.cancelForfeit();
+    this.forfeitState.set('forfeiting');
     this.store.forfeit();
     return true;
   }
@@ -174,10 +249,17 @@ export class BattleScreen {
   private cancelForfeit(): void {
     if (this.forfeitTimer !== null) clearTimeout(this.forfeitTimer);
     this.forfeitTimer = null;
-    this.confirmingForfeit.set(false);
+    this.forfeitState.set('idle');
   }
 
-  /** ZL, ZR or the button: shows the log (which takes focus) or hides it. */
+  /** ZL or the header's timer button: asks the server for the battle timer on or off (real battles only). */
+  protected toggleTimer(): boolean {
+    if (!this.store.canToggleTimer() || this.store.result()) return false;
+    this.store.toggleTimer();
+    return true;
+  }
+
+  /** ZR or the button: shows the log (which takes focus) or hides it. */
   protected toggleLog(): boolean {
     if (this.logOpen()) {
       this.closeLog();
@@ -208,9 +290,15 @@ export class BattleScreen {
     void this.router.navigateByUrl('/replays');
   }
 
-  /** Closes the finished battle (so the page can be left) and goes home. */
+  /** Closes the finished battle (so the page can be left) and goes home; a rematch waiting is withdrawn. */
   protected leave(): void {
+    this.challenges.cancelChallenge();
     this.store.close();
     void this.router.navigateByUrl('/');
   }
+}
+
+/** "battle-gen9randombattle-2345678" → "gen9randombattle". */
+function roomFormat(roomId: string): string | null {
+  return /^battle-([a-z0-9]+)-\d+/.exec(roomId)?.[1] ?? null;
 }

@@ -13,6 +13,11 @@ export class ShowdownBattleConnection implements BattleConnection {
   private side: SideId | null = null;
   /** The latest request's ID, sent with each choice. */
   private rqid: number | null = null;
+  /**
+   * Frames held until our side is known: the challenger's `|player|` line can come before ours, and
+   * passed on unswapped it would give our side their name and leave theirs with none.
+   */
+  private held: string[] = [];
 
   constructor(
     private readonly rooms: BattleRooms,
@@ -22,7 +27,16 @@ export class ShowdownBattleConnection implements BattleConnection {
   ) {}
 
   start(onMessage: (frame: string) => void): void {
-    this.rooms.attach(this.roomId, (frame) => onMessage(this.translate(frame)));
+    this.rooms.attach(this.roomId, (frame) => {
+      for (const line of frame.split('\n')) this.learnFrom(line);
+      if (!this.side) {
+        this.held.push(frame);
+        return;
+      }
+      const frames = [...this.held, frame];
+      this.held = [];
+      frames.forEach((f) => onMessage(this.translate(f)));
+    });
   }
 
   choose(choice: string): void {
@@ -34,6 +48,11 @@ export class ShowdownBattleConnection implements BattleConnection {
     this.rooms.send(this.roomId, '/undo');
   }
 
+  /** Either player can turn the timer on; off only drops our own request for it (the server decides). */
+  setTimer(on: boolean): void {
+    this.rooms.send(this.roomId, on ? '/timer on' : '/timer off');
+  }
+
   forfeit(): void {
     this.rooms.send(this.roomId, '/forfeit');
   }
@@ -43,9 +62,7 @@ export class ShowdownBattleConnection implements BattleConnection {
   }
 
   private translate(frame: string): string {
-    const lines = frame.split('\n');
-    for (const line of lines) this.learnFrom(line);
-    return this.side === 'p2' ? lines.map(swapSidesInLine).join('\n') : frame;
+    return this.side === 'p2' ? frame.split('\n').map(swapSidesInLine).join('\n') : frame;
   }
 
   /** Our side and the request's ID, from the lines as the server sent them. */

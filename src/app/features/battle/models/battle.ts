@@ -141,13 +141,13 @@ export interface MoveAction {
 
 /**
  * An ability (Intimidate, Drizzle, Stamina…) or a held item (Sitrus Berry, Leftovers, Eject Button…)
- * taking effect, shown over the Pokémon it belongs to; or a move missing, over the Pokémon that
- * avoided it.
+ * taking effect, shown over the Pokémon it belongs to; or a notice over a Pokémon: a move that
+ * missed it or didn't affect it, a move it couldn't use (Taunt, Disable…), its perish count.
  */
 export interface EffectPopup {
   id: number;
   slot: SlotKey;
-  kind: 'ability' | 'item' | 'miss';
+  kind: 'ability' | 'item' | 'notice';
   name: string;
 }
 
@@ -217,6 +217,8 @@ export interface BattleConnection {
   forfeit(): void;
   /** Takes back the choices sent while the opponent is still choosing; absent where that can't happen. */
   undo?(): void;
+  /** Asks for the battle timer on or off; absent where there's no timer (the mock, replays). */
+  setTimer?(on: boolean): void;
   stop(): void;
 }
 

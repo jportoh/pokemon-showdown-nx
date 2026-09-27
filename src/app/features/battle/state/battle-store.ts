@@ -29,6 +29,7 @@ import {
   abilityText,
   activateText,
   boostText,
+  cantLabel,
   cantText,
   cureText,
   damageReason,
@@ -38,6 +39,7 @@ import {
   healReason,
   isProtection,
   itemText,
+  perishCount,
   sideText,
   singleTurnText,
   splitArgs,
@@ -135,6 +137,7 @@ export class BattleStore {
   private readonly gameTypeSignal = signal<GameType>('doubles');
   private readonly timerSignal = signal<BattleTimer | null>(null);
   private readonly canUndoSignal = signal(false);
+  private readonly canToggleTimerSignal = signal(false);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -185,6 +188,8 @@ export class BattleStore {
   readonly battleTimer = this.timerSignal.asReadonly();
   /** The choices sent can still be taken back: the opponent hasn't chosen yet (real battles only). */
   readonly canUndo = this.canUndoSignal.asReadonly();
+  /** The battle timer can be turned on and off from here (real battles only). */
+  readonly canToggleTimer = this.canToggleTimerSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -222,6 +227,7 @@ export class BattleStore {
     this.replaySignal.set(connection.replay ?? null);
     this.session.setActive(true);
     this.connection = connection;
+    this.canToggleTimerSignal.set(!!connection.setTimer && !connection.replay);
     connection.start((frame) => this.receive(frame));
   }
 
@@ -258,6 +264,7 @@ export class BattleStore {
     this.critSlots.clear();
     this.timerSignal.set(null);
     this.canUndoSignal.set(false);
+    this.canToggleTimerSignal.set(false);
     this.lastRequest = null;
   }
 
@@ -284,6 +291,12 @@ export class BattleStore {
 
   forfeit(): void {
     this.connection?.forfeit();
+  }
+
+  /** Asks for the battle timer on (while it's off) or off; the server's notices update battleTimer. */
+  toggleTimer(): void {
+    if (!this.canToggleTimerSignal() || this.resultSignal()) return;
+    this.connection?.setTimer?.(this.timerSignal() === null);
   }
 
   /** Pauses or resumes the playback (replays). */
@@ -465,7 +478,8 @@ export class BattleStore {
     switch (command) {
       case 'player': {
         const [side, name] = args;
-        if (side === 'p1' || side === 'p2') this.updateSide(side, (s) => ({ ...s, name }));
+        // A `|player|p2|` with no name (a player leaving, an update) keeps the name already known.
+        if ((side === 'p1' || side === 'p2') && name) this.updateSide(side, (s) => ({ ...s, name }));
         return 0;
       }
       case 'gametype':
@@ -649,6 +663,10 @@ export class BattleStore {
       case '-sideend':
         this.changeSideCondition(args[0], effectName(args[1]), command === '-sidestart');
         return this.say(sideText(args[0], args[1], command === '-sideend', names));
+      case '-fieldactivate':
+        return effectName(args[0]) === 'Perish Song'
+          ? this.say('All Pokémon that heard the song will faint in three turns!')
+          : 0;
       case '-swapsideconditions':
         this.fieldSignal.update((f) => ({ ...f, sides: { p1: f.sides.p2, p2: f.sides.p1 } }));
         return this.say('The effects on both sides of the field were swapped!');
@@ -752,7 +770,14 @@ export class BattleStore {
       this.popup(SOURCE_OWNS_EFFECT.includes(command) ? tags['of'] : args[0], 'ability', effectName(from));
     }
     // |-miss|ATTACKER|TARGET: the target avoided it (a miss with no target has nobody to show it on).
-    if (command === '-miss' && args[1]) this.popup(args[1], 'miss', 'Missed!');
+    if (command === '-miss' && args[1]) this.popup(args[1], 'notice', 'Missed!');
+    // An immunity from an ability (Levitate, Water Absorb…) already pops up as that ability.
+    if (command === '-immune' && !from.startsWith('ability: ')) this.popup(args[0], 'notice', 'No effect!');
+    if (command === 'cant') this.popup(args[0], 'notice', cantLabel(args[1] ?? ''));
+    if (command === '-start') {
+      const perish = perishCount(effectName(args[1]));
+      if (perish) this.popup(args[0], 'notice', `Perish in ${perish} turn${perish === 1 ? '' : 's'}`);
+    }
     // A Frisk reveal isn't the item doing anything.
     if ((command === '-enditem' || command === '-item') && from !== 'ability: Frisk') {
       this.popup(args[0], 'item', args[1]);
