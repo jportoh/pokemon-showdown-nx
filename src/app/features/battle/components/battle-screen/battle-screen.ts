@@ -73,7 +73,8 @@ const FORFEIT_CONFIRM_MS = 4000;
       <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
       <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
-      <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" />
+      <!-- Our tiles pick switches: B there works as in the command panel. -->
+      <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
 
       <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />

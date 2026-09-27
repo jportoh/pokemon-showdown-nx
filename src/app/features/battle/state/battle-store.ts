@@ -1,6 +1,6 @@
 import { Service, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { moveType } from '@core/dex/move-types';
+import { moveType } from '@core/dex/moves';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import {
   BattleConnection,

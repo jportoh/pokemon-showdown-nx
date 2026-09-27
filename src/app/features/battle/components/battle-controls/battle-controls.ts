@@ -1,31 +1,43 @@
+import { NgOptimizedImage } from '@angular/common';
 import { Component, ElementRef, afterRenderEffect, computed, inject, input, output } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
+import { moveInfo } from '@core/dex/moves';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { BattlePokemonCard, PokemonCardMode } from '@features/battle/components/battle-pokemon-card/battle-pokemon-card';
+import { RequestPokemon } from '@features/battle/models/battle';
+import { BattleChoices, SWITCH_ATTRIBUTE, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
 
 const WIDTH = 961;
 const GAP = 12;
-/** Big buttons (targets, the plans while a turn plays, rematch/leave): two per row. */
+/** Big buttons (targets, rematch/leave): two per row. */
 const BIG_WIDTH = Math.floor((WIDTH - GAP) / 2);
-/** The four moves, in one row. */
-const MOVE_WIDTH = Math.floor((WIDTH - GAP * 3) / 4);
-/** Forced switches: three per row, so a full team fits in two. */
-const SWITCH_WIDTH = Math.floor((WIDTH - GAP * 2) / 3);
-/** The two rows of targets or forced switches. */
+/** The two rows of targets. */
 const ROW_TOPS = [36, 96];
+/** The Pokémon card on the right; the moves (or the plans) take the rest. */
+const CARD_WIDTH = 340;
+const LEFT_WIDTH = WIDTH - GAP - CARD_WIDTH;
+/** The four moves, two by two. */
+const MOVE_WIDTH = Math.floor((LEFT_WIDTH - GAP) / 2);
+const MOVE_HEIGHT = 53;
+const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
 
 /**
- * The command panel, 961x148: the four moves in a row (Showdown style, each on its type's colour) and
- * a row to switch to any benched Pokémon; then the target picker when a move needs one (foes on top,
- * as on the field), the forced switch after a faint, and the rematch/leave buttons at the end. While a turn
- * plays (or the opponent chooses) it shows what each Pokémon was told to do and the team's HP, with
- * nothing to press, so the panel never goes blank. Each view is a normal-flow block with absolutely
- * placed parts (Brewser layout rules), swapped with @if. Text rows have fixed heights: on the console
- * a row that starts empty (a slot's name before its Pokémon is out) overlapped the next once filled.
+ * The command panel, 961x148. Choosing: the four moves two by two (Showdown style, each on its type's
+ * colour, with Showdown's category icon, its power, accuracy and PP) and, on the right, the card of the Pokémon
+ * choosing (item, ability, Tera type, stats). Switching is done on the team tiles in the right column
+ * (BattleTeamPreview): the card follows the tile pointed at, to see what comes in. Then the target
+ * picker when a move needs one (foes on top, as on the field), the forced switch after a faint (on the
+ * tiles too), and the rematch/leave buttons at the end. While a turn plays (or the opponent chooses)
+ * it shows what each Pokémon was told to do beside the card, so the panel never goes blank. Each view
+ * is a normal-flow block with absolutely placed parts (Brewser layout rules), swapped with @if. Text
+ * rows have fixed heights: on the console a row that starts empty (a slot's name before its Pokémon
+ * is out) overlapped the next once filled.
  */
 @Component({
   selector: 'app-battle-controls',
+  imports: [BattlePokemonCard, NgOptimizedImage],
   host: { class: 'block h-[148px] w-[961px] text-white' },
   template: `
     @if (store.result(); as result) {
@@ -65,32 +77,25 @@ const ROW_TOPS = [36, 96];
           </button>
         </div>
       } @else if (choices.forceSwitch()) {
+        <!-- The Pokémon is picked on the team tiles on the right, which take focus (BattleTeamPreview). -->
         <div class="relative h-[148px] w-[961px]">
-          <p class="absolute top-0 left-0 block h-7 w-[520px] text-base leading-7 text-gray-200">Choose a Pokémon to send out</p>
-          @for (option of bigSwitches(); track option.index) {
-            <button
-              type="button"
-              data-pick
-              class="absolute h-[52px] w-[312px] rounded-md border border-gray-400 bg-gray-600 p-[4px_12px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
-              [style.left.px]="option.left"
-              [style.top.px]="option.top"
-              [disabled]="!option.allowed"
-              (click)="choices.chooseSwitch(option.index)"
-            >
-              <span class="block text-lg leading-6 font-bold">{{ option.name }}</span>
-              <span class="block text-sm leading-5">{{ option.detail }}</span>
-            </button>
-          }
+          <p class="absolute top-0 left-0 block h-7 w-[609px] text-base leading-7 text-gray-200">
+            <strong class="text-white">Choose a Pokémon to send out</strong> on your team, on the right →
+          </p>
+          <p class="absolute top-[36px] left-0 block h-6 w-[609px] text-sm leading-6 text-gray-300">
+            {{ choices.pokemonName() ? choices.pokemonName() + ' has fainted.' : '' }}
+          </p>
           @if (choices.canGoBack()) {
             <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
               Back
             </button>
           }
+          <app-battle-pokemon-card class="absolute top-[36px] left-[621px]" [pokemon]="inspected().pokemon" [mode]="inspected().mode" />
         </div>
       } @else {
         <div class="relative h-[148px] w-[961px]">
           <p class="absolute top-0 left-0 block h-7 w-[627px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200">
-            <strong class="text-white">{{ choices.pokemonName() }}</strong>{{ ' — choose a move or switch' }}
+            <strong class="text-white">{{ choices.pokemonName() }}</strong>{{ canSwitch() ? ' — choose a move, or switch on the right →' : ' — choose a move' }}
           </p>
           @if (choices.canMega()) {
             <!-- L does this on the controller, so the d-pad skips it (data-kb-skip); it's for clicks. -->
@@ -107,18 +112,20 @@ const ROW_TOPS = [36, 96];
               >
             </button>
           } @else if (choices.teraType(); as teraType) {
-            <!-- Terastallize, as Mega Evolve: L on the controller. Its type is named, on its colour once chosen. -->
+            <!-- Terastallize, as Mega Evolve: L on the controller. Grey naming its type; on the type's colour
+              once chosen. The colour is always bound: Brewser kept the last one when the binding went null. -->
             <button
               type="button"
               data-kb-skip
               class="absolute top-0 left-[641px] h-7 w-[168px] rounded-md border text-sm font-bold"
-              [class]="choices.tera() ? 'border-cyan-200' : 'border-gray-400 bg-gray-700 hover:bg-gray-600'"
-              [style.background-color]="choices.tera() ? teraColor() : null"
+              [class]="choices.tera() ? 'border-white' : 'border-gray-500 text-gray-200'"
+              [style.background-color]="choices.tera() ? teraColor() : '#374151'"
               [attr.aria-pressed]="choices.tera()"
+              [attr.aria-label]="'Terastallize into ' + teraType"
               (click)="choices.toggleTera()"
             >
               <span class="block h-[26px] text-center leading-[26px]"
-                ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ ' Tera ' + teraType }}</span
+                ><span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">L</span>{{ choices.tera() ? ' Terastallizing' : ' Tera: ' + teraType }}</span
               >
             </button>
           }
@@ -131,36 +138,35 @@ const ROW_TOPS = [36, 96];
             <button
               type="button"
               data-pick
-              class="absolute top-[36px] h-[60px] w-[231px] rounded-md border border-gray-300 p-[6px_12px] text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
+              class="absolute h-[53px] w-[298px] rounded-md border border-gray-300 p-0 text-left disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
               [style.left.px]="move.left"
-              [style.background-color]="move.disabled ? null : move.color"
+              [style.top.px]="move.top"
+              [style.background-color]="move.disabled ? '#374151' : move.color"
               [disabled]="move.disabled"
+              [attr.aria-label]="move.label"
               (click)="choices.chooseMove($index)"
             >
-              <span class="block h-6 overflow-hidden text-lg leading-6 font-bold whitespace-nowrap">{{ move.move }}</span>
-              <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap">{{ move.detail }}</span>
+              <!-- Every part placed (a button centres whatever stays in flow). Showdown's category icon and the
+                rest of the line apart: an inline image next to text wraps on Brewser. -->
+              <span class="absolute top-[4px] left-[10px] block h-6 w-[210px] overflow-hidden text-lg leading-6 font-bold whitespace-nowrap">{{ move.move }}</span>
+              @if (move.categoryIcon; as icon) {
+                <img [ngSrc]="icon" width="32" height="14" alt="" class="absolute top-[31px] left-[10px] block" />
+              }
+              <span
+                class="absolute top-[28px] block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap"
+                [style.left.px]="move.categoryIcon ? 48 : 10"
+                [style.width.px]="move.categoryIcon ? 238 : 276"
+                >{{ move.detail }}</span
+              >
+              <span class="absolute top-[4px] left-[214px] block h-6 w-[72px] text-right text-sm leading-6">{{ move.ppText }}</span>
             </button>
           }
-          @for (option of smallSwitches(); track option.index) {
-            <button
-              type="button"
-              data-pick
-              class="absolute top-[104px] h-[44px] rounded-md border border-gray-400 bg-gray-600 p-[3px_8px] text-left enabled:hover:bg-gray-500 disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
-              [style.left.px]="option.left"
-              [style.width.px]="option.width"
-              [disabled]="!option.allowed"
-              [attr.aria-label]="option.label"
-              (click)="choices.chooseSwitch(option.index)"
-            >
-              <span class="block h-5 overflow-hidden text-sm leading-5 font-bold whitespace-nowrap">{{ option.name }}</span>
-              <span class="block h-4 text-xs leading-4">{{ option.detail }}</span>
-            </button>
-          }
+          <app-battle-pokemon-card class="absolute top-[36px] left-[621px]" [pokemon]="inspected().pokemon" [mode]="inspected().mode" />
         </div>
       }
     } @else {
       <div class="relative h-[148px] w-[961px]">
-        <p class="absolute top-0 left-0 block h-7 w-[961px] text-base leading-7 text-gray-200">{{ watchingTitle() }}</p>
+        <p class="absolute top-0 left-0 block h-7 w-[609px] text-base leading-7 text-gray-200">{{ watchingTitle() }}</p>
         @if (store.canUndo()) {
           <!-- Showdown's Cancel: while the opponent is still choosing, the choices can be made again (B too). -->
           <button
@@ -170,29 +176,20 @@ const ROW_TOPS = [36, 96];
             aria-label="Cancel: choose again"
             (click)="store.undo()"
           >
-            <span class="rounded-sm bg-header p-[1px_6px]">B</span> Cancel
+            <span class="block h-[26px] text-center leading-[26px]"><span class="rounded-sm bg-header p-[2px_6px]">B</span> Cancel</span>
           </button>
         }
         @for (plan of plans(); track plan.slot) {
           <div
-            class="absolute top-[36px] block h-[60px] w-[474px] rounded-md border border-gray-500 p-[5px_12px]"
-            [style.left.px]="plan.left"
+            class="absolute block h-[53px] w-[609px] rounded-md border border-gray-500 p-[4px_12px]"
+            [style.top.px]="plan.top"
             [style.background-color]="plan.color"
           >
             <span class="block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-200">{{ plan.name }}{{ plan.detail ? ' · ' + plan.detail : '' }}</span>
-            <span class="block h-7 overflow-hidden text-xl leading-7 font-bold whitespace-nowrap">{{ plan.action }}</span>
+            <span class="block h-6 overflow-hidden text-xl leading-6 font-bold whitespace-nowrap">{{ plan.action }}</span>
           </div>
         }
-        @for (member of teamStatus(); track member.name) {
-          <div
-            class="absolute top-[104px] block h-[44px] rounded-md border border-gray-600 bg-gray-700 p-[3px_8px]"
-            [style.left.px]="member.left"
-            [style.width.px]="member.width"
-          >
-            <span class="block h-5 overflow-hidden text-sm leading-5 font-bold whitespace-nowrap">{{ member.name }}</span>
-            <span class="block h-4 text-xs leading-4 text-gray-300">{{ member.detail }}</span>
-          </div>
-        }
+        <app-battle-pokemon-card class="absolute top-[36px] left-[621px]" [pokemon]="inspected().pokemon" [mode]="inspected().mode" />
       </div>
     }
   `,
@@ -200,6 +197,7 @@ const ROW_TOPS = [36, 96];
 export class BattleControls {
   private readonly dex = inject(ChampionsDex);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly navigation = inject(KeyboardNavigation);
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
 
@@ -221,75 +219,74 @@ export class BattleControls {
 
   protected readonly moves = computed(() =>
     this.choices.moves().map((move, i) => {
-      const type = this.dex.move(move.id)?.type ?? '';
+      const dexMove = this.dex.move(move.id);
+      const info = dexMove ?? moveInfo(move.id);
+      const type = info?.type ?? '';
+      const power = info && info.basePower > 0 ? `${info.basePower} BP` : '';
+      const accuracy = info && info.category !== 'Status' ? (info.accuracy > 0 ? `${info.accuracy}%` : 'Never misses') : '';
+      const category = info?.category ?? '';
+      const detail = [type, power, accuracy].filter(Boolean).join(' · ');
       return {
         ...move,
         disabled: !!move.disabled || move.pp <= 0,
         color: typeColor(type) || '#4b5563',
-        detail: `${type} · PP ${move.pp}/${move.maxpp}`,
-        left: i * (MOVE_WIDTH + GAP),
+        detail,
+        categoryIcon: category ? `categories/${category.toLowerCase()}.png` : '',
+        ppText: `${move.pp}/${move.maxpp}`,
+        label: `${move.move}: ${[type, category, power, accuracy].filter(Boolean).join(' · ')}, ${move.pp} of ${move.maxpp} PP`,
+        left: (i % 2) * (MOVE_WIDTH + GAP),
+        top: MOVE_TOPS[Math.floor(i / 2)] ?? 0,
       };
     }),
   );
 
   protected readonly teraColor = computed(() => typeColor(this.choices.teraType()) || '#374151');
 
+  /** Some team member can come in (not while trapped). */
+  protected readonly canSwitch = computed(() => this.choices.switchOptions().some((option) => option.allowed));
+
   protected readonly watchingTitle = computed(() => {
     if (this.store.playing()) return this.store.turn() > 0 ? `Turn ${this.store.turn()} in progress…` : 'The battle is starting…';
     return 'Waiting for the opponent…';
   });
 
-  /** Each active slot's order this turn, on its move type's colour; before any order, who's out there. */
-  protected readonly plans = computed(() => {
-    const submitted = this.choices.submitted();
-    return this.store.sides().p1.active.map((pokemon, slot) => {
-      const plan = submitted.find((p) => p.slot === slot);
-      const left = slot * (BIG_WIDTH + GAP);
-      if (plan) return { ...plan, left, color: typeColor(plan.type) || '#374151' };
-      const action = !pokemon ? '' : pokemon.fainted ? 'Fainted' : 'Getting ready';
-      return { slot, left, name: pokemon?.name ?? '', action, detail: '', color: '#374151' };
-    });
+  /** The switch the pointed-at team tile would make (the mouse over it, or the d-pad on it); null for none. */
+  private readonly pointedSwitch = computed(() => {
+    const hovered = this.choices.hoveredSwitch();
+    if (hovered !== null) return hovered;
+    const focused = this.navigation.lastFocusedControl() as HTMLButtonElement | null;
+    const index = focused?.getAttribute(SWITCH_ATTRIBUTE);
+    return index && focused?.isConnected && !focused.disabled ? Number(index) : null;
   });
 
   /**
-   * The whole team's HP (read-only), from the log as it plays. The team comes from the last request;
-   * before the first one (the intro), the Pokémon sent out so far.
+   * The Pokémon the card shows: the team member pointed at on the right while choosing, with its
+   * moves (what it would bring in); else the one choosing, else (while the turn plays) the first one
+   * out there, with its stats.
    */
-  protected readonly teamStatus = computed(() => {
-    const seen = this.store.sides().p1;
+  protected readonly inspected = computed<{ pokemon: RequestPokemon | null; mode: PokemonCardMode }>(() => {
     const team = this.store.team();
-    const members = team.length > 0 ? team : seen.pokemon.map((p) => ({ ident: p.ident, condition: `${p.hp}/${p.maxHp}` }));
-    const width = Math.floor((WIDTH - GAP * (members.length - 1)) / Math.max(1, members.length));
-    return members.map((member, i) => {
-      const pokemon = seen.pokemon.find((p) => p.ident === member.ident);
-      const { hp, maxHp, fainted } = pokemon ?? parseCondition(member.condition, 100);
-      const active = seen.active.some((p) => p?.ident === member.ident);
-      const status = fainted ? 'Fainted' : `${hpPercent(hp, maxHp)}%${active ? ' · in battle' : ''}`;
-      return { name: member.ident.slice(member.ident.indexOf(': ') + 2), detail: status, width, left: i * (width + GAP) };
+    const pointed = this.choices.slot() !== null ? this.pointedSwitch() : null;
+    if (pointed !== null && team[pointed - 1]) return { pokemon: team[pointed - 1], mode: 'moves' };
+    if (this.choices.forceSwitch()) return { pokemon: null, mode: 'moves' };
+    const pokemon = this.choices.pokemon() ?? team.find((member) => member.active && !parseCondition(member.condition, 100).fainted) ?? null;
+    return { pokemon, mode: 'stats' };
+  });
+
+  /** Each active slot's order this turn, on its move type's colour; before any order, who's out there. */
+  protected readonly plans = computed(() => {
+    const submitted = this.choices.submitted();
+    const { active } = this.store.sides().p1;
+    // Singles has one slot: the second (always empty) would show as a blank box.
+    const slots = this.store.gameType() === 'singles' ? active.slice(0, 1) : active;
+    return slots.map((pokemon, slot) => {
+      const plan = submitted.find((p) => p.slot === slot);
+      const top = MOVE_TOPS[slot] ?? 0;
+      if (plan) return { ...plan, top, color: typeColor(plan.type) || '#374151' };
+      const action = !pokemon ? '' : pokemon.fainted ? 'Fainted' : 'Getting ready';
+      return { slot, top, name: pokemon?.name ?? '', action, detail: '', color: '#374151' };
     });
   });
-
-  /** One row across the bottom, as wide as the team allows. */
-  protected readonly smallSwitches = computed(() => {
-    const options = this.choices.switchOptions();
-    const width = Math.floor((WIDTH - GAP * (options.length - 1)) / Math.max(1, options.length));
-    return options.map((option, i) => ({
-      ...option,
-      width,
-      left: i * (width + GAP),
-      detail: option.fainted ? 'Fainted' : `${option.hpPercent}%${option.allowed ? '' : ' · in battle'}`,
-      label: `Switch to ${option.name}, ${option.fainted ? 'fainted' : `${option.hpPercent}% HP`}`,
-    }));
-  });
-
-  protected readonly bigSwitches = computed(() =>
-    this.choices.switchOptions().map((option, i) => ({
-      ...option,
-      left: (i % 3) * (SWITCH_WIDTH + GAP),
-      top: ROW_TOPS[Math.floor(i / 3)] ?? 0,
-      detail: option.fainted ? 'Fainted' : `${option.hpPercent}% HP${option.allowed ? '' : ' · in battle'}`,
-    })),
-  );
 
   protected readonly targets = computed(() =>
     this.choices.targetOptions().map((option, i) => ({
@@ -308,7 +305,8 @@ export class BattleControls {
   });
 
   constructor() {
-    // Focus the first usable button of each new view, so the controller can pick straight away.
+    // Focus the first usable button of each new view, so the controller can pick straight away. A
+    // forced switch has none here: the team tiles take focus (BattleTeamPreview).
     afterRenderEffect(() => {
       this.view();
       const first = this.host.nativeElement.querySelector<HTMLButtonElement>('button[data-pick]:not([disabled])');

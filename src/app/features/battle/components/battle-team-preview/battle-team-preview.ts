@@ -1,9 +1,13 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { itemName } from '@core/dex/names';
 import { barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
-import { SideId } from '@features/battle/models/battle';
-import { BattleStore } from '@features/battle/state/battle-store';
+import { BattlePokemon, RequestPokemon, SideId } from '@features/battle/models/battle';
+import { BattleChoices, SWITCH_ATTRIBUTE } from '@features/battle/state/battle-choices';
+import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { previewTeam } from '@features/battle/state/team-preview';
+import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { spriteId } from '@shared/utils/sprite-id';
 
@@ -27,20 +31,32 @@ interface Tile {
   bar: { width: number; color: string } | null;
   fainted: boolean;
   active: boolean;
+  /** Our own Pokémon's held item's ID, for its icon in the corner; '' for none or the opponent's. */
+  item: string;
+  /** The switch that brings it in (Showdown's switch number) while it can be chosen; null otherwise. */
+  switchIndex: number | null;
+  /** What the tile says to screen readers. */
+  label: string;
 }
 
 /**
  * A side's team at a glance, under its owner's name: its Pokémon as shown at team preview, the ones on
  * the field framed, the ones sent out with their HP bar and the fainted ones faded. Without a team
- * preview (Random Battle), the Pokémon seen so far, then an empty tile for each one still unseen.
- * Both sides' sit in
- * the battle's right column, the opponent's on top. A card fixed at 271x188, tiles at fixed positions
- * (Brewser layout rules). The tiles show once the battle's opening title has gone: by then the sprites, fetched from team
+ * preview (Random Battle), the Pokémon seen so far, then an empty tile for each one still unseen; our
+ * own side knows its whole team from the requests, though, and shows it all, each with its held
+ * item's icon in the corner (as Showdown's team icons). Both sides' sit in the battle's right column,
+ * the opponent's on top. A card fixed at 271x188, tiles at fixed positions (Brewser layout rules).
+ * The tiles show once the battle's opening title has gone: by then the sprites, fetched from team
  * preview on, have had time to download (they popped in late on the console).
+ *
+ * Our own tiles are how we switch: while choosing, the ones that can come in light up and pick the
+ * switch (the command panel's card shows the one pointed at), and a forced switch focuses the first.
+ * They're always buttons, disabled while there's nothing to choose: an element that changes kind is
+ * the kind of toggle Brewser doesn't redraw reliably.
  */
 @Component({
   selector: 'app-battle-team-preview',
-  imports: [PokemonSprite],
+  imports: [ItemIcon, NgTemplateOutlet, PokemonSprite],
   host: { class: 'block h-[188px] w-[271px]' },
   template: `
     <div class="relative block h-[188px] w-[271px] rounded-md bg-card" role="group" [attr.aria-label]="ariaLabel()">
@@ -51,36 +67,64 @@ interface Tile {
         >{{ ownerLabel() }}</span
       >
       @for (tile of tiles(); track tile.key) {
-        <div
-          aria-hidden="true"
-          class="absolute block h-[72px] w-[72px] rounded-md border"
-          [class]="tile.fainted ? 'border-gray-700 bg-[#1a2436]' : tile.active ? 'border-sky-300 bg-[#2c4a78]' : 'border-gray-600 bg-header'"
-          [style.left.px]="tile.left"
-          [style.top.px]="tile.top"
-        >
-          <app-pokemon-sprite
-            class="absolute top-0 left-[3px]"
-            [sprite]="tile.sprite"
-            [size]="64"
-            [style.opacity]="tile.fainted ? 0.3 : 1"
-          />
-          @if (tile.bar; as bar) {
-            <span class="absolute top-[62px] left-[7px] block h-[4px] w-[56px] rounded-[1px] bg-gray-700">
-              <span class="block h-[4px] rounded-[1px]" [style.width.px]="bar.width" [style.background-color]="bar.color"></span>
-            </span>
-          }
-        </div>
+        @if (side() === 'p1') {
+          <button
+            type="button"
+            class="absolute block h-[72px] w-[72px] rounded-md border p-0"
+            [class]="tileFrame(tile)"
+            [style.left.px]="tile.left"
+            [style.top.px]="tile.top"
+            [attr.data-switch]="tile.switchIndex"
+            [disabled]="tile.switchIndex === null"
+            [attr.aria-label]="tile.label"
+            (click)="pick(tile)"
+            (mouseenter)="choices.hoveredSwitch.set(tile.switchIndex)"
+            (mouseleave)="choices.hoveredSwitch.set(null)"
+          >
+            <ng-container [ngTemplateOutlet]="face" [ngTemplateOutletContext]="{ $implicit: tile }" />
+          </button>
+        } @else {
+          <div
+            aria-hidden="true"
+            class="absolute block h-[72px] w-[72px] rounded-md border"
+            [class]="tileFrame(tile)"
+            [style.left.px]="tile.left"
+            [style.top.px]="tile.top"
+          >
+            <ng-container [ngTemplateOutlet]="face" [ngTemplateOutletContext]="{ $implicit: tile }" />
+          </div>
+        }
       }
     </div>
+
+    <ng-template #face let-tile>
+      <app-pokemon-sprite class="absolute top-0 left-[3px]" [sprite]="tile.sprite" [size]="64" [style.opacity]="tile.fainted ? 0.3 : 1" />
+      <app-item-icon class="absolute top-[34px] left-[44px]" [item]="tile.item" [size]="24" />
+      @if (tile.bar; as bar) {
+        <span class="absolute top-[62px] left-[7px] block h-[4px] w-[56px] rounded-[1px] bg-gray-700">
+          <span class="block h-[4px] rounded-[1px]" [style.width.px]="bar.width" [style.background-color]="bar.color"></span>
+        </span>
+      }
+    </ng-template>
   `,
 })
 export class BattleTeamPreview {
   private readonly store = inject(BattleStore);
   private readonly dex = inject(ChampionsDex);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly choices = inject(BattleChoices);
 
   readonly side = input.required<SideId>();
 
-  private readonly team = computed(() => previewTeam(this.store.sides()[this.side()]));
+  /** Our own team from the last request (the opponent's is never known). */
+  private readonly ownTeam = computed(() => (this.side() === 'p1' ? this.store.team() : []));
+
+  /** Without a team preview, our side's team in the request's order; otherwise as previewed. */
+  private readonly team = computed(() => {
+    const side = this.store.sides()[this.side()];
+    const own = this.ownTeam();
+    return previewTeam(side.preview.length === 0 && own.length > 0 ? { ...side, preview: own.map(speciesOf) } : side);
+  });
 
   /** Pokémon brought but not seen yet (only without a team preview: it shows them all). */
   private readonly unseen = computed(() => {
@@ -88,10 +132,17 @@ export class BattleTeamPreview {
     return side.preview.length > 0 ? 0 : Math.max(0, Math.min(MAX_TEAM, side.teamSize) - this.team().length);
   });
 
+  /** Our switches by species, while one is being chosen: the ones that can come in. */
+  private readonly switches = computed(() => {
+    if (this.side() !== 'p1' || this.choices.slot() === null || this.choices.pendingMove()) return [];
+    return this.choices.switchOptions().filter((option) => option.allowed);
+  });
+
   protected readonly tiles = computed<Tile[]>(() => {
     if (!this.store.started()) return [];
     const members = this.team().map(({ species, seen, active }, i) => {
       const fraction = seen && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
+      const switchIndex = this.switchFor(species);
       return {
         key: `${i}-${species}`,
         sprite: seen?.sprite || (this.dex.species(species)?.sprite ?? spriteId(species)),
@@ -99,11 +150,14 @@ export class BattleTeamPreview {
         bar: seen && !seen.fainted ? { width: Math.max(1, Math.round(fraction * BAR_WIDTH)), color: barColor(fraction) } : null,
         fainted: !!seen?.fainted,
         active,
+        item: seen?.fainted ? '' : this.itemOf(species),
+        switchIndex,
+        label: `${switchIndex !== null ? 'Switch to ' : ''}${this.memberText(species, seen, active)}`,
       };
     });
     const empty = Array.from({ length: this.unseen() }, (_, n) => {
       const i = members.length + n;
-      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false };
+      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false, item: '', switchIndex: null, label: 'Not seen yet' };
     });
     return [...members, ...empty];
   });
@@ -116,18 +170,63 @@ export class BattleTeamPreview {
     return name.length > MAX_NAME_CHARS ? `${name.slice(0, MAX_NAME_CHARS - 1)}…` : name;
   });
 
-  /** "SC-Control's team: Garchomp 64%, in battle; Incineroar, fainted; Amoonguss, not sent out". */
+  /**
+   * "SC-Control's team: Garchomp 64%, in battle; Incineroar, fainted; Amoonguss, not sent out". Our
+   * own tiles are buttons with their own labels: the group just names the team.
+   */
   protected readonly ariaLabel = computed(() => {
     const owner = this.owner();
-    const members = this.team().map(({ species, seen, active }) => {
-      if (!seen) return `${species}, not sent out`;
-      if (seen.fainted) return `${seen.name}, fainted`;
-      const percent = seen.maxHp > 0 ? Math.max(1, Math.round((seen.hp / seen.maxHp) * 100)) : 0;
-      return `${seen.name} ${percent}%${active ? ', in battle' : ''}`;
-    });
+    if (this.side() === 'p1') return `${owner}'s team`;
+    const members = this.team().map(({ species, seen, active }) => this.memberText(species, seen, active));
     const unseen = this.unseen() > 0 ? [`${this.unseen()} not seen yet`] : [];
     return `${owner}'s team: ${[...members, ...unseen].join('; ') || 'unknown'}`;
   });
+
+  constructor() {
+    // A forced switch is chosen here: focus the first Pokémon that can come in, for the controller.
+    afterRenderEffect(() => {
+      if (this.side() !== 'p1' || !this.choices.forceSwitch() || this.switches().length === 0) return;
+      const first = this.host.nativeElement.querySelector<HTMLButtonElement>(`button[${SWITCH_ATTRIBUTE}]:not([disabled])`);
+      first?.focus();
+    });
+  }
+
+  /** The tile's frame: the ones that can come in light up; the ones on the field are blue; fainted ones dark. */
+  protected tileFrame(tile: Tile): string {
+    if (tile.switchIndex !== null) return 'border-gray-100 bg-[#3a4a68] hover:bg-[#465a7e]';
+    if (tile.fainted) return 'border-gray-700 bg-[#1a2436]';
+    return tile.active ? 'border-sky-300 bg-[#2c4a78]' : 'border-gray-600 bg-header';
+  }
+
+  protected pick(tile: Tile): void {
+    if (tile.switchIndex === null) return;
+    this.choices.hoveredSwitch.set(null);
+    this.choices.chooseSwitch(tile.switchIndex);
+  }
+
+  /** The switch that brings in our Pokémon of that species, while it can be chosen; null otherwise. */
+  private switchFor(species: string): number | null {
+    const option = this.switches().find((o) => o.species === species || o.species.startsWith(`${species}-`));
+    return option?.index ?? null;
+  }
+
+  /** "Garchomp 64%, holding Leftovers, in battle", "Incineroar, fainted", "Amoonguss, not sent out". */
+  private memberText(species: string, seen: BattlePokemon | undefined, active: boolean): string {
+    const own = this.ownTeam().find((member) => speciesOf(member) === species);
+    const name = seen?.name ?? (own ? own.ident.slice(own.ident.indexOf(': ') + 2) : species);
+    if (seen?.fainted) return `${name}, fainted`;
+    const fraction = seen ? (seen.maxHp > 0 ? seen.hp / seen.maxHp : 0) : own ? hpFraction(own.condition) : null;
+    const percent = fraction === null ? '' : ` ${Math.max(1, Math.round(fraction * 100))}%`;
+    const item = itemName(own?.item ?? '');
+    const holding = item ? `, holding ${item}` : '';
+    const where = active ? ', in battle' : seen ? '' : ', not sent out';
+    return `${name}${percent}${holding}${where}`;
+  }
+
+  /** The held item of our Pokémon of that species, from the last request. */
+  private itemOf(species: string): string {
+    return this.ownTeam().find((member) => speciesOf(member) === species)?.item ?? '';
+  }
 
   private tilePosition(i: number): { left: number; top: number } {
     return {
@@ -135,4 +234,15 @@ export class BattleTeamPreview {
       top: FIRST_TOP + Math.floor(i / PER_ROW) * (TILE_SIZE + ROW_GAP),
     };
   }
+}
+
+/** "Garchomp, L50, M" → "Garchomp". */
+function speciesOf(pokemon: RequestPokemon): string {
+  return pokemon.details.split(',')[0];
+}
+
+/** "143/180" → 0.79; 0 when fainted. */
+function hpFraction(condition: string): number {
+  const { hp, maxHp } = parseCondition(condition, 100);
+  return maxHp > 0 ? hp / maxHp : 0;
 }

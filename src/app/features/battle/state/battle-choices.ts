@@ -1,6 +1,7 @@
-import { Service, computed, inject, linkedSignal } from '@angular/core';
+import { Service, computed, inject, linkedSignal, signal } from '@angular/core';
 import { BattlePokemon, RequestMove, RequestPokemon, SlotChoice } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { moveType } from '@core/dex/moves';
 import { BattleStore, parseCondition } from './battle-store';
 
 /** How the moves that hit fixed Pokémon read in the turn summary. */
@@ -17,6 +18,9 @@ const TARGET_LABELS: Record<string, string> = {
 
 /** Move targets the player picks in doubles; every other kind hits fixed Pokémon (itself, all foes…). */
 const CHOSEN_TARGETS = ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'];
+
+/** Marks the team tiles on the right that switch a Pokémon in, with its switch number (see BattleTeamPreview). */
+export const SWITCH_ATTRIBUTE = 'data-switch';
 
 export interface TargetOption {
   /** Showdown's target number: 1, 2 for the foes' slots; -1, -2 for the player's. */
@@ -43,8 +47,8 @@ export interface SwitchOption {
   /** Showdown's switch number: the Pokémon's position in the request, from 1. */
   index: number;
   name: string;
-  /** HP left, 0–100. */
-  hpPercent: number;
+  /** "Garchomp", from the request's details: how the team tiles on the right find it. */
+  species: string;
   fainted: boolean;
   allowed: boolean;
 }
@@ -74,6 +78,8 @@ export class BattleChoices {
   readonly mega = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
   /** Whether the slot being chosen for will Terastallize. */
   readonly tera = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
+  /** The switch (its number) under the mouse on the team tiles, for the Pokémon card; null for none. */
+  readonly hoveredSwitch = signal<number | null>(null);
 
   private readonly request = this.store.request;
 
@@ -135,14 +141,16 @@ export class BattleChoices {
     const request = this.request();
     if (!request) return [];
     const taken = this.choices().flatMap((choice) => (choice.kind === 'switch' ? [choice.slot] : []));
+    const slot = this.slot();
+    const trapped = !request.forceSwitch && slot !== null && !!request.active?.[slot]?.trapped;
     return request.side.pokemon.map((pokemon, i) => {
-      const { hp, maxHp, fainted } = parseCondition(pokemon.condition, 100);
+      const { fainted } = parseCondition(pokemon.condition, 100);
       return {
         index: i + 1,
         name: nameOf(pokemon),
-        hpPercent: fainted ? 0 : Math.max(1, Math.round((hp / maxHp) * 100)),
+        species: pokemon.details.split(',')[0],
         fainted,
-        allowed: !pokemon.active && !fainted && !taken.includes(i + 1),
+        allowed: !trapped && !pokemon.active && !fainted && !taken.includes(i + 1),
       };
     });
   });
@@ -234,7 +242,7 @@ export class BattleChoices {
       }
       case 'move': {
         const move = request.active?.[slot]?.moves[choice.move - 1];
-        const type = this.dex.move(move?.id ?? '')?.type ?? '';
+        const type = this.dex.move(move?.id ?? '')?.type ?? moveType(move?.id ?? '');
         const target = choice.target === undefined ? TARGET_LABELS[move?.target ?? ''] ?? '' : `→ ${this.targetName(choice.target)}`;
         const teraType = request.active?.[slot]?.canTerastallize;
         const special = choice.mega ? 'Mega Evolving' : choice.tera ? `Terastallizing into ${teraType}` : '';

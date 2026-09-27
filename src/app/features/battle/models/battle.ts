@@ -23,6 +23,8 @@ export interface RequestActive {
   canMegaEvo?: boolean;
   /** The Tera type it can Terastallize into this turn (once per battle, Gen 9). */
   canTerastallize?: string;
+  /** It can't switch out (Shadow Tag, Mean Look…). */
+  trapped?: boolean;
 }
 
 /** One of the player's Pokémon in a request. */
@@ -35,7 +37,15 @@ export interface RequestPokemon {
   condition: string;
   active: boolean;
   moves: string[];
+  /** Its item's ID ("leftovers"); '' once it's used up or lost. */
   item: string;
+  /** Its ability's ID ("owntempo"), as it is now. */
+  ability?: string;
+  /** Its stats as they are (HP is in the condition). */
+  stats?: Record<'atk' | 'def' | 'spa' | 'spd' | 'spe', number>;
+  /** Its Tera type (Gen 9), and whether it has Terastallized. */
+  teraType?: string;
+  terastallized?: string;
 }
 
 /** What the player has to choose now: `|request|` in Showdown's protocol. */

@@ -11,7 +11,7 @@
 // descriptions of the abilities they all have. It also writes each legal item's icon to public/items.
 // Run it again when Showdown updates the format. Downloaded files are only read as data, never run.
 
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cropScaled, decodePng, encodePng, isBlank } from './png.mjs';
@@ -222,7 +222,7 @@ for (let i = 0; i < entries.length; i += 16) {
 const sheetResponse = await fetch(ITEM_SHEET_URL);
 if (!sheetResponse.ok) throw new Error(`itemicons-sheet.png: HTTP ${sheetResponse.status}`);
 const sheet = decodePng(Buffer.from(await sheetResponse.arrayBuffer()));
-rmSync(ITEM_ICONS_DIR, { recursive: true, force: true });
+// Not emptied first: update-names.mjs writes the other formats' icons there too.
 mkdirSync(ITEM_ICONS_DIR, { recursive: true });
 for (const item of items) {
   const spritenum = Number(/[{,]spritenum:(\d+)/.exec(entryBody(itemsText, item.id))?.[1] ?? NaN);

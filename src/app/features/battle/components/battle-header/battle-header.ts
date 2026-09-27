@@ -40,18 +40,25 @@ const MAX_NAME_CHARS = 20;
       }
 
       @if (timerView(); as t) {
-        <!-- Icon and time placed apart: an inline svg next to text wraps on Brewser. -->
+        <!-- Icon and time placed apart: an inline svg next to text wraps on Brewser. Running: a clock on
+          green (red when low) with its hand ticking; stopped: two pause bars on grey, the time dimmed. -->
         <div
           role="timer"
-          class="absolute top-[9px] left-[759px] block h-7 w-[110px] rounded-full text-white"
-          [class]="t.low ? 'bg-red-800' : 'bg-tab'"
+          class="absolute top-[9px] left-[759px] block h-7 w-[110px] rounded-full border"
+          [class]="t.running ? (t.low ? 'border-red-300 bg-red-800 text-white' : 'border-emerald-300 bg-emerald-800 text-white') : 'border-gray-500 bg-gray-700 text-gray-300'"
           [attr.aria-label]="t.label"
         >
-          <svg aria-hidden="true" viewBox="0 0 16 16" class="absolute top-[6px] left-[22px] size-4">
-            <circle cx="8" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8" />
-            <path d="M8 5.5V9l2.2 1.6M6 1.5h4" fill="none" stroke="currentColor" stroke-width="1.8" />
-          </svg>
-          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-7 w-[50px] text-sm leading-7 font-bold">{{ t.text }}</span>
+          @if (t.running) {
+            <svg aria-hidden="true" viewBox="0 0 16 16" class="absolute top-[5px] left-[21px] size-4">
+              <circle cx="8" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8" />
+              <path [attr.d]="t.tick ? 'M8 9V5.5M6 1.5h4' : 'M8 9l3-1.5M6 1.5h4'" fill="none" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+          } @else {
+            <svg aria-hidden="true" viewBox="0 0 16 16" class="absolute top-[5px] left-[21px] size-4">
+              <path d="M5 3v10M11 3v10" fill="none" stroke="currentColor" stroke-width="2.4" />
+            </svg>
+          }
+          <span aria-hidden="true" class="absolute top-0 left-[43px] block h-[26px] w-[50px] text-sm leading-[26px] font-bold">{{ t.text }}</span>
         </div>
       }
 
@@ -103,8 +110,9 @@ export class BattleHeader {
   private readonly now = signal(Date.now());
 
   /**
-   * Our time left this turn while the battle timer is on ("2:30"), red when it's running low. It stands
-   * still while we wait for the opponent (the server doesn't count that time).
+   * Our time left this turn while the battle timer is on ("2:30"), green while it runs, red when it's
+   * running low. It stands still, grey with a pause sign, while we wait for the opponent (the server
+   * doesn't count that time).
    */
   protected readonly timerView = computed(() => {
     const timer = this.store.battleTimer();
@@ -112,7 +120,16 @@ export class BattleHeader {
     const seconds = timerSecondsLeft(timer, this.now());
     const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     const total = timer.totalSeconds === null ? '' : `, ${timer.totalSeconds} in total`;
-    return { text, low: seconds <= LOW_SECONDS, label: `Time left this turn: ${seconds} seconds${total}` };
+    const running = timer.since !== null;
+    const state = running ? 'running' : 'stopped until your next choice';
+    return {
+      text,
+      running,
+      low: seconds <= LOW_SECONDS,
+      /** The clock hand moves every second while it runs. */
+      tick: seconds % 2 === 0,
+      label: `Battle timer ${state}: ${seconds} seconds left this turn${total}`,
+    };
   });
 
   constructor() {

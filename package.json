@@ -10,7 +10,8 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "update:champions": "node scripts/update-champions-data.mjs",
-    "update:move-types": "node scripts/update-move-types.mjs"
+    "update:moves": "node scripts/update-moves.mjs",
+    "update:names": "node scripts/update-names.mjs"
   },
   "private": true,
   "packageManager": "npm@10.9.8",

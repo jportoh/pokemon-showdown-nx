@@ -3,6 +3,7 @@ import { STAT_IDS, calcStat } from '@features/teambuilder/data/game-rules';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { BattleConnection, BattleRequest, GameType, SideId } from '@features/battle/models/battle';
 import { DEFAULT_TEAM_FORMAT, RANDOM_BATTLE_FORMAT, formatName } from '@shared/data/formats';
+import { toId } from '@shared/utils/to-id';
 import { TYPES, effectiveness } from './type-chart';
 
 // A stand-in for Showdown's battle server, to build the battle screen without it, answered in
@@ -433,6 +434,9 @@ export class MockBattleConnection implements BattleConnection {
           active: i < this.activeSlots,
           moves: pokemon.moves.map((move) => move.move.id),
           item: pokemon.item,
+          ability: toId(pokemon.ability),
+          stats: { atk: pokemon.stats.atk, def: pokemon.stats.def, spa: pokemon.stats.spa, spd: pokemon.stats.spd, spe: pokemon.stats.spe },
+          ...(this.format.tera ? { teraType: pokemon.teraType, terastallized: pokemon.terastallized ? pokemon.teraType : '' } : {}),
         })),
       },
     };

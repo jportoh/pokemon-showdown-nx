@@ -1,4 +1,4 @@
-import { Injector, Service, afterNextRender, inject } from '@angular/core';
+import { Injector, Service, afterNextRender, inject, signal, untracked } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { GAMEPAD_BUTTONS, InputAction, PageButton, inputAction, isTypingKey } from '@core/input/console-keys';
 import {
@@ -87,6 +87,12 @@ export class KeyboardNavigation {
 
   /** The focused control (virtual focus: see the class comment). */
   private current: HTMLElement | null = null;
+  private readonly currentSignal = signal<HTMLElement | null>(null);
+  /**
+   * The last control focused, for views that follow it (the battle's Pokémon card shows the team
+   * member being pointed at). It may have gone since: check it's still there before using it.
+   */
+  readonly lastFocusedControl = this.currentSignal.asReadonly();
   /** The element that shows the focus ring. */
   private ringed: Element | null = null;
   private usingButtons = false;
@@ -455,7 +461,10 @@ export class KeyboardNavigation {
     if (this.recoverTimer !== null) clearTimeout(this.recoverTimer);
     this.recoverTimer = setTimeout(() => {
       this.recoverTimer = null;
-      if (this.usingButtons && !this.activeControl()) this.recoverFocus();
+      if (!this.usingButtons || this.activeControl()) return;
+      this.recoverFocus();
+      // Nothing to go to (a battle turn playing): no ring left on a control that's now disabled.
+      if (!this.activeControl()) this.dropRing();
     }, RECOVER_FOCUS_MS);
   }
 
@@ -480,6 +489,11 @@ export class KeyboardNavigation {
     this.current = element;
     this.remember(element);
     this.updateRing();
+    // Untracked: focus() is called from effects, which mustn't come to depend on it.
+    if (untracked(this.currentSignal) !== element) {
+      this.currentSignal.set(element);
+      this.renderScheduler.request();
+    }
     // Focus from a click or a component (the rename box) is for typing, except on the console,
     // where the buttons can't type and a letter would be lost.
     const forTyping = !this.movingFocus && (!this.usingButtons || !ON_BREWSER);
@@ -501,6 +515,11 @@ export class KeyboardNavigation {
   }
 
   /** Puts the ring on the focused control while the buttons are in use, and only there. */
+  private dropRing(): void {
+    this.ringed?.removeAttribute(FOCUS_ATTRIBUTE);
+    this.ringed = null;
+  }
+
   private updateRing(): void {
     const target = this.usingButtons ? this.current : null;
     if (this.ringed === target) return;
