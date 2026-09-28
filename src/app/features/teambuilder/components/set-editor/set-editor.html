@@ -19,37 +19,49 @@
     [sprite]="(mega() ?? species())?.sprite ?? ''"
     [size]="48"
   />
-  <h2 class="absolute top-[14px] left-[226px] w-[324px] text-xl font-bold text-white">
+  <h2 class="absolute top-[14px] left-[226px] block h-7 w-[284px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap text-white">
     {{ title() }}
   </h2>
+  <!--
+    The tabs are L and R on the controller and Remove is ZR, so the d-pad skips them (data-kb-skip).
+    Shortcut and label sit apart: an inline pill before the text threw the centring off on the console.
+  -->
   <button
     type="button"
+    data-kb-skip
     [attr.aria-pressed]="tab() === 'details'"
     (click)="tab.set('details')"
-    class="absolute top-[10px] left-[560px] h-9 w-24 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    class="absolute top-[10px] left-[520px] h-9 w-[112px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
     [class.bg-tab-hover]="tab() === 'details'"
   >
-    Details
+    <span aria-hidden="true" [class]="shortcutClass">L</span>
+    <span class="absolute top-0 left-[46px] block h-[34px] w-[58px] text-center leading-[34px]">Details</span>
   </button>
   <button
     type="button"
+    data-kb-skip
     [attr.aria-pressed]="tab() === 'stats'"
     [disabled]="!pokemon()"
     (click)="tab.set('stats')"
-    class="absolute top-[10px] left-[664px] h-9 w-24 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
+    class="absolute top-[10px] left-[640px] h-9 w-[112px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
     [class.bg-tab-hover]="tab() === 'stats'"
   >
-    Stats
+    <span aria-hidden="true" [class]="shortcutClass">R</span>
+    <span class="absolute top-0 left-[46px] block h-[34px] w-[58px] text-center leading-[34px]">Stats</span>
   </button>
   <button
     type="button"
-    (click)="onRemove()"
+    data-kb-skip
+    (click)="pressRemove()"
     [class.hidden]="!pokemon()"
     [attr.aria-label]="confirmingRemove() ? 'Confirm removing ' + title() : 'Remove ' + title()"
-    class="absolute top-[10px] left-[776px] h-9 w-[120px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    class="absolute top-[10px] left-[764px] h-9 w-[132px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
     [class.bg-red-800]="confirmingRemove()"
   >
-    {{ confirmingRemove() ? 'Confirm' : 'Remove' }}
+    <span aria-hidden="true" [class]="shortcutClass">ZR</span>
+    <span aria-hidden="true" class="absolute top-0 left-[46px] block h-[34px] w-[78px] text-center leading-[34px]">
+      {{ confirmingRemove() ? 'Confirm' : 'Remove' }}
+    </span>
   </button>
 </div>
 

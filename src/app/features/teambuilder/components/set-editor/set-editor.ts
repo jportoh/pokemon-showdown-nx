@@ -30,6 +30,7 @@ export class SetEditor {
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser = viewChild.required(DexChooser);
+  private readonly nature = viewChild.required<ElementRef<HTMLSelectElement>>('nature');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   readonly team = input<Team | undefined>(undefined);
@@ -65,6 +66,8 @@ export class SetEditor {
   protected readonly maxNicknameLength = MAX_NICKNAME_LENGTH;
   protected readonly fieldButtonClass =
     'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_12px] text-left text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
+  /** The controller button's pill at the start of a header button. */
+  protected readonly shortcutClass = 'absolute top-[5px] left-[8px] block h-6 w-8 rounded-sm bg-gray-900 text-center text-sm leading-6 font-bold';
   /** The item's field, with room for the item's icon before its name. */
   protected readonly itemButtonClass = this.fieldButtonClass.replace('p-[0_12px]', 'p-[0_12px_0_44px]');
   protected readonly selectClass =
@@ -183,10 +186,17 @@ export class SetEditor {
   // than a flag, so the effect reruns even when the active field hasn't changed (a new slot already
   // starts on the species list).
   private readonly focusRequest = signal(0);
+  /** Bumped to focus the shown tab's first field after the next render. */
+  private readonly focusTabRequest = signal(0);
 
   constructor() {
     afterRenderEffect(() => {
       if (this.focusRequest() > 0 && this.activeField()) this.chooser().open();
+    });
+    afterRenderEffect(() => {
+      if (this.focusTabRequest() === 0) return;
+      if (untracked(this.tab) === 'stats') this.nature().nativeElement.focus();
+      else this.focusField('species');
     });
   }
 
@@ -282,15 +292,32 @@ export class SetEditor {
     this.update({ evs });
   }
 
-  /** Removing a Pokémon can't be undone, so the first click only asks for confirmation. */
-  protected onRemove(): void {
+  /**
+   * L/R: the other tab, with focus on its first field (the tab that had it is now hidden). Stats needs
+   * a Pokémon. Returns whether the tab changed.
+   */
+  switchTab(tab: 'details' | 'stats'): boolean {
+    if (this.tab() === tab || (tab === 'stats' && !this.pokemon())) return false;
+    this.activeField.set(null);
+    this.tab.set(tab);
+    this.focusTabRequest.update((count) => count + 1);
+    return true;
+  }
+
+  /**
+   * ZR, or a click. Removing a Pokémon can't be undone, so the first press only asks for
+   * confirmation. Returns whether it did anything (there's nothing to remove in a new slot).
+   */
+  pressRemove(): boolean {
     const team = this.team();
+    if (!team || !this.pokemon()) return false;
     if (!this.confirmingRemove()) {
       this.confirmingRemove.set(true);
-      return;
+      return true;
     }
-    if (team) this.store.removePokemon(team.id, this.index());
+    this.store.removePokemon(team.id, this.index());
     this.closed.emit();
+    return true;
   }
 }
 

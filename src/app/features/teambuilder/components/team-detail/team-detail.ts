@@ -29,7 +29,7 @@ const SLOT_POSITIONS = [
   template: `
     <div class="relative h-[644px] w-[920px]">
       <div [class.hidden]="editing()">
-        <h2 #heading tabindex="-1" class="absolute top-2 left-6 w-[480px] text-xl font-bold text-white">{{ team()?.name }}</h2>
+        <h2 #heading tabindex="-1" class="absolute top-2 left-6 w-[490px] text-xl font-bold text-white">{{ team()?.name }}</h2>
         <label for="team-format" class="absolute top-[52px] left-6 text-sm text-gray-200">Format</label>
         <select
           #formatSelect
@@ -41,26 +41,35 @@ const SLOT_POSITIONS = [
             <option [value]="format.id" [selected]="format.id === team()?.format">{{ format.name }}</option>
           }
         </select>
-        <button type="button" (click)="startRename()" [class]="actionClass" class="left-[520px] w-[112px]">Rename</button>
+        <button type="button" (click)="startRename()" [class]="actionClass" class="left-[528px] w-[100px]">Rename</button>
+        <!--
+          Validate and Delete are ZL and ZR on the controller, so the d-pad skips them (data-kb-skip).
+          Shortcut and label sit apart: an inline pill before the text threw the centring off on the console.
+        -->
         <button
-          #validateButton
           type="button"
-          (click)="validate.emit()"
+          data-kb-skip
+          (click)="pressValidate()"
           [class]="actionClass"
-          class="left-[644px] w-[112px]"
+          class="left-[640px] w-[124px]"
           [attr.aria-label]="'Validate ' + team()?.name + ' for its format'"
         >
-          Validate
+          <span aria-hidden="true" [class]="shortcutClass">ZL</span>
+          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-[34px] w-[70px] text-center leading-[34px]">Validate</span>
         </button>
         <button
           type="button"
-          (click)="onDelete()"
+          data-kb-skip
+          (click)="pressDelete()"
           [class]="actionClass"
-          class="left-[768px] w-[128px]"
+          class="left-[776px] w-[120px]"
           [class.bg-red-800]="confirmingDelete()"
           [attr.aria-label]="confirmingDelete() ? 'Confirm deleting ' + team()?.name : 'Delete ' + team()?.name"
         >
-          {{ confirmingDelete() ? 'Confirm delete' : 'Delete' }}
+          <span aria-hidden="true" [class]="shortcutClass">ZR</span>
+          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-[34px] w-[68px] text-center leading-[34px]">
+            {{ confirmingDelete() ? 'Confirm' : 'Delete' }}
+          </span>
         </button>
       </div>
 
@@ -105,7 +114,6 @@ export class TeamDetail {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
   private readonly saveButton = viewChild.required<ElementRef<HTMLButtonElement>>('saveButton');
-  private readonly validateButton = viewChild.required<ElementRef<HTMLButtonElement>>('validateButton');
   private readonly slotButtons = viewChildren<ElementRef<HTMLButtonElement>>('slotButton');
 
   readonly team = input<Team | undefined>(undefined);
@@ -122,6 +130,8 @@ export class TeamDetail {
   protected readonly formatOptions = TEAM_FORMATS;
   protected readonly actionClass =
     'absolute top-[14px] h-9 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
+  /** The controller button's pill at the start of an action button. */
+  protected readonly shortcutClass = 'absolute top-[5px] left-[8px] block h-6 w-8 rounded-sm bg-gray-900 text-center text-sm leading-6 font-bold';
 
   // Both reset whenever a different team is shown.
   protected readonly editing = linkedSignal({ source: () => this.team()?.id, computation: () => false });
@@ -157,10 +167,6 @@ export class TeamDetail {
     const name = pokemon.name ? `${pokemon.name} (${pokemon.species})` : pokemon.species;
     // The card itself isn't read out (the label replaces it), so the EVs are told here.
     return `Edit slot ${position + 1}: ${name}, ${totalStatPoints(pokemon.evs)} of ${MAX_TOTAL_STAT_POINTS} EVs`;
-  }
-
-  focusValidate(): void {
-    this.validateButton().nativeElement.focus();
   }
 
   /** Focuses a slot card (the "Add a Pokémon" one past the end of the team). Call it once the team has rendered. */
@@ -201,9 +207,21 @@ export class TeamDetail {
     this.focusAfterRender = 'heading';
   }
 
-  /** Deleting can't be undone, so the first click only asks for confirmation. */
-  protected onDelete(): void {
+  /** ZL, or a click: checks the team, except while it's being renamed. Returns whether it did. */
+  pressValidate(): boolean {
+    if (!this.team() || this.editing()) return false;
+    this.validate.emit();
+    return true;
+  }
+
+  /**
+   * ZR, or a click. Deleting can't be undone, so the first press only asks for confirmation. Does
+   * nothing while the team is being renamed; returns whether it did anything.
+   */
+  pressDelete(): boolean {
+    if (!this.team() || this.editing()) return false;
     if (this.confirmingDelete()) this.deleted.emit();
     else this.confirmingDelete.set(true);
+    return true;
   }
 }

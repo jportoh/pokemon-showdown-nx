@@ -1,4 +1,5 @@
-import { Component, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { TeamDetail } from '@features/teambuilder/components/team-detail/team-detail';
 import { SetEditor } from '@features/teambuilder/components/set-editor/set-editor';
 import { TeamList } from '@features/teambuilder/components/team-list/team-list';
@@ -10,7 +11,7 @@ import { BackAction } from '@shared/directives/back-action';
 type PanelView = 'empty' | 'team' | 'validate' | 'edit';
 
 /** Where focus goes once a panel switch has rendered, so it isn't lost when views swap. */
-type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'validateButton' | 'validationBack' | 'editor';
+type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'validationBack' | 'editor';
 
 @Component({
   imports: [TeamList, TeamDetail, TeamValidationPanel, SetEditor, BackAction],
@@ -46,10 +47,23 @@ export class TeambuilderPage {
       if (target === 'newTeam') this.list().focusNewTeam();
       else if (target === 'teamList') this.list().focusSelected();
       else if (target === 'slot') this.detail().focusSlot(this.focusSlotIndex);
-      else if (target === 'validateButton') this.detail().focusValidate();
       else if (target === 'validationBack') this.validator().focusBack();
       else if (target === 'editor') this.editor().opened();
     });
+
+    // The panels stay mounted, so the buttons go to the one shown: on a team ZL validates and ZR
+    // deletes it; in the editor L/R switch Details/Stats and ZR removes the Pokémon.
+    const navigation = inject(KeyboardNavigation);
+    const unregister = [
+      navigation.registerButton('buttonZL', () => this.view() === 'team' && this.detail().pressValidate()),
+      navigation.registerButton('buttonZR', () => {
+        if (this.view() === 'team') return this.detail().pressDelete();
+        return this.view() === 'edit' && this.editor().pressRemove();
+      }),
+      navigation.registerButton('buttonL', () => this.view() === 'edit' && this.editor().switchTab('details')),
+      navigation.registerButton('buttonR', () => this.view() === 'edit' && this.editor().switchTab('stats')),
+    ];
+    inject(DestroyRef).onDestroy(() => unregister.forEach((fn) => fn()));
   }
 
   /** Opens a team with focus on its first slot; B goes back to the list. */
@@ -103,8 +117,9 @@ export class TeambuilderPage {
     this.show('validate', 'validationBack');
   }
 
+  /** Back to the team, on its first slot: Validate is ZL, not a d-pad stop. */
   protected closeValidation(): void {
-    this.show('team', 'validateButton');
+    this.showSlot(0);
   }
 
   private showSlot(index: number): void {
