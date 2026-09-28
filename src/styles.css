@@ -12,6 +12,28 @@
   --color-tab: #2a3b58;
   --color-tab-hover: #3b5176;
   --color-card: #22304a;
+
+  /*
+    "Retro" palette of the home menu, its pages' frame and the Battle page, by role, so a theme is
+    just these values. Now a dark one (trial, not final): night-blue panels with a lighter blue
+    outline, light text, a coral accent and a teal one. Checked for WCAG AA: ink and muted text on
+    panel/select, white on accent, accent-text/danger/teal on panel and bar.
+  */
+  --color-retro-bg: #121821;
+  --color-retro-bar: #0b1016;
+  --color-retro-panel: #1c2632;
+  --color-retro-outline: #5b7690;
+  --color-retro-rim: #2b3a4a;
+  --color-retro-select: #2c4157;
+  --color-retro-button: #26374a;
+  --color-retro-input: #0f151c;
+  --color-retro-ink: #e8eef3;
+  --color-retro-muted: #a9b8c6;
+  --color-retro-accent: #c94e39;
+  --color-retro-accent-hover: #a83e2c;
+  --color-retro-accent-text: #ff9a85;
+  --color-retro-danger: #ff8a80;
+  --color-retro-teal: #7fd1b9;
 }
 
 /*
@@ -54,6 +76,16 @@ body {
   background-color: #3b5176 !important;
   outline: 3px solid #facc15;
   outline-offset: -3px;
+}
+
+/*
+  The home menu's big buttons show focus as a pressed-in tile: the accent border and a lighter panel,
+  instead of the yellow ring. Pure CSS from the focus attribute, so moving between them doesn't render.
+*/
+[data-kb-focus][data-menu-item] {
+  outline: none !important;
+  border-color: var(--color-retro-accent-text) !important;
+  background-color: var(--color-retro-select) !important;
 }
 
 /* A text field being typed in (A pressed on it): the buttons type instead of navigating. */

@@ -7,10 +7,14 @@ import { splitLine } from './showdown-protocol';
 
 export interface LoginState {
   /**
-   * `connecting` until the server's challenge arrives, `naming` while the name is claimed, `named` once
-   * the server calls us by it, `unavailable` when it can't be done (see `error`).
+   * `offline` until the player connects (as a guest or to log in), `connecting` until the server's
+   * challenge arrives, `ready` while it waits for the player's name and password (logging in),
+   * `naming` while a random name is claimed, `named` once the server calls us by a name,
+   * `unavailable` when it can't be done (see `error`).
    */
-  status: 'connecting' | 'naming' | 'named' | 'unavailable';
+  status: 'offline' | 'connecting' | 'ready' | 'naming' | 'named' | 'unavailable';
+  /** How the player connected: as a guest (a random name) or to log in; null while offline. */
+  mode: 'guest' | 'login' | null;
   /** The name the server knows us by: a guest's ("Guest 16415171") until named. */
   name: string;
   error: string | null;
@@ -32,14 +36,16 @@ interface Credentials {
 const MAX_NAME_TRIES = 3;
 
 /**
- * Gives the player a name on Showdown. Without an account: guests can't battle, but any unregistered
+ * Connects the player to Showdown and gives them a name, only when they ask: `connectAsGuest()` or
+ * `startLogin()` then `logIn()`; `disconnect()` ends it. Other connections (the team validation's)
+ * get no name. As a guest: guests can't battle, but any unregistered
  * name can be claimed with the login server's assertion (`userid` + the server's `challstr`) and
  * `/trn name,0,assertion`. A new random name each time the connection (re)opens: a name kept from
  * before may still be held by an older connection the server hasn't dropped ("Someone is already
  * using the name…"), and then another one is tried. `newName()` asks for another one by hand.
  * `logIn()` claims the player's own name instead: with its password when it's registered (the login
  * server's `login` gives the assertion then). It's kept in memory only (never stored) to log in
- * again when the connection is replaced; `newName()` logs out.
+ * again when the connection is replaced; `disconnect()` forgets it.
  * The login server only allows CORS from Showdown's own site, so a regular browser can't read its
  * answer; the Brewser console doesn't enforce CORS (test P1, 2026-09-26), so there it works.
  */
@@ -48,7 +54,8 @@ export class ShowdownLogin {
   private readonly connection = inject(ShowdownConnection);
   private readonly render = inject(RenderScheduler);
   private readonly stateSignal = signal<LoginState>({
-    status: 'connecting',
+    status: 'offline',
+    mode: null,
     name: '',
     error: null,
     loggingIn: false,
@@ -71,23 +78,56 @@ export class ShowdownLogin {
         if (type === 'challstr') {
           this.challstr = line.slice('|challstr|'.length);
           this.tries = 0;
-          if (this.credentials) void this.claimOwnName(this.credentials);
-          else void this.claimName();
+          this.onChallenge();
         } else if (type === 'updateuser') this.onUpdateUser(args[0] ?? '', args[1] === '1');
         else if (type === 'nametaken') this.onNameTaken(args[1] || `The name ${args[0]} can't be used.`);
       }
     });
-    this.connection.opened.subscribe(() => this.setState({ status: 'connecting', error: null }));
+    this.connection.opened.subscribe(() => {
+      if (this.stateSignal().mode) this.setState({ status: 'connecting', error: null });
+    });
+    // Closed by something else (it doesn't happen while the player is connected, but just in case).
+    this.connection.ended.subscribe(() => {
+      this.challstr = null;
+      if (this.stateSignal().mode) this.reset();
+    });
   }
 
-  /** Opens the connection: the name follows as soon as the server sends its challenge. */
-  start(): void {
-    this.connection.connect();
+  /** Connects with a random name (the server's challenge brings it). */
+  connectAsGuest(): void {
+    if (this.busy()) return;
+    this.credentials = null;
+    this.setState({ mode: 'guest', status: 'connecting', error: null, loginError: null });
+    if (this.challstr) this.onChallenge();
+    else this.connection.connect();
   }
 
-  /** Swaps the name for another random one (the server allows renaming on the same connection). */
+  /** Connects to log in: once the server's challenge is here (`ready`), `logIn()` claims the name. */
+  startLogin(): void {
+    if (this.busy()) return;
+    this.credentials = null;
+    this.setState({ mode: 'login', status: 'connecting', error: null, loginError: null });
+    if (this.challstr) this.onChallenge();
+    else this.connection.connect();
+  }
+
+  /** Leaves a login that hasn't got its name yet: back offline. */
+  cancelLogin(): void {
+    const state = this.stateSignal();
+    if (state.mode === 'login' && state.status !== 'named' && !state.loggingIn) this.disconnect();
+  }
+
+  /** Closes the connection and forgets the name (and the password): back offline. */
+  disconnect(): void {
+    this.credentials = null;
+    this.challstr = null;
+    this.reset();
+    this.connection.disconnect();
+  }
+
+  /** Swaps a guest's name for another random one (the server allows renaming on the same connection). */
   newName(): void {
-    if (!this.challstr || this.busy()) return;
+    if (!this.challstr || this.busy() || this.stateSignal().mode !== 'guest') return;
     this.credentials = null;
     this.tries = 0;
     void this.claimName();
@@ -101,12 +141,26 @@ export class ShowdownLogin {
       this.setState({ loginError: 'Enter a name.' });
       return;
     }
+    this.setState({ mode: 'login' });
     void this.claimOwnName({ name: trimmed, password });
   }
 
   /** The name as Showdown's user ID ("brewser1234"), to recognise our own messages. */
   userId(): string {
     return toId(this.stateSignal().name);
+  }
+
+  /** The server's challenge: what the player connected for (nothing if they didn't). */
+  private onChallenge(): void {
+    const mode = this.stateSignal().mode;
+    if (!mode) return;
+    if (this.credentials) void this.claimOwnName(this.credentials);
+    else if (mode === 'login') this.setState({ status: 'ready', error: null });
+    else void this.claimName();
+  }
+
+  private reset(): void {
+    this.setState({ status: 'offline', mode: null, name: '', error: null, loggingIn: false, loginError: null, ownName: false });
   }
 
   private busy(): boolean {
@@ -171,13 +225,13 @@ export class ShowdownLogin {
   }
 
   /**
-   * The name asked for can't be had: forgotten, so a reconnection won't try it again. The name held
-   * before stays; without one yet (the login on a new connection failed), a random one is claimed.
+   * The name asked for can't be had: forgotten, so a reconnection won't try it again. A name held
+   * before stays; without one, the login waits for another try (`ready`).
    */
   private loginFailed(message: string): void {
     this.credentials = null;
     this.setState({ loggingIn: false, loginError: message });
-    if (this.stateSignal().status !== 'named') void this.claimName();
+    if (this.stateSignal().status !== 'named') this.setState({ status: 'ready' });
   }
 
   /** `|nametaken|name|message`: another connection holds it. Another name, while tries are left. */
@@ -189,6 +243,7 @@ export class ShowdownLogin {
 
   /** `|updateuser| Brewser1234|1|…`: the name (with a leading rank character) and whether it's a chosen one. */
   private onUpdateUser(rawName: string, named: boolean): void {
+    if (!this.stateSignal().mode) return;
     const name = rawName.replace(/^[^A-Za-z0-9]/, '').replace(/@!?$/, '');
     if (!named) {
       this.setState({ name });

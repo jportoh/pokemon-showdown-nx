@@ -3,6 +3,7 @@ import { form, FormField, maxLength } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { BackAction } from '@shared/directives/back-action';
+import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 import { toId } from '@shared/utils/to-id';
 
 /** Challenges go out in a random format only: a challenge can't carry one of our teams yet. */
@@ -22,8 +23,8 @@ const CHALLENGE_FORMAT = 'gen9randombattle';
       <p
         id="challenge-status"
         role="status"
-        class="absolute top-[8px] left-[24px] block h-7 w-[512px] truncate text-sm leading-7"
-        [class]="error() ? 'text-red-300' : 'text-gray-300'"
+        class="absolute top-0 left-0 block h-8 w-[720px] truncate text-lg leading-8"
+        [class]="error() ? 'font-bold text-retro-danger' : 'text-retro-muted'"
       >
         {{ error() ?? 'Challenge a player on Showdown to a Gen 9 Random Battle.' }}
       </p>
@@ -35,18 +36,16 @@ const CHALLENGE_FORMAT = 'gen9randombattle';
         placeholder="Player's name"
         [formField]="challengeForm.name"
         (keydown)="onEnter($event)"
-        class="absolute top-[38px] left-[24px] h-8 w-[512px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        [class]="inputClass"
+        class="absolute top-[48px] left-0 h-11 w-[720px] text-lg"
       />
-      <button
-        type="button"
-        class="absolute top-[72px] left-[24px] h-9 w-[244px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-lg font-bold hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        (click)="submit()"
-      >
+      <button #sendButton type="button" [class]="primaryClass" class="absolute top-[108px] left-0 h-11 w-[352px] text-2xl" (click)="submit()">
         Send challenge
       </button>
       <button
         type="button"
-        class="absolute top-[72px] left-[280px] h-9 w-[256px] cursor-pointer rounded-md border border-gray-400 bg-gray-600 text-lg font-bold hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        [class]="secondaryClass"
+        class="absolute top-[108px] left-[368px] h-11 w-[352px] text-2xl"
         (click)="closed.emit()"
       >
         Cancel
@@ -57,9 +56,14 @@ const CHALLENGE_FORMAT = 'gen9randombattle';
 export class ChallengeForm {
   private readonly challenges = inject(ShowdownChallenges);
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly sendButton = viewChild.required<ElementRef<HTMLButtonElement>>('sendButton');
 
   /** The challenge went out, or the form was cancelled. */
   readonly closed = output<void>();
+
+  protected readonly inputClass = RETRO_INPUT;
+  protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
+  protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
   private readonly model = signal({ name: '' });
   // Showdown's limit for names.
@@ -67,7 +71,9 @@ export class ChallengeForm {
   protected readonly error = signal<string | null>(null);
 
   constructor() {
-    afterNextRender(() => this.nameInput().nativeElement.focus());
+    // Never a text field: focusing one opens the console's keyboard, which breaks the navigation under
+    // way. The field is one step up.
+    afterNextRender(() => this.sendButton().nativeElement.focus());
   }
 
   protected onEnter(event: KeyboardEvent): void {

@@ -75,6 +75,10 @@ export class ChatRoomStore {
       )
       .subscribe((frame) => this.queue(frame.lines));
 
+    // Disconnecting (from the home screen) leaves the room.
+    this.connection.ended.pipe(takeUntilDestroyed()).subscribe(() => {
+      if (this.joinRequested) this.reset();
+    });
     // Rejoin after reconnections, once the user has asked for the room.
     this.connection.opened.pipe(takeUntilDestroyed()).subscribe(() => {
       if (this.joinRequested) this.sendJoin();
@@ -83,9 +87,9 @@ export class ChatRoomStore {
     inject(DestroyRef).onDestroy(() => this.clearTimers());
   }
 
-  /** Enters `room` as a guest (the server names guests itself), connecting first if needed. */
+  /** Enters `room` once the player is connected (from the home screen). */
   join(room: ChatRoom): void {
-    if (this.joinRequested) return;
+    if (this.joinRequested || this.connection.state().status === 'offline') return;
     this.joinRequested = true;
     this.roomSignal.set(room);
     this.joinErrorSignal.set(null);

@@ -1,0 +1,83 @@
+<!-- The bar: 76px, as the pages' frame. Logo on the left, a challenge notice, the connection on the right. -->
+<header class="absolute top-0 left-0 block h-19 w-[1280px] bg-retro-bar">
+  <img
+    ngSrc="https://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png"
+    alt="Pokémon Showdown"
+    width="146"
+    height="44"
+    priority
+    class="absolute top-[16px] left-[24px] h-11 w-[146px] max-w-none"
+  />
+  <app-challenge-notice class="absolute top-[20px] left-[200px]" />
+
+  <!--
+    On the right: [name • connection] [ZR button]. Each state has its own wrapper with fixed positions
+    (swapped as normal-flow wrappers, which toggle reliably on Brewser, rather than moving anything),
+    the status line right-aligned against its button. The buttons are for ZR (and clicks), not the
+    d-pad (data-kb-skip). Their shortcut and label sit apart, the label centred in the rest: an inline
+    pill before the text threw the centring off on the console.
+  -->
+  <!-- Offline, the Log in button alone says so. Nothing while the login box is open: not connected yet, for the player. -->
+  <div class="block" [class.hidden]="!offline() || loginOpen()">
+    <button type="button" data-kb-skip [class]="secondaryClass" class="absolute top-[14px] left-[1106px] h-12 w-[150px] text-xl" (click)="openLogin()">
+      <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7">ZR</span>
+      <span class="absolute top-0 left-[54px] block h-11 w-[82px] text-center leading-[44px]">Log in</span>
+    </button>
+  </div>
+  <div class="block" [class.hidden]="offline() || loginOpen()">
+    <app-trainer-status class="absolute top-[24px] left-[684px]" />
+    <!-- Two steps, as forfeiting a battle: ZR (or a click) asks, a second one within a few seconds does it. -->
+    <button
+      type="button"
+      data-kb-skip
+      [class]="confirmingDisconnect() ? primaryClass : secondaryClass"
+      class="absolute top-[14px] left-[1060px] h-12 w-[196px] text-xl"
+      [attr.aria-label]="disconnectLabel()"
+      (click)="disconnect()"
+    >
+      <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">ZR</span>
+      <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[128px] text-center leading-[44px]">
+        {{ confirmingDisconnect() ? 'Press again' : login.state().ownName ? 'Log out' : 'Disconnect' }}
+      </span>
+    </button>
+  </div>
+</header>
+
+<main class="block h-[720px] w-[1280px]">
+  <!--
+    The pages as big buttons, two per row, each with its icon beside its name; Random Battle also has
+    a line for its search. The one pointed at gets the accent border and the lighter panel from
+    styles.css ([data-kb-focus][data-menu-item]), without any rendering. Hidden (not removed) while
+    the login box is open, so returning to it is instant.
+  -->
+  <nav aria-label="Main menu" class="block" [class.hidden]="loginOpen()">
+    @for (item of items; track item.id; let i = $index) {
+      <button
+        #tile
+        type="button"
+        class="absolute h-[140px] w-[568px] cursor-pointer rounded-2xl border-4 border-retro-outline bg-retro-panel text-retro-ink hover:bg-retro-select focus-visible:border-retro-accent-text focus-visible:bg-retro-select focus-visible:outline-none"
+        [style.left.px]="48 + (i % 2) * 616"
+        [style.top.px]="116 + Math.floor(i / 2) * 164"
+        [attr.data-menu-item]="item.id"
+        (click)="open(item)"
+      >
+        <app-pixel-icon class="absolute top-[18px] left-[32px]" [name]="item.id" [size]="96" />
+        @if (item.path) {
+          <span class="absolute top-[38px] left-[160px] block h-14 w-[392px] text-left text-[44px] leading-[56px] font-bold">{{ item.label }}</span>
+        } @else {
+          <span class="absolute top-[22px] left-[160px] block h-14 w-[392px] text-left text-[44px] leading-[56px] font-bold">{{ item.label }}</span>
+          <span role="status" class="absolute top-[82px] left-[160px] block h-7 w-[392px] overflow-hidden text-left text-lg whitespace-nowrap" [class]="randomLine().error ? 'text-retro-danger' : 'text-retro-muted'">
+            {{ randomLine().text }}
+          </span>
+        }
+      </button>
+    }
+  </nav>
+
+  @if (loginOpen()) {
+    <app-retro-box class="absolute top-[280px] left-[320px]" [width]="640" [height]="236">
+      <h2 class="absolute top-[20px] left-[37px] block h-10 w-[560px] text-3xl leading-10 font-bold">Log in to Showdown</h2>
+      <app-login-form class="absolute top-[88px] left-[37px]" (closed)="closeLogin()" (guest)="connectAsGuest()" />
+    </app-retro-box>
+  }
+</main>

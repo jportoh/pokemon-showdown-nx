@@ -2,6 +2,7 @@ import { DestroyRef, Service, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { ShowdownLogin } from '@features/connection/showdown-login';
 import { splitLine } from '@features/connection/showdown-protocol';
 import { ChatRoomStore } from '@features/lobby/state/chat-room-store';
 import { packTeam } from '@features/teambuilder/data/packed-team';
@@ -29,6 +30,7 @@ export interface ValidationResult {
 export class TeamValidation {
   private readonly connection = inject(ShowdownConnection);
   private readonly chat = inject(ChatRoomStore);
+  private readonly login = inject(ShowdownLogin);
   private readonly render = inject(RenderScheduler);
 
   private readonly resultSignal = signal<ValidationResult | null>(null);
@@ -69,7 +71,7 @@ export class TeamValidation {
     if (this.connection.state().status === 'connected') {
       this.sendPending();
     } else {
-      this.connectedForValidation ||= this.connection.state().status === 'disconnected';
+      this.connectedForValidation ||= this.connection.state().status === 'offline';
       this.connection.connect();
     }
   }
@@ -88,8 +90,9 @@ export class TeamValidation {
     this.pending = null;
     this.awaitingReply = false;
     this.publish(result);
-    // The socket costs the console its traffic: close it unless the chat has joined a room meanwhile.
-    if (this.connectedForValidation && this.chat.joinState() === 'idle') this.connection.disconnect();
+    // The socket costs the console its traffic: close it unless the player connected meanwhile (from
+    // the home screen) or the chat has joined a room.
+    if (this.connectedForValidation && !this.login.state().mode && this.chat.joinState() === 'idle') this.connection.disconnect();
     this.connectedForValidation = false;
   }
 

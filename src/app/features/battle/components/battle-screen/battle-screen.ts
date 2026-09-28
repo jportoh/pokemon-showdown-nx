@@ -28,7 +28,7 @@ const FORFEIT_CONFIRM_MS = 4000;
 
 /**
  * A battle (doubles, or singles with one Pokémon a side) against the mock server or a real player on
- * Showdown (a challenge we accepted), or a replay
+ * Showdown (a challenge we accepted, a ladder match), or a replay
  * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
  * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
  * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
@@ -100,6 +100,8 @@ export class BattleScreen {
 
   /** The format of the battles this page starts (the lobby's pick). */
   private format = DEFAULT_TEAM_FORMAT;
+  /** The team picked for the mock battle; without one (or if it's gone), the first team with Pokémon. */
+  private teamId: string | null = null;
 
   /** The real battle's server room (an accepted challenge); null against the mock. */
   private readonly liveRoom = signal<string | null>(null);
@@ -141,12 +143,13 @@ export class BattleScreen {
   private focusBeforeLog: HTMLElement | null = null;
 
   constructor() {
-    // Opened from the lobby's Battle! button: a new battle against the mock in the format picked there.
+    // Opened from the Battle page's Find a battle button: a new battle against the mock in the format picked there.
     // After accepting a challenge: the real battle in its server room. From the replay list: the replay
     // it started.
     const request = this.session.takeStartRequest();
     if (request?.kind === 'mock') {
       this.format = request.format;
+      this.teamId = request.teamId;
       this.start();
     } else if (request?.kind === 'live') {
       this.startLive(request.roomId);
@@ -203,7 +206,9 @@ export class BattleScreen {
    */
   protected start(): void {
     const format = mockFormat(this.format);
-    const team = format.randomTeams ? undefined : this.teams.teams().find((t) => t.sets.length > 0);
+    const team = format.randomTeams
+      ? undefined
+      : (this.teams.team(this.teamId) ?? this.teams.teams().find((t) => t.sets.length > 0));
     this.cancelForfeit();
     this.store.start(new MockBattleConnection(this.dex, format, 'Player', team?.sets ?? []));
   }
@@ -290,11 +295,11 @@ export class BattleScreen {
     void this.router.navigateByUrl('/replays');
   }
 
-  /** Closes the finished battle (so the page can be left) and goes home; a rematch waiting is withdrawn. */
+  /** Closes the finished battle (so the page can be left) and goes back to the Battle page; a rematch waiting is withdrawn. */
   protected leave(): void {
     this.challenges.cancelChallenge();
     this.store.close();
-    void this.router.navigateByUrl('/');
+    void this.router.navigateByUrl('/play');
   }
 }
 

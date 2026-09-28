@@ -1,58 +1,29 @@
-<!-- Fixed 76px header; the active tab shares the stage color so it reads as joined to the page below. -->
-<header class="relative flex h-19 shrink-0 items-end gap-5 bg-header p-[0_12px]">
-  <img
-    ngSrc="https://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png"
-    alt="Pokémon Showdown"
-    width="146"
-    height="44"
-    priority
-    class="mb-4 h-11 w-[146px] max-w-none"
-  />
-  <!--
-    Tabs at fixed absolute positions (116px apart) rather than a flex row: on Brewser a flex
-    container whose content changes loses its gap.
-  -->
-  <nav aria-label="Navegación principal" class="relative h-[52px] w-[228px]">
-    <a
-      class="absolute top-0 left-0 flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
-      routerLink="/"
-      routerLinkActive
-      ariaCurrentWhenActive="page"
-      [routerLinkActiveOptions]="{ exact: true }"
-    >
-      <svg aria-hidden="true" viewBox="0 0 16 16" class="size-5 fill-white">
-        <path d="M8 1 1 7h2v7h4v-4h2v4h4V7h2z" />
-      </svg>
-      <span>Home</span>
-    </a>
-    <a
-      class="absolute top-0 left-[116px] flex h-[52px] w-[112px] flex-col items-center justify-center gap-1 rounded-t-lg bg-tab text-sm font-bold text-gray-200 hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-[current=page]:bg-stage aria-[current=page]:text-white"
-      routerLink="/teambuilder"
-      routerLinkActive
-      ariaCurrentWhenActive="page"
-    >
-      <svg aria-hidden="true" viewBox="0 0 16 16" class="size-5">
-        <rect x="1.75" y="1.75" width="12.5" height="12.5" rx="1" fill="none" stroke-width="1.5" class="stroke-white" />
-        <rect x="5" y="5" width="6" height="6" class="fill-white" />
-      </svg>
-      <span>Teambuilder</span>
-    </a>
-  </nav>
-  <!--
-    What the console's buttons do (see core/input/console-keys). Fixed 150px items at absolute
-    positions: Brewser ignores margins on inline elements, and the header never moves.
-  -->
-  <p aria-label="Controller buttons" class="absolute top-7 left-[668px] h-6 w-[600px] text-sm text-gray-200">
-    @for (item of legend; track item.button; let i = $index) {
-      <span class="absolute top-0 block h-6 w-[150px] leading-6" [style.left.px]="i * 150"
-        ><span class="rounded-sm bg-tab p-[2px_6px] font-bold text-white">{{ item.button }}</span
-        >{{ ' ' + item.legend }}</span
-      >
-    }
-  </p>
+<!-- Fixed 76px bar: the page's icon and title, how to go back, a challenge notice and the trainer's status. -->
+<header class="relative block h-19 w-[1280px] bg-retro-bar">
+  @if (page(); as page) {
+    <app-pixel-icon class="absolute top-[14px] left-[24px]" [name]="page.icon" [size]="48" />
+    <h1 class="absolute top-[18px] left-[88px] block h-10 w-[260px] text-4xl leading-10 font-bold text-retro-ink">{{ page.title }}</h1>
+  }
+  <!-- The way back: a button for pointers, B on the controller (the page's appBack below). -->
+  <button
+    type="button"
+    data-kb-skip
+    class="absolute top-[20px] left-[360px] h-9 w-[112px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-lg font-bold text-retro-ink hover:bg-retro-select"
+    aria-label="Back to the menu"
+    (click)="home()"
+  >
+    <!-- The shortcut and the label apart: an inline pill before the text threw the centring off on the console. -->
+    <span aria-hidden="true" class="absolute top-[4px] left-[8px] block h-6 w-7 rounded-sm bg-retro-select text-center leading-6">B</span>
+    <span class="absolute top-0 left-[40px] block h-8 w-[60px] text-center leading-8">Back</span>
+  </button>
+  <!-- The Battle page shows the challenge itself. -->
+  @if (page()?.icon !== 'battle') {
+    <app-challenge-notice class="absolute top-[20px] left-[496px]" />
+  }
+  <app-trainer-status class="absolute top-[24px] left-[896px]" />
 </header>
 
-<!-- 644px = 720px stage - 76px header. See styles.css for why sizes are fixed. -->
-<main class="h-[644px] w-[1280px]">
+<!-- 644px = 720px stage - 76px bar. See styles.css for why sizes are fixed. -->
+<main class="block h-[644px] w-[1280px]" (appBack)="home()">
   <router-outlet />
 </main>

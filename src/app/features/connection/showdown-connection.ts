@@ -12,9 +12,10 @@ import { ProtocolFrame, parseFrame, splitLine } from './showdown-protocol';
  */
 @Service()
 export class ShowdownConnection {
-  private readonly stateSignal = signal<ConnectionState>({ status: 'disconnected', error: null, challstr: null });
+  private readonly stateSignal = signal<ConnectionState>({ status: 'offline', error: null, challstr: null });
   private readonly framesSubject = new Subject<ProtocolFrame>();
   private readonly openedSubject = new Subject<void>();
+  private readonly endedSubject = new Subject<void>();
   private readonly render = inject(RenderScheduler);
   private socket: WebSocket | null = null;
   private reconnectAttempts = 0;
@@ -27,6 +28,8 @@ export class ShowdownConnection {
    * in an effect on `state`: effects only run when Angular renders, which is exactly what stalled on Brewser.
    */
   readonly opened: Observable<void> = this.openedSubject.asObservable();
+  /** Emits when the connection is closed on purpose (`disconnect()`): no reconnection follows. */
+  readonly ended: Observable<void> = this.endedSubject.asObservable();
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.disconnect());
@@ -65,12 +68,15 @@ export class ShowdownConnection {
     this.socket.send(`${roomId}|${text}`);
   }
 
+  /** Closes the connection for good (until the next `connect()`). */
   disconnect(): void {
     this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
     const socket = this.socket;
     this.socket = null;
     socket?.close();
-    this.setState({ status: 'disconnected', challstr: null });
+    this.setState({ status: 'offline', error: null, challstr: null });
+    this.endedSubject.next();
   }
 
   private handleMessage(data: string): void {

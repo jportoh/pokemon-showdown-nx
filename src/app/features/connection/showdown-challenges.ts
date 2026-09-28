@@ -1,5 +1,6 @@
 import { Service, inject, signal } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { merge } from 'rxjs';
 import { formatName } from '@shared/data/formats';
 import { toId } from '@shared/utils/to-id';
 import { ShowdownConnection } from './showdown-connection';
@@ -68,8 +69,8 @@ export class ShowdownChallenges {
           this.onPopup(args.join('|'));
       }
     });
-    // Challenges don't survive a new connection.
-    this.connection.opened.subscribe(() => {
+    // Challenges don't survive a new connection, or the end of one.
+    merge(this.connection.opened, this.connection.ended).subscribe(() => {
       this.setIncoming([]);
       this.setOutgoing(null);
     });

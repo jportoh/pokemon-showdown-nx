@@ -30,11 +30,11 @@ type ChatView = 'chat' | 'users';
                 #roomButton
                 type="button"
                 (click)="joinRoom(room)"
-                [disabled]="joining()"
-                class="block h-[72px] w-[378px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[10px_16px] text-left text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-wait disabled:bg-gray-800"
+                [disabled]="joining() || offline()"
+                class="block h-[72px] w-[378px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[10px_16px] text-left text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800"
               >
                 <span class="block text-xl font-bold">{{ room.title }}</span>
-                <span class="block text-sm text-gray-300">{{ joining() && store.room()?.id === room.id ? 'Joining…' : 'Join as a guest' }}</span>
+                <span class="block text-sm text-gray-300">{{ offline() ? 'Connect from the menu first' : joining() && store.room()?.id === room.id ? 'Joining…' : 'Join' }}</span>
               </button>
             </div>
           }
@@ -62,7 +62,7 @@ type ChatView = 'chat' | 'users';
       </div>
       <div class="relative h-11 w-[426px] border-t border-gray-600">
         <p role="status" class="absolute top-3 left-2 w-[410px] text-sm leading-5 text-gray-300" [class.hidden]="joined()">
-          {{ joining() ? 'Joining ' + roomTitle() + '…' : (store.joinError() ?? 'Not in a room') }}
+          {{ offline() ? 'Offline: connect from the menu' : joining() ? 'Joining ' + roomTitle() + '…' : (store.joinError() ?? 'Not in a room') }}
         </p>
         <button
           type="button"
@@ -112,8 +112,13 @@ export class LobbyChat {
   protected readonly usersShown = computed(() => this.joined() && this.view() === 'users');
   protected readonly logShown = computed(() => this.joined() && this.view() === 'chat');
 
+  /** Not connected: the player connects from the home screen (as a guest or logging in). */
+  protected readonly offline = computed(() => this.store.connectionState().status === 'offline');
+
   protected readonly statusText = computed(() => {
     switch (this.store.connectionState().status) {
+      case 'offline':
+        return 'Offline: connect from the menu';
       case 'connecting':
         return 'Connecting…';
       case 'connected':

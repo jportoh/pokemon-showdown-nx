@@ -95,7 +95,8 @@ export class KeyboardNavigation {
   readonly lastFocusedControl = this.currentSignal.asReadonly();
   /** The element that shows the focus ring. */
   private ringed: Element | null = null;
-  private usingButtons = false;
+  /** The ring shows while the buttons are in use: from the start on the console, where nothing else drives it. */
+  private usingButtons = ON_BREWSER;
   /** The last control that had focus, and where it was, for when focus is lost (its control vanished). */
   private lastFocused: HTMLElement | null = null;
   private lastBox: Box | null = null;
@@ -151,6 +152,14 @@ export class KeyboardNavigation {
   registerPager(element: Element, pager: Pager): () => void {
     this.pagers.set(element, pager);
     return () => this.pagers.delete(element);
+  }
+
+  /**
+   * Focuses the next page's start once the current navigation has rendered it (its `data-autofocus`
+   * control, or its first one): for menus that open pages, whose own control goes with the old page.
+   */
+  focusPageAfterNavigation(): void {
+    this.focusPageOnNavigation = true;
   }
 
   /** ZL/ZR call this with -1/+1; the layout switches its tabs. */

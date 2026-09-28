@@ -37,7 +37,7 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
   { button: 'D-pad', key: 'W / A / S / D', action: 'Move focus; left/right change a list box option' },
   { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
   { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
-  { button: 'ZL/ZR', key: 'Z / C', action: 'Previous / next header tab (battle: show or hide the battle log)', legend: 'Switch tab' },
+  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: battle timer / battle log)" },
   { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit)" },
 ];
 

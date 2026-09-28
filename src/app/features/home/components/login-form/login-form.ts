@@ -3,24 +3,27 @@ import { form, FormField, maxLength } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { BackAction } from '@shared/directives/back-action';
+import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
 /**
- * Logs in to the player's own Showdown name, laid out over the challenge panel's three rows: a
- * registered name with its password, a free one with the password left empty. Closes itself once
- * the server calls us by the name. The values are read from the inputs themselves: the console's
- * on-screen keyboard may fill them in without the input events that keep the form model up to date.
+ * Logs in to the player's own Showdown name, in three rows over a fixed 560x116 area (the home
+ * screen's login box), once the connection is ready, or a guest's random name instead: a registered name with its password, a free one with the password left empty.
+ * Closes itself once the server calls us by the name. The values are read from the inputs themselves:
+ * the console's on-screen keyboard may fill them in without the input events that keep the form model
+ * up to date.
  */
 @Component({
   imports: [FormField, BackAction],
   selector: 'app-login-form',
-  host: { class: 'block' },
+  // No `relative` here: the parent places it with `absolute` (both set `position`, and `relative` wins).
+  host: { class: 'block h-[116px] w-[560px]' },
   template: `
     <div role="group" aria-label="Log in to Showdown" (appBack)="closed.emit()">
       <p
         id="login-status"
         role="status"
-        class="absolute top-[8px] left-[24px] block h-7 w-[512px] truncate text-sm leading-7"
-        [class]="error() ? 'text-red-300' : 'text-gray-300'"
+        class="absolute top-[4px] left-0 block h-7 w-[560px] truncate text-base leading-7"
+        [class]="error() ? 'font-bold text-retro-danger' : 'text-retro-muted'"
       >
         {{ statusText() }}
       </p>
@@ -34,7 +37,7 @@ import { BackAction } from '@shared/directives/back-action';
         [formField]="loginForm.name"
         (keydown)="onEnter($event)"
         [class]="inputClass"
-        class="left-[24px] w-[244px]"
+        class="absolute top-[38px] left-0 h-9 w-[272px]"
       />
       <input
         #passwordInput
@@ -46,21 +49,28 @@ import { BackAction } from '@shared/directives/back-action';
         [formField]="loginForm.password"
         (keydown)="onEnter($event)"
         [class]="inputClass"
-        class="left-[280px] w-[256px]"
+        class="absolute top-[38px] left-[288px] h-9 w-[272px]"
       />
       <button
         type="button"
-        class="absolute top-[72px] left-[24px] h-9 w-[244px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-lg font-bold hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-60"
-        [disabled]="login.state().loggingIn"
+        [class]="primaryClass"
+        class="absolute top-[80px] left-0 h-9 w-[176px] text-xl"
+        [disabled]="!canSubmit()"
         (click)="submit()"
       >
         Log in
       </button>
       <button
+        #guestButton
         type="button"
-        class="absolute top-[72px] left-[280px] h-9 w-[256px] cursor-pointer rounded-md border border-gray-400 bg-gray-600 text-lg font-bold hover:bg-gray-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-        (click)="closed.emit()"
+        [class]="secondaryClass"
+        class="absolute top-[80px] left-[188px] h-9 w-[212px] text-xl"
+        [disabled]="login.state().loggingIn"
+        (click)="guest.emit()"
       >
+        Connect as guest
+      </button>
+      <button type="button" [class]="secondaryClass" class="absolute top-[80px] left-[412px] h-9 w-[148px] text-xl" (click)="closed.emit()">
         Cancel
       </button>
     </div>
@@ -70,12 +80,16 @@ export class LoginForm {
   protected readonly login = inject(ShowdownLogin);
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
   private readonly passwordInput = viewChild.required<ElementRef<HTMLInputElement>>('passwordInput');
+  private readonly guestButton = viewChild.required<ElementRef<HTMLButtonElement>>('guestButton');
 
   /** Cancelled, or logged in. */
   readonly closed = output<void>();
+  /** Connect with a random name instead. */
+  readonly guest = output<void>();
 
-  protected readonly inputClass =
-    'absolute top-[38px] h-8 rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
+  protected readonly inputClass = RETRO_INPUT;
+  protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
+  protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
   private readonly model = signal({ name: '', password: '' });
   // Showdown's limit for names.
@@ -86,16 +100,25 @@ export class LoginForm {
   /** Only an error from a login asked for here: an older one would read as this one's. */
   protected readonly error = computed(() => (this.submitted() ? this.login.state().loginError : null));
 
-  protected readonly statusText = computed(() => {
+  /** The server's challenge is here (`ready`, or `named` to switch names) and no login is under way. */
+  protected readonly canSubmit = computed(() => {
     const state = this.login.state();
+    return (state.status === 'ready' || state.status === 'named') && !state.loggingIn;
+  });
+
+  protected readonly statusText = computed(() => {
     const error = this.error();
     if (error) return error;
+    const state = this.login.state();
     if (state.loggingIn) return 'Logging in…';
-    return 'Your Showdown name. Leave the password empty if it isn’t registered.';
+    if (state.status === 'connecting' || state.status === 'offline') return 'Connecting to Showdown…';
+    return 'Leave the password empty for an unregistered name.';
   });
 
   constructor() {
-    afterNextRender(() => this.nameInput().nativeElement.focus());
+    // Never a text field: focusing one opens the console's keyboard, which breaks the navigation under
+    // way. The fields are one step up.
+    afterNextRender(() => this.guestButton().nativeElement.focus());
     effect(() => {
       const state = this.login.state();
       if (this.submitted() && state.ownName && !state.loggingIn) this.closed.emit();

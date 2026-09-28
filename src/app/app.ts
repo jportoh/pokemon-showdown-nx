@@ -17,10 +17,10 @@ export class App {
   constructor() {
     const router = inject(Router);
     const session = inject(BattleSession);
-    // Other players can challenge us from the start, whichever page is open: connect and take a name,
-    // and keep track of challenges.
+    // Nothing connects until the player asks (on the home screen). From then on other players can
+    // challenge us whichever page is open: the name and the challenges are tracked app-wide.
     inject(ShowdownChallenges);
-    inject(ShowdownLogin).start();
+    inject(ShowdownLogin);
     // An accepted challenge opens its battle, unless one is already open.
     inject(BattleRooms).started.subscribe((roomId) => {
       if (session.active()) return;
