@@ -97,6 +97,8 @@ export class ShowdownLogin {
   connectAsGuest(): void {
     if (this.busy()) return;
     this.credentials = null;
+    // Another round of names: a try after a failed one gets its own.
+    this.tries = 0;
     this.setState({ mode: 'guest', status: 'connecting', error: null, loginError: null });
     if (this.challstr) this.onChallenge();
     else this.connection.connect();
@@ -111,10 +113,10 @@ export class ShowdownLogin {
     else this.connection.connect();
   }
 
-  /** Leaves a login that hasn't got its name yet: back offline. */
+  /** Leaves a connection (a guest's or a login) that hasn't got its name yet: back offline. */
   cancelLogin(): void {
     const state = this.stateSignal();
-    if (state.mode === 'login' && state.status !== 'named' && !state.loggingIn) this.disconnect();
+    if (state.mode && state.status !== 'named' && !state.loggingIn) this.disconnect();
   }
 
   /** Closes the connection and forgets the name (and the password): back offline. */

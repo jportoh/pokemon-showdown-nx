@@ -75,9 +75,10 @@
   </nav>
 
   @if (loginOpen()) {
-    <app-retro-box class="absolute top-[280px] left-[320px]" [width]="640" [height]="236">
-      <h2 class="absolute top-[20px] left-[37px] block h-10 w-[560px] text-3xl leading-10 font-bold">Log in to Showdown</h2>
-      <app-login-form class="absolute top-[88px] left-[37px]" (closed)="closeLogin()" (guest)="connectAsGuest()" />
+    <!-- Most of the stage under the bar: 1088x568 from (96, 116), the inside 1082x562. -->
+    <app-retro-box class="absolute top-[116px] left-[96px]" [width]="1088" [height]="568">
+      <h2 class="absolute top-[32px] left-[48px] block h-12 w-[980px] text-[40px] leading-[48px] font-bold">Connect to Showdown</h2>
+      <app-login-form class="absolute top-[112px] left-[48px]" (closed)="closeLogin()" />
     </app-retro-box>
   }
 </main>

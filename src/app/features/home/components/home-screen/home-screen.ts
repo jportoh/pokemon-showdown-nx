@@ -107,14 +107,7 @@ export class HomeScreen {
     else if (this.login.state().status === 'named') this.search.search(RANDOM_BATTLE_FORMAT);
   }
 
-  /** From the login box: a random name instead (the connection it opened stays). */
-  protected connectAsGuest(): void {
-    this.loginOpen.set(false);
-    this.login.connectAsGuest();
-    afterNextRender(() => this.focusItem(this.menu.lastItem()), { injector: this.injector });
-  }
-
-  /** ZR or its button, while offline: connects and shows the login box (its fields take the focus). */
+  /** ZR or its button, while offline: connects and shows the login box (its guest button takes the focus). */
   protected openLogin(): boolean {
     if (!this.offline()) return false;
     this.login.startLogin();
@@ -144,7 +137,7 @@ export class HomeScreen {
     this.confirmingDisconnect.set(false);
   }
 
-  /** Logged in, or cancelled (which disconnects a login that has no name yet). */
+  /** Connected with a name (a guest's or the player's), or backed out (which disconnects one that has no name yet). */
   protected closeLogin(): void {
     this.loginOpen.set(false);
     this.login.cancelLogin();
