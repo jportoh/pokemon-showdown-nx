@@ -47,21 +47,25 @@ const ROWS = 8;
     </button>
 
     <app-retro-box class="absolute top-[92px] left-[32px]" [width]="1220" [height]="528">
-      @if (message(); as message) {
-        <p role="status" class="absolute top-[24px] left-[24px] block w-[1160px] text-xl">{{ message }}</p>
-      }
+      <!-- Always mounted, shown with display: an absolute box added or removed later left stale paint on
+        Brewser. The rows hide while it shows, so it never lies over the old list during a refresh. -->
+      <p role="status" class="absolute top-[24px] left-[24px] block h-7 w-[1160px] text-xl" [style.display]="message() ? 'block' : 'none'">{{ message() }}</p>
+      <!-- ROWS fixed slots, tracked by position so no row ever moves or is re-created: on Brewser, moved
+        absolute boxes left their text behind (overlapping) and new ones came out blank. Empty slots hide. -->
       <ul aria-label="Live battles" class="block">
-        @for (battle of shown(); track battle.roomId; let i = $index) {
+        @for (row of rows(); track $index; let i = $index) {
           <li class="block">
             <button
               type="button"
               class="absolute left-[12px] h-14 w-[1184px] cursor-pointer rounded-lg border-2 border-retro-rim bg-retro-button text-left text-retro-ink hover:bg-retro-select"
               [style.top.px]="12 + i * 62"
-              [attr.aria-label]="'Watch ' + battle.p1 + ' versus ' + battle.p2 + ', ' + ratingText(battle)"
-              (click)="watch(battle)"
+              [style.display]="row ? 'block' : 'none'"
+              [disabled]="!row"
+              [attr.aria-label]="row ? 'Watch ' + row.p1 + ' versus ' + row.p2 + ', ' + ratingText(row) : null"
+              (click)="row && watch(row)"
             >
-              <span class="absolute top-[12px] left-[20px] block h-7 w-[860px] overflow-hidden text-xl font-bold whitespace-nowrap">{{ battle.p1 }} vs {{ battle.p2 }}</span>
-              <span class="absolute top-[14px] left-[900px] block h-6 w-[260px] text-lg text-retro-muted">{{ ratingText(battle) }}</span>
+              <span class="absolute top-[12px] left-[20px] block h-7 w-[860px] overflow-hidden text-xl font-bold whitespace-nowrap">{{ row ? row.p1 + ' vs ' + row.p2 : '' }}</span>
+              <span class="absolute top-[14px] left-[900px] block h-6 w-[260px] text-lg text-retro-muted">{{ row ? ratingText(row) : '' }}</span>
             </button>
           </li>
         }
@@ -90,6 +94,11 @@ export class LivePage {
   /** Back to the first page with each new list. */
   protected readonly page = linkedSignal({ source: this.battles, computation: () => 0 });
   protected readonly shown = computed(() => this.battles().slice(this.page() * ROWS, (this.page() + 1) * ROWS));
+  /** Always ROWS slots (null: empty), all empty while the message shows. */
+  protected readonly rows = computed<readonly (LiveBattle | null)[]>(() => {
+    const shown = this.message() ? [] : this.shown();
+    return Array.from({ length: ROWS }, (_, i) => shown[i] ?? null);
+  });
 
   protected readonly range = computed(() => {
     const total = this.battles().length;
