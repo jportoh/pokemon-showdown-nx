@@ -21,17 +21,35 @@ export interface PlayableFormat extends BattleFormat {
   label: string;
   /** Teams are handed out at random: no team of the player's is needed. */
   randomTeams: boolean;
+  /** The heading it's listed under in the format picker, as Showdown groups its formats. */
+  category: string;
+  /** One line under its name: how it's played. */
+  detail: string;
 }
 
 export const RANDOM_BATTLE_FORMAT = 'gen9randombattle';
 
 /**
- * The formats the Battle Finder and the replay list offer: the teambuilder's VGC format (doubles) and
- * Random Battle (singles).
+ * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles) and
+ * Random Battle (singles). The format picker lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
-  { id: DEFAULT_TEAM_FORMAT, name: TEAM_FORMATS[0].name, label: 'VGC 2026 Reg M-C', randomTeams: false },
-  { id: RANDOM_BATTLE_FORMAT, name: '[Gen 9] Random Battle', label: 'Gen 9 Random Battle', randomTeams: true },
+  {
+    id: DEFAULT_TEAM_FORMAT,
+    name: TEAM_FORMATS[0].name,
+    label: 'VGC 2026 Reg M-C',
+    randomTeams: false,
+    category: 'Doubles',
+    detail: 'Doubles · one of your teams',
+  },
+  {
+    id: RANDOM_BATTLE_FORMAT,
+    name: '[Gen 9] Random Battle',
+    label: 'Gen 9 Random Battle',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random teams',
+  },
 ];
 
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */

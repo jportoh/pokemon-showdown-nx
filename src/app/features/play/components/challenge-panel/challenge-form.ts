@@ -10,7 +10,7 @@ import { toId } from '@shared/utils/to-id';
 const CHALLENGE_FORMAT = 'gen9randombattle';
 
 /**
- * Challenges a player by name to a Random Battle, laid out over the challenge panel's three rows.
+ * Challenges a player by name to a Random Battle, in a box over the Battle page (three rows).
  * Sending closes it: the panel then shows the challenge waiting for an answer. The name is read
  * from the input itself (the on-screen keyboard may skip the input events).
  */
