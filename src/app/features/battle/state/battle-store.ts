@@ -13,6 +13,7 @@ import {
   GameType,
   MoveAction,
   BattleLogEntry,
+  RatingChange,
   BattlePokemon,
   BattleRequest,
   BattleSide,
@@ -24,6 +25,7 @@ import {
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
+import { parseRatingChange } from './battle-ratings';
 import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
 import {
   BattleNames,
@@ -88,6 +90,11 @@ export function timerSecondsLeft(timer: BattleTimer, now: number): number | null
   return Math.max(0, timer.turnSeconds - elapsed);
 }
 
+/** "+17", "-17", "±0". */
+export function signed(n: number): string {
+  return n > 0 ? `+${n}` : n < 0 ? `${n}` : '±0';
+}
+
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -124,6 +131,8 @@ export class BattleStore {
   private readonly requestSignal = signal<BattleRequest | null>(null);
   private readonly resultSignal = signal<'win' | 'loss' | 'tie' | null>(null);
   private readonly winnerSignal = signal('');
+  private readonly ratedSignal = signal(false);
+  private readonly ratingsSignal = signal<Partial<Record<SideId, RatingChange>>>({});
   private readonly playingSignal = signal(false);
   private readonly teamSignal = signal<readonly RequestPokemon[]>([]);
   private readonly battleIdSignal = signal(0);
@@ -157,6 +166,10 @@ export class BattleStore {
   readonly result = this.resultSignal.asReadonly();
   /** The winner's name once the battle is over ('' for a tie). */
   readonly winner = this.winnerSignal.asReadonly();
+  /** A ladder battle (`|rated|`): the players' ratings change when it ends. */
+  readonly rated = this.ratedSignal.asReadonly();
+  /** Each player's rating change, once the server has worked it out (a moment after the battle ends). */
+  readonly ratings = this.ratingsSignal.asReadonly();
   /** Whether log steps are still being shown. */
   readonly playing = this.playingSignal.asReadonly();
   /** The player's whole team as of the last request (it stays while the turn plays). */
@@ -271,6 +284,8 @@ export class BattleStore {
     this.turnSignal.set(0);
     this.resultSignal.set(null);
     this.winnerSignal.set('');
+    this.ratedSignal.set(false);
+    this.ratingsSignal.set({});
     this.requestSignal.set(null);
     this.teamSignal.set([]);
     this.pausedSignal.set(false);
@@ -787,10 +802,28 @@ export class BattleStore {
         return this.say('The battle ended in a tie!', 'result');
       case '-message':
         return this.say(args[0]);
+      case 'rated':
+        // `|rated|Tournament battle` (with a message) doesn't change anyone's rating.
+        this.ratedSignal.set(!rest.join('|'));
+        return 0;
+      case 'raw':
+        this.addRating(rest.join('|'));
+        return 0;
       default:
         // Chat, timers, ratings (|c|, |t:|, |raw|, |inactive|…) and effects with nothing to show.
         return 0;
     }
+  }
+
+  /** `|raw|X's rating: 1822 &rarr; <strong>1839</strong><br />(+17 for winning)`, for X's side. */
+  private addRating(html: string): void {
+    const rating = parseRatingChange(html);
+    if (!rating) return;
+    const { p1, p2 } = this.sidesSignal();
+    const side = [p1, p2].find((s) => toId(s.name) === toId(rating.name));
+    if (!side) return;
+    this.ratingsSignal.update((ratings) => ({ ...ratings, [side.id]: { ...rating, name: side.name } }));
+    this.addEntry('message', `${side.name}'s rating: ${rating.before} → ${rating.after} (${signed(rating.change)})`);
   }
 
   private say(text: string, kind: BattleLogEntry['kind'] = 'message'): number {

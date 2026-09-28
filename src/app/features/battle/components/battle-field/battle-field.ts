@@ -2,6 +2,7 @@ import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, c
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { nextFrame, outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
 import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
+import { BattleResult } from '@features/battle/components/battle-result/battle-result';
 import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SlotKey, StatusChange } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleStore } from '@features/battle/state/battle-store';
@@ -189,7 +190,7 @@ interface FieldSlot {
  */
 @Component({
   selector: 'app-battle-field',
-  imports: [BattleHpBox, ItemIcon, PokemonSprite],
+  imports: [BattleHpBox, BattleResult, ItemIcon, PokemonSprite],
   host: { class: 'block h-[500px] w-[985px]' },
   template: `
     <div class="relative h-[500px] w-[985px] overflow-hidden" [style.background-color]="palette().sky">
@@ -342,6 +343,8 @@ interface FieldSlot {
         <!-- Trick Room: the field framed in violet, as the move's twisted dimensions. -->
         <div aria-hidden="true" class="absolute top-0 left-0 h-[500px] w-[985px] border-[6px] border-[#a855f7]"></div>
       }
+      <!-- Who won, once the battle is over (and the ratings, in a rated battle). -->
+      <app-battle-result />
     </div>
   `,
 })

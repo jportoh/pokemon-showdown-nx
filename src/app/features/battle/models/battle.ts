@@ -194,6 +194,15 @@ export interface BattleLogEntry {
   text: string;
 }
 
+/** A player's ladder rating before and after a rated battle. */
+export interface RatingChange {
+  name: string;
+  before: number;
+  after: number;
+  /** after - before: positive when won. */
+  change: number;
+}
+
 /** One slot's choice while the player picks the turn's actions. */
 export type SlotChoice =
   | { kind: 'move'; move: number; target?: number; mega?: boolean; tera?: boolean }
