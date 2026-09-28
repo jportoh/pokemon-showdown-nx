@@ -1,4 +1,20 @@
-import { Component, ElementRef, Injector, afterNextRender, computed, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  Injector,
+  afterNextRender,
+  afterRenderEffect,
+  computed,
+  inject,
+  input,
+  linkedSignal,
+  output,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { FormField, form } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { ItemIcon } from '@shared/components/item-icon';
@@ -18,6 +34,16 @@ export interface ChooserOption {
 
 /** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
 const MAX_RESULTS = 30;
+
+/**
+ * A long list (a learnset: up to ~100 moves) froze the console for a moment when it opened, building
+ * every row at once. Its rows are added in batches instead: enough to fill the list (and reach the
+ * current choice) first, the rest a batch at a time, with a pause between them for the buttons.
+ */
+const ROWS_PER_BATCH = 16;
+const BATCH_DELAY_MS = 40;
+/** A list this close to the one shown (the next move slot's: one move in, one out) keeps its rows. */
+const SAME_LIST_CHANGES = 2;
 
 @Component({
   imports: [FormField, ItemIcon, ScrollRegion],
@@ -50,7 +76,7 @@ const MAX_RESULTS = 30;
       [style.height.px]="searchable() ? 476 : 516"
       class="w-[408px] overflow-y-auto rounded-md border border-gray-600 bg-card"
     >
-      @for (option of results(); track option.id) {
+      @for (option of shownResults(); track option.id) {
         <li>
           <button
             type="button"
@@ -121,6 +147,41 @@ export class DexChooser {
     return this.searchable() ? this.matches().slice(0, MAX_RESULTS) : this.matches();
   });
 
+  /**
+   * How many rows are built so far. A new list starts with the first batch (or up to the current
+   * choice, which gets focus); the next move slot's list keeps what the last one had built.
+   */
+  private readonly rowCount = linkedSignal<readonly ChooserOption[], number>({
+    source: this.results,
+    computation: (results, previous) => {
+      if (previous && isSameList(previous.source, results)) return previous.value;
+      const current = untracked(this.selectedId);
+      const selected = current ? results.findIndex((option) => option.id === current) : -1;
+      return Math.max(ROWS_PER_BATCH, selected + ROWS_PER_BATCH / 2);
+    },
+  });
+
+  protected readonly shownResults = computed(() => this.results().slice(0, this.rowCount()));
+
+  private batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    // Once a batch is on screen, the next one is scheduled. The render is requested explicitly: a
+    // timer's change didn't always get one on the console (see RenderScheduler).
+    const render = inject(RenderScheduler);
+    afterRenderEffect(() => {
+      if (this.rowCount() >= this.results().length || this.batchTimer !== null) return;
+      this.batchTimer = setTimeout(() => {
+        this.batchTimer = null;
+        this.rowCount.update((count) => count + ROWS_PER_BATCH);
+        render.request();
+      }, BATCH_DELAY_MS);
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (this.batchTimer !== null) clearTimeout(this.batchTimer);
+    });
+  }
+
   protected readonly summary = computed(() => {
     if (this.unavailable()) return this.unavailable();
     const total = this.matches().length;
@@ -168,3 +229,14 @@ export class DexChooser {
 }
 
 let nextId = 0;
+
+/** Whether two lists differ by only a few options (in either direction). */
+function isSameList(before: readonly ChooserOption[], after: readonly ChooserOption[]): boolean {
+  if (Math.abs(before.length - after.length) > SAME_LIST_CHANGES) return false;
+  const ids = new Set(before.map((option) => option.id));
+  let changes = 0;
+  for (const option of after) {
+    if (!ids.has(option.id) && ++changes > SAME_LIST_CHANGES) return false;
+  }
+  return true;
+}
