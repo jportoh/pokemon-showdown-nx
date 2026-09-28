@@ -13,3 +13,6 @@ export const RECONNECT_MAX_DELAY_MS = 30_000;
  * Same host as the sprites, already in the Brewser network allow-list.
  */
 export const LOGIN_ASSERTION_URL = 'https://play.pokemonshowdown.com/api/getassertion';
+
+/** Logs in to a registered name with its password (`name`, `pass`, `challstr`): same server as above. */
+export const LOGIN_URL = 'https://play.pokemonshowdown.com/api/login';
