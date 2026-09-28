@@ -7,8 +7,10 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { ChallengeNotice } from '@features/home/components/challenge-notice/challenge-notice';
 import { LoginForm } from '@features/home/components/login-form/login-form';
+import { RegisterForm } from '@features/home/components/register-form/register-form';
 import { TrainerStatus } from '@features/home/components/trainer-status/trainer-status';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
+import { TrainerCard } from '@features/trainer-card/components/trainer-card/trainer-card';
 import { PixelIconName, PixelIcon } from '@shared/components/pixel-icon';
 import { RetroBox } from '@shared/components/retro-box';
 import { RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
@@ -22,10 +24,11 @@ const DISCONNECT_CONFIRM_MS = 4000;
  * login box, which also connects as a guest; once connected, the name, and ZR twice to disconnect or
  * log out), and the menu as six big buttons, two per row: the pages, plus Random Battle (a ladder
  * search right here). The button pointed at is marked by CSS from the controller's focus attribute
- * (styles.css), so moving around doesn't even render. Logging in opens a box over the grid.
+ * (styles.css), so moving around doesn't even render. Logging in opens a box over the grid, and so
+ * does L's: the Trainer Card for a registered name, or registering the player's own name.
  */
 @Component({
-  imports: [ChallengeNotice, LoginForm, NgOptimizedImage, PixelIcon, RetroBox, TrainerStatus],
+  imports: [ChallengeNotice, LoginForm, NgOptimizedImage, PixelIcon, RegisterForm, RetroBox, TrainerCard, TrainerStatus],
   selector: 'app-home-screen',
   host: { class: 'bg-retro-bg relative block h-[720px] w-[1280px] text-retro-ink' },
   templateUrl: './home-screen.html',
@@ -46,6 +49,8 @@ export class HomeScreen {
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
   protected readonly loginOpen = signal(false);
+  /** L's box is open: the Trainer Card, or registering the name (whichever the name allows). */
+  protected readonly lBoxOpen = signal(false);
   /** A first press to disconnect is waiting for the second one. */
   protected readonly confirmingDisconnect = signal(false);
   private confirmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +69,27 @@ export class HomeScreen {
     return status === 'offline' || (status === 'ready' && !this.loginOpen());
   });
 
+  /** The Trainer Card is for registered players, logged in (guests have no ratings to show). */
+  protected readonly canShowCard = computed(() => {
+    const login = this.login.state();
+    return login.status === 'named' && login.registered && !this.loginOpen();
+  });
+
+  /** The player's own name, not registered: L offers registering it. */
+  protected readonly canRegister = computed(() => {
+    const login = this.login.state();
+    return login.status === 'named' && login.ownName && !login.registered && !this.loginOpen();
+  });
+
+  protected readonly hasLButton = computed(() => this.canShowCard() || this.canRegister());
+
+  /**
+   * The box shown while L's is open, as the name allows (logging out closes it). A name just
+   * registered goes straight from the register box to its card.
+   */
+  protected readonly cardShown = computed(() => this.lBoxOpen() && this.canShowCard());
+  protected readonly registerShown = computed(() => this.lBoxOpen() && this.canRegister());
+
   /** Random Battle's line: the search under way, why it was refused, or what A will do. */
   protected readonly randomLine = computed(() => {
     const error = this.search.error();
@@ -80,6 +106,7 @@ export class HomeScreen {
     afterNextRender(() => this.focusItem(this.menu.lastItem()));
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.openLogin() || this.disconnect()),
+      this.navigation.registerButton('buttonL', () => this.toggleLBox()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
@@ -127,6 +154,7 @@ export class HomeScreen {
       return true;
     }
     this.cancelDisconnect();
+    if (this.lBoxOpen()) this.closeLBox();
     this.login.disconnect();
     return true;
   }
@@ -141,6 +169,22 @@ export class HomeScreen {
   protected closeLogin(): void {
     this.loginOpen.set(false);
     this.login.cancelLogin();
+    afterNextRender(() => this.focusItem(this.menu.lastItem()), { injector: this.injector });
+  }
+
+  /** L or its button: opens the Trainer Card (or registering the name) over the menu, or closes it. */
+  protected toggleLBox(): boolean {
+    if (this.cardShown() || this.registerShown()) {
+      this.closeLBox();
+      return true;
+    }
+    if (!this.hasLButton()) return false;
+    this.lBoxOpen.set(true);
+    return true;
+  }
+
+  protected closeLBox(): void {
+    this.lBoxOpen.set(false);
     afterNextRender(() => this.focusItem(this.menu.lastItem()), { injector: this.injector });
   }
 

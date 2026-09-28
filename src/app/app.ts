@@ -3,6 +3,7 @@ import { Router, RouterOutlet } from '@angular/router';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
+import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
 @Component({
@@ -21,6 +22,8 @@ export class App {
     // challenge us whichever page is open: the name and the challenges are tracked app-wide.
     inject(ShowdownChallenges);
     inject(ShowdownLogin);
+    // The server lists its formats once, on connecting: their names, for ladder ratings.
+    inject(ShowdownFormats);
     // An accepted challenge opens its battle, unless one is already open.
     inject(BattleRooms).started.subscribe((roomId) => {
       if (session.active()) return;

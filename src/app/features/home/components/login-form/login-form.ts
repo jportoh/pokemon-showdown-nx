@@ -2,6 +2,7 @@ import { Component, ElementRef, afterNextRender, computed, effect, inject, outpu
 import { form, FormField, maxLength } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { ShowdownLogin } from '@features/connection/showdown-login';
+import { PasswordField } from '@shared/components/password-field';
 import { BackAction } from '@shared/directives/back-action';
 import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
@@ -14,7 +15,7 @@ import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shar
  * on-screen keyboard may fill them in without the input events that keep the form model up to date.
  */
 @Component({
-  imports: [FormField, BackAction],
+  imports: [FormField, BackAction, PasswordField],
   selector: 'app-login-form',
   // No `relative` here: the parent places it with `absolute` (both set `position`, and `relative` wins).
   host: { class: 'block h-[416px] w-[980px]' },
@@ -49,17 +50,15 @@ import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shar
         [class]="inputClass"
         class="absolute top-[220px] left-0 h-16 w-[482px]"
       />
-      <input
-        #passwordInput
-        type="password"
-        autocomplete="current-password"
-        aria-label="Password (empty for an unregistered name)"
-        aria-describedby="login-status"
+      <app-password-field
+        #passwordField
+        ariaLabel="Password (empty for an unregistered name)"
+        describedBy="login-status"
         placeholder="Password"
-        [formField]="loginForm.password"
-        (keydown)="onEnter($event)"
-        [class]="inputClass"
-        class="absolute top-[220px] left-[498px] h-16 w-[482px]"
+        [width]="482"
+        [height]="64"
+        (enter)="submit()"
+        class="absolute top-[220px] left-[498px]"
       />
       <button
         type="button"
@@ -85,7 +84,7 @@ import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shar
 export class LoginForm {
   protected readonly login = inject(ShowdownLogin);
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
-  private readonly passwordInput = viewChild.required<ElementRef<HTMLInputElement>>('passwordInput');
+  private readonly passwordField = viewChild.required(PasswordField);
   private readonly guestButton = viewChild.required<ElementRef<HTMLButtonElement>>('guestButton');
 
   /** Backed out (B), or connected with a name. */
@@ -171,7 +170,7 @@ export class LoginForm {
   protected submit(): void {
     if (!this.canSubmit()) return;
     const name = this.nameInput().nativeElement.value.trim();
-    const password = this.passwordInput().nativeElement.value;
+    const password = this.passwordField().value();
     this.model.set({ name, password });
     this.submitted.set(true);
     this.login.logIn(name, password);

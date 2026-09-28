@@ -1,8 +1,9 @@
 import { Service, inject, signal } from '@angular/core';
+import { readJson, writeJson } from '@core/persistence/device-storage';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { toId } from '@shared/utils/to-id';
 import { ShowdownConnection } from './showdown-connection';
-import { LOGIN_ASSERTION_URL, LOGIN_URL } from './showdown-config';
+import { LOGIN_ASSERTION_URL, LOGIN_URL, REGISTER_URL } from './showdown-config';
 import { splitLine } from './showdown-protocol';
 
 export interface LoginState {
@@ -24,6 +25,14 @@ export interface LoginState {
   loginError: string | null;
   /** The current name is the player's own (asked for with `logIn`), not a random one. */
   ownName: boolean;
+  /** The player's own name is a registered one (logged in with its password). */
+  registered: boolean;
+  /** The trainer avatar the server shows for us ("lucas", "167", "#custom"); empty until named. */
+  avatar: string;
+  /** The player's unregistered name is being registered (`register`). */
+  registering: boolean;
+  /** Why the last `register` failed, until the next one. */
+  registerError: string | null;
 }
 
 /** A name the player chose, and its password for a registered one (empty otherwise). */
@@ -31,6 +40,9 @@ interface Credentials {
   name: string;
   password: string;
 }
+
+/** The avatar the player chose (a trainer sprite's name), set again on every connection. */
+const AVATAR_STORAGE_KEY = 'psb.avatar.v1';
 
 /** Names tried in a row before giving up: registered ones, or ones someone is already using. */
 const MAX_NAME_TRIES = 3;
@@ -61,6 +73,10 @@ export class ShowdownLogin {
     loggingIn: false,
     loginError: null,
     ownName: false,
+    registered: false,
+    avatar: '',
+    registering: false,
+    registerError: null,
   });
   /** The server's latest challenge: a login for an older one would be refused. */
   private challstr: string | null = null;
@@ -68,6 +84,10 @@ export class ShowdownLogin {
   private tries = 0;
   /** The player's own name, once asked for: claimed again on each new connection. */
   private credentials: Credentials | null = null;
+  /** The avatar the player chose, if any: the server gives a random one to each new connection. */
+  private chosenAvatar = readJson<string | null>(AVATAR_STORAGE_KEY, null);
+  /** The chosen avatar was already asked for on this connection's name. */
+  private avatarApplied = false;
 
   readonly state = this.stateSignal.asReadonly();
 
@@ -79,11 +99,13 @@ export class ShowdownLogin {
           this.challstr = line.slice('|challstr|'.length);
           this.tries = 0;
           this.onChallenge();
-        } else if (type === 'updateuser') this.onUpdateUser(args[0] ?? '', args[1] === '1');
+        } else if (type === 'updateuser') this.onUpdateUser(args[0] ?? '', args[1] === '1', args[2] ?? '');
         else if (type === 'nametaken') this.onNameTaken(args[1] || `The name ${args[0]} can't be used.`);
       }
     });
     this.connection.opened.subscribe(() => {
+      // A new connection has a new random avatar.
+      this.avatarApplied = false;
       if (this.stateSignal().mode) this.setState({ status: 'connecting', error: null });
     });
     // Closed by something else (it doesn't happen while the player is connected, but just in case).
@@ -147,6 +169,56 @@ export class ShowdownLogin {
     void this.claimOwnName({ name: trimmed, password });
   }
 
+  /**
+   * Registers the player's own unregistered name with a password, as Showdown's register form does
+   * (the login server's `register`, with its "What is this Pokémon?" answer), and logs in to it: the
+   * server's `updateuser` then makes it `registered`.
+   */
+  register(password: string, confirmation: string, captcha: string): void {
+    const state = this.stateSignal();
+    const challstr = this.challstr;
+    if (!challstr || state.status !== 'named' || !state.ownName || state.registered || state.registering) return;
+    if (!password) {
+      this.setState({ registerError: 'Choose a password.' });
+      return;
+    }
+    if (password !== confirmation) {
+      this.setState({ registerError: "The passwords don't match." });
+      return;
+    }
+    if (!captcha) {
+      this.setState({ registerError: 'Answer which Pokémon it is.' });
+      return;
+    }
+    this.setState({ registering: true, registerError: null });
+    void fetchRegisterAssertion(state.name, password, confirmation, captcha, challstr).then(
+      (result) => {
+        if (this.challstr !== challstr) return;
+        if ('error' in result) {
+          this.setState({ registering: false, registerError: result.error });
+          return;
+        }
+        // Logged in to it from now on, reconnections included.
+        this.credentials = { name: state.name, password };
+        this.connection.send('', `/trn ${state.name},0,${result.assertion}`);
+      },
+      () => this.setState({ registering: false, registerError: "Couldn't reach Showdown's login server." }),
+    );
+  }
+
+  /**
+   * Changes the player's avatar (a trainer sprite's name, as the client sends it: `/avatar dawn`)
+   * and keeps it, for this and later connections, as Showdown's client does.
+   */
+  setAvatar(avatar: string): void {
+    if (this.stateSignal().status !== 'named') return;
+    this.chosenAvatar = avatar;
+    writeJson(AVATAR_STORAGE_KEY, avatar);
+    this.connection.send('', `/avatar ${avatar}`);
+    // Shown at once: the server's own update may come later, or not at all.
+    this.setState({ avatar });
+  }
+
   /** The name as Showdown's user ID ("brewser1234"), to recognise our own messages. */
   userId(): string {
     return toId(this.stateSignal().name);
@@ -162,7 +234,20 @@ export class ShowdownLogin {
   }
 
   private reset(): void {
-    this.setState({ status: 'offline', mode: null, name: '', error: null, loggingIn: false, loginError: null, ownName: false });
+    this.avatarApplied = false;
+    this.setState({
+      status: 'offline',
+      mode: null,
+      name: '',
+      error: null,
+      loggingIn: false,
+      loginError: null,
+      ownName: false,
+      registered: false,
+      avatar: '',
+      registering: false,
+      registerError: null,
+    });
   }
 
   private busy(): boolean {
@@ -243,16 +328,41 @@ export class ShowdownLogin {
     else this.fail(message);
   }
 
-  /** `|updateuser| Brewser1234|1|…`: the name (with a leading rank character) and whether it's a chosen one. */
-  private onUpdateUser(rawName: string, named: boolean): void {
+  /**
+   * `|updateuser| Brewser1234|1|lucas|…`: the name (with a leading rank character), whether it's a
+   * chosen one, and the avatar.
+   */
+  private onUpdateUser(rawName: string, named: boolean, avatar: string): void {
     if (!this.stateSignal().mode) return;
     const name = rawName.replace(/^[^A-Za-z0-9]/, '').replace(/@!?$/, '');
     if (!named) {
-      this.setState({ name });
+      this.setState({ name, avatar });
       return;
     }
+    this.applyChosenAvatar(avatar);
     const ownName = this.credentials !== null && toId(name) === toId(this.credentials.name);
-    this.setState({ status: 'named', name, error: null, ownName, loggingIn: this.stateSignal().loggingIn && !ownName });
+    // Only a registered name needs its password, so one given means it's registered.
+    const registered = ownName && this.credentials?.password !== '';
+    this.setState({
+      status: 'named',
+      name,
+      avatar,
+      error: null,
+      ownName,
+      registered,
+      registering: false,
+      loggingIn: this.stateSignal().loggingIn && !ownName,
+    });
+  }
+
+  /**
+   * Once per connection, as soon as it has a name: asks for the avatar the player chose, silently
+   * (`,1`, as the client does), when the server gave another one.
+   */
+  private applyChosenAvatar(current: string): void {
+    if (this.avatarApplied || !this.chosenAvatar) return;
+    this.avatarApplied = true;
+    if (current !== this.chosenAvatar) this.connection.send('', `/avatar ${this.chosenAvatar},1`);
   }
 
   private fail(error: string): void {
@@ -300,9 +410,40 @@ async function fetchLoginAssertion(name: string, password: string, challstr: str
   return assertion.startsWith(';;') ? assertion : ';;Wrong password.';
 }
 
+/**
+ * Registers a name: the answer is JSON after a "]" guard, as `login`'s, with `actionerror` when
+ * refused ("Your passwords do not match.", a wrong answer, a name taken meanwhile…).
+ */
+async function fetchRegisterAssertion(
+  name: string,
+  password: string,
+  confirmation: string,
+  captcha: string,
+  challstr: string,
+): Promise<{ assertion: string } | { error: string }> {
+  const response = await fetch(REGISTER_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: [
+      `username=${encodeURIComponent(name)}`,
+      `password=${encodeURIComponent(password)}`,
+      `cpassword=${encodeURIComponent(confirmation)}`,
+      `captcha=${encodeURIComponent(captcha)}`,
+      `challstr=${encodeURIComponent(challstr)}`,
+    ].join('&'),
+  });
+  if (!response.ok) throw new Error(`The login server answered ${response.status}.`);
+  const data: unknown = JSON.parse((await response.text()).replace(/^]/, ''));
+  if (!isLoginAnswer(data)) return { error: "The login server's answer wasn't understood." };
+  const assertion = data.assertion ?? '';
+  if (data.curuser?.loggedin && assertion && !assertion.startsWith(';')) return { assertion };
+  return { error: data.actionerror || (assertion.startsWith(';;') ? assertion.slice(2) : "Showdown couldn't register the name.") };
+}
+
 interface LoginAnswer {
   assertion?: string;
   curuser?: { loggedin?: boolean };
+  actionerror?: string;
 }
 
 function isLoginAnswer(data: unknown): data is LoginAnswer {

@@ -25,7 +25,45 @@
     </button>
   </div>
   <div class="block" [class.hidden]="offline() || loginOpen()">
-    <app-trainer-status class="absolute top-[24px] left-[684px]" />
+    <!--
+      L (or a click), as ZR, not the d-pad: the Trainer Card for a registered name, registering for the
+      player's own unregistered one. It sits between the status line and ZR, the status line ending
+      right against it, so each case has its own status line (nothing moves on Brewser).
+    -->
+    <div class="block" [class.hidden]="!canShowCard()">
+      <button
+        type="button"
+        data-kb-skip
+        [class]="cardShown() ? primaryClass : secondaryClass"
+        class="absolute top-[14px] left-[882px] h-12 w-[166px] text-xl"
+        aria-label="Trainer Card"
+        [attr.aria-pressed]="cardShown()"
+        (click)="toggleLBox()"
+      >
+        <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">L</span>
+        <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[98px] text-center leading-[44px]">Card</span>
+      </button>
+    </div>
+    <div class="block" [class.hidden]="!canRegister()">
+      <button
+        type="button"
+        data-kb-skip
+        [class]="registerShown() ? primaryClass : secondaryClass"
+        class="absolute top-[14px] left-[882px] h-12 w-[166px] text-xl"
+        aria-label="Register your name"
+        [attr.aria-pressed]="registerShown()"
+        (click)="toggleLBox()"
+      >
+        <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">L</span>
+        <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[98px] text-center leading-[44px]">Register</span>
+      </button>
+    </div>
+    <div class="block" [class.hidden]="!hasLButton()">
+      <app-trainer-status class="absolute top-[24px] left-[506px]" />
+    </div>
+    <div class="block" [class.hidden]="hasLButton()">
+      <app-trainer-status class="absolute top-[24px] left-[684px]" />
+    </div>
     <!-- Two steps, as forfeiting a battle: ZR (or a click) asks, a second one within a few seconds does it. -->
     <button
       type="button"
@@ -50,7 +88,7 @@
     styles.css ([data-kb-focus][data-menu-item]), without any rendering. Hidden (not removed) while
     the login box is open, so returning to it is instant.
   -->
-  <nav aria-label="Main menu" class="block" [class.hidden]="loginOpen()">
+  <nav aria-label="Main menu" class="block" [class.hidden]="loginOpen() || cardShown() || registerShown()">
     @for (item of items; track item.id; let i = $index) {
       <button
         #tile
@@ -80,5 +118,13 @@
       <h2 class="absolute top-[32px] left-[48px] block h-12 w-[980px] text-[40px] leading-[48px] font-bold">Connect to Showdown</h2>
       <app-login-form class="absolute top-[112px] left-[48px]" (closed)="closeLogin()" />
     </app-retro-box>
+  }
+
+  @if (cardShown()) {
+    <app-trainer-card class="absolute top-[116px] left-[96px]" (closed)="closeLBox()" />
+  }
+
+  @if (registerShown()) {
+    <app-register-form class="absolute top-[116px] left-[96px]" (closed)="closeLBox()" />
   }
 </main>
