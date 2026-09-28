@@ -247,7 +247,7 @@ interface FieldSlot {
             [style.top.px]="slot.boxTop"
             [pokemon]="slot.pokemon"
             [own]="true"
-            [exact]="!store.replay()"
+            [exact]="!store.watching()"
             [emphasis]="emphasis()[slot.key] ?? null"
           />
         }

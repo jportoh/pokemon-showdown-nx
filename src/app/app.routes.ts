@@ -46,6 +46,11 @@ export const routes: Routes = [
           import('@features/replays/components/replay-list/replay-list').then((c) => c.ReplayList),
       },
       {
+        path: 'live',
+        data: { page: { title: 'Watch Live', icon: 'live' } satisfies PageInfo },
+        loadComponent: () => import('@features/live/components/live-page/live-page').then((c) => c.LivePage),
+      },
+      {
         path: 'chats',
         data: { page: { title: 'Chats', icon: 'chats' } satisfies PageInfo },
         loadComponent: () => import('@features/lobby/components/chats-page/chats-page').then((c) => c.ChatsPage),

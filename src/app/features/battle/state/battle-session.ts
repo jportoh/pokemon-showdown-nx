@@ -3,7 +3,8 @@ import { Service, signal } from '@angular/core';
 /** What the battle page should open: a battle against the mock server, or a real one in a server room. */
 export type BattleStart =
   | { kind: 'mock'; format: string; teamId: string | null }
-  | { kind: 'live'; roomId: string };
+  | { kind: 'live'; roomId: string }
+  | { kind: 'spectate'; roomId: string };
 
 /**
  * Whether a battle is open, for the /battle route (which can't be left while one is). Kept
@@ -30,6 +31,11 @@ export class BattleSession {
   /** Asks the battle page to show the real battle in a server room when it opens. */
   requestLive(roomId: string): void {
     this.startRequested = { kind: 'live', roomId };
+  }
+
+  /** Asks the battle page to watch a battle in a server room, as a spectator, when it opens. */
+  requestSpectate(roomId: string): void {
+    this.startRequested = { kind: 'spectate', roomId };
   }
 
   /** The battle the page should start, if any (used once). */

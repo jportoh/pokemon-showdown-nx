@@ -3,7 +3,7 @@ import { Observable, Subject } from 'rxjs';
 import { ShowdownConnection } from './showdown-connection';
 
 /**
- * Battle rooms the server puts us in (a challenge we accepted). The first frames (`|init|battle`, the
+ * Battle rooms the server puts us in (a challenge we accepted, a ladder match) or that we join to watch. The first frames (`|init|battle`, the
  * players, the first request) arrive while the battle page is still loading, so each room's frames
  * are kept until the page attaches to it, then passed on as they come.
  */
@@ -42,6 +42,11 @@ export class BattleRooms {
     this.buffers.delete(roomId);
     this.listeners.set(roomId, listener);
     buffered.forEach((frame) => listener(frame));
+  }
+
+  /** Joins a battle as a spectator: `attach()` first, so its frames come straight to the listener. */
+  join(roomId: string): void {
+    this.connection.send('', `/join ${roomId}`);
   }
 
   /** Stops listening and leaves the room. */

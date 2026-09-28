@@ -86,8 +86,11 @@ const MAX_NAME_CHARS = 20;
         {{ store.turn() > 0 ? 'Turn ' + store.turn() : 'Starting…' }}
       </span>
 
-      @if (store.replay()) {
-        <span class="absolute top-[11px] left-[1003px] block h-6 w-[130px] rounded-sm bg-tab text-center text-sm leading-6 font-bold uppercase">Replay</span>
+      @if (store.watching()) {
+        <span
+          class="absolute top-[11px] left-[1003px] block h-6 w-[130px] rounded-sm text-center text-sm leading-6 font-bold uppercase"
+          [class]="store.spectating() ? 'bg-red-800' : 'bg-tab'"
+        >{{ store.spectating() ? 'Live' : 'Replay' }}</span>
       } @else if (!store.result()) {
         @if (forfeitState() === 'forfeiting') {
           <span role="status" class="absolute top-[7px] left-[1003px] block h-8 w-[130px] rounded-md border border-red-300 bg-red-900 text-center text-sm leading-[30px] font-bold">

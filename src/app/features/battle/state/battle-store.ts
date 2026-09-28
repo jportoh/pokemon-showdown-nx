@@ -1,4 +1,4 @@
-import { Service, inject, signal } from '@angular/core';
+import { Service, computed, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveType } from '@core/dex/moves';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
@@ -128,6 +128,8 @@ export class BattleStore {
   private readonly teamSignal = signal<readonly RequestPokemon[]>([]);
   private readonly battleIdSignal = signal(0);
   private readonly replaySignal = signal<Replay | null>(null);
+  private readonly spectatingSignal = signal(false);
+  private readonly spectateErrorSignal = signal<string | null>(null);
   private readonly pausedSignal = signal(false);
   private readonly speedSignal = signal(1);
   private readonly fieldSignal = signal<BattleFieldState>(emptyField());
@@ -163,6 +165,12 @@ export class BattleStore {
   readonly battleId = this.battleIdSignal.asReadonly();
   /** The replay being watched; null in a battle the player plays. */
   readonly replay = this.replaySignal.asReadonly();
+  /** A live battle watched as a spectator. */
+  readonly spectating = this.spectatingSignal.asReadonly();
+  /** Why the battle to watch couldn't be joined (it has ended, or never existed). */
+  readonly spectateError = this.spectateErrorSignal.asReadonly();
+  /** Watched rather than played (a replay or a live battle): no "you", both players by name. */
+  readonly watching = computed(() => this.replaySignal() !== null || this.spectatingSignal());
   /** Replays only: the playback is paused. */
   readonly paused = this.pausedSignal.asReadonly();
   /** Playback speed: 1 (normal), 2 or 4. */
@@ -203,6 +211,8 @@ export class BattleStore {
   private queue: string[] = [];
   private pendingRequest: BattleRequest | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Watching live: the first frame (the battle so far) is still to come, and is applied at once. */
+  private catchingUp = false;
   /**
    * User IDs of the players who want the battle timer on: it stays on while anyone does. Only the
    * server's notices tell who they are, and whether `/timer off` from us actually turns it off.
@@ -228,7 +238,7 @@ export class BattleStore {
     pokemon: (ident, sentenceStart = true) => this.label(ident, sentenceStart),
     team: (side, sentenceStart = true) => {
       const id = side.slice(0, 2) as SideId;
-      if (this.replaySignal()) return `${this.sidesSignal()[id]?.name ?? id}'s team`;
+      if (this.watching()) return `${this.sidesSignal()[id]?.name ?? id}'s team`;
       if (id === 'p1') return sentenceStart ? 'Your team' : 'your team';
       return sentenceStart ? 'The opposing team' : 'the opposing team';
     },
@@ -238,6 +248,8 @@ export class BattleStore {
     this.reset();
     this.battleIdSignal.update((id) => id + 1);
     this.replaySignal.set(connection.replay ?? null);
+    this.spectatingSignal.set(!!connection.spectating);
+    this.catchingUp = !!connection.spectating;
     this.session.setActive(true);
     this.connection = connection;
     this.canToggleTimerSignal.set(!!connection.setTimer && !connection.replay);
@@ -248,6 +260,7 @@ export class BattleStore {
   close(): void {
     this.reset();
     this.replaySignal.set(null);
+    this.spectatingSignal.set(false);
     this.session.setActive(false);
   }
 
@@ -276,6 +289,8 @@ export class BattleStore {
     this.blinkedHits.clear();
     this.critSlots.clear();
     this.timerSignal.set(null);
+    this.spectateErrorSignal.set(null);
+    this.catchingUp = false;
     this.timerRequesters.clear();
     this.timerCooldownUntilSignal.set(null);
     this.canUndoSignal.set(false);
@@ -348,6 +363,21 @@ export class BattleStore {
     this.step();
   }
 
+  /**
+   * Watching live, the battle so far: applied at once with nothing left animating, so the screen shows
+   * the battle as it stands and only what happens from now on plays out.
+   */
+  private catchUp(): void {
+    this.catchingUp = false;
+    while (this.queue.length > 0) this.apply(this.queue.shift()!);
+    this.actionSignal.set(null);
+    this.fieldEventSignal.set(null);
+    this.popupsSignal.set([]);
+    this.hpChangesSignal.set([]);
+    this.statusChangesSignal.set([]);
+    this.step();
+  }
+
   private stop(): void {
     this.connection?.stop();
     this.connection = null;
@@ -380,12 +410,21 @@ export class BattleStore {
         this.onChoiceError(line.slice('|error|'.length));
         continue;
       }
+      // `|noinit|nonexistent|The room "battle-…" does not exist.`: the battle to watch is gone.
+      if (line.startsWith('|noinit|')) {
+        this.spectateErrorSignal.set(line.split('|')[3] || 'This battle has ended.');
+        continue;
+      }
       this.queue.push(line);
       hasLog = true;
     }
     // The opponent has chosen (the turn's log is here) or there's something new to choose. Chat and
     // players joining don't count.
     if (hasRequest || frame.split('\n').some(isBattleLine)) this.canUndoSignal.set(false);
+    if (this.catchingUp && hasLog) {
+      this.catchUp();
+      return;
+    }
     if (hasLog) this.stopWaitingForLog();
     // Showdown sends a request just BEFORE the log that leads up to it: wait for that log first.
     else if (hasRequest) {
@@ -408,6 +447,11 @@ export class BattleStore {
   private updateTimer(line: string): void {
     const off = line.startsWith('|inactiveoff|');
     const text = line.slice(line.indexOf('|', 1) + 1);
+    // Watching: the timer isn't ours to show, only its news for the log.
+    if (this.watching()) {
+      if (text.startsWith('Battle timer is') || text.includes('OFF')) this.addEntry('message', text);
+      return;
+    }
     if (off) {
       const cooldown = /can't be re-enabled so soon.*\((\d+) seconds? remaining\)/.exec(text);
       if (text.includes('OFF')) {
@@ -560,7 +604,7 @@ export class BattleStore {
         if (!pokemon || command === 'replace') return 0;
         this.emit('send-out', args[0]);
         if (command === 'drag') return this.say(`${this.label(args[0])} was dragged out!`);
-        if (pokemon.side === 'p1' && !this.replaySignal()) return this.say(`Go! ${pokemon.name}!`);
+        if (pokemon.side === 'p1' && !this.watching()) return this.say(`Go! ${pokemon.name}!`);
         return this.say(`${this.sidesSignal()[pokemon.side].name} sent out ${pokemon.name}!`);
       }
       case 'swap':
@@ -570,6 +614,8 @@ export class BattleStore {
         this.updatePokemon(args[0], (p) => ({ ...p, ...parseDetails(args[1], this.dex) }));
         return 0;
       case '-mega':
+        // |-mega|p1a: Charizard|Charizard|Charizardite Y: its Mega Stone is revealed.
+        if (args[2]) this.updatePokemon(args[0], (p) => ({ ...p, item: args[2], lostItem: '' }));
         this.emit('mega', args[0]);
         return this.say(
           `${this.label(args[0])} has Mega Evolved into ${megaName(this.findPokemon(args[0])?.species, args[1])}!`,
@@ -580,6 +626,7 @@ export class BattleStore {
         return this.say(`${this.label(args[0])} has Terastallized into the ${args[1]}-type!`);
       case 'move':
         this.critSlots.clear();
+        this.revealMove(args[0], args[1], tags);
         this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
         return this.say(`${this.label(args[0])} used ${args[1]}!`);
       case 'cant':
@@ -808,11 +855,11 @@ export class BattleStore {
     const owner = SOURCE_OWNS_EFFECT.includes(command) && tags['of'] ? tags['of'] : args[0];
     if (command === '-ability') {
       // Trace shows as Trace, not as the ability it copied.
-      this.popup(args[0], 'ability', from.startsWith('ability: ') ? effectName(from) : args[1]);
+      this.announce(args[0], 'ability', from.startsWith('ability: ') ? effectName(from) : args[1]);
     } else if (command === '-activate' && /^(ability|item): /.test(args[1] ?? '')) {
-      this.popup(args[0], args[1].startsWith('item: ') ? 'item' : 'ability', effectName(args[1]));
+      this.announce(args[0], args[1].startsWith('item: ') ? 'item' : 'ability', effectName(args[1]));
     } else if (from.startsWith('ability: ')) {
-      this.popup(SOURCE_OWNS_EFFECT.includes(command) ? tags['of'] : args[0], 'ability', effectName(from));
+      this.announce(SOURCE_OWNS_EFFECT.includes(command) ? tags['of'] : args[0], 'ability', effectName(from));
     }
     // |-miss|ATTACKER|TARGET: the target avoided it (a miss with no target has nobody to show it on).
     if (command === '-miss' && args[1]) this.popup(args[1], 'notice', 'Missed!');
@@ -827,8 +874,34 @@ export class BattleStore {
     if ((command === '-enditem' || command === '-item') && from !== 'ability: Frisk') {
       this.popup(args[0], 'item', args[1]);
     } else if (from.startsWith('item: ')) {
-      this.popup(owner, 'item', effectName(from));
+      this.announce(owner, 'item', effectName(from));
     }
+    // What the item lines tell about who holds what: a new item (Trick, Frisk's reveal), one gone.
+    if (command === '-item' && args[1]) this.updatePokemon(args[0], (p) => ({ ...p, item: args[1], lostItem: '' }));
+    if (command === '-enditem' && args[1]) this.updatePokemon(args[0], (p) => ({ ...p, item: '', lostItem: args[1] }));
+  }
+
+  /**
+   * An ability or item taking effect: it pops up over its owner, who is known to have it from then on.
+   * A berry's effect comes after the line that ate it: that one stays gone.
+   */
+  private announce(ident: string | undefined, kind: 'ability' | 'item', name: string): void {
+    this.popup(ident, kind, name);
+    if (!ident || !name) return;
+    this.updatePokemon(ident, (p) => {
+      if (kind === 'ability') return { ...p, ability: name };
+      return p.lostItem === name ? p : { ...p, item: name, lostItem: '' };
+    });
+  }
+
+  /**
+   * A move its user has chosen, one of its own (not one called by another move, bounced back or copied
+   * by an ability; a move it's locked into repeats one already known). Struggle isn't one of its moves.
+   */
+  private revealMove(ident: string, move: string, tags: Record<string, string>): void {
+    const from = tags['from'];
+    if (!move || move === 'Struggle' || (from !== undefined && from !== 'lockedmove')) return;
+    this.updatePokemon(ident, (p) => (p.moves.includes(move) ? p : { ...p, moves: [...p.moves, move] }));
   }
 
   private popup(ident: string | undefined, kind: EffectPopup['kind'], name: string | undefined): void {
@@ -975,6 +1048,10 @@ export class BattleStore {
       status: '',
       fainted: false,
       boosts: {},
+      moves: [],
+      item: '',
+      lostItem: '',
+      ability: '',
     };
     // Stat stages go with switching out.
     const pokemon = {
@@ -1010,7 +1087,7 @@ export class BattleStore {
     const player = this.sidesSignal()[side].name;
     this.addEntry(
       'message',
-      side === 'p1' && !this.replaySignal() ? `${leaving.name}, come back!` : `${player} withdrew ${leaving.name}!`,
+      side === 'p1' && !this.watching() ? `${leaving.name}, come back!` : `${player} withdrew ${leaving.name}!`,
     );
     this.emit('withdraw', ident);
     this.withdrawn = line;

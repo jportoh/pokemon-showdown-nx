@@ -5,6 +5,7 @@ import { itemName } from '@core/dex/names';
 import { barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
 import { BattlePokemon, RequestPokemon, SideId } from '@features/battle/models/battle';
 import { BattleChoices, SWITCH_ATTRIBUTE } from '@features/battle/state/battle-choices';
+import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { previewTeam } from '@features/battle/state/team-preview';
 import { ItemIcon } from '@shared/components/item-icon';
@@ -35,6 +36,8 @@ interface Tile {
   item: string;
   /** The switch that brings it in (Showdown's switch number) while it can be chosen; null otherwise. */
   switchIndex: number | null;
+  /** Its INSPECT_ATTRIBUTE value while a spectator can point at it; null otherwise. */
+  inspect: string | null;
   /** What the tile says to screen readers. */
   label: string;
 }
@@ -53,6 +56,9 @@ interface Tile {
  * switch (the command panel's card shows the one pointed at), and a forced switch focuses the first.
  * They're always buttons, disabled while there's nothing to choose: an element that changes kind is
  * the kind of toggle Brewser doesn't redraw reliably.
+ *
+ * Watching a live battle, both sides' tiles are buttons the d-pad can point at (A does nothing): the
+ * command panel shows everything known of the one pointed at (PokemonInspection), framed in yellow.
  */
 @Component({
   selector: 'app-battle-team-preview',
@@ -67,7 +73,7 @@ interface Tile {
         >{{ ownerLabel() }}</span
       >
       @for (tile of tiles(); track tile.key) {
-        @if (side() === 'p1') {
+        @if (side() === 'p1' || inspectable()) {
           <button
             type="button"
             class="absolute block h-[72px] w-[72px] rounded-md border p-0"
@@ -75,11 +81,12 @@ interface Tile {
             [style.left.px]="tile.left"
             [style.top.px]="tile.top"
             [attr.data-switch]="tile.switchIndex"
-            [disabled]="tile.switchIndex === null"
+            [attr.data-inspect]="tile.inspect"
+            [disabled]="tile.switchIndex === null && tile.inspect === null"
             [attr.aria-label]="tile.label"
             (click)="pick(tile)"
-            (mouseenter)="choices.hoveredSwitch.set(tile.switchIndex)"
-            (mouseleave)="choices.hoveredSwitch.set(null)"
+            (mouseenter)="pointAt(tile)"
+            (mouseleave)="pointAt(null)"
           >
             <ng-container [ngTemplateOutlet]="face" [ngTemplateOutletContext]="{ $implicit: tile }" />
           </button>
@@ -113,8 +120,12 @@ export class BattleTeamPreview {
   private readonly dex = inject(ChampionsDex);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly choices = inject(BattleChoices);
+  private readonly inspection = inject(PokemonInspection);
 
   readonly side = input.required<SideId>();
+
+  /** Watching a live battle: every Pokémon seen or previewed can be pointed at, to see it in the panel. */
+  protected readonly inspectable = this.store.spectating;
 
   /** Our own team from the last request (the opponent's is never known). */
   private readonly ownTeam = computed(() => (this.side() === 'p1' ? this.store.team() : []));
@@ -152,12 +163,13 @@ export class BattleTeamPreview {
         active,
         item: seen?.fainted ? '' : this.itemOf(species),
         switchIndex,
+        inspect: this.inspectable() ? this.inspection.keyOf(this.side(), species) : null,
         label: `${switchIndex !== null ? 'Switch to ' : ''}${this.memberText(species, seen, active)}`,
       };
     });
     const empty = Array.from({ length: this.unseen() }, (_, n) => {
       const i = members.length + n;
-      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false, item: '', switchIndex: null, label: 'Not seen yet' };
+      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false, item: '', switchIndex: null, inspect: null, label: 'Not seen yet' };
     });
     return [...members, ...empty];
   });
@@ -176,7 +188,7 @@ export class BattleTeamPreview {
    */
   protected readonly ariaLabel = computed(() => {
     const owner = this.owner();
-    if (this.side() === 'p1') return `${owner}'s team`;
+    if (this.side() === 'p1' || this.inspectable()) return `${owner}'s team`;
     const members = this.team().map(({ species, seen, active }) => this.memberText(species, seen, active));
     const unseen = this.unseen() > 0 ? [`${this.unseen()} not seen yet`] : [];
     return `${owner}'s team: ${[...members, ...unseen].join('; ') || 'unknown'}`;
@@ -191,11 +203,29 @@ export class BattleTeamPreview {
     });
   }
 
-  /** The tile's frame: the ones that can come in light up; the ones on the field are blue; fainted ones dark. */
+  /**
+   * The tile's frame: the ones that can come in light up; the one the spectator's panel shows is framed
+   * in yellow; the ones on the field are blue; fainted ones dark.
+   */
   protected tileFrame(tile: Tile): string {
     if (tile.switchIndex !== null) return 'border-gray-100 bg-[#3a4a68] hover:bg-[#465a7e]';
+    if (tile.inspect !== null && tile.inspect === this.shownKey()) {
+      return `border-yellow-300 ${tile.fainted ? 'bg-[#1a2436]' : tile.active ? 'bg-[#2c4a78]' : 'bg-header'}`;
+    }
     if (tile.fainted) return 'border-gray-700 bg-[#1a2436]';
     return tile.active ? 'border-sky-300 bg-[#2c4a78]' : 'border-gray-600 bg-header';
+  }
+
+  /** The spectator panel's Pokémon, as its tile's INSPECT_ATTRIBUTE value. */
+  private readonly shownKey = computed(() => {
+    const shown = this.inspection.shown();
+    return shown ? this.inspection.keyOf(shown.side, shown.member.species) : null;
+  });
+
+  /** The mouse over a tile: the switch it would make, or (spectating) the Pokémon to show. */
+  protected pointAt(tile: Tile | null): void {
+    this.choices.hoveredSwitch.set(tile?.switchIndex ?? null);
+    this.inspection.hovered.set(tile?.inspect ?? null);
   }
 
   protected pick(tile: Tile): void {

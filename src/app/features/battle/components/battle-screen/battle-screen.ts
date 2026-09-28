@@ -1,4 +1,4 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -10,6 +10,8 @@ import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
+import { SpectateBattleConnection } from '@features/battle/live/spectate-battle-connection';
+import { SpectatorControls } from '@features/battle/components/spectator-controls/spectator-controls';
 import { MockBattleConnection, mockFormat } from '@features/battle/mock/mock-battle-connection';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleChoices } from '@features/battle/state/battle-choices';
@@ -28,7 +30,7 @@ const FORFEIT_CONFIRM_MS = 4000;
 
 /**
  * A battle (doubles, or singles with one Pokémon a side) against the mock server or a real player on
- * Showdown (a challenge we accepted, a ladder match), or a replay
+ * Showdown (a challenge we accepted, a ladder match), a live battle watched as a spectator, or a replay
  * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
  * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
  * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
@@ -42,7 +44,17 @@ const FORFEIT_CONFIRM_MS = 4000;
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [BackAction, BattleConditions, BattleControls, BattleField, BattleHeader, BattleLog, BattleTeamPreview, ReplayControls],
+  imports: [
+    BackAction,
+    BattleConditions,
+    BattleControls,
+    BattleField,
+    BattleHeader,
+    BattleLog,
+    BattleTeamPreview,
+    ReplayControls,
+    SpectatorControls,
+  ],
   host: { class: 'block h-[720px] w-[1280px] bg-header' },
   template: `
     <div class="relative h-[720px] w-[1280px]">
@@ -60,6 +72,8 @@ const FORFEIT_CONFIRM_MS = 4000;
       <div class="absolute top-[548px] left-[12px] h-[172px] w-[985px] bg-[#283040]">
         @if (store.replay()) {
           <app-replay-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveReplay()" (again)="watchAgain()" (leave)="leaveReplay()" />
+        } @else if (store.spectating()) {
+          <app-spectator-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveLive()" (leave)="leaveLive()" />
         } @else {
           <app-battle-controls
             class="absolute top-[12px] left-[12px]"
@@ -74,7 +88,8 @@ const FORFEIT_CONFIRM_MS = 4000;
       </div>
 
       <!-- From 8px under the header to the bottom of the command buttons (708). -->
-      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" />
+      <!-- Watching live, both teams' tiles can be pointed at (see SpectatorControls): B there goes back to its button. -->
+      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" (appBack)="back()" />
       <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
       <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
@@ -91,6 +106,7 @@ export class BattleScreen {
   private readonly teams = inject(TeamStore);
   private readonly router = inject(Router);
   protected readonly store = inject(BattleStore);
+  private readonly spectatorControls = viewChild(SpectatorControls);
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
@@ -153,6 +169,8 @@ export class BattleScreen {
       this.start();
     } else if (request?.kind === 'live') {
       this.startLive(request.roomId);
+    } else if (request?.kind === 'spectate') {
+      this.store.start(new SpectateBattleConnection(this.rooms, request.roomId));
     }
     // A rematch accepted (theirs or ours) opens its room while this battle is still on screen (App only
     // opens battles when none is): it takes this one's place.
@@ -215,9 +233,14 @@ export class BattleScreen {
 
   /**
    * B: takes back the choices sent while the opponent is still choosing, or steps back while choosing.
-   * At the end, it withdraws the rematch waiting for an answer.
+   * At the end, it withdraws the rematch waiting for an answer. Watching live, it leaves the team
+   * tiles for the way out.
    */
   protected back(): void {
+    if (this.store.spectating()) {
+      this.spectatorControls()?.focusLeave();
+      return;
+    }
     if (this.store.result()) this.challenges.cancelChallenge();
     else if (this.store.canUndo()) this.store.undo();
     else this.choices.back();
@@ -238,7 +261,7 @@ export class BattleScreen {
    * forfeits. Further presses do nothing while the server ends the battle.
    */
   protected forfeit(): boolean {
-    if (this.store.result() || this.store.replay()) return false;
+    if (this.store.result() || this.store.watching()) return false;
     if (this.forfeitState() === 'forfeiting') return true;
     if (this.forfeitState() === 'idle') {
       this.forfeitState.set('confirming');
@@ -293,6 +316,12 @@ export class BattleScreen {
   protected leaveReplay(): void {
     this.store.close();
     void this.router.navigateByUrl('/replays');
+  }
+
+  /** Stops watching the live battle (leaving its room) and goes back to the list of live battles. */
+  protected leaveLive(): void {
+    this.store.close();
+    void this.router.navigateByUrl('/live');
   }
 
   /** Closes the finished battle (so the page can be left) and goes back to the Battle page; a rematch waiting is withdrawn. */

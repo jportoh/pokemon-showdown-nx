@@ -80,6 +80,14 @@ export interface BattlePokemon {
   tera?: string;
   /** Stat stages from -6 to +6 ('atk', 'spe', 'accuracy'…); only the changed ones. Reset on switching out. */
   boosts: Record<string, number>;
+  /** What the battle has revealed of it, as a spectator learns it: the moves it has used, in order. */
+  moves: readonly string[];
+  /** Its held item's name once revealed (Leftovers healing, Frisk, a Mega Stone…); '' while unknown or gone. */
+  item: string;
+  /** The item it had and lost (eaten, used up, knocked off); '' when none was lost. */
+  lostItem: string;
+  /** Its ability's name once revealed (Intimidate, a Trace…); '' while unknown. */
+  ability: string;
 }
 
 /** A weather, terrain, room (Trick Room…) or side condition (Tailwind, Reflect…) in play. */
@@ -212,6 +220,11 @@ export interface Replay extends ReplaySummary {
 export interface BattleConnection {
   /** Set when the battle is a replay: it's watched, with no choices to make. */
   readonly replay?: Replay;
+  /**
+   * Set when watching a battle live as a spectator: no choices either. Its first frame is the battle
+   * so far, applied at once so the screen catches up.
+   */
+  readonly spectating?: boolean;
   start(onMessage: (frame: string) => void): void;
   choose(choice: string): void;
   forfeit(): void;
