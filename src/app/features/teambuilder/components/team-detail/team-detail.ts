@@ -78,7 +78,7 @@ const SLOT_POSITIONS = [
           (keydown.enter)="saveRename($event)"
           class="absolute top-3 left-6 h-10 w-[400px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-lg text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         />
-        <button type="button" (click)="saveRename()" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
+        <button #saveButton type="button" (click)="saveRename()" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
         <button type="button" (click)="cancelRename()" [class]="actionClass" class="left-[536px] w-[88px]">Cancel</button>
         @if (showNameError()) {
           <p id="rename-error" class="absolute top-[54px] left-6 text-sm text-red-300">{{ renameForm.name().errors()[0]?.message }}</p>
@@ -104,6 +104,7 @@ const SLOT_POSITIONS = [
 export class TeamDetail {
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
+  private readonly saveButton = viewChild.required<ElementRef<HTMLButtonElement>>('saveButton');
   private readonly validateButton = viewChild.required<ElementRef<HTMLButtonElement>>('validateButton');
   private readonly slotButtons = viewChildren<ElementRef<HTMLButtonElement>>('slotButton');
 
@@ -133,12 +134,14 @@ export class TeamDetail {
   });
 
   // Where focus goes once the next render shows (or hides) the rename form.
-  private focusAfterRender: 'heading' | 'input' | null = null;
+  private focusAfterRender: 'heading' | 'save' | null = null;
 
   constructor() {
     afterRenderEffect(() => {
       this.editing();
-      if (this.focusAfterRender === 'input') this.nameInput().nativeElement.focus();
+      // Save rather than the name field: focusing a text field opens the console's keyboard, which
+      // breaks the navigation under way. The field is one step left.
+      if (this.focusAfterRender === 'save') this.saveButton().nativeElement.focus();
       else if (this.focusAfterRender === 'heading') this.heading().nativeElement.focus();
       this.focusAfterRender = null;
     });
@@ -175,7 +178,7 @@ export class TeamDetail {
     this.renameForm().reset({ name });
     this.confirmingDelete.set(false);
     this.editing.set(true);
-    this.focusAfterRender = 'input';
+    this.focusAfterRender = 'save';
   }
 
   /**
