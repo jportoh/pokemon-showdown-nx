@@ -22,6 +22,7 @@ import {
   SideId,
 } from '@features/battle/models/battle';
 import { spriteId } from '@shared/utils/sprite-id';
+import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
 import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
 import {
@@ -77,8 +78,12 @@ function isBattleLine(line: string): boolean {
   return line.startsWith('|') && !ROOM_LINES.has(line.slice(1).split('|')[0]);
 }
 
-/** Seconds left this turn on the timer at `now`. */
-export function timerSecondsLeft(timer: BattleTimer, now: number): number {
+/** Showdown won't let a player turn the timer back on this soon after turning it off. */
+const TIMER_COOLDOWN_MS = 20_000;
+
+/** Seconds left this turn on the timer at `now`; null until the server has told them. */
+export function timerSecondsLeft(timer: BattleTimer, now: number): number | null {
+  if (timer.turnSeconds === null) return null;
   const elapsed = timer.since === null ? 0 : Math.max(0, Math.floor((now - timer.since) / 1000));
   return Math.max(0, timer.turnSeconds - elapsed);
 }
@@ -138,6 +143,7 @@ export class BattleStore {
   private readonly timerSignal = signal<BattleTimer | null>(null);
   private readonly canUndoSignal = signal(false);
   private readonly canToggleTimerSignal = signal(false);
+  private readonly timerCooldownUntilSignal = signal<number | null>(null);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -190,11 +196,18 @@ export class BattleStore {
   readonly canUndo = this.canUndoSignal.asReadonly();
   /** The battle timer can be turned on and off from here (real battles only). */
   readonly canToggleTimer = this.canToggleTimerSignal.asReadonly();
+  /** Until when the server won't let us turn the timer back on (20 s after we turned it off). */
+  readonly timerCooldownUntil = this.timerCooldownUntilSignal.asReadonly();
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
   private pendingRequest: BattleRequest | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * User IDs of the players who want the battle timer on: it stays on while anyone does. Only the
+   * server's notices tell who they are, and whether `/timer off` from us actually turns it off.
+   */
+  private readonly timerRequesters = new Set<string>();
   private nextLogId = 0;
   private nextEventId = 0;
   /** The switch line whose withdrawal has just played, so applying it again brings the new Pokémon. */
@@ -263,6 +276,8 @@ export class BattleStore {
     this.blinkedHits.clear();
     this.critSlots.clear();
     this.timerSignal.set(null);
+    this.timerRequesters.clear();
+    this.timerCooldownUntilSignal.set(null);
     this.canUndoSignal.set(false);
     this.canToggleTimerSignal.set(false);
     this.lastRequest = null;
@@ -285,7 +300,7 @@ export class BattleStore {
     this.canUndoSignal.set(false);
     this.connection?.undo?.();
     this.showRequestAgain();
-    this.timerSignal.update((timer) => (timer ? { ...timer, since: Date.now() } : timer));
+    this.timerSignal.update((timer) => (timer?.turnSeconds != null ? { ...timer, since: Date.now() } : timer));
     this.renderScheduler.request();
   }
 
@@ -293,10 +308,21 @@ export class BattleStore {
     this.connection?.forfeit();
   }
 
-  /** Asks for the battle timer on (while it's off) or off; the server's notices update battleTimer. */
+  /**
+   * Asks for the battle timer on, or off if we're one of those who want it; the server's notices
+   * update battleTimer. The server doesn't always say it's off (not when no clock is ticking at that
+   * moment), so once nobody wants it, it's taken as off here.
+   */
   toggleTimer(): void {
     if (!this.canToggleTimerSignal() || this.resultSignal()) return;
-    this.connection?.setTimer?.(this.timerSignal() === null);
+    const me = toId(this.sidesSignal().p1.name);
+    const on = !this.timerRequesters.has(me);
+    this.connection?.setTimer?.(on);
+    if (on) return;
+    this.timerRequesters.delete(me);
+    this.timerCooldownUntilSignal.set(Date.now() + TIMER_COOLDOWN_MS);
+    if (this.timerRequesters.size === 0) this.timerSignal.set(null);
+    this.renderScheduler.request();
   }
 
   /** Pauses or resumes the playback (replays). */
@@ -375,18 +401,32 @@ export class BattleStore {
   /**
    * Showdown's timer notices (`|inactive|…`, `|inactiveoff|…`). Ours: "Time left: 150 sec this turn |
    * 280 sec total" with each request, and "Brewser1234 has 20 seconds left." as it runs low. Turning it
-   * on or off also goes to the log.
+   * on or off also goes to the log, with who asked for it ("(requested by Brewser1234)", "X also wants
+   * the timer to be on.", "X no longer wants the timer on, but…"). Turned on while we wait, our time
+   * only comes with our next request, so until then it shows as on without a time.
    */
   private updateTimer(line: string): void {
     const off = line.startsWith('|inactiveoff|');
     const text = line.slice(line.indexOf('|', 1) + 1);
     if (off) {
+      const cooldown = /can't be re-enabled so soon.*\((\d+) seconds? remaining\)/.exec(text);
       if (text.includes('OFF')) {
+        this.timerRequesters.clear();
         this.timerSignal.set(null);
-        this.addEntry('message', text);
+      } else if (cooldown) {
+        this.timerCooldownUntilSignal.set(Date.now() + Number(cooldown[1]) * 1000);
       }
+      this.addEntry('message', text);
     } else if (text.startsWith('Battle timer is ON')) {
+      const requester = /\(requested by (.+)\)\s*$/.exec(text);
+      if (requester) this.timerRequesters.add(toId(requester[1]));
+      this.timerSignal.update((timer) => timer ?? { turnSeconds: null, totalSeconds: null, since: null });
       this.addEntry('message', 'The battle timer is on: inactive players will automatically lose when time is up.');
+    } else if (/ also wants the timer to be on\.$/.test(text)) {
+      this.timerRequesters.add(toId(text.slice(0, text.indexOf(' also wants'))));
+    } else if (text.includes(' no longer wants the timer on')) {
+      this.timerRequesters.delete(toId(text.slice(0, text.indexOf(' no longer wants'))));
+      this.addEntry('message', text);
     } else {
       const own = /^Time left: (\d+) sec this turn \| (\d+) sec total/.exec(text);
       const low = new RegExp(`^${escapeRegExp(this.sidesSignal().p1.name)} has (\\d+) seconds left`).exec(text);
@@ -634,8 +674,13 @@ export class BattleStore {
         return this.say(`The Pokémon was hit ${args[1]} time${args[1] === '1' ? '' : 's'}!`);
       case '-prepare':
         return this.say(`${this.label(args[0])} is getting ready to use ${args[1]}!`);
-      case '-transform':
+      case '-transform': {
+        // `|-transform|p1a: Ditto|p2a: Garchomp|[from] ability: Imposter`: it looks like its target
+        // until it switches out (switching in takes the sprite from its own species again).
+        const sprite = this.findPokemon(args[1])?.sprite;
+        if (sprite) this.updatePokemon(args[0], (p) => ({ ...p, sprite }));
         return this.say(`${this.label(args[0])} transformed into ${this.label(args[1], false)}!`);
+      }
       case '-singleturn':
         if (isProtection(args[1])) this.emit('protect', args[0]);
         return this.sayIf(singleTurnText(args[0], args[1], names, tags));

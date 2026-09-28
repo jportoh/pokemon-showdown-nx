@@ -75,10 +75,10 @@ const MAX_NAME_CHARS = 20;
           type="button"
           data-kb-skip
           class="absolute top-[7px] left-[759px] h-8 w-[110px] rounded-md border border-gray-500 bg-tab text-sm font-bold hover:bg-tab-hover"
-          aria-label="Turn the battle timer on"
+          [attr.aria-label]="cooldownSeconds() ? 'Turn the battle timer on: allowed again in ' + cooldownSeconds() + ' seconds' : 'Turn the battle timer on'"
           (click)="toggleTimer.emit()"
         >
-          <span class="block h-[30px] text-center leading-[30px]"><span class="rounded-sm bg-header p-[2px_6px]">ZL</span> Timer</span>
+          <span class="block h-[30px] text-center leading-[30px]"><span class="rounded-sm bg-header p-[2px_6px]">ZL</span> {{ cooldownSeconds() ? 'Wait ' + cooldownSeconds() + 's' : 'Timer' }}</span>
         </button>
       }
 
@@ -141,16 +141,25 @@ export class BattleHeader {
    * running low. It stands still, grey with a pause sign, while we wait for the opponent (the server
    * doesn't count that time).
    */
+  /** Seconds until the server lets us turn the timer back on (after we turned it off); 0 when it does. */
+  protected readonly cooldownSeconds = computed(() => {
+    const until = this.store.timerCooldownUntil();
+    return until ? Math.max(0, Math.ceil((until - this.now()) / 1000)) : 0;
+  });
+
   protected readonly timerView = computed(() => {
     const timer = this.store.battleTimer();
     if (!timer || this.store.result()) return null;
     const seconds = timerSecondsLeft(timer, this.now());
-    const text = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
     const total = timer.totalSeconds === null ? '' : `, ${timer.totalSeconds} in total`;
     const running = timer.since !== null;
     const state = running ? 'running' : 'stopped until your next choice';
+    // Turned on while we wait: our time comes with our next request.
+    if (seconds === null) {
+      return { text: 'On', running, low: false, tick: false, label: 'Battle timer on, stopped until your next choice' };
+    }
     return {
-      text,
+      text: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
       running,
       low: seconds <= LOW_SECONDS,
       /** The clock hand moves every second while it runs. */
@@ -162,7 +171,8 @@ export class BattleHeader {
   constructor() {
     const render = inject(RenderScheduler);
     const clock = setInterval(() => {
-      if (this.store.battleTimer()?.since == null) return;
+      const cooldown = this.store.timerCooldownUntil();
+      if (this.store.battleTimer()?.since == null && !(cooldown && cooldown > this.now())) return;
       this.now.set(Date.now());
       render.request();
     }, 1000);

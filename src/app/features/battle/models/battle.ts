@@ -225,9 +225,10 @@ export interface BattleConnection {
 /**
  * The battle timer while it's on (either player can turn it on): our time left this turn and in total,
  * as of `since`. It only runs while we have something to choose; `since` is null while it's stopped.
+ * `turnSeconds` is null when it was turned on while we waited: the server tells our time with our next request.
  */
 export interface BattleTimer {
-  turnSeconds: number;
+  turnSeconds: number | null;
   totalSeconds: number | null;
   since: number | null;
 }
