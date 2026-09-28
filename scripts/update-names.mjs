@@ -14,50 +14,21 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cropScaled, decodePng, encodePng, isBlank } from './png.mjs';
+import { download, entries, stringField } from './showdown-data.mjs';
 
-const DATA_URL = 'https://play.pokemonshowdown.com/data';
 const OUTPUT = join(dirname(fileURLToPath(import.meta.url)), '../src/app/core/dex/names.json');
 const ITEM_SHEET_URL = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
 const ITEM_ICON_SIZE = 24;
 /** Served as items/<id>.png (48x48), bundled with the app like the data. */
 const ITEM_ICONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../public/items');
 
-async function download(file) {
-  const response = await fetch(`${DATA_URL}/${file}`);
-  if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
-  return response.text();
-}
-
-/** The top-level entries of `exports.X = {id:{…},…}` (object literals, not JSON), as [id, body]. */
-function entries(source) {
-  const result = [];
-  let i = source.indexOf('{') + 1;
-  while (i < source.length) {
-    const key = /^\s*,?\s*"?([a-z0-9]+)"?:\{/.exec(source.slice(i, i + 80));
-    if (!key) break;
-    const open = i + key[0].length - 1;
-    let depth = 0;
-    let end = open;
-    for (; end < source.length; end++) {
-      const char = source[end];
-      if (char === '"' || char === "'") {
-        for (end++; end < source.length && source[end] !== char; end++) if (source[end] === '\\') end++;
-      } else if (char === '{') depth++;
-      else if (char === '}' && --depth === 0) break;
-    }
-    result.push([key[1], source.slice(open, end + 1)]);
-    i = end + 1;
-  }
-  return result;
-}
-
 /** id → name, without the CAP ones (they never show in the formats the app plays). */
 function names(source) {
   const byId = {};
   for (const [id, body] of entries(source)) {
-    const name = /[{,]name:"((?:[^"\\]|\\.)*)"/.exec(body)?.[1];
+    const name = stringField(body, 'name');
     if (!name || /[{,]isNonstandard:"CAP"/.test(body)) continue;
-    byId[id] = JSON.parse(`"${name}"`);
+    byId[id] = name;
   }
   return byId;
 }

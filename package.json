@@ -11,7 +11,8 @@
     "test": "ng test",
     "update:champions": "node scripts/update-champions-data.mjs",
     "update:moves": "node scripts/update-moves.mjs",
-    "update:names": "node scripts/update-names.mjs"
+    "update:names": "node scripts/update-names.mjs",
+    "update:species": "node scripts/update-species.mjs"
   },
   "private": true,
   "packageManager": "npm@10.9.8",
