@@ -1,6 +1,7 @@
 import { Component, ElementRef, Injector, afterNextRender, computed, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { FormField, form } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
+import { ItemIcon } from '@shared/components/item-icon';
 import { ScrollRegion } from '@shared/directives/scroll-region';
 import { toId } from '@shared/utils/to-id';
 
@@ -11,19 +12,22 @@ export interface ChooserOption {
   detail: string;
   /** Row background (e.g. the move's type colour) while it isn't the current choice. */
   color?: string;
+  /** An item's ID, whose icon goes at the row's start (see `withIcons`). */
+  icon?: string;
 }
 
 /** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
 const MAX_RESULTS = 30;
 
 @Component({
-  imports: [FormField, ScrollRegion],
+  imports: [FormField, ItemIcon, ScrollRegion],
   selector: 'app-dex-chooser',
   host: { class: 'block' },
   // Fixed 408x564 panel (see styles.css): title, search box and a scrolling list of plain block rows
   // (Brewser layout rules, seen on device). Typing a few letters is the only writing needed; the
   // d-pad moves between the box and the results (KeyboardNavigation). A list that isn't searchable
-  // hides the box and shows every option in the room it leaves.
+  // hides the box and shows every option in the room it leaves. A list with icons (items) gives
+  // every row the icon's room at its start, so the names line up even where there's none ("No item").
   template: `
     <h3 [id]="titleId" class="h-8 text-lg font-bold text-white">{{ title() }}</h3>
     <input
@@ -52,10 +56,14 @@ const MAX_RESULTS = 30;
             type="button"
             [attr.aria-current]="option.id === selectedId() ? 'true' : null"
             (click)="picked.emit(option.id)"
-            class="block w-[406px] cursor-pointer border-b border-gray-700 p-[6px_12px] text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+            class="relative block w-[406px] cursor-pointer border-b border-gray-700 text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
             [class.bg-tab-hover]="option.id === selectedId()"
             [style.background-color]="option.id === selectedId() ? null : option.color || null"
+            [class]="withIcons() ? 'min-h-[60px] p-[6px_12px_6px_64px]' : 'p-[6px_12px]'"
           >
+            @if (option.icon) {
+              <app-item-icon class="absolute top-[5px] left-[8px]" [item]="option.icon" />
+            }
             <span class="block text-base font-bold">{{ option.name }}</span>
             @if (option.detail) {
               <span class="block text-sm text-gray-300">{{ option.detail }}</span>
@@ -73,6 +81,8 @@ export class DexChooser {
   readonly title = input.required<string>();
   readonly options = input.required<readonly ChooserOption[]>();
   readonly selectedId = input('');
+  /** Rows leave room for an icon at their start (the options' `icon`). */
+  readonly withIcons = input(false);
   /** Whether it has a search box; without one, every option is listed. */
   readonly searchable = input(true);
   /** A short list (and its name) to show instead of the first results until something is typed. */

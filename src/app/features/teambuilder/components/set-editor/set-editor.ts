@@ -5,6 +5,7 @@ import { SetStats } from '@features/teambuilder/components/set-stats/set-stats';
 import { MAX_NICKNAME_LENGTH, NATURES, STAT_IDS, natureLabel } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
+import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
 import { BackAction } from '@shared/directives/back-action';
@@ -20,7 +21,7 @@ const MOVE_FIELDS: readonly ChooserField[] = ['move0', 'move1', 'move2', 'move3'
 const MAX_DETAIL_LENGTH = 90;
 
 @Component({
-  imports: [DexChooser, SetStats, PokemonSprite, BackAction],
+  imports: [DexChooser, ItemIcon, SetStats, PokemonSprite, BackAction],
   selector: 'app-set-editor',
   host: { class: 'block' },
   templateUrl: './set-editor.html',
@@ -64,6 +65,8 @@ export class SetEditor {
   protected readonly maxNicknameLength = MAX_NICKNAME_LENGTH;
   protected readonly fieldButtonClass =
     'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_12px] text-left text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
+  /** The item's field, with room for the item's icon before its name. */
+  protected readonly itemButtonClass = this.fieldButtonClass.replace('p-[0_12px]', 'p-[0_12px_0_44px]');
   protected readonly selectClass =
     'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
 
@@ -110,7 +113,7 @@ export class SetEditor {
   ].sort((a, b) => a.name.localeCompare(b.name));
   private readonly itemOptions: readonly ChooserOption[] = [
     { id: '', name: 'No item', detail: '' },
-    ...this.dex.allItems.map((item) => ({ id: item.id, name: item.name, detail: shorten(item.desc) })),
+    ...this.dex.allItems.map((item) => ({ id: item.id, name: item.name, detail: shorten(item.desc), icon: item.id })),
   ];
   private readonly popularItemIds = new Set(this.dex.popularItems.map((item) => item.id));
 
@@ -167,6 +170,9 @@ export class SetEditor {
     const choosingMove = field !== null && MOVE_FIELDS.includes(field);
     return choosingMove && !this.species() ? `${this.pokemon()?.species} isn't allowed in ${this.dex.format.name}: choose another species.` : '';
   });
+
+  /** The held item's ID when it's a legal one (only those have icons). */
+  protected readonly itemId = computed(() => this.dex.item(this.pokemon()?.item ?? '')?.id ?? '');
 
   protected readonly chooserSearchable = computed(() => {
     const field = this.activeField();

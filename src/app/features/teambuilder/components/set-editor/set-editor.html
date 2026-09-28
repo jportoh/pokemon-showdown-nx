@@ -92,9 +92,12 @@
           [disabled]="!pokemon()"
           data-field="item"
           (click)="openChooser('item')"
-          [class]="fieldButtonClass"
+          [class]="itemButtonClass"
           [class.bg-tab-hover]="isActive('item')"
         >
+          @if (itemId()) {
+            <app-item-icon class="absolute top-[5px] left-[10px]" [item]="itemId()" [size]="24" />
+          }
           <span id="item-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.item || 'No item' }}</span>
         </button>
       </div>
@@ -212,6 +215,7 @@
         [searchable]="chooserSearchable()"
         [suggested]="chooserSuggested()"
         suggestedLabel="Popular items"
+        [withIcons]="activeField() === 'item'"
         [unavailable]="chooserUnavailable()"
         (picked)="pick($event)"
       />
