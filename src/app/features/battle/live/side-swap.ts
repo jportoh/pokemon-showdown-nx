@@ -1,8 +1,9 @@
 import { BattleRequest } from '@features/battle/models/battle';
 
 // The battle screen shows the player as p1 (own team at the bottom, "Your team", the result from p1's
-// side), which is what the mock does. On Showdown the challenger is p1, so after accepting a challenge
-// we're p2: these functions swap the two sides in the server's lines so the screen sees us as p1.
+// side). On Showdown we may be either (a challenger is p1, so after accepting a challenge we're p2, and
+// a ladder match can go both ways): these functions swap the two sides in the server's lines so the
+// screen sees us as p1.
 
 /** Lines with free text and no side references (chat, HTML), passed through untouched. */
 const TEXT_LINES = new Set(['c', 'c:', 'chat', 'raw', 'html', 'uhtml', 'uhtmlchange', 'j', 'l', 'n', 'title', 'inactive', 'inactiveoff']);

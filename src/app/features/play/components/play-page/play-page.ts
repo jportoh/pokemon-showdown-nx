@@ -4,6 +4,10 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { ShowdownLogin } from '@features/connection/showdown-login';
+import { ShowdownSearch } from '@features/connection/showdown-search';
+import { packTeam } from '@features/teambuilder/data/packed-team';
 import { PlaySelection } from '@features/play/state/play-selection';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { RetroBox } from '@shared/components/retro-box';
@@ -26,8 +30,8 @@ const SELECTOR_BUTTON =
   'cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-left text-retro-ink hover:bg-retro-select';
 
 /**
- * The Battle page: pick a format and a team and start a battle (against the mock server for now), or
- * send and answer challenges on Showdown. On the left, the format and team (each opens a list to pick
+ * The Battle page: pick a format and a team and search Showdown's ladder for an opponent (BATTLE!, which
+ * cancels the search while it runs; a match opens the battle, see App), or send and answer challenges. On the left, the format and team (each opens a list to pick
  * from; L/R also step through the teams) over the actions; on the right, the team picked, large.
  * Challenges that arrive show in a box over the page, and so do the lists and the form to challenge
  * someone; the page's own controls hide meanwhile (only normal-flow wrappers toggle on Brewser), so the
@@ -47,6 +51,7 @@ const SELECTOR_BUTTON =
           [class]="selectorClass"
           class="absolute top-[44px] left-[12px] h-[84px] w-[410px]"
           aria-describedby="format-title"
+          [disabled]="searching()"
           [attr.aria-label]="'Format: ' + format().label + '. Change'"
           (click)="open('format')"
         >
@@ -76,6 +81,7 @@ const SELECTOR_BUTTON =
             [class]="selectorClass"
             class="absolute top-[180px] left-[12px] h-[84px] w-[410px]"
             aria-describedby="team-title"
+            [disabled]="searching()"
             [attr.aria-label]="'Team: ' + team.name + '. Change'"
             (click)="open('team')"
           >
@@ -102,8 +108,8 @@ const SELECTOR_BUTTON =
           (click)="battle()"
         >
           <!-- Placed boxes: Brewser leaves a button's element children at its top left. -->
-          <span class="absolute top-[8px] left-0 block h-[52px] w-[406px] text-center text-5xl leading-[52px]">BATTLE!</span>
-          <span class="absolute top-[60px] left-0 block h-6 w-[406px] text-center font-sans text-base leading-6 font-normal">Practice against the computer</span>
+          <span class="absolute top-[8px] left-0 block h-[52px] w-[406px] text-center text-5xl leading-[52px]">{{ searching() ? 'CANCEL' : 'BATTLE!' }}</span>
+          <span class="absolute top-[60px] left-0 block h-6 w-[406px] truncate text-center font-sans text-base leading-6 font-normal">{{ battleLine() }}</span>
         </button>
         <app-challenge-panel
           #challengePanel
@@ -156,6 +162,9 @@ export class PlayPage {
   private readonly teamStore = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly challenges = inject(ShowdownChallenges);
+  private readonly connection = inject(ShowdownConnection);
+  private readonly login = inject(ShowdownLogin);
+  private readonly search = inject(ShowdownSearch);
   protected readonly selection = inject(PlaySelection);
 
   private readonly formatButton = viewChild.required<ElementRef<HTMLButtonElement>>('formatButton');
@@ -208,7 +217,25 @@ export class PlayPage {
     return this.chosenTeam()?.name ?? 'No team for this format';
   });
 
-  protected readonly canBattle = computed(() => this.randomTeams() || this.chosenTeam() !== null);
+  /** Connected with a name: Showdown only lets named players search. */
+  private readonly online = computed(() => this.login.state().status === 'named' && this.connection.state().status === 'connected');
+  /** A ladder search is under way (in any format: the home screen's Random Battle searches too). */
+  protected readonly searching = computed(() => this.search.searching() !== null);
+  private readonly hasTeam = computed(() => this.randomTeams() || this.chosenTeam() !== null);
+  /** BATTLE! searches (online, with a team for the format), cancels the search, or goes back to the open battle. */
+  protected readonly canBattle = computed(() => this.session.active() || this.searching() || (this.online() && this.hasTeam()));
+
+  /** Under BATTLE!: what it does now, or what it's waiting for. */
+  protected readonly battleLine = computed(() => {
+    if (this.session.active()) return 'Back to your battle';
+    if (this.searching()) return 'Searching for an opponent…';
+    if (!this.hasTeam()) return 'Build a team for this format first';
+    const status = this.login.state().status;
+    if (status === 'offline') return 'Connect from the home menu first';
+    if (status === 'unavailable') return 'No name on Showdown: online battles unavailable';
+    if (!this.online()) return 'Connecting to Showdown…';
+    return 'Find an opponent on the ladder';
+  });
   /** L/R step through the teams. */
   protected readonly canCycle = computed(() => !this.randomTeams() && this.teams().length > 1);
 
@@ -272,7 +299,7 @@ export class PlayPage {
 
   /** L/R on the page: the previous or next team for the format (wrapping around). */
   private cycleTeam(step: 1 | -1): boolean {
-    if (this.layer() !== 'page' || !this.canCycle()) return false;
+    if (this.layer() !== 'page' || !this.canCycle() || this.searching()) return false;
     const teams = this.teams();
     const index = teams.findIndex((team) => team.id === this.chosenTeam()?.id);
     this.selection.teamId.set(teams[(index + step + teams.length) % teams.length].id);
@@ -286,19 +313,30 @@ export class PlayPage {
       challenge: () => this.challengePanel().nativeElement.querySelector('button') ?? undefined,
       battle: () => this.battleButton().nativeElement,
     }[control]();
-    // BATTLE! is disabled without a team: the team's button (to the Teambuilder) then.
-    const enabled = [target, this.battleButton().nativeElement, this.teamButton()?.nativeElement].find((el) => el && !el.disabled);
+    // BATTLE! is disabled without a team (the team's button, to the Teambuilder, then) or offline.
+    const enabled = [target, this.battleButton().nativeElement, this.teamButton()?.nativeElement, this.formatButton().nativeElement].find(
+      (el) => el && !el.disabled,
+    );
     enabled?.focus();
     this.returnTo = 'battle';
   }
 
-  /** A battle against the mock server, in the format and with the team picked. */
+  /**
+   * Searches the ladder in the format picked, with the team picked (none in random formats), or cancels
+   * the search under way. A battle still open takes this button back to it.
+   */
   protected battle(): void {
-    if (!this.canBattle()) return;
-    if (!this.session.active()) {
-      this.session.requestStart(this.format().id, this.randomTeams() ? null : (this.chosenTeam()?.id ?? null));
+    if (this.session.active()) {
+      void this.router.navigateByUrl('/battle');
+      return;
     }
-    void this.router.navigateByUrl('/battle');
+    if (this.searching()) {
+      this.search.cancel();
+      return;
+    }
+    if (!this.canBattle()) return;
+    const team = this.chosenTeam();
+    this.search.search(this.format().id, team ? packTeam(team.sets) : null);
   }
 
   protected openTeambuilder(): void {

@@ -1,6 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
-import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
@@ -12,7 +11,6 @@ import { ReplayControls } from '@features/battle/components/replay-controls/repl
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
 import { SpectateBattleConnection } from '@features/battle/live/spectate-battle-connection';
 import { SpectatorControls } from '@features/battle/components/spectator-controls/spectator-controls';
-import { MockBattleConnection, mockFormat } from '@features/battle/mock/mock-battle-connection';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
@@ -20,8 +18,6 @@ import { BattleStore } from '@features/battle/state/battle-store';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { TeamStore } from '@features/teambuilder/state/team-store';
-import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
 import { toId } from '@shared/utils/to-id';
 
@@ -29,8 +25,8 @@ import { toId } from '@shared/utils/to-id';
 const FORFEIT_CONFIRM_MS = 4000;
 
 /**
- * A battle (doubles, or singles with one Pokémon a side) against the mock server or a real player on
- * Showdown (a challenge we accepted, a ladder match), a live battle watched as a spectator, or a replay
+ * A battle (doubles, or singles with one Pokémon a side) against a real player on Showdown (a ladder
+ * match, a challenge we accepted), a live battle watched as a spectator, or a replay
  * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
  * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
  * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
@@ -102,8 +98,6 @@ const FORFEIT_CONFIRM_MS = 4000;
   `,
 })
 export class BattleScreen {
-  private readonly dex = inject(ChampionsDex);
-  private readonly teams = inject(TeamStore);
   private readonly router = inject(Router);
   protected readonly store = inject(BattleStore);
   private readonly spectatorControls = viewChild(SpectatorControls);
@@ -114,24 +108,19 @@ export class BattleScreen {
   private readonly login = inject(ShowdownLogin);
   private readonly challenges = inject(ShowdownChallenges);
 
-  /** The format of the battles this page starts (the lobby's pick). */
-  private format = DEFAULT_TEAM_FORMAT;
-  /** The team picked for the mock battle; without one (or if it's gone), the first team with Pokémon. */
-  private teamId: string | null = null;
-
-  /** The real battle's server room (an accepted challenge); null against the mock. */
+  /** The real battle's server room (a ladder match or an accepted challenge); null for replays and spectating. */
   private readonly liveRoom = signal<string | null>(null);
   /** A rematch was asked for since this battle started: only then do challenge errors show here. */
   private readonly rematchAsked = signal(false);
 
   /**
-   * The end's Rematch button. Against the mock: another battle. In a real battle (random formats only:
-   * a challenge can't carry a team yet): a challenge to the same player in the same format, or
+   * The end's Rematch button, in a real battle (random formats only: a challenge can't carry a team
+   * yet): a challenge to the same player in the same format, or
    * accepting theirs if they asked first; while ours waits, the button cancels it.
    */
   protected readonly rematchView = computed(() => {
     const room = this.liveRoom();
-    if (!room) return { can: true, label: 'Rematch', note: '' };
+    if (!room) return { can: false, label: '', note: '' };
     const format = roomFormat(room);
     const opponent = this.store.sides().p2.name;
     if (!format?.includes('random') || !opponent) return { can: false, label: '', note: '' };
@@ -159,15 +148,10 @@ export class BattleScreen {
   private focusBeforeLog: HTMLElement | null = null;
 
   constructor() {
-    // Opened from the Battle page's Find a battle button: a new battle against the mock in the format picked there.
-    // After accepting a challenge: the real battle in its server room. From the replay list: the replay
-    // it started.
+    // After a ladder match or an accepted challenge: the real battle in its server room. From the list
+    // of live battles: that battle, as a spectator.
     const request = this.session.takeStartRequest();
-    if (request?.kind === 'mock') {
-      this.format = request.format;
-      this.teamId = request.teamId;
-      this.start();
-    } else if (request?.kind === 'live') {
+    if (request?.kind === 'live') {
       this.startLive(request.roomId);
     } else if (request?.kind === 'spectate') {
       this.store.start(new SpectateBattleConnection(this.rooms, request.roomId));
@@ -202,10 +186,7 @@ export class BattleScreen {
   /** The end's Rematch button (see rematchView). */
   protected rematch(): void {
     const room = this.liveRoom();
-    if (!room) {
-      this.start();
-      return;
-    }
+    if (!room) return;
     const format = roomFormat(room);
     const opponent = this.store.sides().p2.name;
     const theirs = this.theirRematch();
@@ -216,19 +197,6 @@ export class BattleScreen {
       this.rematchAsked.set(true);
       this.challenges.challenge(opponent, format);
     }
-  }
-
-  /**
-   * A new battle against the mock server, in the format picked in the lobby (again for a rematch): VGC
-   * with the first team that has Pokémon (random Pokémon fill the rest), or a Random Battle.
-   */
-  protected start(): void {
-    const format = mockFormat(this.format);
-    const team = format.randomTeams
-      ? undefined
-      : (this.teams.team(this.teamId) ?? this.teams.teams().find((t) => t.sets.length > 0));
-    this.cancelForfeit();
-    this.store.start(new MockBattleConnection(this.dex, format, 'Player', team?.sets ?? []));
   }
 
   /**

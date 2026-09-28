@@ -203,7 +203,7 @@ export class BattleControls {
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
 
-  /** Another battle at the end: against the mock, or the same player again (random formats). */
+  /** Another battle at the end: the same player again (random formats). */
   readonly canRematch = input(true);
   /** "Rematch", "Accept rematch" or "Cancel rematch" (while ours waits for an answer). */
   readonly rematchLabel = input('Rematch');

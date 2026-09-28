@@ -8,11 +8,11 @@ import { LOBBY_ROOM_ID, splitLine } from './showdown-protocol';
 const ANSWER_WINDOW_MS = 5000;
 
 /**
- * Searching Showdown's ladder for an opponent in a random format (no team to send): `/search
- * gen9randombattle` (after `/utm null`, which clears any team sent before) and `/cancelsearch`. The
- * server reports what we're searching with `|updatesearch|{"searching":["gen9randombattle"],…}`, and a
- * refusal ("You must choose a name…") as a popup. A match opens a battle room, which BattleRooms picks
- * up and App opens, as an accepted challenge.
+ * Searching Showdown's ladder for an opponent: `/utm <packed team>` (or `/utm null` in a random
+ * format, which clears any team sent before), then `/search <format>`, and `/cancelsearch`. The server
+ * reports what we're searching with `|updatesearch|{"searching":["gen9randombattle"],…}`, and a refusal
+ * ("You must choose a name…", a team that breaks the format's rules) as a popup. A match opens a battle
+ * room, which BattleRooms picks up and App opens, as an accepted challenge.
  */
 @Service()
 export class ShowdownSearch {
@@ -42,10 +42,11 @@ export class ShowdownSearch {
     merge(this.connection.opened, this.connection.ended).subscribe(() => this.set(null, null));
   }
 
-  search(format: string): void {
+  /** Searches in a format (its ID) with a team in Showdown's packed format, or none (null) in random formats. */
+  search(format: string, packedTeam: string | null = null): void {
     if (this.searchingSignal()) return;
     this.searchedAt = Date.now();
-    this.connection.send('', '/utm null');
+    this.connection.send('', `/utm ${packedTeam ?? 'null'}`);
     this.connection.send('', `/search ${format}`);
     // Shown at once; the server's `updatesearch` confirms it (or a popup refuses it).
     this.set(format, null);

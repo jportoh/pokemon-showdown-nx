@@ -1,4 +1,4 @@
-// A battle as the client sees it. The server side (the mock for now, Showdown later) speaks Showdown's
+// A battle as the client sees it. The server (Showdown) speaks Showdown's
 // battle protocol: log lines such as `|switch|p1a: Garchomp|Garchomp, L50, M|180/180`, and a
 // `|request|` JSON with what the player can choose. These types follow that protocol's shapes.
 
@@ -239,7 +239,7 @@ export interface BattleConnection {
   forfeit(): void;
   /** Takes back the choices sent while the opponent is still choosing; absent where that can't happen. */
   undo?(): void;
-  /** Asks for the battle timer on or off; absent where there's no timer (the mock, replays). */
+  /** Asks for the battle timer on or off; absent where there's no timer (replays, spectating). */
   setTimer?(on: boolean): void;
   stop(): void;
 }

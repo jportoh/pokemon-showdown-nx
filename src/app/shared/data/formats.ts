@@ -15,7 +15,7 @@ export const TEAM_FORMATS: readonly BattleFormat[] = [{ id: 'gen9championsvgc202
 /** The format of new and imported teams. */
 export const DEFAULT_TEAM_FORMAT = TEAM_FORMATS[0].id;
 
-/** A format battles can be played (against the mock server for now) and watched in. */
+/** A format battles can be played (on Showdown's ladder) and watched in. */
 export interface PlayableFormat extends BattleFormat {
   /** Short, for buttons and the format picker. */
   label: string;

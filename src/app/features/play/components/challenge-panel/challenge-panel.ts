@@ -2,6 +2,7 @@ import { Component, computed, inject, input, output } from '@angular/core';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
+import { ShowdownSearch } from '@features/connection/showdown-search';
 import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
 /**
@@ -72,6 +73,7 @@ export class ChallengePanel {
   private readonly connection = inject(ShowdownConnection);
   protected readonly login = inject(ShowdownLogin);
   protected readonly challenges = inject(ShowdownChallenges);
+  private readonly search = inject(ShowdownSearch);
 
   /** Challenges received and left for later. */
   readonly postponed = input(0);
@@ -107,7 +109,8 @@ export class ChallengePanel {
 
   private readonly problem = computed(() => {
     const login = this.login.state();
-    return login.status === 'unavailable' ? login.error : this.challenges.error();
+    // The ladder search's refusal (BATTLE! has no room for it) shows here too.
+    return login.status === 'unavailable' ? login.error : (this.search.error() ?? this.challenges.error());
   });
 
   protected readonly hintText = computed(() => {
