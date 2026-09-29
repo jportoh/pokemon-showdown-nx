@@ -50,6 +50,30 @@ const SHIELD_MS = 900;
 const SHIELD_PULSES = 3;
 const SHIELD_FILL = [165, 243, 252] as const;
 const SHIELD_EDGE = [103, 232, 249] as const;
+/** Moves that don't fly (pillars, closing rings) start once the user's glow has begun. */
+const GROUND_DELAY_MS = 200;
+/** Pillars bursting out of the ground: three, a little apart in time. */
+const PILLAR_OFFSETS = [-0.2, 0, 0.2] as const;
+const PILLAR_GAP_MS = 60;
+const PILLAR_MS = 420;
+/** Psychic: rings closing in on the target. */
+const PSY_RINGS = 3;
+const PSY_GAP_MS = 110;
+const PSY_MS = 320;
+/** Falling rocks: where each lands across the target's body, one after another. */
+const ROCK_OFFSETS = [-0.22, 0.12, -0.04, 0.24] as const;
+const ROCK_GAP_MS = 90;
+const ROCK_FALL_MS = 260;
+const ROCK_GRADIENT =
+  'radial-gradient(circle, rgba(222, 200, 160, 1) 0%, rgba(150, 120, 80, 1) 45%, rgba(110, 88, 60, 1) 60%, rgba(110, 88, 60, 0) 68%)';
+/** Earthquake: dust puffs at the feet of every Pokémon it hits. */
+const DUST_MS = 520;
+const DUST_COLOR = [140, 100, 55] as const;
+/** Tailwind: gusts sweeping across the side, towards the other one. */
+const GUSTS = 6;
+const GUST_GAP_MS = 90;
+const GUST_MS = 440;
+const GUST_COLOR = [210, 230, 255] as const;
 /** Stat changes: streaks rising (raised) or falling (lowered), in two waves, green and red as the stage chips. */
 const STAT_STREAKS = 5;
 const STAT_STREAK_MS = 620;
@@ -105,7 +129,8 @@ type Rgb = readonly [number, number, number];
  * A move's visual effect over the field, in its type's colour: a burst with sparks where a hit lands,
  * an orb that gathers at a special move's user and flies to each target, rings and rising sparks
  * around the Pokémon a status move affects; and the patterns some moves have of their own (see
- * move-patterns): beams, waves, trails, flurries, claps, rooms, shields and barriers. Every shape is a radial-gradient box (probe N2: they
+ * move-patterns): beams, waves, trails, flurries, claps, rooms, shields and barriers, pillars,
+ * closing rings, falling rocks, dust and gusts. Every shape is a radial-gradient box (probe N2: they
  * render, and `border-radius` circles don't; a box sized by width/height grows fine where a scale()
  * transform gets clipped). The pieces are always mounted and hidden with display, since re-creating
  * DOM stutters on the console; frames move them by left/top on requestAnimationFrame.
@@ -169,7 +194,7 @@ export class MoveEffects {
     size: number,
     speed: number,
     arrived: (target: EffectTarget) => void,
-    style: 'orb' | 'beam' | 'wave' = 'orb',
+    style: 'orb' | 'beam' | 'wave' | 'erupt' | 'psywave' = 'orb',
   ): void {
     const rgb = colorOf(type);
     const land = (target: EffectTarget) => {
@@ -178,6 +203,14 @@ export class MoveEffects {
     };
     if (style === 'wave') {
       targets.forEach((target) => this.wave(from, target, rgb, size, speed, () => land(target)));
+      return;
+    }
+    if (style === 'erupt' || style === 'psywave') {
+      this.after(GROUND_DELAY_MS / speed, () =>
+        targets.forEach((target) =>
+          style === 'erupt' ? this.pillars(target.at, rgb, size, speed, () => land(target)) : this.psyRings(target.at, rgb, size, speed, () => land(target)),
+        ),
+      );
       return;
     }
     const chargeMs = CHARGE_MS / speed;
@@ -251,6 +284,65 @@ export class MoveEffects {
     }
   }
 
+  /**
+   * Rock Slide: rocks fall one after another onto the target, each landing with a small burst when it
+   * hits; `landed` runs as the first gets there.
+   */
+  rocks(at: EffectPoint, type: string, hit: boolean, size: number, speed: number, landed: () => void): void {
+    const rock = size * 0.2;
+    // From just inside the field's top edge at most: nothing clips what spills out on the console.
+    const top = Math.max(rock / 2, at.y - size * 0.9);
+    ROCK_OFFSETS.forEach((offset, i) =>
+      this.after((i * ROCK_GAP_MS) / speed, () => {
+        const x = at.x + offset * size;
+        const bottom = at.y + (i % 2 ? 0.08 : -0.04) * size;
+        this.run(
+          ROCK_FALL_MS / speed,
+          ROCK_GRADIENT,
+          (piece, p) => place(piece, x, top + (bottom - top) * p * p, rock * (i % 2 ? 0.85 : 1), 1),
+          () => {
+            if (hit) this.impact({ x, y: bottom }, type, size, speed, true);
+            if (i === 0) landed();
+          },
+        );
+      }),
+    );
+  }
+
+  /** Earthquake: dust puffs up at the feet of each Pokémon it shakes. */
+  dust(points: readonly EffectPoint[], size: number, speed: number): void {
+    const background = gradient(DUST_COLOR, 'spark');
+    for (const at of points) {
+      for (const side of [-1, 1]) {
+        this.run(DUST_MS / speed, background, (piece, p) =>
+          place(piece, at.x + side * size * (0.12 + 0.25 * p), at.y + size * (0.32 - 0.12 * p), size * (0.24 + 0.26 * p), 1 - p),
+        );
+      }
+    }
+  }
+
+  /**
+   * Tailwind: gusts sweep across the user's side, between `top` and `bottom`, towards the other side
+   * (left to right for the player's).
+   */
+  gusts(towardsRight: boolean, top: number, bottom: number, size: number, speed: number): void {
+    const width = size * 0.6;
+    const height = size * 0.06;
+    const background = `radial-gradient(rgba(255, 255, 255, 0.95) 0%, ${rgba(GUST_COLOR, 0.8)} 40%, ${rgba(GUST_COLOR, 0)} 70%)`;
+    // Inside the field from end to end: nothing clips what spills out on the console.
+    const start = width / 2;
+    const end = FIELD_WIDTH - width / 2;
+    for (let i = 0; i < GUSTS; i++) {
+      const y = top + ((i * 0.618) % 1) * (bottom - top);
+      this.after((i * GUST_GAP_MS) / speed, () =>
+        this.run(GUST_MS / speed, background, (piece, p) => {
+          const x = towardsRight ? start + (end - start) * p : end - (end - start) * p;
+          placeBox(piece, x, y, width, height, p < 0.2 ? p / 0.2 : p > 0.8 ? (1 - p) / 0.2 : 1);
+        }),
+      );
+    }
+  }
+
   /** A room (Trick Room…): the whole field pulses in its colour. */
   roomPulse(move: string, type: string, speed: number): void {
     const rgb = ROOM_COLORS[move.toLowerCase().replace(/[^a-z]/g, '')] ?? colorOf(type);
@@ -277,6 +369,40 @@ export class MoveEffects {
     const form = shape === 'circle' ? 'circle, ' : '';
     const background = `radial-gradient(${form}${rgba(SHIELD_FILL, 0.35)} 0%, ${rgba(SHIELD_FILL, 0.5)} 55%, ${rgba(SHIELD_EDGE, 1)} 64%, rgba(255, 255, 255, 1) 67%, ${rgba(SHIELD_EDGE, 0)} 71%)`;
     this.run(SHIELD_MS / speed, background, (piece, p) => placeBox(piece, at.x, at.y, width, height, Math.abs(Math.sin(p * SHIELD_PULSES * Math.PI))));
+  }
+
+  /** Pillars bursting up from the ground under the target; `landed` runs as the first peaks. */
+  private pillars(at: EffectPoint, rgb: Rgb, size: number, speed: number, landed: () => void): void {
+    // Tall ellipses (the gradient's own shape on a narrow box), standing on the Pokémon's feet.
+    const background = `radial-gradient(rgba(255, 255, 255, 1) 0%, ${rgba(rgb, 1)} 40%, ${rgba(rgb, 0)} 70%)`;
+    const feet = at.y + size * 0.3;
+    PILLAR_OFFSETS.forEach((offset, i) =>
+      this.after((i * PILLAR_GAP_MS) / speed, () =>
+        this.run(
+          PILLAR_MS / speed,
+          background,
+          (piece, p) => {
+            const height = size * 0.75 * (p < 0.5 ? p * 2 : 1);
+            placeBox(piece, at.x + offset * size, feet - height / 2, size * 0.16, Math.max(1, height), p < 0.6 ? 1 : (1 - p) / 0.4);
+          },
+        ),
+      ),
+    );
+    this.after((PILLAR_MS * 0.5) / speed, landed);
+  }
+
+  /** Rings closing in on the target; `landed` runs as the first one closes. */
+  private psyRings(at: EffectPoint, rgb: Rgb, size: number, speed: number, landed: () => void): void {
+    for (let i = 0; i < PSY_RINGS; i++) {
+      this.after((i * PSY_GAP_MS) / speed, () =>
+        this.run(
+          PSY_MS / speed,
+          gradient(rgb, 'ring'),
+          (piece, p) => place(piece, at.x, at.y, size * (1.05 - 0.8 * p), 0.3 + 0.7 * p),
+          i === 0 ? landed : undefined,
+        ),
+      );
+    }
   }
 
   /** A stream of orbs flying straight to the target; `landed` runs as the last one gets there. */

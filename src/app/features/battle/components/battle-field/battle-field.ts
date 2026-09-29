@@ -34,6 +34,10 @@ const GLOW_MS = 420;
 const GLOW_BRIGHTNESS = 1.8;
 const BLINK_MS = 540;
 const BLINKS = 6;
+/** Earthquake shakes the whole field sideways, dying down. */
+const QUAKE_MS = 520;
+const QUAKE_PX = 10;
+const QUAKE_SHAKES = 5;
 /** A flinching target (Fake Out) shakes sideways as it blinks. */
 const SHAKE_PX = 10;
 const SHAKES = 3;
@@ -734,7 +738,9 @@ export class BattleField {
    * burst as it lands (a missed one sees it fade); a beam streams orbs there, a wave rolls rings out.
    * Status: the attacker lunges (hops, with no target) and rings spread around the Pokémon it affects
    * (itself, with no target); a room pulses the whole field; a protection only hops, as its shield
-   * shows with the next line.
+   * shows with the next line; Tailwind sends gusts across the user's side. Whatever the category,
+   * Earthquake hops and shakes the field, Earth Power bursts pillars out of the ground under its
+   * targets, Psychic closes rings on them (they wobble) and Rock Slide drops rocks on them.
    */
   private playMove(action: MoveAction): void {
     const effects = this.effects();
@@ -743,7 +749,8 @@ export class BattleField {
     const size = this.layout().spriteSize;
     const speed = this.store.speed();
     const pattern = movePattern(action.move);
-    if (action.category === 'Special' || pattern === 'beam' || pattern === 'wave') {
+    const aimed = pattern === 'beam' || pattern === 'wave' || pattern === 'erupt' || pattern === 'psywave' ? pattern : null;
+    if (action.category === 'Special' || aimed) {
       this.glow(action.attacker);
       const from = this.effectPoint(action.attacker);
       const slots = new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits]);
@@ -751,7 +758,6 @@ export class BattleField {
         const at = this.effectPoint(slot);
         return at ? [{ slot, at, hit: action.hits.includes(slot) }] : [];
       });
-      const style = pattern === 'beam' || pattern === 'wave' ? pattern : 'orb';
       if (from) {
         effects.projectiles(
           from,
@@ -760,9 +766,9 @@ export class BattleField {
           size,
           speed,
           (target) => {
-            if (target.hit) this.blink(target.slot);
+            if (target.hit) this.blink(target.slot, pattern === 'psywave');
           },
-          style,
+          aimed ?? 'orb',
         );
       } else {
         action.hits.forEach((slot) => this.blink(slot));
@@ -770,15 +776,41 @@ export class BattleField {
       return;
     }
     if (pattern === 'room') effects.roomPulse(action.move, action.type, speed);
+    if (pattern === 'tailwind') this.gusts(action.attacker);
     const rush = pattern === 'rush';
     this.lunge(
       action,
       () => {
-        if (action.category === 'Status' && pattern !== 'guard' && pattern !== 'room') {
+        if (action.category === 'Status' && pattern !== 'guard' && pattern !== 'room' && pattern !== 'tailwind') {
           for (const slot of action.targets.length > 0 ? action.targets : [action.attacker]) {
             const at = this.effectPoint(slot);
             if (at) effects.aura(at, action.type, size, speed);
           }
+        }
+        if (pattern === 'quake') {
+          this.shakeField();
+          const shaken = [...new Set([...action.targets, ...action.hits])].filter((slot) => slot !== action.attacker);
+          effects.dust(shaken.map((slot) => this.effectPoint(slot)).filter((point): point is EffectPoint => !!point), size, speed);
+          for (const slot of action.hits) {
+            this.blink(slot);
+            const at = this.effectPoint(slot);
+            if (at) effects.impact(at, action.type, size, speed, true);
+          }
+          return;
+        }
+        if (pattern === 'rocks') {
+          for (const slot of new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits])) {
+            const at = this.effectPoint(slot);
+            const hit = action.hits.includes(slot);
+            if (at) {
+              effects.rocks(at, action.type, hit, size, speed, () => {
+                if (hit) this.blink(slot);
+              });
+            } else if (hit) {
+              this.blink(slot);
+            }
+          }
+          return;
         }
         for (const slot of action.hits) {
           const at = this.effectPoint(slot);
@@ -800,7 +832,42 @@ export class BattleField {
             if (from) effects.trail(from, dx, dy, action.type, size, RUSH_MS, speed);
           }
         : undefined,
+      pattern === 'quake',
     );
+  }
+
+  /** Tailwind: gusts sweep across the user's side towards the other one. */
+  private gusts(attacker: SlotKey): void {
+    const side = attacker.slice(0, 2);
+    const points = Object.keys(this.layout().stands)
+      .filter((slot) => slot.startsWith(side))
+      .map((slot) => this.effectPoint(slot))
+      .filter((point): point is EffectPoint => !!point);
+    if (points.length === 0) return;
+    const size = this.layout().spriteSize;
+    const ys = points.map((point) => point.y);
+    this.effects()?.gusts(side === 'p1', Math.min(...ys) - size * 0.3, Math.max(...ys) + size * 0.2, size, this.store.speed());
+  }
+
+  /** Earthquake: the whole field shakes sideways, dying down. */
+  private shakeField(): void {
+    const field = this.host.firstElementChild as HTMLElement | null;
+    if (!field) return;
+    this.running.get('field')?.();
+    const reset = () => (field.style.left = '');
+    const stop = stepAnimation(
+      QUAKE_MS / this.store.speed(),
+      (progress) => (field.style.left = `${Math.round(Math.sin(progress * QUAKE_SHAKES * 2 * Math.PI) * QUAKE_PX * (1 - progress))}px`),
+      () => {
+        reset();
+        this.running.delete('field');
+      },
+    );
+    this.running.set('field', () => {
+      stop();
+      reset();
+      this.running.delete('field');
+    });
   }
 
   /** Where a move's effect centres on a slot's Pokémon (its body, a little below the sprite's middle); null for an empty slot. */
@@ -820,15 +887,15 @@ export class BattleField {
   /**
    * The attacker lunges at its targets (their middle, for a spread move) and comes back; `contact`
    * runs as it reaches them. With `rushing`, it goes faster, and `rushing` gets the lunge's reach
-   * as it starts (for the trail).
+   * as it starts (for the trail). With `hop`, it hops in place whatever its targets (Earthquake).
    */
-  private lunge(action: MoveAction, contact: () => void, rushing?: (dx: number, dy: number) => void): void {
+  private lunge(action: MoveAction, contact: () => void, rushing?: (dx: number, dy: number) => void, hop = false): void {
     const from = this.slotData(action.attacker);
     if (!from) return;
     const targets = action.targets.filter((t) => t !== action.attacker).map((t) => this.slotData(t)).filter((t): t is FieldSlot => !!t);
     let dx = 0;
     let dy = -HOP_PX;
-    if (targets.length > 0) {
+    if (targets.length > 0 && !hop) {
       const x = targets.reduce((sum, t) => sum + t.left, 0) / targets.length - from.left;
       const y = targets.reduce((sum, t) => sum + t.top, 0) / targets.length - from.top;
       const length = Math.hypot(x, y) || 1;

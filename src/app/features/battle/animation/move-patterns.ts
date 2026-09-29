@@ -10,8 +10,13 @@ import { toId } from '@shared/utils/to-id';
  * - clap: two orbs slam together on the target, which flinches (Fake Out).
  * - room: the whole field pulses (Trick Room and the other rooms).
  * - guard: a hop only; the shield (or the side's barrier) shows as the protection starts.
+ * - quake: the field shakes and dust rises under every Pokémon it hits (Earthquake).
+ * - erupt: pillars burst out of the ground under each target (Earth Power).
+ * - rocks: rocks fall on each target (Rock Slide).
+ * - psywave: rings close in on each target, which wobbles (Psychic).
+ * - tailwind: gusts sweep across the user's side.
  */
-export type MovePattern = 'beam' | 'wave' | 'rush' | 'flurry' | 'clap' | 'room' | 'guard';
+export type MovePattern = 'beam' | 'wave' | 'rush' | 'flurry' | 'clap' | 'room' | 'guard' | 'quake' | 'erupt' | 'rocks' | 'psywave' | 'tailwind';
 
 const PATTERNS: Readonly<Record<MovePattern, readonly string[]>> = {
   beam: [
@@ -36,6 +41,11 @@ const PATTERNS: Readonly<Record<MovePattern, readonly string[]>> = {
     'Baneful Bunker', 'Burning Bulwark', 'Crafty Shield', 'Detect', "King's Shield", 'Mat Block', 'Obstruct',
     'Protect', 'Quick Guard', 'Silk Trap', 'Spiky Shield', 'Wide Guard',
   ],
+  quake: ['Bulldoze', 'Earthquake', 'Fissure', 'Magnitude'],
+  erupt: ['Earth Power', 'Precipice Blades', 'Scorching Sands', 'Thousand Arrows', 'Thousand Waves'],
+  rocks: ['Diamond Storm', 'Rock Slide', 'Rock Tomb', 'Stone Edge'],
+  psywave: ['Esper Wing', 'Expanding Force', 'Extrasensory', 'Lumina Crash', 'Psychic', 'Psychic Noise', 'Psycho Boost', 'Psyshock', 'Stored Power'],
+  tailwind: ['Tailwind'],
 };
 
 const BY_MOVE = new Map<string, MovePattern>(
