@@ -45,11 +45,16 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
           Challenge a player
         </button>
       }
-      <p role="status" class="absolute top-[66px] left-0 block h-8 w-[290px] truncate text-lg leading-8 text-retro-muted">
+      <!-- Label and name as separate blocks on the button's 32px line: inline, Brewser drops the space
+           between them and sets the two font sizes on different baselines. -->
+      <p role="status" class="absolute top-[66px] left-0 block h-8 w-[290px] text-lg leading-8 text-retro-muted">
         @if (name(); as name) {
-          Name: <strong class="text-xl font-bold text-retro-ink">{{ name }}</strong>
+          <span class="absolute top-0 left-0 block h-8 leading-8">Name:</span>
+          <strong class="absolute top-0 left-[72px] block h-8 w-[218px] truncate text-xl leading-8 font-bold text-retro-ink">{{
+            name
+          }}</strong>
         } @else {
-          {{ statusText() }}
+          <span class="block h-8 w-[290px] truncate leading-8">{{ statusText() }}</span>
         }
       </p>
       @if (canRename()) {
