@@ -3,6 +3,7 @@ import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
+import { formatLabel } from '@shared/data/formats';
 import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
 /**
@@ -118,9 +119,9 @@ export class ChallengePanel {
     if (this.login.state().status === 'offline') return 'Connect from the menu to send and receive challenges.';
     const problem = this.problem();
     if (problem) return problem;
-    if (outgoing) return `Waiting for ${outgoing.to} to accept the Random Battle…`;
+    if (outgoing) return `Waiting for ${outgoing.to} to accept your ${formatLabel(outgoing.format)} challenge…`;
     if (this.postponed() > 0) return `${this.challenges.incoming()[0]?.from ?? 'A player'} is waiting for your answer.`;
-    return 'Players can challenge this name to a Random Battle, or challenge one yourself.';
+    return 'Players can challenge this name, or challenge one yourself in the format picked.';
   });
 
   protected readonly hintClass = computed(() => (this.problem() ? 'font-bold text-retro-danger' : 'text-retro-muted'));

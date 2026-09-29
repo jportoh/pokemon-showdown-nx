@@ -135,6 +135,8 @@ const SELECTOR_BUTTON =
           class="absolute top-[158px] left-[248px]"
           [challenge]="challenge"
           [waiting]="waitingBehind()"
+          [teams]="popupTeams()"
+          [preferredTeam]="selection.teamId()"
           (later)="postpone(challenge.fromId)"
           (viewCard)="openCard(challenge.from)"
         />
@@ -160,7 +162,7 @@ const SELECTOR_BUTTON =
     } @else if (overlay() === 'challenge') {
       <app-retro-box class="absolute top-[158px] left-[248px]" [width]="784" [height]="296">
         <h2 class="absolute top-[24px] left-[29px] block h-12 w-[720px] text-4xl leading-[48px] font-bold">Challenge a player</h2>
-        <app-challenge-form class="absolute top-[100px] left-[29px]" (closed)="close()" />
+        <app-challenge-form class="absolute top-[100px] left-[29px]" [format]="format()" [team]="chosenTeam()" (closed)="close()" />
       </app-retro-box>
     }
 
@@ -209,7 +211,7 @@ export class PlayPage {
 
   /** The player's teams for the format, with at least one Pokémon. */
   protected readonly teams = computed(() =>
-    this.teamStore.teams().filter((team) => team.format === this.format().id && team.sets.length > 0),
+    this.teamStore.teams().filter((team) => team.format === (this.format().teamFormat ?? this.format().id) && team.sets.length > 0),
   );
 
   protected readonly teamOptions = computed((): PickerOption[] =>
@@ -269,6 +271,13 @@ export class PlayPage {
     this.challenges.incoming().filter((challenge) => !this.postponed().includes(challenge.fromId)),
   );
   protected readonly popupChallenge = computed(() => this.unanswered()[0] ?? null);
+  /** The teams the challenge on show can be accepted with (its format's, or the one it borrows them from). */
+  protected readonly popupTeams = computed(() => {
+    const challenge = this.popupChallenge();
+    if (!challenge?.needsTeam) return [];
+    const teamFormat = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.teamFormat ?? challenge.format;
+    return this.teamStore.teams().filter((team) => team.format === teamFormat && team.sets.length > 0);
+  });
   protected readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - 1));
   protected readonly postponedCount = computed(() => this.challenges.incoming().length - this.unanswered().length);
 

@@ -15,7 +15,7 @@ export interface Challenge {
   /** The format's ID ("gen9randombattle"). */
   format: string;
   formatName: string;
-  /** Random formats bring their own teams; the others need one of ours, which can't be sent yet. */
+  /** Random formats bring their own teams; the others need one of ours to accept. */
   needsTeam: boolean;
 }
 
@@ -35,8 +35,9 @@ const ANSWER_WINDOW_MS = 5000;
  * Challenges other players send us. Showdown sends them as private messages:
  * `|pm| ffenrix|!Brewser1234|/challenge gen9randombattle|gen9randombattle|||`, and the same with an
  * empty `/challenge` when it's withdrawn (or, from our side, once we've answered). Accepting starts a
- * battle room, which BattleRooms picks up. Ours (rematches, random formats only) go out as
- * `/challenge ffenrix, gen9randombattle`, and the server echoes them the same way with us as sender.
+ * battle room, which BattleRooms picks up. Ours go out as `/challenge ffenrix, gen9randombattle`, and
+ * the server echoes them the same way with us as sender. In formats played with our own teams, the
+ * team goes first, packed, with `/utm` (as for a ladder search); `/utm null` clears it otherwise.
  */
 @Service()
 export class ShowdownChallenges {
@@ -76,13 +77,13 @@ export class ShowdownChallenges {
     });
   }
 
-  /** Challenges a player to a random format (no team to send): `/utm null` clears any team sent before. */
-  challenge(to: string, format: string): void {
+  /** Challenges a player, with our packed team in formats that need one (null in random formats). */
+  challenge(to: string, format: string, team: string | null = null): void {
     if (this.outgoingSignal()) return;
     this.answeredAt = Date.now();
     this.errorSignal.set(null);
     const id = toId(to);
-    this.connection.send('', '/utm null');
+    this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/challenge ${id}, ${format}`);
     this.setOutgoing({ to, toId: id, format });
     // Silence isn't an answer either: said, so it shows (the challenge may still go out).
@@ -102,10 +103,10 @@ export class ShowdownChallenges {
     this.setOutgoing(null);
   }
 
-  /** Random formats need no team: `/utm null` clears any team sent before. */
-  accept(challenge: Challenge): void {
+  /** Accepts, with our packed team when the format needs one (null in random formats). */
+  accept(challenge: Challenge, team: string | null = null): void {
     this.answer(challenge);
-    this.connection.send('', '/utm null');
+    this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/accept ${challenge.fromId}`);
   }
 

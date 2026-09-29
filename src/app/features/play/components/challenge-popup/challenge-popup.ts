@@ -1,12 +1,16 @@
-import { Component, ElementRef, afterRenderEffect, computed, inject, input, output, untracked, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, output, untracked, viewChild } from '@angular/core';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { Challenge, ShowdownChallenges } from '@features/connection/showdown-challenges';
+import { packTeam } from '@features/teambuilder/data/packed-team';
+import { Team } from '@features/teambuilder/models/team';
 import { RetroBox } from '@shared/components/retro-box';
 import { BackAction } from '@shared/directives/back-action';
 import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
 /**
  * A challenge from another player, in a box over the Battle page while it waits for an answer:
- * Accept (only for formats that bring their own teams, for now) or Reject, after a look at the
+ * Accept (in formats played with our own teams, with one of ours for it: the Battle page's, L/R to
+ * pick another) or Reject, after a look at the
  * challenger's Trainer Card if the player wants (the page shows it). B leaves it for later:
  * the page keeps a button to come back to it. Focus starts on Accept (or Reject when it can't be accepted),
  * again for each challenge in line.
@@ -23,16 +27,16 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
         </h2>
         <p id="challenge-popup-text" class="absolute top-[88px] left-[32px] block h-16 w-[712px] text-xl leading-8">
           {{ challenge().formatName }}{{ others() }}
-          <span class="block text-lg text-retro-muted">{{ challenge().needsTeam ? 'Needs a team: not supported yet.' : 'Showdown hands out the teams.' }}</span>
+          <span class="block text-lg text-retro-muted">{{ teamLine() }}</span>
         </p>
-        @if (!challenge().needsTeam) {
+        @if (canAccept()) {
           <button
             #accept
             type="button"
             [class]="primaryClass"
             class="absolute top-[184px] left-[32px] h-14 w-[344px] text-2xl"
             [attr.aria-label]="'Accept the challenge from ' + challenge().from"
-            (click)="challenges.accept(challenge())"
+            (click)="acceptChallenge()"
           >
             Accept
           </button>
@@ -73,6 +77,10 @@ export class ChallengePopup {
   readonly challenge = input.required<Challenge>();
   /** How many other challenges wait behind this one. */
   readonly waiting = input(0);
+  /** The player's teams for the challenge's format (none in random formats). */
+  readonly teams = input<readonly Team[]>([]);
+  /** The team picked on the Battle page, taken first when it fits. */
+  readonly preferredTeam = input<string | null>(null);
   /** B: the challenge stays, unanswered, and the box closes. */
   readonly later = output<void>();
   /** The challenger's Trainer Card was asked for (the page shows it over the box). */
@@ -83,12 +91,47 @@ export class ChallengePopup {
 
   protected readonly others = computed(() => (this.waiting() > 0 ? ` · ${this.waiting()} more waiting` : ''));
 
+  /** The team to accept with: the Battle page's when it fits, else the first; L/R step through them. */
+  private readonly teamIndex = linkedSignal(() => {
+    this.challenge().fromId;
+    return Math.max(0, this.teams().findIndex((team) => team.id === this.preferredTeam()));
+  });
+  private readonly team = computed(() => this.teams()[this.teamIndex()] ?? null);
+
+  protected readonly canAccept = computed(() => !this.challenge().needsTeam || this.team() !== null);
+
+  protected readonly teamLine = computed(() => {
+    if (!this.challenge().needsTeam) return 'Showdown hands out the teams.';
+    const team = this.team();
+    if (!team) return "You have no team for this format.";
+    return this.teams().length > 1 ? `With your team ${team.name} · L/R to change` : `With your team ${team.name}`;
+  });
+
   constructor() {
+    const navigation = inject(KeyboardNavigation);
+    const unregister = [
+      navigation.registerButton('buttonL', () => this.cycleTeam(-1)),
+      navigation.registerButton('buttonR', () => this.cycleTeam(1)),
+    ];
+    inject(DestroyRef).onDestroy(() => unregister.forEach((fn) => fn()));
     // Each challenge shown (the first, then the next one in line) starts on its first button.
     afterRenderEffect(() => {
       this.challenge().fromId;
       untracked(() => (this.acceptButton() ?? this.rejectButton()).nativeElement.focus());
     });
+  }
+
+  protected acceptChallenge(): void {
+    const team = this.team();
+    this.challenges.accept(this.challenge(), this.challenge().needsTeam && team ? packTeam(team.sets) : null);
+  }
+
+  /** L/R: the previous or next team to accept with (wrapping around), when there's more than one. */
+  private cycleTeam(step: 1 | -1): boolean {
+    const count = this.teams().length;
+    if (!this.challenge().needsTeam || count < 2) return false;
+    this.teamIndex.set((this.teamIndex() + step + count) % count);
+    return true;
   }
 
   /** Back from the challenger's card: on the button that opened it. */

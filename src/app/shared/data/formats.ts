@@ -25,13 +25,21 @@ export interface PlayableFormat extends BattleFormat {
   category: string;
   /** One line under its name: how it's played. */
   detail: string;
+  /** The teams it's played with, when they're another format's (a best-of-3 uses its format's teams). */
+  teamFormat?: string;
 }
 
 export const RANDOM_BATTLE_FORMAT = 'gen9randombattle';
 
 /**
- * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles) and
- * Random Battle (singles). The format picker lists them by category, in this order.
+ * The VGC format as a best-of-3 set with Open Team Sheets forced on: each game starts showing both
+ * teams' sets (everything but stats). The ID is checked against the server's `|formats|` (2026-09-28).
+ */
+export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
+
+/**
+ * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles), as
+ * single games and as best-of-3 sets, and Random Battle (singles). The format picker lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
   {
@@ -41,6 +49,15 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: false,
     category: 'Doubles',
     detail: 'Doubles · one of your teams',
+  },
+  {
+    id: BO3_TEAM_FORMAT,
+    name: '[Gen 9 Champions] VGC 2026 Reg M-C (Bo3)',
+    label: 'VGC 2026 Reg M-C (Bo3)',
+    randomTeams: false,
+    category: 'Doubles',
+    detail: 'Best of 3 · open team sheets',
+    teamFormat: DEFAULT_TEAM_FORMAT,
   },
   {
     id: RANDOM_BATTLE_FORMAT,
@@ -55,4 +72,9 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */
 export function formatName(id: string): string {
   return [...TEAM_FORMATS, ...PLAYABLE_FORMATS].find((format) => format.id === id)?.name ?? id;
+}
+
+/** A format's short label ("VGC 2026 Reg M-C (Bo3)"), or its full name when the app doesn't offer it. */
+export function formatLabel(id: string): string {
+  return PLAYABLE_FORMATS.find((format) => format.id === id)?.label ?? formatName(id);
 }

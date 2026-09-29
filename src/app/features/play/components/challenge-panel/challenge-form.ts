@@ -1,16 +1,17 @@
-import { Component, ElementRef, afterNextRender, inject, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { form, FormField, maxLength } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
+import { packTeam } from '@features/teambuilder/data/packed-team';
+import { Team } from '@features/teambuilder/models/team';
+import { PlayableFormat } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
 import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 import { toId } from '@shared/utils/to-id';
 
-/** Challenges go out in a random format only: a challenge can't carry one of our teams yet. */
-const CHALLENGE_FORMAT = 'gen9randombattle';
-
 /**
- * Challenges a player by name to a Random Battle, in a box over the Battle page (three rows).
+ * Challenges a player by name in the format picked on the Battle page, with the team picked there
+ * (none in random formats), in a box over the page (three rows).
  * Sending closes it: the panel then shows the challenge waiting for an answer. The name is read
  * from the input itself (the on-screen keyboard may skip the input events).
  */
@@ -26,7 +27,7 @@ const CHALLENGE_FORMAT = 'gen9randombattle';
         class="absolute top-0 left-0 block h-8 w-[720px] truncate text-lg leading-8"
         [class]="error() ? 'font-bold text-retro-danger' : 'text-retro-muted'"
       >
-        {{ error() ?? 'Challenge a player on Showdown to a Gen 9 Random Battle.' }}
+        {{ error() ?? intro() }}
       </p>
       <input
         #nameInput
@@ -65,6 +66,17 @@ export class ChallengeForm {
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
+  /** The Battle page's format and team (null in random formats, or when there's none). */
+  readonly format = input.required<PlayableFormat>();
+  readonly team = input<Team | null>(null);
+
+  protected readonly intro = computed(() => {
+    const format = this.format();
+    const team = this.team();
+    if (format.randomTeams) return `Challenge a player on Showdown to ${format.label}.`;
+    return team ? `Challenge a player to ${format.label} with ${team.name}.` : `Pick a team for ${format.label} first.`;
+  });
+
   private readonly model = signal({ name: '' });
   // Showdown's limit for names.
   protected readonly challengeForm = form(this.model, (path) => maxLength(path.name, 18));
@@ -89,7 +101,13 @@ export class ChallengeForm {
       this.error.set('Enter the name of the player to challenge.');
       return;
     }
-    this.challenges.challenge(name, CHALLENGE_FORMAT);
+    const format = this.format();
+    const team = this.team();
+    if (!format.randomTeams && !team) {
+      this.error.set(`Pick a team for ${format.label} first.`);
+      return;
+    }
+    this.challenges.challenge(name, format.id, team ? packTeam(team.sets) : null);
     this.closed.emit();
   }
 }
