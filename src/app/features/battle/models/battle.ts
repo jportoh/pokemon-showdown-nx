@@ -152,6 +152,8 @@ export interface MoveAction {
   move: string;
   /** The move's type, for its colour; '' when unknown. */
   type: string;
+  /** Physical, Special or Status, which picks its animation; '' when unknown. */
+  category: string;
 }
 
 /**
@@ -181,6 +183,15 @@ export interface StatusChange {
   id: number;
   slot: SlotKey;
   status: string;
+}
+
+/** A stat stage raised or lowered ("atk", +1), shown as "Attack +1" over the Pokémon with arrows of light. */
+export interface StatChange {
+  id: number;
+  slot: SlotKey;
+  stat: string;
+  /** Stages gained (positive) or lost (negative); never 0. */
+  amount: number;
 }
 
 /**

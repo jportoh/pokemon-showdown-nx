@@ -1,6 +1,6 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { moveType } from '@core/dex/moves';
+import { moveInfo, moveType } from '@core/dex/moves';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import {
   BattleConnection,
@@ -8,6 +8,7 @@ import {
   FieldCondition,
   EffectPopup,
   HpChange,
+  StatChange,
   StatusChange,
   FieldEvent,
   GameType,
@@ -161,6 +162,7 @@ export class BattleStore {
   private readonly popupsSignal = signal<readonly EffectPopup[]>([]);
   private readonly hpChangesSignal = signal<readonly HpChange[]>([]);
   private readonly statusChangesSignal = signal<readonly StatusChange[]>([]);
+  private readonly statChangesSignal = signal<readonly StatChange[]>([]);
   private readonly introSignal = signal<{ p1: string; p2: string } | null>(null);
   private readonly startedSignal = signal(false);
   private readonly formatSignal = signal('');
@@ -221,6 +223,8 @@ export class BattleStore {
   readonly hpChanges = this.hpChangesSignal.asReadonly();
   /** The latest status conditions inflicted (a few), for the field's "Burned!" labels. */
   readonly statusChanges = this.statusChangesSignal.asReadonly();
+  /** The latest stat stages raised or lowered (a few), for the field's "Attack +1" labels and arrows. */
+  readonly statChanges = this.statChangesSignal.asReadonly();
   /** The players' names while the battle's title shows, at its start; null otherwise. */
   readonly intro = this.introSignal.asReadonly();
   /** The battle has begun and its title has gone: the teams at a glance show from then on. */
@@ -340,6 +344,7 @@ export class BattleStore {
     this.popupsSignal.set([]);
     this.hpChangesSignal.set([]);
     this.statusChangesSignal.set([]);
+    this.statChangesSignal.set([]);
     this.introSignal.set(null);
     this.startedSignal.set(false);
     this.formatSignal.set('');
@@ -438,6 +443,7 @@ export class BattleStore {
     this.popupsSignal.set([]);
     this.hpChangesSignal.set([]);
     this.statusChangesSignal.set([]);
+    this.statChangesSignal.set([]);
     this.step();
   }
 
@@ -760,6 +766,7 @@ export class BattleStore {
       case '-unboost': {
         const amount = Number(args[2]) || 0;
         this.changeBoost(args[0], args[1], (stage) => stage + (command === '-boost' ? amount : -amount));
+        this.showStatChange(args[0], args[1], command === '-boost' ? amount : -amount);
         return this.say(boostText(args[0], args[1], amount, command === '-boost', names));
       }
       case '-setboost':
@@ -930,10 +937,12 @@ export class BattleStore {
     if (tags['spread']) targets = tags['spread'].split(',').filter((slot) => /^p[12][ab]$/.test(slot));
     else if ('notarget' in tags || !target) targets = [];
     else targets = [this.slotOf(target)].filter((slot): slot is string => !!slot);
-    const type = this.dex.move(move)?.type ?? moveType(move);
+    const dexMove = this.dex.move(move);
+    const type = dexMove?.type ?? moveType(move);
+    const category = dexMove?.category ?? moveInfo(move)?.category ?? '';
     const hits = this.upcomingHits().filter((slot) => slot !== from);
     hits.forEach((slot) => this.blinkedHits.add(slot));
-    return { id: this.nextEventId++, attacker: from, targets, hits, move, type };
+    return { id: this.nextEventId++, attacker: from, targets, hits, move, type, category };
   }
 
   /**
@@ -1125,6 +1134,14 @@ export class BattleStore {
     if (!slot || !status) return;
     const change = { id: this.nextEventId++, slot, status };
     this.statusChangesSignal.update((changes) => [...changes, change].slice(-MAX_POPUPS));
+  }
+
+  /** A stat stage raised or lowered, for the field's label and arrows over the Pokémon ("Attack +1"). */
+  private showStatChange(ident: string, stat: string | undefined, amount: number): void {
+    const slot = this.slotOf(ident);
+    if (!slot || !stat || amount === 0) return;
+    const change = { id: this.nextEventId++, slot, stat, amount };
+    this.statChangesSignal.update((changes) => [...changes, change].slice(-MAX_POPUPS));
   }
 
   private findPokemon(ident: string): BattlePokemon | undefined {

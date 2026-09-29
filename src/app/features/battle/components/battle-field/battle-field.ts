@@ -1,9 +1,10 @@
-import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { nextFrame, outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
 import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
 import { BattleResult } from '@features/battle/components/battle-result/battle-result';
-import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SlotKey, StatusChange } from '@features/battle/models/battle';
+import { EffectPoint, EffectTarget, MoveEffects } from '@features/battle/components/move-effects/move-effects';
+import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SlotKey, StatChange, StatusChange } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { STATUS } from '@features/battle/state/status-conditions';
@@ -25,6 +26,9 @@ const LUNGE_MIN_PX = 72;
 const LUNGE_MAX_PX = 180;
 /** A move with no target (or aimed at itself): a hop in place. */
 const HOP_PX = 24;
+/** A special move's user glows while its attack gathers. */
+const GLOW_MS = 420;
+const GLOW_BRIGHTNESS = 1.8;
 const BLINK_MS = 540;
 const BLINKS = 6;
 /** Blinks dim the sprite: Brewser ignores visibility changes, but opacity works (probe N1). */
@@ -62,6 +66,19 @@ const CRIT_COLOR = '#b45309';
 /** "Burned!", "Badly poisoned!": this far under the HP label, stays as long as an ability pop-up. */
 const STATUS_LABEL_WIDTH = 150;
 const STATUS_LABEL_DROP = 36;
+/** "Attack +1" in the same place (a status and a stat change rarely come together), coloured as the status boxes' stage chips. */
+const STAT_LABEL_WIDTH = 150;
+const STAT_UP_COLOR = '#15803d';
+const STAT_DOWN_COLOR = '#b91c1c';
+const STAT_NAMES: Record<string, string> = {
+  atk: 'Attack',
+  def: 'Defense',
+  spa: 'Sp. Atk',
+  spd: 'Sp. Def',
+  spe: 'Speed',
+  accuracy: 'Accuracy',
+  evasion: 'Evasion',
+};
 
 /**
  * Where each Pokémon stands: its platform's centre (x) and its feet (y), and where its status box
@@ -174,10 +191,13 @@ interface FieldSlot {
  * conditions in a column on the right), all positions absolute. The terrain colours the ground and the
  * platforms, the weather the sky, and Trick Room frames the field.
  *
- * Moves animate so it's clear who hit whom without reading the log: the attacker lunges at its
- * target (a hop when it has none), a banner names the move on its type's colour, the status boxes of
- * the attacker (yellow) and its targets (red) stand out, each target it damages blinks as the lunge
- * reaches it (its HP drops a step later), and a fainted Pokémon sinks and fades out. A withdrawn Pokémon slides away towards its trainer's side
+ * Moves animate so it's clear who hit whom without reading the log: a physical move's user lunges at
+ * its target (a hop when it has none), a special move's glows and sends an orb flying, a status
+ * move's spreads rings around the Pokémon it affects (see MoveEffects); a banner names the move on
+ * its type's colour, the status boxes of the attacker (yellow) and its targets (red) stand out, each
+ * target it damages blinks under a burst as the hit lands (its HP drops a step later), and a fainted
+ * Pokémon sinks and fades out. A stat stage raised sends green streaks rising over the Pokémon with an
+ * "Attack +1" label; one lowered, red streaks falling and "Speed -1". A withdrawn Pokémon slides away towards its trainer's side
  * (left for the player's, right for the opponent's) and fades; the next one slides in from there,
  * once its sprite has loaded (preloaded from team preview). Mega Evolution flashes the new sprite
  * white, and Protect pulses a shield around the Pokémon. Abilities (Intimidate, Drizzle, Stamina…)
@@ -190,7 +210,7 @@ interface FieldSlot {
  */
 @Component({
   selector: 'app-battle-field',
-  imports: [BattleHpBox, BattleResult, ItemIcon, PokemonSprite],
+  imports: [BattleHpBox, BattleResult, ItemIcon, MoveEffects, PokemonSprite],
   host: { class: 'block h-[500px] w-[985px]' },
   template: `
     <div class="relative h-[500px] w-[985px] overflow-hidden" [style.background-color]="palette().sky">
@@ -253,6 +273,8 @@ interface FieldSlot {
           />
         }
       }
+      <!-- The move's effect (bursts, orbs, rings), over the sprites. -->
+      <app-move-effects />
       @for (shield of shields(); track shield.key) {
         <!-- Shown (display) only while its pulse plays. -->
         <div
@@ -319,6 +341,17 @@ interface FieldSlot {
           >{{ label.text }}</span
         >
       }
+      <!-- A stat stage raised or lowered ("Attack +1"), where status labels go; the log says it too. -->
+      @for (label of statLabels(); track label.slot) {
+        <span
+          aria-hidden="true"
+          class="absolute block h-[32px] w-[150px] rounded-md border-2 border-white text-center text-base leading-7 font-bold text-white"
+          [style.left.px]="label.left"
+          [style.top.px]="label.top"
+          [style.background-color]="label.color"
+          >{{ label.text }}</span
+        >
+      }
       @if (banner(); as b) {
         <div
           role="status"
@@ -354,6 +387,7 @@ export class BattleField {
   private readonly renderScheduler = inject(RenderScheduler);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dex = inject(ChampionsDex);
+  private readonly effects = viewChild(MoveEffects);
   /** Sprites already asked for, so team preview's are fetched once. */
   private readonly preloaded = new Set<string>();
 
@@ -440,6 +474,19 @@ export class BattleField {
     }),
   );
 
+  /** The stat labels being shown, one per slot at most; each goes after POPUP_MS. */
+  private readonly shownStatChanges = signal<readonly StatChange[]>([]);
+
+  protected readonly statLabels = computed(() =>
+    this.shownStatChanges().map(({ slot, stat, amount }) => ({
+      slot,
+      text: `${STAT_NAMES[stat] ?? stat} ${amount > 0 ? '+' : ''}${amount}`,
+      color: amount > 0 ? STAT_UP_COLOR : STAT_DOWN_COLOR,
+      left: this.centredOver(slot, STAT_LABEL_WIDTH),
+      top: this.hpLabelPosition(slot).top + STATUS_LABEL_DROP,
+    })),
+  );
+
   /** One Pokémon per side in singles (bigger), two in doubles. */
   private readonly layout = computed(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
@@ -499,7 +546,7 @@ export class BattleField {
     // After rendering, so the sprites the animations move are in place.
     afterRenderEffect(() => {
       const action = this.store.action();
-      if (action) untracked(() => this.lunge(action));
+      if (action) untracked(() => this.playMove(action));
     });
     afterRenderEffect(() => {
       const event = this.store.fieldEvent();
@@ -515,6 +562,11 @@ export class BattleField {
     this.showBySlot(this.store.popups, this.shownPopups, POPUP_MS);
     this.showBySlot(this.store.hpChanges, this.shownHpChanges, HP_LABEL_MS);
     this.showBySlot(this.store.statusChanges, this.shownStatusChanges, POPUP_MS);
+    // Each stat change also sends streaks of light up (raised) or down (lowered) over the Pokémon.
+    this.showBySlot(this.store.statChanges, this.shownStatChanges, POPUP_MS, ({ slot, amount }) => {
+      const at = this.effectPoint(slot);
+      if (at) this.effects()?.statChange(at, amount > 0, this.layout().spriteSize, this.store.speed());
+    });
 
     // Team preview lists every Pokémon that may come out: their sprites are fetched ahead, so a
     // send-out doesn't wait for the download (the player's side is seen from behind). So are their
@@ -557,12 +609,13 @@ export class BattleField {
   /**
    * Shows the store's latest pop-ups (or HP labels), one per slot: each new one replaces its slot's
    * current one, stays for `ms` (at normal speed), then goes. A new battle empties the list, and its
-   * pop-ups go with it.
+   * pop-ups go with it. `onShown` runs for each new one as it shows.
    */
   private showBySlot<T extends { id: number; slot: SlotKey }>(
     source: () => readonly T[],
     shown: WritableSignal<readonly T[]>,
     ms: number,
+    onShown?: (item: T) => void,
   ): void {
     let lastSeen = -1;
     const timers = new Map<SlotKey, ReturnType<typeof setTimeout>>();
@@ -579,6 +632,7 @@ export class BattleField {
           lastSeen = item.id;
           clearTimeout(timers.get(item.slot));
           shown.update((current) => [...current.filter((i) => i.slot !== item.slot), item]);
+          onShown?.(item);
           timers.set(
             item.slot,
             setTimeout(() => {
@@ -691,8 +745,67 @@ export class BattleField {
     }
   }
 
-  /** The attacker lunges at its targets (their middle, for a spread move) and comes back. */
-  private lunge(action: MoveAction): void {
+  /**
+   * A move's animation, by its category, in its type's colour. Physical (or unknown): the attacker
+   * lunges at its targets and each one it damages blinks under a burst as the lunge reaches it.
+   * Special: the attacker glows while an orb gathers on it and flies to each target, which blinks
+   * under a burst as the orb lands (a missed one sees it fade). Status: the attacker lunges (hops,
+   * with no target) and rings spread around the Pokémon it affects (itself, with no target).
+   */
+  private playMove(action: MoveAction): void {
+    const effects = this.effects();
+    if (!effects) return;
+    effects.stop();
+    const size = this.layout().spriteSize;
+    const speed = this.store.speed();
+    if (action.category === 'Special') {
+      this.glow(action.attacker);
+      const from = this.effectPoint(action.attacker);
+      const slots = new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits]);
+      const targets: EffectTarget[] = [...slots].flatMap((slot) => {
+        const at = this.effectPoint(slot);
+        return at ? [{ slot, at, hit: action.hits.includes(slot) }] : [];
+      });
+      if (from) effects.projectiles(from, targets, action.type, size, speed, (target) => {
+        if (target.hit) this.blink(target.slot);
+      });
+      else action.hits.forEach((slot) => this.blink(slot));
+      return;
+    }
+    this.lunge(action, () => {
+      if (action.category === 'Status') {
+        for (const slot of action.targets.length > 0 ? action.targets : [action.attacker]) {
+          const at = this.effectPoint(slot);
+          if (at) effects.aura(at, action.type, size, speed);
+        }
+      }
+      for (const slot of action.hits) {
+        this.blink(slot);
+        const at = this.effectPoint(slot);
+        if (at) effects.impact(at, action.type, size, speed);
+      }
+    });
+  }
+
+  /** Where a move's effect centres on a slot's Pokémon (its body, a little below the sprite's middle); null for an empty slot. */
+  private effectPoint(slot: SlotKey): EffectPoint | null {
+    const data = this.slotData(slot);
+    if (!data?.pokemon || data.pokemon.fainted) return null;
+    return { x: Math.round(data.left + data.size / 2), y: Math.round(data.top + data.size * 0.55) };
+  }
+
+  /** A special move's user glows as it gathers the attack. */
+  private glow(slot: SlotKey): void {
+    this.animate(slot, GLOW_MS, (el, _base, progress) => {
+      el.style.filter = progress < 1 ? `brightness(${Math.round((1 + (GLOW_BRIGHTNESS - 1) * outAndBack(progress)) * 100) / 100})` : '';
+    });
+  }
+
+  /**
+   * The attacker lunges at its targets (their middle, for a spread move) and comes back; `contact`
+   * runs as it reaches them.
+   */
+  private lunge(action: MoveAction, contact: () => void): void {
     const from = this.slotData(action.attacker);
     if (!from) return;
     const targets = action.targets.filter((t) => t !== action.attacker).map((t) => this.slotData(t)).filter((t): t is FieldSlot => !!t);
@@ -714,7 +827,7 @@ export class BattleField {
       el.style.top = `${Math.round(base.top + dy * amount)}px`;
       if (!struck && progress >= 0.5) {
         struck = true;
-        action.hits.forEach((slot) => this.blink(slot));
+        contact();
       }
     });
   }
