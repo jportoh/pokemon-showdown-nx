@@ -61,9 +61,9 @@ export function calcStat(stat: StatId, base: number, points: number, natureName:
   return value;
 }
 
-/** Stat points spent across all six stats. */
+/** Stat points spent across all six stats (anything that isn't a number counts as none). */
 export function totalStatPoints(spread: StatSpread): number {
-  return STAT_IDS.reduce((sum, stat) => sum + (spread[stat] ?? 0), 0);
+  return STAT_IDS.reduce((sum, stat) => sum + (Number.isFinite(spread[stat]) ? (spread[stat] as number) : 0), 0);
 }
 
 /**

@@ -239,39 +239,24 @@
   </div>
 </div>
 
-<!-- Stats tab: nature (next to the stats it changes) and, for a Mega, what it Mega Evolves into. -->
+<!--
+  Stats tab: the stat points and the nature right under the header and, for a Mega, what it Mega Evolves
+  into beside the stat points' title, over the side panel.
+-->
 <div [class.hidden]="tab() !== 'stats'">
   <div class="relative h-[580px] w-[920px]">
-    <div class="absolute top-0 left-6 w-[872px]">
-      <div class="relative h-[52px] w-[872px]">
-        <label for="field-nature" class="absolute top-[14px] left-0 w-[100px] text-sm text-gray-200"
-          >Nature</label
-        >
-        <select
-          #nature
-          id="field-nature"
-          [disabled]="!pokemon()"
-          (change)="update({ nature: nature.value })"
-          class="absolute top-2 left-[72px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
-        >
-          <option value="" [selected]="!pokemon()?.nature">No nature</option>
-          @for (option of natures; track option.name) {
-            <option [value]="option.name" [selected]="option.name === pokemon()?.nature">
-              {{ option.label }}
-            </option>
-          }
-        </select>
-        <p class="absolute top-[14px] left-[432px] w-[440px] text-sm text-gray-200">
-          {{ megaSummary() }}
-        </p>
-      </div>
+    <div class="absolute top-2 left-6 w-[872px]">
       @if (pokemon(); as current) {
         <app-set-stats
           [set]="current"
           [baseStats]="baseStats()"
           (pointsChanged)="updateStatPoints($event)"
+          (natureChanged)="update({ nature: $event })"
         />
       }
     </div>
+    <p class="absolute top-2 left-[476px] block h-7 w-[420px] overflow-hidden text-sm leading-7 whitespace-nowrap text-gray-200">
+      {{ megaSummary() }}
+    </p>
   </div>
 </div>

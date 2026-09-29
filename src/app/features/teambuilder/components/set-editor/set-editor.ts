@@ -2,7 +2,7 @@ import { Component, ElementRef, afterRenderEffect, computed, inject, input, link
 import { ChampionsDex, DexMega, DexSpecies, StatTable } from '@core/dex/champions-dex';
 import { ChooserOption, DexChooser } from '@features/teambuilder/components/dex-chooser/dex-chooser';
 import { SetStats } from '@features/teambuilder/components/set-stats/set-stats';
-import { MAX_NICKNAME_LENGTH, NATURES, STAT_IDS, natureLabel } from '@features/teambuilder/data/game-rules';
+import { MAX_NICKNAME_LENGTH, STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { ItemIcon } from '@shared/components/item-icon';
@@ -31,7 +31,7 @@ export class SetEditor {
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser = viewChild.required(DexChooser);
-  private readonly nature = viewChild.required<ElementRef<HTMLSelectElement>>('nature');
+  private readonly stats = viewChild(SetStats);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   readonly team = input<Team | undefined>(undefined);
@@ -63,7 +63,6 @@ export class SetEditor {
   protected readonly confirmingRemove = linkedSignal({ source: this.slotKey, computation: () => false });
 
   protected readonly moveFields = MOVE_FIELDS;
-  protected readonly natures = NATURES.map((nature) => ({ name: nature.name, label: natureLabel(nature) }));
   protected readonly maxNicknameLength = MAX_NICKNAME_LENGTH;
   protected readonly fieldButtonClass =
     'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_12px] text-left text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
@@ -201,7 +200,7 @@ export class SetEditor {
     });
     afterRenderEffect(() => {
       if (this.focusTabRequest() === 0) return;
-      if (untracked(this.tab) === 'stats') this.nature().nativeElement.focus();
+      if (untracked(this.tab) === 'stats') this.stats()?.focusFirst();
       else this.focusField('species');
     });
   }
