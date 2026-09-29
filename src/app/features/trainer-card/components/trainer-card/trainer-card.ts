@@ -1,14 +1,16 @@
 import { NgOptimizedImage } from '@angular/common';
-import { Component, ElementRef, Injector, afterNextRender, computed, inject, output, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { AvatarPicker } from '@features/trainer-card/components/avatar-picker/avatar-picker';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRating, LadderRatings } from '@features/trainer-card/state/ladder-ratings';
+import { PlayerDetails } from '@features/trainer-card/state/player-details';
 import { RetroBox } from '@shared/components/retro-box';
 import { BackAction } from '@shared/directives/back-action';
 import { RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
+import { toId } from '@shared/utils/to-id';
 
 /** Ladder rows the card has room for: the best ones. */
 const SHOWN_RATINGS = 4;
@@ -23,11 +25,12 @@ interface RatingRow {
 }
 
 /**
- * The player's Trainer Card, Gen 3 style, over the home screen (1088x568, as the login box): the
- * avatar in a frame, the name and totals across every ladder (battles, wins and losses, win rate),
- * and the best ladder ratings. Registered players only: guests have no ratings. The ratings are
- * loaded each time it opens. B or its Close button closes it (L too, from the home screen). A on
- * the avatar opens the avatar picker over the card.
+ * A Trainer Card, Gen 3 style, 1088x568 (as the login box): the avatar in a frame, the name and
+ * totals across every ladder (battles, wins and losses, win rate), and the best ladder ratings.
+ * The player's own (the home screen's L, registered players only: guests have no ratings), where A
+ * on the avatar opens the avatar picker over the card; or someone else's (`player`, e.g. whoever
+ * challenges us), whose avatar comes from the server's user details. The data is loaded each time
+ * it's shown. B or its Close button closes it (L too, from the home screen).
  * Brewser layout rules apply (see styles.css): fixed sizes, the rows always mounted as slots toggled
  * on normal-flow wrappers, text boxes at the text's natural line height.
  */
@@ -66,9 +69,12 @@ interface RatingRow {
         </dl>
 
         <!--
-          The avatar, twice its 80px size, in a frame that's also the button to change it: one new img per
-          sprite (Brewser doesn't repaint a changed src).
+          The avatar, twice its 80px size: one new img per sprite (Brewser doesn't repaint a changed src).
+          The player's own is in a frame that's also the button to change it. Only one of the two frames
+          exists (a card is either's for good): an img created inside a hidden frame was drawn anyway, at
+          the card's top left, on the console (2026-09-28).
         -->
+        @if (isSelf()) {
         <button
           #avatarButton
           type="button"
@@ -81,6 +87,14 @@ interface RatingRow {
           }
           <span aria-hidden="true" class="absolute top-[168px] left-[8px] block h-7 w-[184px] rounded-sm bg-retro-select text-center text-lg leading-7 font-bold text-retro-ink">Change avatar</span>
         </button>
+        } @else {
+          <!-- Someone else's: only shown, centred, once the server has said which it is (one img, not two). -->
+          <div class="absolute top-[112px] left-[826px] block size-[208px] rounded-lg border-4 border-retro-outline bg-retro-bg">
+            @for (src of othersAvatarSrc(); track src) {
+              <img [ngSrc]="src" width="80" height="80" [alt]="avatarAlt()" class="absolute top-[20px] left-[20px] block size-40 max-w-none [image-rendering:pixelated]" />
+            }
+          </div>
+        }
 
         <div aria-hidden="true" class="absolute top-[336px] left-[48px] block h-[3px] w-[986px] bg-retro-outline"></div>
         <h3 id="trainer-card-ladder-title" class="absolute top-[352px] left-[48px] block h-7 w-[480px] text-xl leading-7 font-bold">{{ ladderTitle() }}</h3>
@@ -124,16 +138,36 @@ export class TrainerCard {
   private readonly injector = inject(Injector);
   private readonly formats = inject(ShowdownFormats);
   private readonly ladder = inject(LadderRatings);
+  private readonly playerDetails = inject(PlayerDetails);
   private readonly closeButton = viewChild.required<ElementRef<HTMLButtonElement>>('closeButton');
-  private readonly avatarButton = viewChild.required<ElementRef<HTMLButtonElement>>('avatarButton');
+  private readonly avatarButton = viewChild<ElementRef<HTMLButtonElement>>('avatarButton');
 
+  /** Whose card: someone else's by name, or the player's own (null). */
+  readonly player = input<string | null>(null);
+  /**
+   * Shown. A page that keeps the card mounted and hides it passes this (removed, it would stay painted
+   * on Brewser): each showing loads the player's ratings again and focuses Close.
+   */
+  readonly active = input(true);
   readonly closed = output<void>();
 
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
   protected readonly slots = Array.from({ length: SHOWN_RATINGS }, (_, i) => i);
 
-  protected readonly avatarSrc = computed(() => [avatarUrl(this.login.state().avatar)]);
-  protected readonly avatarLabel = computed(() => `${this.login.state().name}'s avatar: change it`);
+  private readonly userId = computed(() => toId(this.player() ?? '') || this.login.userId());
+  protected readonly isSelf = computed(() => this.userId() === this.login.userId());
+  /** The details loaded for someone else (none while another player's are still there). */
+  private readonly others = computed(() => {
+    const state = this.playerDetails.state();
+    return state.userId === this.userId() ? state : null;
+  });
+  protected readonly name = computed(() => (this.isSelf() ? this.login.state().name : this.others()?.name || (this.player() ?? '')));
+  private readonly avatar = computed(() => (this.isSelf() ? this.login.state().avatar : (this.others()?.avatar ?? '')));
+
+  protected readonly avatarSrc = computed(() => [avatarUrl(this.avatar())]);
+  protected readonly othersAvatarSrc = computed(() => (this.others()?.status === 'loaded' ? [avatarUrl(this.avatar())] : []));
+  protected readonly avatarLabel = computed(() => `${this.name()}'s avatar: change it`);
+  protected readonly avatarAlt = computed(() => `${this.name()}'s avatar`);
   /** The avatar picker is shown over the card. */
   protected readonly picking = signal(false);
   protected readonly pickerMounted = signal(false);
@@ -141,7 +175,7 @@ export class TrainerCard {
   /** The ratings loaded for the player shown (none while another player's are still there). */
   private readonly ratings = computed(() => {
     const state = this.ladder.state();
-    return state.userId === this.login.userId() ? state.ratings : [];
+    return state.userId === this.userId() ? state.ratings : [];
   });
 
   private readonly loading = computed(() => this.ladder.state().status === 'loading' && this.ratings().length === 0);
@@ -153,7 +187,7 @@ export class TrainerCard {
     const losses = sum(ratings, (rating) => rating.losses);
     const ties = sum(ratings, (rating) => rating.ties);
     return [
-      { label: 'Name', value: this.login.state().name },
+      { label: 'Name', value: this.name() },
       { label: 'Battles', value: pending ?? String(wins + losses + ties) },
       { label: 'Wins – Losses', value: pending ?? `${wins} – ${losses}` },
       { label: 'Win rate', value: pending ?? winRate(wins, losses) },
@@ -191,8 +225,16 @@ export class TrainerCard {
   });
 
   constructor() {
-    this.ladder.load(this.login.userId());
-    afterNextRender(() => this.navigation.focus(this.closeButton().nativeElement));
+    // Each showing, and each other player shown (only these are tracked): their data, and Close focused.
+    effect(() => {
+      if (!this.active()) return;
+      const userId = this.userId();
+      untracked(() => {
+        this.ladder.load(userId);
+        if (!this.isSelf()) this.playerDetails.load(this.player() ?? userId);
+        afterNextRender(() => this.navigation.focus(this.closeButton().nativeElement), { injector: this.injector });
+      });
+    });
   }
 
   protected startPicking(): void {
@@ -208,7 +250,13 @@ export class TrainerCard {
   /** Back to the card, on its avatar. */
   protected stopPicking(): void {
     this.picking.set(false);
-    afterNextRender(() => this.navigation.focus(this.avatarButton().nativeElement), { injector: this.injector });
+    afterNextRender(
+      () => {
+        const button = this.avatarButton();
+        if (button) this.navigation.focus(button.nativeElement);
+      },
+      { injector: this.injector },
+    );
   }
 }
 

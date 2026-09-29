@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -10,6 +10,7 @@ import { ShowdownSearch } from '@features/connection/showdown-search';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { PlaySelection } from '@features/play/state/play-selection';
 import { TeamStore } from '@features/teambuilder/state/team-store';
+import { TrainerCard } from '@features/trainer-card/components/trainer-card/trainer-card';
 import { RetroBox } from '@shared/components/retro-box';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
 import { RETRO_PRIMARY_BUTTON } from '@shared/ui/retro-classes';
@@ -38,7 +39,7 @@ const SELECTOR_BUTTON =
  * d-pad stays in the box.
  */
 @Component({
-  imports: [ChallengeForm, ChallengePanel, ChallengePopup, OptionPicker, RetroBox, TeamPreview],
+  imports: [ChallengeForm, ChallengePanel, ChallengePopup, OptionPicker, RetroBox, TeamPreview, TrainerCard],
   selector: 'app-play-page',
   host: { class: 'bg-retro-bg relative block h-[644px] w-[1280px] text-retro-ink' },
   template: `
@@ -128,7 +129,16 @@ const SELECTOR_BUTTON =
     </div>
 
     @if (popupChallenge(); as challenge) {
-      <app-challenge-popup class="absolute top-[158px] left-[248px]" [challenge]="challenge" [waiting]="waitingBehind()" (later)="postpone(challenge.fromId)" />
+      <!-- Hidden (not removed) while the challenger's card is shown over it. -->
+      <div class="block" [class.hidden]="cardOpen()">
+        <app-challenge-popup
+          class="absolute top-[158px] left-[248px]"
+          [challenge]="challenge"
+          [waiting]="waitingBehind()"
+          (later)="postpone(challenge.fromId)"
+          (viewCard)="openCard(challenge.from)"
+        />
+      </div>
     } @else if (overlay() === 'format') {
       <app-option-picker
         class="absolute top-[24px] left-[32px]"
@@ -153,6 +163,16 @@ const SELECTOR_BUTTON =
         <app-challenge-form class="absolute top-[100px] left-[29px]" (closed)="close()" />
       </app-retro-box>
     }
+
+    <!--
+      A challenger's Trainer Card. Mounted the first time it's asked for, then only hidden: removed, the
+      card stayed painted over what was left on Brewser (the avatar picker did, 2026-09-28).
+    -->
+    @if (cardMounted()) {
+      <div class="block" [class.hidden]="!cardOpen()">
+        <app-trainer-card class="absolute top-[38px] left-[96px]" [player]="cardPlayer()" [active]="cardOpen()" (closed)="closeCard()" />
+      </div>
+    }
   `,
 })
 export class PlayPage {
@@ -168,6 +188,8 @@ export class PlayPage {
   protected readonly selection = inject(PlaySelection);
 
   private readonly formatButton = viewChild.required<ElementRef<HTMLButtonElement>>('formatButton');
+  private readonly challengePopup = viewChild(ChallengePopup);
+  private readonly injector = inject(Injector);
   private readonly teamButton = viewChild<ElementRef<HTMLButtonElement>>('teamButton');
   private readonly battleButton = viewChild.required<ElementRef<HTMLButtonElement>>('battleButton');
   private readonly challengePanel = viewChild.required('challengePanel', { read: ElementRef<HTMLElement> });
@@ -250,8 +272,15 @@ export class PlayPage {
   protected readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - 1));
   protected readonly postponedCount = computed(() => this.challenges.incoming().length - this.unanswered().length);
 
-  /** What's on top: a challenge first, then whatever the player opened, else the page itself. */
-  protected readonly layer = computed(() => (this.popupChallenge() ? 'popup' : (this.overlay() ?? 'page')));
+  /** A challenger's Trainer Card is shown (over their challenge), and whose it is (kept once closed). */
+  protected readonly cardOpen = signal(false);
+  protected readonly cardMounted = signal(false);
+  protected readonly cardPlayer = signal<string | null>(null);
+
+  /** What's on top: a challenger's card, their challenge, whatever the player opened, else the page itself. */
+  protected readonly layer = computed(() =>
+    this.cardOpen() ? 'card' : this.popupChallenge() ? 'popup' : (this.overlay() ?? 'page'),
+  );
 
   /** Where focus goes when the page shows again. */
   private returnTo: PageControl = 'battle';
@@ -289,6 +318,18 @@ export class PlayPage {
   protected pickTeam(id: string): void {
     this.selection.teamId.set(id);
     this.close();
+  }
+
+  protected openCard(name: string): void {
+    this.cardPlayer.set(name);
+    this.cardMounted.set(true);
+    this.cardOpen.set(true);
+  }
+
+  /** Back to the challenge, on the button that opened the card (or to the page, if it's gone meanwhile). */
+  protected closeCard(): void {
+    this.cardOpen.set(false);
+    afterNextRender(() => this.challengePopup()?.focusCardButton(), { injector: this.injector });
   }
 
   protected postpone(fromId: string): void {

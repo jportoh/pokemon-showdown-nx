@@ -6,7 +6,8 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
 
 /**
  * A challenge from another player, in a box over the Battle page while it waits for an answer:
- * Accept (only for formats that bring their own teams, for now) or Reject. B leaves it for later:
+ * Accept (only for formats that bring their own teams, for now) or Reject, after a look at the
+ * challenger's Trainer Card if the player wants (the page shows it). B leaves it for later:
  * the page keeps a button to come back to it. Focus starts on Accept (or Reject when it can't be accepted),
  * again for each challenge in line.
  */
@@ -48,7 +49,17 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
         </button>
         <!-- The shortcut and the label apart: an inline pill before the text threw the centring off on the console. -->
         <span aria-hidden="true" class="absolute top-[262px] left-[32px] block h-6 w-7 rounded-sm bg-retro-select text-center leading-6 font-bold">B</span>
-        <p class="absolute top-[260px] left-[68px] block h-7 w-[676px] text-base leading-7 text-retro-muted">Answer later</p>
+        <p class="absolute top-[260px] left-[68px] block h-7 w-[420px] text-base leading-7 text-retro-muted">Answer later</p>
+        <button
+          #cardButton
+          type="button"
+          [class]="secondaryClass"
+          class="absolute top-[250px] left-[524px] h-11 w-[220px] text-lg"
+          [attr.aria-label]="'See the Trainer Card of ' + challenge().from"
+          (click)="viewCard.emit()"
+        >
+          Trainer Card
+        </button>
       </div>
     </app-retro-box>
   `,
@@ -57,12 +68,15 @@ export class ChallengePopup {
   protected readonly challenges = inject(ShowdownChallenges);
   private readonly acceptButton = viewChild<ElementRef<HTMLButtonElement>>('accept');
   private readonly rejectButton = viewChild.required<ElementRef<HTMLButtonElement>>('reject');
+  private readonly cardButton = viewChild.required<ElementRef<HTMLButtonElement>>('cardButton');
 
   readonly challenge = input.required<Challenge>();
   /** How many other challenges wait behind this one. */
   readonly waiting = input(0);
   /** B: the challenge stays, unanswered, and the box closes. */
   readonly later = output<void>();
+  /** The challenger's Trainer Card was asked for (the page shows it over the box). */
+  readonly viewCard = output<void>();
 
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
@@ -75,5 +89,10 @@ export class ChallengePopup {
       this.challenge().fromId;
       untracked(() => (this.acceptButton() ?? this.rejectButton()).nativeElement.focus());
     });
+  }
+
+  /** Back from the challenger's card: on the button that opened it. */
+  focusCardButton(): void {
+    this.cardButton().nativeElement.focus();
   }
 }
