@@ -140,6 +140,8 @@ export class BattleScreen {
   protected readonly rematchView = computed(() => {
     const room = this.liveRoom();
     if (!room) return { can: false, label: '', note: '' };
+    // The next battle is on its way: it takes this one's place once it has something to show.
+    if (this.nextJoining()) return { can: true, label: 'Joining battle…', note: '' };
     // A game of a best-of set: its place goes to getting ready for the next game, until the set is over.
     const series = this.store.series();
     if (series) {
@@ -159,6 +161,9 @@ export class BattleScreen {
     const error = this.rematchAsked() ? this.challenges.error() : null;
     return { can: true, label: 'Rematch', note: error ?? '' };
   });
+
+  /** Over, with the next battle (a rematch, the set's next game) accepted or opening. */
+  private readonly nextJoining = computed(() => !!this.store.result() && (!!this.challenges.accepted() || this.rooms.joining()));
 
   /** The opponent's challenge to a rematch in this battle's format, if they've sent one. */
   private readonly theirRematch = computed(() => {
@@ -226,7 +231,7 @@ export class BattleScreen {
   /** The end's Rematch button (see rematchView), or Ready between the games of a set. */
   protected rematch(): void {
     const room = this.liveRoom();
-    if (!room) return;
+    if (!room || this.nextJoining()) return;
     const series = this.store.series();
     if (series) {
       // As the server's own button does, from the game's room to the set's.

@@ -13,7 +13,8 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
  * pick another) or Reject, after a look at the
  * challenger's Trainer Card if the player wants (the page shows it). B leaves it for later:
  * the page keeps a button to come back to it. Focus starts on Accept (or Reject when it can't be accepted),
- * again for each challenge in line.
+ * again for each challenge in line. Once accepted, the box stays with "Joining battle…" in place of its
+ * buttons until the battle has something to show (see BattleRooms), when App opens it.
  */
 @Component({
   imports: [BackAction, RetroBox],
@@ -21,7 +22,7 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
   host: { class: 'block' },
   template: `
     <app-retro-box [width]="784" [height]="328">
-      <div role="alertdialog" aria-labelledby="challenge-popup-title" aria-describedby="challenge-popup-text" class="block" (appBack)="later.emit()">
+      <div role="alertdialog" aria-labelledby="challenge-popup-title" aria-describedby="challenge-popup-text" class="block" (appBack)="back()">
         <h2 id="challenge-popup-title" class="absolute top-[24px] left-[32px] block h-12 w-[712px] truncate text-4xl leading-[48px] font-bold text-retro-accent-text">
           {{ challenge().from }} wants to battle!
         </h2>
@@ -29,41 +30,45 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
           {{ challenge().formatName }}{{ others() }}
           <span class="block text-lg text-retro-muted">{{ teamLine() }}</span>
         </p>
-        @if (canAccept()) {
+        @if (joining()) {
+          <p role="status" class="absolute top-[196px] left-[32px] block h-8 w-[712px] text-2xl leading-8 font-bold">Joining battle…</p>
+        } @else {
+          @if (canAccept()) {
+            <button
+              #accept
+              type="button"
+              [class]="primaryClass"
+              class="absolute top-[184px] left-[32px] h-14 w-[344px] text-2xl"
+              [attr.aria-label]="'Accept the challenge from ' + challenge().from"
+              (click)="acceptChallenge()"
+            >
+              Accept
+            </button>
+          }
           <button
-            #accept
+            #reject
             type="button"
-            [class]="primaryClass"
-            class="absolute top-[184px] left-[32px] h-14 w-[344px] text-2xl"
-            [attr.aria-label]="'Accept the challenge from ' + challenge().from"
-            (click)="acceptChallenge()"
+            [class]="secondaryClass"
+            class="absolute top-[184px] left-[400px] h-14 w-[344px] text-2xl"
+            [attr.aria-label]="'Reject the challenge from ' + challenge().from"
+            (click)="challenges.reject(challenge())"
           >
-            Accept
+            Reject
+          </button>
+          <!-- The shortcut and the label apart: an inline pill before the text threw the centring off on the console. -->
+          <span aria-hidden="true" class="absolute top-[262px] left-[32px] block h-6 w-7 rounded-sm bg-retro-select text-center leading-6 font-bold">B</span>
+          <p class="absolute top-[260px] left-[68px] block h-7 w-[420px] text-base leading-7 text-retro-muted">Answer later</p>
+          <button
+            #cardButton
+            type="button"
+            [class]="secondaryClass"
+            class="absolute top-[250px] left-[524px] h-11 w-[220px] text-lg"
+            [attr.aria-label]="'See the Trainer Card of ' + challenge().from"
+            (click)="viewCard.emit()"
+          >
+            Trainer Card
           </button>
         }
-        <button
-          #reject
-          type="button"
-          [class]="secondaryClass"
-          class="absolute top-[184px] left-[400px] h-14 w-[344px] text-2xl"
-          [attr.aria-label]="'Reject the challenge from ' + challenge().from"
-          (click)="challenges.reject(challenge())"
-        >
-          Reject
-        </button>
-        <!-- The shortcut and the label apart: an inline pill before the text threw the centring off on the console. -->
-        <span aria-hidden="true" class="absolute top-[262px] left-[32px] block h-6 w-7 rounded-sm bg-retro-select text-center leading-6 font-bold">B</span>
-        <p class="absolute top-[260px] left-[68px] block h-7 w-[420px] text-base leading-7 text-retro-muted">Answer later</p>
-        <button
-          #cardButton
-          type="button"
-          [class]="secondaryClass"
-          class="absolute top-[250px] left-[524px] h-11 w-[220px] text-lg"
-          [attr.aria-label]="'See the Trainer Card of ' + challenge().from"
-          (click)="viewCard.emit()"
-        >
-          Trainer Card
-        </button>
       </div>
     </app-retro-box>
   `,
@@ -71,8 +76,8 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
 export class ChallengePopup {
   protected readonly challenges = inject(ShowdownChallenges);
   private readonly acceptButton = viewChild<ElementRef<HTMLButtonElement>>('accept');
-  private readonly rejectButton = viewChild.required<ElementRef<HTMLButtonElement>>('reject');
-  private readonly cardButton = viewChild.required<ElementRef<HTMLButtonElement>>('cardButton');
+  private readonly rejectButton = viewChild<ElementRef<HTMLButtonElement>>('reject');
+  private readonly cardButton = viewChild<ElementRef<HTMLButtonElement>>('cardButton');
 
   readonly challenge = input.required<Challenge>();
   /** How many other challenges wait behind this one. */
@@ -98,6 +103,9 @@ export class ChallengePopup {
   });
   private readonly team = computed(() => this.teams()[this.teamIndex()] ?? null);
 
+  /** Accepted: waiting for the battle to open. */
+  protected readonly joining = computed(() => this.challenges.accepted()?.fromId === this.challenge().fromId);
+
   protected readonly canAccept = computed(() => !this.challenge().needsTeam || this.team() !== null);
 
   protected readonly teamLine = computed(() => {
@@ -117,7 +125,7 @@ export class ChallengePopup {
     // Each challenge shown (the first, then the next one in line) starts on its first button.
     afterRenderEffect(() => {
       this.challenge().fromId;
-      untracked(() => (this.acceptButton() ?? this.rejectButton()).nativeElement.focus());
+      untracked(() => (this.acceptButton() ?? this.rejectButton())?.nativeElement.focus());
     });
   }
 
@@ -126,16 +134,21 @@ export class ChallengePopup {
     this.challenges.accept(this.challenge(), this.challenge().needsTeam && team ? packTeam(team.sets) : null);
   }
 
+  /** B: for later, unless it's accepted already. */
+  protected back(): void {
+    if (!this.joining()) this.later.emit();
+  }
+
   /** L/R: the previous or next team to accept with (wrapping around), when there's more than one. */
   private cycleTeam(step: 1 | -1): boolean {
     const count = this.teams().length;
-    if (!this.challenge().needsTeam || count < 2) return false;
+    if (!this.challenge().needsTeam || count < 2 || this.joining()) return false;
     this.teamIndex.set((this.teamIndex() + step + count) % count);
     return true;
   }
 
   /** Back from the challenger's card: on the button that opened it. */
   focusCardButton(): void {
-    this.cardButton().nativeElement.focus();
+    this.cardButton()?.nativeElement.focus();
   }
 }

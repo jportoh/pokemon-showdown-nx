@@ -3,6 +3,7 @@ import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { merge } from 'rxjs';
 import { formatName } from '@shared/data/formats';
 import { toId } from '@shared/utils/to-id';
+import { BattleRooms } from './battle-rooms';
 import { ShowdownConnection } from './showdown-connection';
 import { ShowdownLogin } from './showdown-login';
 import { splitLine } from './showdown-protocol';
@@ -44,9 +45,12 @@ export class ShowdownChallenges {
   private readonly connection = inject(ShowdownConnection);
   private readonly login = inject(ShowdownLogin);
   private readonly render = inject(RenderScheduler);
+  private readonly rooms = inject(BattleRooms);
   private readonly incomingSignal = signal<readonly Challenge[]>([]);
   private readonly errorSignal = signal<string | null>(null);
   private readonly outgoingSignal = signal<OutgoingChallenge | null>(null);
+  private readonly acceptedSignal = signal<Challenge | null>(null);
+  private acceptTimer: ReturnType<typeof setTimeout> | null = null;
   /** When we last accepted, rejected or challenged: a popup soon after is the server's answer. */
   private answeredAt = 0;
   /** The server has echoed our challenge back: it went out. */
@@ -59,6 +63,8 @@ export class ShowdownChallenges {
   readonly error = this.errorSignal.asReadonly();
   /** The challenge we sent, while it waits for an answer. */
   readonly outgoing = this.outgoingSignal.asReadonly();
+  /** The challenge we accepted, until its battle has something to show (or it failed). */
+  readonly accepted = this.acceptedSignal.asReadonly();
 
   constructor() {
     this.connection.frames.subscribe((frame) => {
@@ -74,7 +80,9 @@ export class ShowdownChallenges {
     merge(this.connection.opened, this.connection.ended).subscribe(() => {
       this.setIncoming([]);
       this.setOutgoing(null);
+      this.setAccepted(null);
     });
+    this.rooms.started.subscribe(() => this.setAccepted(null));
   }
 
   /** Challenges a player, with our packed team in formats that need one (null in random formats). */
@@ -108,6 +116,15 @@ export class ShowdownChallenges {
     this.answer(challenge);
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/accept ${challenge.fromId}`);
+    this.setAccepted(challenge);
+    // No battle room by then, and no refusal either: it isn't coming.
+    this.acceptTimer = setTimeout(() => {
+      this.acceptTimer = null;
+      if (this.acceptedSignal() && !this.rooms.joining()) {
+        this.setAccepted(null);
+        this.setError('The battle did not start.');
+      }
+    }, ANSWER_WINDOW_MS);
   }
 
   reject(challenge: Challenge): void {
@@ -171,6 +188,7 @@ export class ShowdownChallenges {
   /** An error after challenging ("The user 'ffenrix' was not found.") means the challenge didn't go out. */
   private onPopup(error: string): void {
     this.setOutgoing(null);
+    this.setAccepted(null);
     // A popup's "||" is a line break.
     this.setError(error.replace(/\|\|/g, ' ').trim());
   }
@@ -182,6 +200,15 @@ export class ShowdownChallenges {
       this.confirmTimer = null;
     }
     this.outgoingSignal.set(challenge);
+    this.render.request();
+  }
+
+  private setAccepted(challenge: Challenge | null): void {
+    if (!challenge && this.acceptTimer !== null) {
+      clearTimeout(this.acceptTimer);
+      this.acceptTimer = null;
+    }
+    this.acceptedSignal.set(challenge);
     this.render.request();
   }
 

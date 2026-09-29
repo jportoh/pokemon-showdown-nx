@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
+import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -184,6 +185,7 @@ export class PlayPage {
   private readonly teamStore = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly challenges = inject(ShowdownChallenges);
+  private readonly rooms = inject(BattleRooms);
   private readonly connection = inject(ShowdownConnection);
   private readonly login = inject(ShowdownLogin);
   private readonly search = inject(ShowdownSearch);
@@ -252,6 +254,7 @@ export class PlayPage {
   /** Under BATTLE!: what it does now, or what it's waiting for. */
   protected readonly battleLine = computed(() => {
     if (this.session.active()) return 'Back to your battle';
+    if (this.rooms.joining()) return 'Joining battle…';
     if (this.searching()) return 'Searching for an opponent…';
     if (!this.hasTeam()) return 'Build a team for this format first';
     const status = this.login.state().status;
@@ -270,7 +273,8 @@ export class PlayPage {
   private readonly unanswered = computed(() =>
     this.challenges.incoming().filter((challenge) => !this.postponed().includes(challenge.fromId)),
   );
-  protected readonly popupChallenge = computed(() => this.unanswered()[0] ?? null);
+  /** The challenge in the box: the one accepted while its battle opens, else the next one unanswered. */
+  protected readonly popupChallenge = computed(() => this.challenges.accepted() ?? this.unanswered()[0] ?? null);
   /** The teams the challenge on show can be accepted with (its format's, or the one it borrows them from). */
   protected readonly popupTeams = computed(() => {
     const challenge = this.popupChallenge();
@@ -278,7 +282,7 @@ export class PlayPage {
     const teamFormat = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.teamFormat ?? challenge.format;
     return this.teamStore.teams().filter((team) => team.format === teamFormat && team.sets.length > 0);
   });
-  protected readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - 1));
+  protected readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - (this.challenges.accepted() ? 0 : 1)));
   protected readonly postponedCount = computed(() => this.challenges.incoming().length - this.unanswered().length);
 
   /** A challenger's Trainer Card is shown (over their challenge), and whose it is (kept once closed). */
@@ -380,6 +384,8 @@ export class PlayPage {
       void this.router.navigateByUrl('/battle');
       return;
     }
+    // A match was found: its battle opens by itself.
+    if (this.rooms.joining()) return;
     if (this.searching()) {
       this.search.cancel();
       return;
