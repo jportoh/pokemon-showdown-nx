@@ -57,6 +57,13 @@ export interface BattleRequest {
   forceSwitch?: boolean[];
   /** Nothing to choose: the opponent is choosing. */
   wait?: boolean;
+  /**
+   * Team preview (formats played with our own teams): pick the Pokémon to bring, in order, the first
+   * ones leading (`/choose team 3142`).
+   */
+  teamPreview?: boolean;
+  /** How many to bring (VGC: 4 of 6); all of them when absent. */
+  maxChosenTeamSize?: number;
   side: { name: string; id: SideId; pokemon: RequestPokemon[] };
 }
 

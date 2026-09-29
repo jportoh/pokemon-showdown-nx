@@ -7,6 +7,7 @@ import { BattleField } from '@features/battle/components/battle-field/battle-fie
 import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
+import { BattleTeamSelect } from '@features/battle/components/battle-team-select/battle-team-select';
 import { BattleTeamSheet } from '@features/battle/components/battle-team-sheet/battle-team-sheet';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
@@ -49,6 +50,7 @@ const FORFEIT_CONFIRM_MS = 4000;
     BattleHeader,
     BattleLog,
     BattleTeamPreview,
+    BattleTeamSelect,
     BattleTeamSheet,
     ReplayControls,
     SpectatorControls,
@@ -93,6 +95,9 @@ const FORFEIT_CONFIRM_MS = 4000;
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
       <!-- Our tiles pick switches: B there works as in the command panel. -->
       <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
+
+      <!-- Team preview: picking the Pokémon to bring, over the field and the panel while the server asks. -->
+      <app-battle-team-select #teamSelect class="absolute top-[48px] left-[12px]" (appBack)="teamSelect.undo()" />
 
       <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
