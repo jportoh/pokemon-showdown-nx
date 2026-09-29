@@ -260,6 +260,8 @@ export interface BattleConnection {
   undo?(): void;
   /** Asks for the battle timer on or off; absent where there's no timer (replays, spectating). */
   setTimer?(on: boolean): void;
+  /** Agrees to the open team sheets offered at team preview (Open Team Sheets formats); absent where there's no offer. */
+  acceptTeamSheets?(): void;
   stop(): void;
 }
 

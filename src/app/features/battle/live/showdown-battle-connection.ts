@@ -53,6 +53,10 @@ export class ShowdownBattleConnection implements BattleConnection {
     this.rooms.send(this.roomId, on ? '/timer on' : '/timer off');
   }
 
+  acceptTeamSheets(): void {
+    this.rooms.send(this.roomId, '/acceptopenteamsheets');
+  }
+
   forfeit(): void {
     this.rooms.send(this.roomId, '/forfeit');
   }

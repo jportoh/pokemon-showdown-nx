@@ -6,7 +6,7 @@ import { BattleControls } from '@features/battle/components/battle-controls/batt
 import { BattleField } from '@features/battle/components/battle-field/battle-field';
 import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
-import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
+import { BattleTeamPreview, SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleTeamSelect } from '@features/battle/components/battle-team-select/battle-team-select';
 import { BattleTeamSheet } from '@features/battle/components/battle-team-sheet/battle-team-sheet';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
@@ -37,7 +37,8 @@ const FORFEIT_CONFIRM_MS = 4000;
  * side's and the player's team. The battle log shows over the field's right part only on request
  * (hidden, not removed: see BattleLog). The battle itself lives in root services.
  * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL
- * shows or hides the opponent's open team sheet (formats that have one), ZR shows or hides the battle log (B hides
+ * shows or hides the opponent's open team sheet (formats that have one; where both players must agree to them,
+ * the first press agrees), ZR shows or hides the battle log (B hides
  * either too), R3 turns the battle timer on or off (real battles). A replay swaps the command panel for playback
  * controls and has nothing to forfeit.
  */
@@ -90,22 +91,31 @@ const FORFEIT_CONFIRM_MS = 4000;
 
       <!-- From 8px under the header to the bottom of the command buttons (708). -->
       <!-- Its tiles can be pointed at, to see what's known of them: B there goes back to the command panel (to its button, watching live). -->
-      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheetHint]="hasSheet()" [sheetOpen]="sheetOpen()" (toggleSheet)="toggleSheet()" (appBack)="leaveOpponentTeam()" />
+      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheet]="sheetButton()" [sheetOpen]="sheetOpen()" (toggleSheet)="pressSheet()" (appBack)="leaveOpponentTeam()" />
       <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
       <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
       <!-- Our tiles pick switches: B there works as in the command panel. -->
       <app-battle-team-preview #ownTeam class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
 
-      <!-- Team preview: picking the Pokémon to bring, over the field and the panel while the server asks. -->
-      <app-battle-team-select #teamSelect class="absolute top-[48px] left-[12px]" (appBack)="teamSelect.undo()" />
+      <!-- Team preview: picking the Pokémon to bring, over everything under the header while the server asks. -->
+      <app-battle-team-select
+        #teamSelect
+        class="absolute top-[48px] left-0"
+        [sheet]="sheetButton()"
+        (sheetPressed)="pressSheet()"
+        (appBack)="teamSelect.undo()"
+      />
 
       <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
       <!-- The opponent's open team sheet over the whole field, likewise always mounted. -->
       <app-battle-team-sheet class="absolute top-[48px] left-[12px]" [open]="sheetOpen()" (appBack)="closeSheet()" />
 
-      <!-- Until the server has the battle going (team preview, or its start), in place of an empty field. -->
+      <!--
+        Until the server has the battle going (team preview, or its start), in place of an empty field. Battles
+        normally open once they have something to show (see BattleRooms): this covers one slow to.
+      -->
       @if (joining()) {
         <div role="status" class="absolute top-0 left-0 block h-[720px] w-[1280px] bg-header">
           <p class="absolute top-[330px] left-0 block h-[60px] w-[1280px] text-center text-4xl leading-[60px] font-bold">Joining battle…</p>
@@ -186,8 +196,12 @@ export class BattleScreen {
   private focusBeforeLog: HTMLElement | null = null;
 
   protected readonly sheetOpen = signal(false);
-  /** The opponent's open team sheet has come (Open Team Sheets formats): ZL shows it. */
-  protected readonly hasSheet = computed(() => !!this.store.teamSheets().p2);
+  /** What ZL does: shows the opponent's open team sheet once it's here, or agrees to them while offered. */
+  protected readonly sheetButton = computed((): SheetButton | null => {
+    if (this.store.teamSheets().p2) return 'sheet';
+    const offer = this.store.sheetOffer();
+    return offer === 'offered' ? 'accept' : offer === 'accepted' ? 'waiting' : null;
+  });
 
   constructor() {
     // After a ladder match or an accepted challenge: the real battle in its server room. From the list
@@ -207,7 +221,7 @@ export class BattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
-      this.navigation.registerButton('buttonZL', () => this.hasSheet() && this.toggleSheet()),
+      this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
       this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
     ];
@@ -330,8 +344,16 @@ export class BattleScreen {
     return true;
   }
 
-  /** ZL or the opponent's card's button: shows their team sheet (which takes focus) or hides it. */
-  protected toggleSheet(): boolean {
+  /** ZL or the opponent's card's button: agrees to open team sheets, or shows or hides the opponent's. */
+  protected pressSheet(): boolean {
+    const button = this.sheetButton();
+    if (button === 'accept') this.store.acceptTeamSheets();
+    else if (button === 'sheet') this.toggleSheet();
+    return button !== null;
+  }
+
+  /** Shows the opponent's team sheet (which takes focus) or hides it. */
+  private toggleSheet(): boolean {
     if (this.sheetOpen()) {
       this.closeSheet();
     } else {

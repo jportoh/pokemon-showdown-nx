@@ -54,6 +54,9 @@ import {
   weatherText,
 } from './battle-text';
 
+/** Open team sheets offered at team preview: 'offered' to answer, 'accepted' by us while the opponent decides. */
+export type SheetOffer = 'none' | 'offered' | 'accepted';
+
 /** How long each step of the log stays on screen before the next one (at normal speed). */
 const MESSAGE_MS = 1100;
 /** A damage or heal step: long enough to see the HP bar move. */
@@ -202,6 +205,7 @@ export class BattleStore {
   private readonly seriesInfoSignal = signal<SeriesInfo | null>(null);
   private readonly seriesScoreSignal = signal<SeriesScore | null>(null);
   private readonly readySignal = signal<ReadyState>('none');
+  private readonly sheetOfferSignal = signal<SheetOffer>('none');
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -273,6 +277,12 @@ export class BattleStore {
    * preview, `|showteam|p2|…`, with everything but stats.
    */
   readonly teamSheets = this.teamSheetsSignal.asReadonly();
+  /**
+   * The open team sheets offered at team preview in formats where both players have to agree
+   * (`|uhtml|otsrequest|…`): still to answer, or accepted by us while the opponent decides. Back to
+   * 'none' when the sheets come, the opponent rejects them, or the battle starts.
+   */
+  readonly sheetOffer = this.sheetOfferSignal.asReadonly();
   /** Between games of a set: whether the server asks if we're ready for the next one. */
   readonly ready = this.readySignal.asReadonly();
 
@@ -391,6 +401,7 @@ export class BattleStore {
     this.seriesInfoSignal.set(null);
     this.seriesScoreSignal.set(null);
     this.readySignal.set('none');
+    this.sheetOfferSignal.set('none');
   }
 
   /** Sends the turn's choices ("move 1 2, switch 3"); the request is used up. */
@@ -432,6 +443,14 @@ export class BattleStore {
     this.timerRequesters.delete(me);
     this.timerCooldownUntilSignal.set(Date.now() + TIMER_COOLDOWN_MS);
     if (this.timerRequesters.size === 0) this.timerSignal.set(null);
+    this.renderScheduler.request();
+  }
+
+  /** Agrees to the open team sheets offered: they show once the opponent agrees too. */
+  acceptTeamSheets(): void {
+    if (this.sheetOfferSignal() !== 'offered' || !this.connection?.acceptTeamSheets) return;
+    this.connection.acceptTeamSheets();
+    this.sheetOfferSignal.set('accepted');
     this.renderScheduler.request();
   }
 
@@ -489,8 +508,12 @@ export class BattleStore {
     let hasLog = false;
     let hasRequest = false;
     for (const line of frame.split('\n')) {
-      // A room frame starts with ">battle-…"; this screen shows a single battle.
-      if (!line.startsWith('|')) continue;
+      // A room frame starts with ">battle-…"; this screen shows a single battle. Chat commands' notices
+      // come as bare text: the opponent turning down the open team sheets is one.
+      if (!line.startsWith('|')) {
+        if (line.endsWith(' rejected open team sheets.')) this.setSheetOffer('none');
+        continue;
+      }
       if (line.startsWith('|request|')) {
         const json = line.slice('|request|'.length);
         if (json) this.pendingRequest = JSON.parse(json) as BattleRequest;
@@ -597,6 +620,12 @@ export class BattleStore {
     if (line.startsWith('|showteam|')) {
       const [, , side, ...packed] = line.split('|');
       if (side === 'p1' || side === 'p2') this.teamSheetsSignal.update((sheets) => ({ ...sheets, [side]: packed.join('|') }));
+      this.sheetOfferSignal.set('none');
+    } else if (line.startsWith('|uhtml|otsrequest|') || line.startsWith('|uhtmlchange|otsrequest|')) {
+      // The offer's buttons, then emptied once we've answered (kept as accepted then), someone rejected, or the battle started.
+      const offered = line.length > '|uhtml|otsrequest|'.length && line.startsWith('|uhtml|');
+      if (offered) this.sheetOfferSignal.set('offered');
+      else if (this.sheetOfferSignal() === 'offered') this.sheetOfferSignal.set('none');
     } else if (line.startsWith('|uhtml|bestof|') || line.startsWith('|uhtmlchange|bestof|')) {
       const info = parseSeriesTitle(line);
       if (info) this.seriesInfoSignal.set(info);
@@ -611,6 +640,11 @@ export class BattleStore {
     }
     this.renderScheduler.request();
     return true;
+  }
+
+  private setSheetOffer(offer: SheetOffer): void {
+    this.sheetOfferSignal.set(offer);
+    this.renderScheduler.request();
   }
 
   /** Stops our clock where it is: we've chosen (the server doesn't count the time we wait). */
@@ -718,6 +752,8 @@ export class BattleStore {
       case 'start': {
         const { p1, p2 } = this.sidesSignal();
         this.introSignal.set({ p1: p1.name, p2: p2.name });
+        // Too late to agree to the open team sheets now.
+        this.sheetOfferSignal.set('none');
         this.say(`Battle started between ${p1.name} and ${p2.name}!`);
         return INTRO_MS;
       }

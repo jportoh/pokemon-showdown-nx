@@ -23,6 +23,9 @@ const BAR_WIDTH = 56;
 const MAX_NAME_CHARS = 30;
 const MAX_TEAM = PER_ROW * 2;
 
+/** What the opponent's card's ZL button does: see BattleTeamPreview.sheet. */
+export type SheetButton = 'sheet' | 'accept' | 'waiting';
+
 interface Tile {
   key: string;
   sprite: string;
@@ -73,22 +76,22 @@ interface Tile {
         aria-hidden="true"
         class="absolute top-[4px] left-[10px] block h-4 overflow-hidden text-xs leading-4 font-bold whitespace-nowrap uppercase"
         [class]="side() === 'p1' ? 'text-sky-300' : 'text-red-300'"
-        [style.width.px]="sheetHint() ? 160 : 251"
+        [style.width.px]="sheet() ? 160 : 251"
         >{{ ownerLabel() }}</span
       >
-      <!-- The opponent's open team sheet: ZL (or a click), not the d-pad. -->
-      <div class="block" [class.hidden]="!sheetHint()">
+      <!-- The opponent's open team sheet (or agreeing to show them): ZL (or a click), not the d-pad. -->
+      <div class="block" [class.hidden]="!sheet()">
         <button
           type="button"
           data-kb-skip
           class="absolute top-[2px] left-[176px] block h-5 w-[88px] rounded-sm border p-0 text-[11px] font-bold text-white"
           [class]="sheetOpen() ? 'border-sky-300 bg-[#2c4a78]' : 'border-gray-500 bg-tab hover:bg-tab-hover'"
           [attr.aria-expanded]="sheetOpen()"
-          aria-label="Opponent's team sheet"
+          [attr.aria-label]="sheetAriaLabel()"
           (click)="toggleSheet.emit()"
         >
           <span aria-hidden="true" class="absolute top-[1px] left-[3px] block h-4 w-[22px] rounded-sm bg-header text-center leading-4">ZL</span>
-          <span aria-hidden="true" class="absolute top-0 left-[28px] block h-[18px] w-[56px] text-center leading-[18px]">Sheet</span>
+          <span aria-hidden="true" class="absolute top-0 left-[28px] block h-[18px] w-[56px] text-center leading-[18px]">{{ sheetLabel() }}</span>
         </button>
       </div>
       @for (tile of tiles(); track tile.key) {
@@ -143,8 +146,11 @@ export class BattleTeamPreview {
   private readonly inspection = inject(PokemonInspection);
 
   readonly side = input.required<SideId>();
-  /** The opponent's card offers their open team sheet (ZL), when there is one. */
-  readonly sheetHint = input(false);
+  /**
+   * The opponent's card's ZL button: their open team sheet, when it's here; agreeing to open team sheets,
+   * while offered; waiting for the opponent to agree too; or none.
+   */
+  readonly sheet = input<SheetButton | null>(null);
   readonly sheetOpen = input(false);
   readonly toggleSheet = output<void>();
 
@@ -217,6 +223,16 @@ export class BattleTeamPreview {
    * "SC-Control's team: Garchomp 64%, in battle; Incineroar, fainted; Amoonguss, not sent out". Our
    * own tiles are buttons with their own labels: the group just names the team.
    */
+  protected readonly sheetLabel = computed(() => ({ sheet: 'Sheet', accept: 'Accept', waiting: 'Waiting' })[this.sheet() ?? 'sheet']);
+  protected readonly sheetAriaLabel = computed(
+    () =>
+      ({
+        sheet: "Opponent's team sheet",
+        accept: 'Accept open team sheets',
+        waiting: 'Open team sheets accepted: waiting for the opponent',
+      })[this.sheet() ?? 'sheet'],
+  );
+
   protected readonly ariaLabel = computed(() => {
     const owner = this.owner();
     if (this.side() === 'p1' || this.inspectable()) return `${owner}'s team`;
