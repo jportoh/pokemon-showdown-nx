@@ -1014,6 +1014,10 @@ export class BattleStore {
     if (command === '-miss' && args[1]) this.popup(args[1], 'notice', 'Missed!');
     // An immunity from an ability (Levitate, Water Absorb…) already pops up as that ability.
     if (command === '-immune' && !from.startsWith('ability: ')) this.popup(args[0], 'notice', 'No effect!');
+    // A move whose conditions weren't met (Sucker Punch, Fake Out after the first turn…); an
+    // ability stopping it already pops up as that ability.
+    if (command === '-fail' && !from.startsWith('ability: ')) this.popup(args[0], 'notice', 'Failed!');
+    if (command === '-notarget' && args[0]) this.popup(args[0], 'notice', 'No target!');
     if (command === 'cant') this.popup(args[0], 'notice', cantLabel(args[1] ?? ''));
     if (command === '-start') {
       const perish = perishCount(effectName(args[1]));
