@@ -47,7 +47,7 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
  * 12–15, the standard mapping's positions for those labels). L=4, R=5 and R3=11 (the right stick
- * pressed) are the standard mapping's too; R3 not yet seen on device.
+ * pressed) are the standard mapping's too.
  */
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [0, 'accept'],
