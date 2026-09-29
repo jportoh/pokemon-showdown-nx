@@ -84,6 +84,16 @@ function isBattleLine(line: string): boolean {
   return line.startsWith('|') && !ROOM_LINES.has(line.slice(1).split('|')[0]);
 }
 
+/**
+ * A room's first frame (`|init|battle` and the log so far) for a battle already past its first turn:
+ * we're back in one we left (the app closed mid-battle), so the log is caught up, not played again. A
+ * new battle's first frame goes no further than turn 1, whose lead-ins still play out.
+ */
+function isRejoin(frame: string): boolean {
+  const lines = frame.split('\n');
+  return lines.includes('|init|battle') && lines.some((line) => line.startsWith('|turn|') && Number(line.slice('|turn|'.length)) > 1);
+}
+
 /** Showdown won't let a player turn the timer back on this soon after turning it off. */
 const TIMER_COOLDOWN_MS = 20_000;
 
@@ -417,7 +427,7 @@ export class BattleStore {
   }
 
   /**
-   * Watching live, the battle so far: applied at once with nothing left animating, so the screen shows
+   * Watching live or back in a battle we left, the battle so far: applied at once with nothing left animating, so the screen shows
    * the battle as it stands and only what happens from now on plays out.
    */
   private catchUp(): void {
@@ -475,7 +485,7 @@ export class BattleStore {
     // The opponent has chosen (the turn's log is here) or there's something new to choose. Chat and
     // players joining don't count.
     if (hasRequest || frame.split('\n').some(isBattleLine)) this.canUndoSignal.set(false);
-    if (this.catchingUp && hasLog) {
+    if ((this.catchingUp || isRejoin(frame)) && hasLog) {
       this.catchUp();
       return;
     }
