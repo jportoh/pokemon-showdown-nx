@@ -52,7 +52,8 @@ function stageText(stage: number): string {
  * its trainer, name, level, types (or its Tera type once Terastallized), HP and status on the left;
  * its base stats as bars, with its stat stages while it's on the field, in the middle; on the right,
  * its item and ability once the battle has revealed them (until then the abilities it may have), and
- * the moves it has used so far. A fixed 645x148 card with absolutely placed rows (Brewser layout
+ * the moves it has used so far. With an open team sheet (Open Team Sheets formats) all of those, and
+ * its nature, are known from the start. A fixed 645x148 card with absolutely placed rows (Brewser layout
  * rules); colours are always bound, never null.
  */
 @Component({
@@ -148,14 +149,16 @@ export class BattlePokemonInfo {
   protected readonly view = computed(() => {
     const inspected = this.inspected();
     if (!inspected) return { ...EMPTY_VIEW, label: 'Pokémon details: point at a Pokémon on the right' };
-    const { side, member } = inspected;
+    const { side, member, sheet } = inspected;
     const seen = member.seen;
     const species = seen?.species ?? member.species;
     const info = speciesInfo(species);
     const name = seen?.name ?? member.species;
     const owner = this.owner();
 
-    const subtitle = [seen ? `Lv ${seen.level}` : '', seen?.gender === 'M' ? '♂' : seen?.gender === 'F' ? '♀' : '', name !== species ? species : '']
+    const gender = seen?.gender || sheet?.gender;
+    const nature = sheet?.nature ?? '';
+    const subtitle = [seen ? `Lv ${seen.level}` : '', gender === 'M' ? '♂' : gender === 'F' ? '♀' : '', name !== species ? species : '', nature]
       .filter(Boolean)
       .join(' · ');
 
@@ -195,18 +198,21 @@ export class BattlePokemonInfo {
         })
       : [];
 
-    const itemName = seen?.item ?? '';
     const lost = seen?.lostItem ?? '';
-    const item = itemName || (lost ? `No item (${lost} gone)` : 'Item not revealed');
+    // The sheet's item until the battle shows it used up or knocked off.
+    const itemName = seen?.item || (lost ? '' : (sheet?.item ?? ''));
+    const item = itemName || (lost ? `No item (${lost} gone)` : sheet ? 'No item' : 'Item not revealed');
 
     const possible = info?.abilities ?? [];
-    const abilityKnown = !!seen?.ability || possible.length === 1;
-    const ability = seen?.ability || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
+    const known = seen?.ability || sheet?.ability;
+    const abilityKnown = !!known || possible.length === 1;
+    const ability = known || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
 
     const moves = Array.from({ length: MOVE_SLOTS }, (_, i) => {
-      const move = seen?.moves[i];
+      // The sheet's moves in its order; without one, those used so far.
+      const move = sheet ? sheet.moves[i] : seen?.moves[i];
       const top = MOVE_TOP + i * MOVE_ROW;
-      if (!move) return { name: 'Move not revealed', known: false, top, color: '#111827' };
+      if (!move) return { name: sheet ? '—' : 'Move not revealed', known: false, top, color: '#111827' };
       const data = moveInfo(move);
       return { name: data?.name ?? move, known: true, top, color: typeColor(data?.type ?? '') || '#4b5563' };
     });
@@ -215,6 +221,7 @@ export class BattlePokemonInfo {
     const label = [
       `${owner ? `${owner}'s ` : ''}${name}${name !== species ? ` (${species})` : ''}`,
       seen ? `level ${seen.level}` : '',
+      nature ? `${nature} nature` : '',
       types.map((t) => t.text).join(' and ') + (types.length ? ' type' : ''),
       hp ? `${hp.text} HP` : '',
       status ? status.name : '',
@@ -222,7 +229,7 @@ export class BattlePokemonInfo {
       stats.map((s) => `base ${s.label} ${s.value}${s.stage ? ` (${s.stageText})` : ''}`).join(', '),
       item,
       abilityKnown ? `ability ${ability}` : ability,
-      knownMoves.length ? `moves used: ${knownMoves.join(', ')}` : 'no moves used yet',
+      knownMoves.length ? `${sheet ? 'moves' : 'moves used'}: ${knownMoves.join(', ')}` : 'no moves used yet',
     ]
       .filter(Boolean)
       .join('; ');

@@ -37,7 +37,8 @@ const FORFEIT_CONFIRM_MS = 4000;
  * side's and the player's team. The battle log shows over the field's right part only on request
  * (hidden, not removed: see BattleLog). The battle itself lives in root services.
  * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL
- * turns the battle timer on or off (real battles), ZR shows or hides the battle log (B hides it too). A replay swaps the command panel for playback
+ * shows or hides the opponent's open team sheet (formats that have one), ZR shows or hides the battle log (B hides
+ * either too), R3 turns the battle timer on or off (real battles). A replay swaps the command panel for playback
  * controls and has nothing to forfeit.
  */
 @Component({
@@ -187,9 +188,9 @@ export class BattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
-      // With an open team sheet, ZL shows it (those formats' timer is always on anyway).
-      this.navigation.registerButton('buttonZL', () => (this.hasSheet() ? this.toggleSheet() : this.toggleTimer())),
+      this.navigation.registerButton('buttonZL', () => this.hasSheet() && this.toggleSheet()),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
+      this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
@@ -279,7 +280,7 @@ export class BattleScreen {
     this.forfeitState.set('idle');
   }
 
-  /** ZL or the header's timer button: asks the server for the battle timer on or off (real battles only). */
+  /** R3 or the header's timer button: asks the server for the battle timer on or off (real battles only). */
   protected toggleTimer(): boolean {
     if (!this.store.canToggleTimer() || this.store.result()) return false;
     this.store.toggleTimer();

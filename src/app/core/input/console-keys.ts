@@ -20,14 +20,16 @@ export type InputAction =
   | 'nextTab'
   | 'buttonL'
   | 'buttonR'
+  | 'buttonR3'
   | 'first'
   | 'last';
 
 /**
- * The shoulder buttons, whose meaning depends on the page (see KeyboardNavigation.registerButton). ZL
- * and ZR switch the header's tabs unless the page uses them (the battle, which has no header).
+ * The shoulder buttons and R3 (the right stick pressed), whose meaning depends on the page (see
+ * KeyboardNavigation.registerButton). ZL and ZR switch the header's tabs unless the page uses them (the
+ * battle, which has no header).
  */
-export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR';
+export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3';
 
 /**
  * Each button and the key that stands for it on a computer keyboard (the build's button mappings, for
@@ -37,14 +39,15 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
   { button: 'D-pad', key: 'W / A / S / D', action: 'Move focus; left/right change a list box option' },
   { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
   { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
-  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: battle timer / battle log; teambuilder: Validate / Delete or Remove)" },
+  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: open team sheet / battle log; teambuilder: Validate / Delete or Remove)" },
   { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit; teambuilder: Details / Stats)" },
+  { button: 'R3', key: 'R', action: "The right stick pressed: the page's own action (battle: battle timer)" },
 ];
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
- * 12–15, the standard mapping's positions for those labels). L=4 and R=5 are the standard mapping's
- * too, not yet seen on device.
+ * 12–15, the standard mapping's positions for those labels). L=4, R=5 and R3=11 (the right stick
+ * pressed) are the standard mapping's too; R3 not yet seen on device.
  */
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [0, 'accept'],
@@ -53,6 +56,7 @@ export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [7, 'nextTab'],
   [4, 'buttonL'],
   [5, 'buttonR'],
+  [11, 'buttonR3'],
   [12, 'up'],
   [13, 'down'],
   [14, 'left'],
@@ -70,6 +74,7 @@ const BY_KEY: Record<string, InputAction> = {
   k: 'back',
   q: 'buttonL',
   e: 'buttonR',
+  r: 'buttonR3',
   z: 'prevTab',
   c: 'nextTab',
   ArrowUp: 'up',
@@ -97,6 +102,7 @@ const BY_CODE: Record<string, InputAction> = {
   KeyK: 'back',
   KeyQ: 'buttonL',
   KeyE: 'buttonR',
+  KeyR: 'buttonR3',
   KeyZ: 'prevTab',
   KeyC: 'nextTab',
 };
@@ -110,6 +116,7 @@ const BY_KEY_CODE: Record<number, InputAction> = {
   75: 'back',
   81: 'buttonL',
   69: 'buttonR',
+  82: 'buttonR3',
   90: 'prevTab',
   67: 'nextTab',
   38: 'up',

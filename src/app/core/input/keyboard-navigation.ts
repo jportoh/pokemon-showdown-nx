@@ -168,7 +168,7 @@ export class KeyboardNavigation {
   }
 
   /**
-   * What L, R, ZL or ZR does on a page (its component registers while it's shown). The handler returns
+   * What L, R, ZL, ZR or R3 does on a page (its component registers while it's shown). The handler returns
    * whether it used the press. Returns the unregister function.
    */
   registerButton(button: PageButton, handler: () => boolean): () => void {
@@ -333,6 +333,7 @@ export class KeyboardNavigation {
         return true;
       case 'buttonL':
       case 'buttonR':
+      case 'buttonR3':
         return this.pressPageButton(action);
       case 'first':
       case 'last':

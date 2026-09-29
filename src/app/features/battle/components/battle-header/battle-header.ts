@@ -14,7 +14,7 @@ const MAX_NAME_CHARS = 20;
  * The match header across the top of the battle, 1280x48, laid out like a scoreboard over the stage
  * below it: the format on the left; "p1 VS p2" centred over the field, each name in its side's colour
  * (blue the near side, red the far one, as the team cards and the target buttons); our battle timer (while
- * it's on; in a real battle a "Timer" button while it's off, both turning it on or off with ZL) and the
+ * it's on; in a real battle a "Timer" button while it's off, both turning it on or off with R3) and the
  * turn at the field's right edge; and over the right column, Forfeit (R) and the battle log (ZR) as button hints.
  * A replay shows a "Replay" badge where Forfeit goes. The hints are for clicks: the controller has
  * its own buttons for them, so the d-pad skips them (data-kb-skip). Absolutely laid out (Brewser
@@ -45,7 +45,7 @@ const MAX_NAME_CHARS = 20;
       @if (timerView(); as t) {
         <!-- Icon and time placed apart: an inline svg next to text wraps on Brewser. Running: a clock on
           green (red when low) with its hand ticking; stopped: two pause bars on grey, the time dimmed.
-          A button (ZL) that asks for the timer off. -->
+          A button (R3) that asks for the timer off. -->
         <button
           type="button"
           data-kb-skip
@@ -56,7 +56,7 @@ const MAX_NAME_CHARS = 20;
           (click)="toggleTimer.emit()"
         >
           @if (store.canToggleTimer()) {
-            <span aria-hidden="true" class="absolute top-[4px] left-[6px] block h-[18px] w-[24px] rounded-sm bg-header text-center text-xs leading-[18px] font-bold text-white">ZL</span>
+            <span aria-hidden="true" class="absolute top-[4px] left-[6px] block h-[18px] w-[24px] rounded-sm bg-header text-center text-xs leading-[18px] font-bold text-white">R3</span>
           }
           @if (t.running) {
             <svg aria-hidden="true" viewBox="0 0 16 16" class="absolute top-[5px] left-[36px] size-4">
@@ -78,7 +78,7 @@ const MAX_NAME_CHARS = 20;
           [attr.aria-label]="cooldownSeconds() ? 'Turn the battle timer on: allowed again in ' + cooldownSeconds() + ' seconds' : 'Turn the battle timer on'"
           (click)="toggleTimer.emit()"
         >
-          <span class="block h-[30px] text-center leading-[30px]"><span class="rounded-sm bg-header p-[2px_6px]">ZL</span> {{ cooldownSeconds() ? 'Wait ' + cooldownSeconds() + 's' : 'Timer' }}</span>
+          <span class="block h-[30px] text-center leading-[30px]"><span class="rounded-sm bg-header p-[2px_6px]">R3</span> {{ cooldownSeconds() ? 'Wait ' + cooldownSeconds() + 's' : 'Timer' }}</span>
         </button>
       }
 
