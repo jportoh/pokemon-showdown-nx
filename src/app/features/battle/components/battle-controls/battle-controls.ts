@@ -84,9 +84,9 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
           <p class="absolute top-0 left-0 block h-7 w-[609px] text-base leading-7 text-gray-200">
             <strong class="text-white">Choose a Pokémon to send out</strong> on your team, on the right →
           </p>
-          <p class="absolute top-[36px] left-0 block h-6 w-[609px] text-sm leading-6 text-gray-300">
-            {{ choices.pokemonName() ? choices.pokemonName() + ' has fainted.' : '' }}
-          </p>
+          <p class="absolute top-[36px] left-0 block h-6 w-[609px] text-sm leading-6 text-gray-300">{{ switchReason() }}</p>
+          <!-- Always there (fixed height): why the team tile just pressed can't come in. -->
+          <p role="status" class="absolute top-[66px] left-0 block h-6 w-[609px] text-sm leading-6 font-bold text-amber-300">{{ choices.notice() }}</p>
           @if (choices.canGoBack()) {
             <button type="button" class="absolute top-0 left-[821px] h-7 w-[140px] rounded-md border border-gray-400 bg-gray-600 text-sm font-bold hover:bg-gray-500" (click)="choices.back()">
               Back
@@ -96,8 +96,9 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
         </div>
       } @else {
         <div class="relative h-[148px] w-[961px]">
-          <p class="absolute top-0 left-0 block h-7 w-[627px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200">
-            <strong class="text-white">{{ choices.pokemonName() }}</strong>{{ canSwitch() ? ' — choose a move, or switch on the right →' : ' — choose a move' }}
+          <!-- The pressed team tile's notice takes the heading's place: text swapped, not elements (Brewser). -->
+          <p role="status" class="absolute top-0 left-0 block h-7 w-[627px] overflow-hidden text-base leading-7 whitespace-nowrap text-gray-200">
+            <strong [class]="choices.notice() ? 'text-amber-300' : 'text-white'">{{ choices.notice() || choices.pokemonName() }}</strong>{{ headingHint() }}
           </p>
           @if (choices.canMega()) {
             <!-- L does this on the controller, so the d-pad skips it (data-kb-skip); it's for clicks. -->
@@ -250,6 +251,19 @@ export class BattleControls {
 
   /** Some team member can come in (not while trapped). */
   protected readonly canSwitch = computed(() => this.choices.switchOptions().some((option) => option.allowed));
+
+  /** After the choosing Pokémon's name; nothing while a notice takes its place. */
+  protected readonly headingHint = computed(() => {
+    if (this.choices.notice()) return '';
+    return this.canSwitch() ? ' — choose a move, or switch on the right →' : ' — choose a move';
+  });
+
+  /** Under a forced switch's heading: fainted, or forced out by its own move (U-turn, Parting Shot). */
+  protected readonly switchReason = computed(() => {
+    const name = this.choices.pokemonName();
+    if (!name) return '';
+    return this.choices.pokemonFainted() ? `${name} has fainted.` : `${name} is coming back.`;
+  });
 
   protected readonly watchingTitle = computed(() => {
     if (this.store.playing()) return this.store.turn() > 0 ? `Turn ${this.store.turn()} in progress…` : 'The battle is starting…';

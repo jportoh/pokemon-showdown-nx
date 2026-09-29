@@ -51,6 +51,8 @@ export interface SwitchOption {
   species: string;
   fainted: boolean;
   allowed: boolean;
+  /** Why it can't come in ("Meow has fainted and can't battle."); '' while it can. */
+  blocked: string;
 }
 
 /**
@@ -80,6 +82,8 @@ export class BattleChoices {
   readonly tera = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
   /** The switch (its number) under the mouse on the team tiles, for the Pokémon card; null for none. */
   readonly hoveredSwitch = signal<number | null>(null);
+  /** Why the team tile just pressed can't come in, for the command panel; cleared by each new step. */
+  readonly notice = linkedSignal<unknown, string>({ source: () => [this.choices(), this.pendingMove()], computation: () => '' });
 
   private readonly request = this.store.request;
 
@@ -115,6 +119,12 @@ export class BattleChoices {
 
   readonly pokemonName = computed(() => nameOf(this.pokemon()));
 
+  /** Whether the Pokémon being chosen for has fainted (one forced out by U-turn or Parting Shot hasn't). */
+  readonly pokemonFainted = computed(() => {
+    const pokemon = this.pokemon();
+    return !!pokemon && parseCondition(pokemon.condition, 100).fainted;
+  });
+
   readonly moves = computed<readonly RequestMove[]>(() => {
     const slot = this.slot();
     return slot === null ? [] : (this.request()?.active?.[slot]?.moves ?? []);
@@ -143,15 +153,20 @@ export class BattleChoices {
     const taken = this.choices().flatMap((choice) => (choice.kind === 'switch' ? [choice.slot] : []));
     const slot = this.slot();
     const trapped = !request.forceSwitch && slot !== null && !!request.active?.[slot]?.trapped;
+    const current = slot === null ? '' : nameOf(request.side.pokemon[slot] ?? null);
     return request.side.pokemon.map((pokemon, i) => {
       const { fainted } = parseCondition(pokemon.condition, 100);
-      return {
-        index: i + 1,
-        name: nameOf(pokemon),
-        species: pokemon.details.split(',')[0],
-        fainted,
-        allowed: !trapped && !pokemon.active && !fainted && !taken.includes(i + 1),
-      };
+      const name = nameOf(pokemon);
+      const blocked = fainted
+        ? `${name} has fainted and can't battle.`
+        : pokemon.active
+          ? `${name} is already in battle.`
+          : taken.includes(i + 1)
+            ? `${name} is already coming in.`
+            : trapped
+              ? `${current} is trapped and can't switch out.`
+              : '';
+      return { index: i + 1, name, species: pokemon.details.split(',')[0], fainted, allowed: !blocked, blocked };
     });
   });
 
@@ -221,7 +236,7 @@ export class BattleChoices {
     // Slots skipped before this one pass.
     while (choices.length < (this.slot() ?? choices.length)) choices.push({ kind: 'pass' });
     choices.push(choice);
-    while (choices.length < this.slotCount() && !this.needsChoice(choices.length)) choices.push({ kind: 'pass' });
+    while (choices.length < this.slotCount() && !this.needsChoice(choices.length, choices)) choices.push({ kind: 'pass' });
     if (choices.length < this.slotCount()) {
       this.choices.set(choices);
       return;
@@ -238,7 +253,7 @@ export class BattleChoices {
     switch (choice.kind) {
       case 'switch': {
         const incoming = nameOf(request.side.pokemon[choice.slot - 1] ?? null);
-        return { slot, name, action: `Switch to ${incoming}`, detail: request.forceSwitch ? 'Replacing the fainted Pokémon' : 'Switching out', type: '' };
+        return { slot, name, action: `Switch to ${incoming}`, detail: parseCondition(pokemon.condition, 100).fainted ? 'Replacing the fainted Pokémon' : 'Switching out', type: '' };
       }
       case 'move': {
         const move = request.active?.[slot]?.moves[choice.move - 1];
@@ -262,10 +277,20 @@ export class BattleChoices {
     return target > 0 ? `the opposing ${pokemon.name}` : pokemon.name;
   }
 
-  private needsChoice(slot: number): boolean {
+  /**
+   * Whether the slot has something to choose, given the choices made so far. A forced switch with no one
+   * left to send in passes (doubles, the last Pokémon in reserve already chosen for the other slot).
+   */
+  private needsChoice(slot: number, choices: readonly SlotChoice[] = this.choices()): boolean {
     const request = this.request();
     if (!request) return false;
-    if (request.forceSwitch) return !!request.forceSwitch[slot];
+    if (request.forceSwitch) {
+      const taken = choices.flatMap((choice) => (choice.kind === 'switch' ? [choice.slot] : []));
+      const inReserve = request.side.pokemon.some(
+        (pokemon, i) => !pokemon.active && !parseCondition(pokemon.condition, 100).fainted && !taken.includes(i + 1),
+      );
+      return !!request.forceSwitch[slot] && inReserve;
+    }
     const pokemon = request.side.pokemon[slot];
     return !!pokemon && !parseCondition(pokemon.condition, 100).fainted;
   }

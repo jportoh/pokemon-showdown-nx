@@ -36,6 +36,8 @@ interface Tile {
   item: string;
   /** The switch that brings it in (Showdown's switch number) while it can be chosen; null otherwise. */
   switchIndex: number | null;
+  /** While choosing, why this one of ours can't come in (A says so in the command panel); null otherwise. */
+  blocked: string | null;
   /** Its INSPECT_ATTRIBUTE value while a spectator can point at it; null otherwise. */
   inspect: string | null;
   /** What the tile says to screen readers. */
@@ -98,7 +100,8 @@ interface Tile {
             [style.top.px]="tile.top"
             [attr.data-switch]="tile.switchIndex"
             [attr.data-inspect]="tile.inspect"
-            [disabled]="tile.switchIndex === null && tile.inspect === null"
+            [disabled]="tile.switchIndex === null && tile.blocked === null && tile.inspect === null"
+            [attr.aria-disabled]="tile.blocked !== null"
             [attr.aria-label]="tile.label"
             (click)="pick(tile)"
             (mouseenter)="pointAt(tile)"
@@ -163,17 +166,20 @@ export class BattleTeamPreview {
     return side.preview.length > 0 ? 0 : Math.max(0, Math.min(MAX_TEAM, side.teamSize) - this.team().length);
   });
 
-  /** Our switches by species, while one is being chosen: the ones that can come in. */
+  /** Our switches by species while one is being chosen, the ones that can't come in too (with why). */
   private readonly switches = computed(() => {
     if (this.side() !== 'p1' || this.choices.slot() === null || this.choices.pendingMove()) return [];
-    return this.choices.switchOptions().filter((option) => option.allowed);
+    return this.choices.switchOptions();
   });
 
   protected readonly tiles = computed<Tile[]>(() => {
     if (!this.store.started()) return [];
     const members = this.team().map(({ species, seen, active }, i) => {
       const fraction = seen && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
-      const switchIndex = this.switchFor(species);
+      const option = this.switchFor(species);
+      const switchIndex = option?.allowed ? option.index : null;
+      // A team member missing from the request was left out at team preview.
+      const blocked = this.switches().length === 0 || option?.allowed ? null : (option?.blocked ?? `${this.memberName(species, seen)} wasn't brought to this battle.`);
       return {
         key: `${i}-${species}`,
         sprite: seen?.sprite || (this.dex.species(species)?.sprite ?? spriteId(species)),
@@ -183,13 +189,14 @@ export class BattleTeamPreview {
         active,
         item: seen?.fainted ? '' : this.itemOf(species),
         switchIndex,
+        blocked,
         inspect: this.inspectable() ? this.inspection.keyOf(this.side(), species) : null,
-        label: `${switchIndex !== null ? 'Switch to ' : ''}${this.memberText(species, seen, active)}`,
+        label: `${switchIndex !== null ? 'Switch to ' : ''}${this.memberText(species, seen, active)}${blocked ? `. ${blocked}` : ''}`,
       };
     });
     const empty = Array.from({ length: this.unseen() }, (_, n) => {
       const i = members.length + n;
-      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false, item: '', switchIndex: null, inspect: null, label: 'Not seen yet' };
+      return { ...this.tilePosition(i), key: `unseen-${i}`, sprite: '', bar: null, fainted: false, active: false, item: '', switchIndex: null, blocked: null, inspect: null, label: 'Not seen yet' };
     });
     return [...members, ...empty];
   });
@@ -249,21 +256,27 @@ export class BattleTeamPreview {
   }
 
   protected pick(tile: Tile): void {
+    if (tile.blocked !== null) this.choices.notice.set(tile.blocked);
     if (tile.switchIndex === null) return;
     this.choices.hoveredSwitch.set(null);
     this.choices.chooseSwitch(tile.switchIndex);
   }
 
-  /** The switch that brings in our Pokémon of that species, while it can be chosen; null otherwise. */
-  private switchFor(species: string): number | null {
-    const option = this.switches().find((o) => o.species === species || o.species.startsWith(`${species}-`));
-    return option?.index ?? null;
+  /** Our switch of that species while one is being chosen (allowed or not); undefined if not brought. */
+  private switchFor(species: string) {
+    return this.switches().find((o) => o.species === species || o.species.startsWith(`${species}-`));
+  }
+
+  /** Its nickname when known, else its species. */
+  private memberName(species: string, seen: BattlePokemon | undefined): string {
+    const own = this.ownTeam().find((member) => speciesOf(member) === species);
+    return seen?.name ?? (own ? own.ident.slice(own.ident.indexOf(': ') + 2) : species);
   }
 
   /** "Garchomp 64%, holding Leftovers, in battle", "Incineroar, fainted", "Amoonguss, not sent out". */
   private memberText(species: string, seen: BattlePokemon | undefined, active: boolean): string {
     const own = this.ownTeam().find((member) => speciesOf(member) === species);
-    const name = seen?.name ?? (own ? own.ident.slice(own.ident.indexOf(': ') + 2) : species);
+    const name = this.memberName(species, seen);
     if (seen?.fainted) return `${name}, fainted`;
     const fraction = seen ? (seen.maxHp > 0 ? seen.hp / seen.maxHp : 0) : own ? hpFraction(own.condition) : null;
     const percent = fraction === null ? '' : ` ${Math.max(1, Math.round(fraction * 100))}%`;
