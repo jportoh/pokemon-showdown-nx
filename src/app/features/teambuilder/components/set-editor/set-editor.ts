@@ -8,6 +8,7 @@ import { TeamStore } from '@features/teambuilder/state/team-store';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
+import { typeRank } from '@shared/data/type-order';
 import { BackAction } from '@shared/directives/back-action';
 import { toId } from '@shared/utils/to-id';
 
@@ -138,6 +139,11 @@ export class SetEditor {
     return field ? `Choose move ${MOVE_FIELDS.indexOf(field) + 1}` : '';
   });
 
+  /** The species' moves by type, in the games' order, then by name. */
+  private readonly sortedMoves = computed(() =>
+    [...(this.species()?.moves ?? [])].sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.name.localeCompare(b.name)),
+  );
+
   protected readonly chooserOptions = computed<readonly ChooserOption[]>(() => {
     const field = this.activeField();
     if (field === 'species') return this.speciesOptions;
@@ -151,7 +157,7 @@ export class SetEditor {
     const taken = new Set((this.pokemon()?.moves ?? []).filter((_, i) => i !== slot).map(toId));
     return [
       { id: '', name: 'No move', detail: '' },
-      ...(this.species()?.moves ?? [])
+      ...this.sortedMoves()
         .filter((move) => !taken.has(move.id))
         .map((move) => ({ id: move.id, name: move.name, detail: moveDetail(move.type, move.category, move.basePower), color: typeColor(move.type) })),
     ];
