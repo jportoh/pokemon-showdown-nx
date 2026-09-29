@@ -48,6 +48,11 @@ const NATURE_GRID: readonly NatureCell[] = GRID_STATS.flatMap((plus, row) =>
 const BAR_WIDTH = 152;
 const SEGMENT_WIDTH = 7;
 const SEGMENT_STEP = 9;
+/** The Battle page's pixel triangles: 4x7 pointing left/right, 7x4 pointing up/down. */
+const LEFT_ARROW = 'M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z';
+const RIGHT_ARROW = 'M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z';
+const UP_ARROW = 'M3 0h1v1h1v1h1v1h1v1h-7v-1h1v-1h1v-1h1z';
+const DOWN_ARROW = 'M0 0h7v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h-1z';
 
 interface StatRow {
   id: StatId;
@@ -124,10 +129,11 @@ interface Segment {
       (click)="openNatures()"
     >
       <span aria-hidden="true" class="absolute top-[16px] left-[14px] block h-6 w-[64px] text-left text-sm leading-6 font-bold text-retro-muted">Nature</span>
-      <span aria-hidden="true" class="absolute top-[12px] left-[84px] block h-8 w-6 text-center text-xl leading-8 font-bold text-retro-muted">←</span>
+      <!-- Pixel triangles, as on the Battle page (Brewser draws ◀ ▶ as emoji and CSS triangles not at all). -->
+      <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[21px] left-[92px] h-[14px] w-2 fill-retro-muted"><path [attr.d]="leftArrow" /></svg>
       <span aria-hidden="true" class="absolute top-[4px] left-[112px] block h-7 w-[256px] text-center text-xl leading-7 font-bold">{{ natureName() }}</span>
       <span aria-hidden="true" class="absolute top-[32px] left-[112px] block h-5 w-[256px] text-center text-xs leading-5 text-retro-muted">{{ natureEffect() }}</span>
-      <span aria-hidden="true" class="absolute top-[12px] left-[376px] block h-8 w-6 text-center text-xl leading-8 font-bold text-retro-muted">→</span>
+      <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[21px] left-[384px] h-[14px] w-2 fill-retro-muted"><path [attr.d]="rightArrow" /></svg>
     </button>
 
     <!-- Beside the list: how to adjust, the panel adjusting one stat, or the natures' grid. -->
@@ -175,7 +181,7 @@ interface Segment {
       <div #panel class="absolute top-[36px] left-[452px] block h-[400px] w-[420px] rounded-lg border-2 border-retro-outline bg-retro-panel" (appBack)="cancel()">
         <!-- Up/down: the other stats (a click works too). -->
         <button type="button" data-kb-skip aria-label="Previous stat" class="absolute top-[8px] left-[186px] block h-5 w-11 cursor-pointer p-0" (click)="step(-1)">
-          <span aria-hidden="true" class="absolute top-0 left-0 block h-5 w-11 text-center text-xl leading-5 font-bold text-retro-muted">↑</span>
+          <svg aria-hidden="true" viewBox="0 0 7 4" class="absolute top-[6px] left-[15px] h-2 w-[14px] fill-retro-muted"><path [attr.d]="upArrow" /></svg>
         </button>
         <p class="absolute top-[32px] left-[20px] block h-8 w-[376px] text-center text-2xl leading-8 font-bold">
           {{ current()?.name }}<span class="text-retro-accent-text">{{ current()?.nature === '+' ? ' +' : '' }}</span
@@ -183,7 +189,7 @@ interface Segment {
         </p>
         <p class="absolute top-[66px] left-[20px] block h-12 w-[376px] text-center text-5xl leading-[48px] font-bold">{{ current()?.total }}</p>
         <button type="button" data-kb-skip aria-label="Next stat" class="absolute top-[122px] left-[186px] block h-5 w-11 cursor-pointer p-0" (click)="step(1)">
-          <span aria-hidden="true" class="absolute top-0 left-0 block h-5 w-11 text-center text-xl leading-5 font-bold text-retro-muted">↓</span>
+          <svg aria-hidden="true" viewBox="0 0 7 4" class="absolute top-[6px] left-[15px] h-2 w-[14px] fill-retro-muted"><path [attr.d]="downArrow" /></svg>
         </button>
 
         <p class="absolute top-[158px] left-[20px] block h-7 w-[376px] text-center text-lg leading-7">
@@ -191,7 +197,7 @@ interface Segment {
         </p>
 
         <button type="button" data-kb-skip aria-label="One point less" class="absolute top-[204px] left-[12px] block h-10 w-10 cursor-pointer rounded-full border-2 border-retro-outline bg-retro-button p-0 hover:bg-retro-select" (click)="adjust(-1)">
-          <span aria-hidden="true" class="absolute top-[4px] left-0 block h-7 w-9 text-center text-xl leading-7 font-bold">←</span>
+          <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[8px] left-[11px] h-[21px] w-3 fill-retro-ink"><path [attr.d]="leftArrow" /></svg>
         </button>
         <div
           #gauge
@@ -216,7 +222,7 @@ interface Segment {
           }
         </div>
         <button type="button" data-kb-skip aria-label="One point more" class="absolute top-[204px] left-[366px] block h-10 w-10 cursor-pointer rounded-full border-2 border-retro-outline bg-retro-button p-0 hover:bg-retro-select" (click)="adjust(1)">
-          <span aria-hidden="true" class="absolute top-[4px] left-0 block h-7 w-9 text-center text-xl leading-7 font-bold">→</span>
+          <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[8px] left-[13px] h-[21px] w-3 fill-retro-ink"><path [attr.d]="rightArrow" /></svg>
         </button>
 
         <button type="button" data-kb-skip aria-label="No points" class="absolute top-[260px] left-[8px] block h-7 w-[64px] cursor-pointer rounded-sm p-0 text-sm font-bold hover:bg-retro-select" (click)="setPoints(0)">
@@ -261,6 +267,10 @@ export class SetStats {
   protected readonly maxPoints = MAX_STAT_POINTS;
   protected readonly maxTotal = MAX_TOTAL_STAT_POINTS;
   protected readonly segmentWidth = SEGMENT_WIDTH;
+  protected readonly leftArrow = LEFT_ARROW;
+  protected readonly rightArrow = RIGHT_ARROW;
+  protected readonly upArrow = UP_ARROW;
+  protected readonly downArrow = DOWN_ARROW;
   protected readonly natureGrid = NATURE_GRID;
   protected readonly gridStats = GRID_STATS;
   protected readonly statNames = STAT_NAMES;

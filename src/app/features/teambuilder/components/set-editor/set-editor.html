@@ -12,7 +12,9 @@
     (click)="closed.emit()"
     class="absolute top-[10px] left-6 h-9 w-[132px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
   >
-    ← Team
+    <!-- The Battle page's pixel triangle (Brewser draws ◀ as an emoji). -->
+    <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[10px] left-[36px] h-[14px] w-2 fill-white"><path d="M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z" /></svg>
+    <span class="absolute top-0 left-[52px] block h-[34px] w-[60px] text-left leading-[34px]">Team</span>
   </button>
   <app-pokemon-sprite
     class="absolute top-2 left-[168px]"
