@@ -189,13 +189,16 @@ export class BattleHeader {
   });
 
   /**
-   * "[Gen 9 Champions] VGC 2026 Reg M-C" as a small "Gen 9 Champions" line (with the replay's rating)
-   * over the format's own name.
+   * "[Gen 9 Champions] VGC 2026 Reg M-C" as a small "Gen 9 Champions" line (with the replay's rating,
+   * or the game and score of a best-of set) over the format's own name.
    */
   protected readonly formatLine = computed(() => {
     const match = /^\[(.+?)\]\s*(.*)$/.exec(this.store.format());
     const rating = this.store.replay()?.rating;
-    const top = [match?.[1] ?? '', rating ? `Rating ${rating}` : ''].filter(Boolean).join(' · ');
+    const series = this.store.series();
+    const game = series ? `Game ${series.game}/${series.bestOf} · ${series.wins.p1}–${series.wins.p2}` : '';
+    // A set's game and score come first (the generation gives way when it doesn't all fit).
+    const top = [game, match?.[1] ?? '', rating ? `Rating ${rating}` : ''].filter(Boolean).join(' · ');
     return { top, name: match?.[2] ?? this.store.format() };
   });
 }

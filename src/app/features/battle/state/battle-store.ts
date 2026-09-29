@@ -25,6 +25,7 @@ import {
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
+import { ReadyState, SeriesInfo, SeriesScore, parseReadyPrompt, parseSeriesScore, parseSeriesTitle } from './battle-series';
 import { parseRatingChange } from './battle-ratings';
 import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
 import {
@@ -74,7 +75,10 @@ const MAX_POPUPS = 8;
 /** Lines that start the next action: a move's own damage lines come before any of these. */
 const ACTION_BOUNDARIES = new Set(['move', 'switch', 'drag', 'cant', 'turn', 'upkeep', 'win', 'tie']);
 /** Lines that aren't the battle itself: chat, joins and leaves, server HTML, timer notices. */
-const ROOM_LINES = new Set(['', 'c', 'c:', 'chat', 'j', 'J', 'l', 'L', 'n', 'N', 'raw', 'html', 'uhtml', 'uhtmlchange', 'inactive', 'inactiveoff', 'error', 'init', 'title']);
+const ROOM_LINES = new Set([
+  '', 'c', 'c:', 'chat', 'j', 'J', 'l', 'L', 'n', 'N', 'raw', 'html', 'uhtml', 'uhtmlchange', 'inactive', 'inactiveoff', 'error', 'init', 'title',
+  'showteam', 'tempnotify', 'tempnotifyoff',
+]);
 
 function isBattleLine(line: string): boolean {
   return line.startsWith('|') && !ROOM_LINES.has(line.slice(1).split('|')[0]);
@@ -155,6 +159,10 @@ export class BattleStore {
   private readonly canUndoSignal = signal(false);
   private readonly canToggleTimerSignal = signal(false);
   private readonly timerCooldownUntilSignal = signal<number | null>(null);
+  private readonly teamSheetsSignal = signal<Partial<Record<SideId, string>>>({});
+  private readonly seriesInfoSignal = signal<SeriesInfo | null>(null);
+  private readonly seriesScoreSignal = signal<SeriesScore | null>(null);
+  private readonly readySignal = signal<ReadyState>('none');
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
@@ -219,6 +227,32 @@ export class BattleStore {
   readonly canToggleTimer = this.canToggleTimerSignal.asReadonly();
   /** Until when the server won't let us turn the timer back on (20 s after we turned it off). */
   readonly timerCooldownUntil = this.timerCooldownUntilSignal.asReadonly();
+  /**
+   * Each side's open team sheet (Open Team Sheets formats): the packed team the server shows at team
+   * preview, `|showteam|p2|…`, with everything but stats.
+   */
+  readonly teamSheets = this.teamSheetsSignal.asReadonly();
+  /** Between games of a set: whether the server asks if we're ready for the next one. */
+  readonly ready = this.readySignal.asReadonly();
+
+  /**
+   * The best-of set this battle is a game of, with the score from p1's side: as the game started, and
+   * with this game's result once it's over (then `over` when someone has won the set).
+   */
+  readonly series = computed(() => {
+    const info = this.seriesInfoSignal();
+    if (!info) return null;
+    const score = this.seriesScoreSignal();
+    const sides = this.sidesSignal();
+    // The table names the set's players; the screen has us as p1 whichever side we are.
+    const flipped = !!score && toId(score.names[0]) === toId(sides.p2.name) && toId(score.names[1]) === toId(sides.p1.name);
+    const before = score ? (flipped ? { p1: score.wins[1], p2: score.wins[0] } : { p1: score.wins[0], p2: score.wins[1] }) : { p1: 0, p2: 0 };
+    const result = this.resultSignal();
+    const wins = { p1: before.p1 + (result === 'win' ? 1 : 0), p2: before.p2 + (result === 'loss' ? 1 : 0) };
+    const needed = Math.floor(info.bestOf / 2) + 1;
+    const over = wins.p1 >= needed || wins.p2 >= needed || (!!result && info.game >= info.bestOf);
+    return { ...info, wins, over };
+  });
 
   private connection: BattleConnection | null = null;
   private queue: string[] = [];
@@ -311,6 +345,10 @@ export class BattleStore {
     this.canUndoSignal.set(false);
     this.canToggleTimerSignal.set(false);
     this.lastRequest = null;
+    this.teamSheetsSignal.set({});
+    this.seriesInfoSignal.set(null);
+    this.seriesScoreSignal.set(null);
+    this.readySignal.set('none');
   }
 
   /** Sends the turn's choices ("move 1 2, switch 3"); the request is used up. */
@@ -425,6 +463,7 @@ export class BattleStore {
         this.onChoiceError(line.slice('|error|'.length));
         continue;
       }
+      if (this.takeRoomNotice(line)) continue;
       // `|noinit|nonexistent|The room "battle-…" does not exist.`: the battle to watch is gone.
       if (line.startsWith('|noinit|')) {
         this.spectateErrorSignal.set(line.split('|')[3] || 'This battle has ended.');
@@ -504,6 +543,31 @@ export class BattleStore {
       if (secondsLeft) this.addEntry('message', text);
     }
     this.renderScheduler.request();
+  }
+
+  /**
+   * What the room says beside the battle that's kept here (applied at once, not played back): the open
+   * team sheets and, in a best-of set, which game this is, the score and the ready prompt between
+   * games. Returns whether the line was one of them.
+   */
+  private takeRoomNotice(line: string): boolean {
+    if (line.startsWith('|showteam|')) {
+      const [, , side, ...packed] = line.split('|');
+      if (side === 'p1' || side === 'p2') this.teamSheetsSignal.update((sheets) => ({ ...sheets, [side]: packed.join('|') }));
+    } else if (line.startsWith('|uhtml|bestof|') || line.startsWith('|uhtmlchange|bestof|')) {
+      const info = parseSeriesTitle(line);
+      if (info) this.seriesInfoSignal.set(info);
+    } else if (line.startsWith('|html|<table') && line.includes('fa-circle')) {
+      const score = parseSeriesScore(line);
+      if (score) this.seriesScoreSignal.set(score);
+    } else if (line.startsWith('|c|~|/uhtml controls,')) {
+      const ready = parseReadyPrompt(line.slice('|c|~|'.length));
+      if (ready) this.readySignal.set(ready);
+    } else {
+      return line.startsWith('|tempnotify');
+    }
+    this.renderScheduler.request();
+    return true;
   }
 
   /** Stops our clock where it is: we've chosen (the server doesn't count the time we wait). */

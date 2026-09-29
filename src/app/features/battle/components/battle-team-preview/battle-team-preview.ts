@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, ElementRef, afterRenderEffect, computed, inject, input } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input, output } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { itemName } from '@core/dex/names';
 import { barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
@@ -68,10 +68,26 @@ interface Tile {
     <div class="relative block h-[188px] w-[271px] rounded-md bg-card" role="group" [attr.aria-label]="ariaLabel()">
       <span
         aria-hidden="true"
-        class="absolute top-[4px] left-[10px] block h-4 w-[251px] overflow-hidden text-xs leading-4 font-bold whitespace-nowrap uppercase"
+        class="absolute top-[4px] left-[10px] block h-4 overflow-hidden text-xs leading-4 font-bold whitespace-nowrap uppercase"
         [class]="side() === 'p1' ? 'text-sky-300' : 'text-red-300'"
+        [style.width.px]="sheetHint() ? 160 : 251"
         >{{ ownerLabel() }}</span
       >
+      <!-- The opponent's open team sheet: ZL (or a click), not the d-pad. -->
+      <div class="block" [class.hidden]="!sheetHint()">
+        <button
+          type="button"
+          data-kb-skip
+          class="absolute top-[2px] left-[176px] block h-5 w-[88px] rounded-sm border p-0 text-[11px] font-bold text-white"
+          [class]="sheetOpen() ? 'border-sky-300 bg-[#2c4a78]' : 'border-gray-500 bg-tab hover:bg-tab-hover'"
+          [attr.aria-expanded]="sheetOpen()"
+          aria-label="Opponent's team sheet"
+          (click)="toggleSheet.emit()"
+        >
+          <span aria-hidden="true" class="absolute top-[1px] left-[3px] block h-4 w-[22px] rounded-sm bg-header text-center leading-4">ZL</span>
+          <span aria-hidden="true" class="absolute top-0 left-[28px] block h-[18px] w-[56px] text-center leading-[18px]">Sheet</span>
+        </button>
+      </div>
       @for (tile of tiles(); track tile.key) {
         @if (side() === 'p1' || inspectable()) {
           <button
@@ -123,6 +139,10 @@ export class BattleTeamPreview {
   private readonly inspection = inject(PokemonInspection);
 
   readonly side = input.required<SideId>();
+  /** The opponent's card offers their open team sheet (ZL), when there is one. */
+  readonly sheetHint = input(false);
+  readonly sheetOpen = input(false);
+  readonly toggleSheet = output<void>();
 
   /** Watching a live battle: every Pokémon seen or previewed can be pointed at, to see it in the panel. */
   protected readonly inspectable = this.store.spectating;

@@ -7,6 +7,7 @@ import { BattleField } from '@features/battle/components/battle-field/battle-fie
 import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview } from '@features/battle/components/battle-team-preview/battle-team-preview';
+import { BattleTeamSheet } from '@features/battle/components/battle-team-sheet/battle-team-sheet';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
 import { SpectateBattleConnection } from '@features/battle/live/spectate-battle-connection';
@@ -48,6 +49,7 @@ const FORFEIT_CONFIRM_MS = 4000;
     BattleHeader,
     BattleLog,
     BattleTeamPreview,
+    BattleTeamSheet,
     ReplayControls,
     SpectatorControls,
   ],
@@ -85,7 +87,7 @@ const FORFEIT_CONFIRM_MS = 4000;
 
       <!-- From 8px under the header to the bottom of the command buttons (708). -->
       <!-- Watching live, both teams' tiles can be pointed at (see SpectatorControls): B there goes back to its button. -->
-      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" (appBack)="back()" />
+      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheetHint]="hasSheet()" [sheetOpen]="sheetOpen()" (toggleSheet)="toggleSheet()" (appBack)="back()" />
       <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
       <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
@@ -94,6 +96,8 @@ const FORFEIT_CONFIRM_MS = 4000;
 
       <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
+      <!-- The opponent's open team sheet over the whole field, likewise always mounted. -->
+      <app-battle-team-sheet class="absolute top-[48px] left-[12px]" [open]="sheetOpen()" (appBack)="closeSheet()" />
     </div>
   `,
 })
@@ -121,6 +125,15 @@ export class BattleScreen {
   protected readonly rematchView = computed(() => {
     const room = this.liveRoom();
     if (!room) return { can: false, label: '', note: '' };
+    // A game of a best-of set: its place goes to getting ready for the next game, until the set is over.
+    const series = this.store.series();
+    if (series) {
+      if (series.over) return { can: false, label: '', note: '' };
+      const next = series.game + 1;
+      return this.store.ready() === 'waiting'
+        ? { can: true, label: 'Waiting for opponent…', note: `You're ready for game ${next}. It starts once both are, or in 40 seconds.` }
+        : { can: true, label: `Ready for game ${next}`, note: 'The next game starts by itself in 40 seconds.' };
+    }
     const format = roomFormat(room);
     const opponent = this.store.sides().p2.name;
     if (!format?.includes('random') || !opponent) return { can: false, label: '', note: '' };
@@ -144,8 +157,12 @@ export class BattleScreen {
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly logOpen = signal(false);
-  /** Where focus was when the log opened (the log takes it), to give it back on closing. */
+  /** Where focus was when the log or the team sheet opened (they take it), to give it back on closing. */
   private focusBeforeLog: HTMLElement | null = null;
+
+  protected readonly sheetOpen = signal(false);
+  /** The opponent's open team sheet has come (Open Team Sheets formats): ZL shows it. */
+  protected readonly hasSheet = computed(() => !!this.store.teamSheets().p2);
 
   constructor() {
     // After a ladder match or an accepted challenge: the real battle in its server room. From the list
@@ -156,8 +173,8 @@ export class BattleScreen {
     } else if (request?.kind === 'spectate') {
       this.store.start(new SpectateBattleConnection(this.rooms, request.roomId));
     }
-    // A rematch accepted (theirs or ours) opens its room while this battle is still on screen (App only
-    // opens battles when none is): it takes this one's place.
+    // A rematch accepted (theirs or ours), or the next game of a best-of set, opens its room while this
+    // battle is still on screen (App only opens battles when none is): it takes this one's place.
     const rematches = this.rooms.started.subscribe((roomId) => {
       if (this.liveRoom() && this.store.result()) this.startLive(roomId);
     });
@@ -165,7 +182,8 @@ export class BattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
-      this.navigation.registerButton('buttonZL', () => this.toggleTimer()),
+      // With an open team sheet, ZL shows it (those formats' timer is always on anyway).
+      this.navigation.registerButton('buttonZL', () => (this.hasSheet() ? this.toggleSheet() : this.toggleTimer())),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
     ];
     inject(DestroyRef).onDestroy(() => {
@@ -180,13 +198,21 @@ export class BattleScreen {
     this.liveRoom.set(roomId);
     this.rematchAsked.set(false);
     this.cancelForfeit();
+    // A new game (a rematch, the next of a set) brings its own team sheet.
+    if (this.sheetOpen()) this.closeSheet();
     this.store.start(new ShowdownBattleConnection(this.rooms, roomId, this.login.userId()));
   }
 
-  /** The end's Rematch button (see rematchView). */
+  /** The end's Rematch button (see rematchView), or Ready between the games of a set. */
   protected rematch(): void {
     const room = this.liveRoom();
     if (!room) return;
+    const series = this.store.series();
+    if (series) {
+      // As the server's own button does, from the game's room to the set's.
+      if (!series.over && this.store.ready() !== 'waiting') this.rooms.send(room, `/msgroom ${series.roomId},/confirmready`);
+      return;
+    }
     const format = roomFormat(room);
     const opponent = this.store.sides().p2.name;
     const theirs = this.theirRematch();
@@ -260,10 +286,31 @@ export class BattleScreen {
     if (this.logOpen()) {
       this.closeLog();
     } else {
+      if (this.sheetOpen()) this.closeSheet();
       this.focusBeforeLog = this.navigation.focused();
       this.logOpen.set(true);
     }
     return true;
+  }
+
+  /** ZL or the opponent's card's button: shows their team sheet (which takes focus) or hides it. */
+  protected toggleSheet(): boolean {
+    if (this.sheetOpen()) {
+      this.closeSheet();
+    } else {
+      if (this.logOpen()) this.closeLog();
+      this.focusBeforeLog = this.navigation.focused();
+      this.sheetOpen.set(true);
+    }
+    return true;
+  }
+
+  /** Hides the team sheet, giving focus back to where it was if that control is still there. */
+  protected closeSheet(): void {
+    this.sheetOpen.set(false);
+    const previous = this.focusBeforeLog;
+    this.focusBeforeLog = null;
+    if (previous?.isConnected) this.navigation.focus(previous);
   }
 
   /** Hides the log, giving focus back to where it was if that control is still there. */
