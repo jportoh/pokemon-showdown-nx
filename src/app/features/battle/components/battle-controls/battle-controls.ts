@@ -4,6 +4,8 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattlePokemonCard, PokemonCardMode } from '@features/battle/components/battle-pokemon-card/battle-pokemon-card';
+import { BattlePokemonInfo } from '@features/battle/components/battle-pokemon-info/battle-pokemon-info';
+import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { RequestPokemon } from '@features/battle/models/battle';
 import { BattleChoices, SWITCH_ATTRIBUTE, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
@@ -37,7 +39,7 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
  */
 @Component({
   selector: 'app-battle-controls',
-  imports: [BattlePokemonCard, NgOptimizedImage],
+  imports: [BattlePokemonCard, BattlePokemonInfo, NgOptimizedImage],
   host: { class: 'block h-[148px] w-[961px] text-white' },
   template: `
     @if (store.result(); as result) {
@@ -195,6 +197,17 @@ const MOVE_TOPS = [36, 36 + MOVE_HEIGHT + 6];
         <app-battle-pokemon-card class="absolute top-[36px] left-[621px]" [pokemon]="inspected().pokemon" [mode]="inspected().mode" />
       </div>
     }
+    <!-- An opponent's team tile pointed at: what's known of it, over whatever view is there (which stays
+      mounted, so B can focus its first button at once). Always mounted and hidden otherwise (Brewser). -->
+    <div class="absolute top-0 left-0 h-[148px] w-[961px] bg-[#283040]" [class.hidden]="!opponent()">
+      <p class="absolute top-0 left-0 block h-[72px] w-[300px] overflow-hidden text-base leading-6 text-gray-200">
+        <strong class="text-white">{{ opponentName() }}'s team:</strong> everything seen so far.
+      </p>
+      <p class="absolute top-[104px] left-0 block h-[44px] w-[300px] text-base leading-[44px] text-gray-200">
+        <span class="rounded-sm bg-header p-[2px_6px] font-bold text-white">B</span> Back to your choices
+      </p>
+      <app-battle-pokemon-info class="absolute top-0 left-[316px]" [inspected]="opponent()" [owner]="opponentName()" />
+    </div>
   `,
 })
 export class BattleControls {
@@ -203,6 +216,7 @@ export class BattleControls {
   private readonly navigation = inject(KeyboardNavigation);
   protected readonly store = inject(BattleStore);
   protected readonly choices = inject(BattleChoices);
+  private readonly inspection = inject(PokemonInspection);
 
   /** Another battle at the end: the same player again (random formats). */
   readonly canRematch = input(true);
@@ -212,6 +226,14 @@ export class BattleControls {
   readonly rematchNote = input('');
   readonly rematch = output<void>();
   readonly leave = output<void>();
+
+  /** The opponent's team member pointed at on the right (their tiles take the d-pad); null for none. */
+  protected readonly opponent = computed(() => {
+    const shown = this.inspection.shown();
+    return shown?.side === 'p2' ? shown : null;
+  });
+
+  protected readonly opponentName = computed(() => this.store.sides().p2.name || 'Opponent');
 
   protected readonly resultText = computed(() => {
     switch (this.store.result()) {
@@ -329,9 +351,15 @@ export class BattleControls {
     // forced switch has none here: the team tiles take focus (BattleTeamPreview).
     afterRenderEffect(() => {
       this.view();
-      const first = this.host.nativeElement.querySelector<HTMLButtonElement>('button[data-pick]:not([disabled])');
-      first?.focus();
+      this.focusFirst();
     });
+  }
+
+  /** Focuses the first usable button of the view (a move, a target…); false when there's none. */
+  focusFirst(): boolean {
+    const first = this.host.nativeElement.querySelector<HTMLButtonElement>('button[data-pick]:not([disabled])');
+    first?.focus();
+    return !!first;
   }
 }
 

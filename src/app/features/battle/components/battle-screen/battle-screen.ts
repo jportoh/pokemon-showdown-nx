@@ -89,13 +89,13 @@ const FORFEIT_CONFIRM_MS = 4000;
       </div>
 
       <!-- From 8px under the header to the bottom of the command buttons (708). -->
-      <!-- Watching live, both teams' tiles can be pointed at (see SpectatorControls): B there goes back to its button. -->
-      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheetHint]="hasSheet()" [sheetOpen]="sheetOpen()" (toggleSheet)="toggleSheet()" (appBack)="back()" />
+      <!-- Its tiles can be pointed at, to see what's known of them: B there goes back to the command panel (to its button, watching live). -->
+      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheetHint]="hasSheet()" [sheetOpen]="sheetOpen()" (toggleSheet)="toggleSheet()" (appBack)="leaveOpponentTeam()" />
       <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
       <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
       <!-- Our tiles pick switches: B there works as in the command panel. -->
-      <app-battle-team-preview class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
+      <app-battle-team-preview #ownTeam class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
 
       <!-- Team preview: picking the Pokémon to bring, over the field and the panel while the server asks. -->
       <app-battle-team-select #teamSelect class="absolute top-[48px] left-[12px]" (appBack)="teamSelect.undo()" />
@@ -111,6 +111,8 @@ export class BattleScreen {
   private readonly router = inject(Router);
   protected readonly store = inject(BattleStore);
   private readonly spectatorControls = viewChild(SpectatorControls);
+  private readonly controls = viewChild(BattleControls);
+  private readonly ownTeam = viewChild<BattleTeamPreview>('ownTeam');
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
@@ -244,6 +246,18 @@ export class BattleScreen {
     if (this.store.result()) this.challenges.cancelChallenge();
     else if (this.store.canUndo()) this.store.undo();
     else this.choices.back();
+  }
+
+  /**
+   * B on the opponent's tiles: back to the command panel's first choice (the first move), or to the
+   * first Pokémon that can come in on a forced switch. Watching live, to the way out.
+   */
+  protected leaveOpponentTeam(): void {
+    if (this.store.spectating()) {
+      this.spectatorControls()?.focusLeave();
+      return;
+    }
+    if (!this.controls()?.focusFirst()) this.ownTeam()?.focusFirstSwitch();
   }
 
   /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */

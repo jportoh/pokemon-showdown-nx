@@ -61,6 +61,7 @@ interface Tile {
  *
  * Watching a live battle, both sides' tiles are buttons the d-pad can point at (A does nothing): the
  * command panel shows everything known of the one pointed at (PokemonInspection), framed in yellow.
+ * In our own battles the opponent's tiles work the same way.
  */
 @Component({
   selector: 'app-battle-team-preview',
@@ -147,8 +148,11 @@ export class BattleTeamPreview {
   readonly sheetOpen = input(false);
   readonly toggleSheet = output<void>();
 
-  /** Watching a live battle: every Pokémon seen or previewed can be pointed at, to see it in the panel. */
-  protected readonly inspectable = this.store.spectating;
+  /**
+   * Tiles that can be pointed at, to see everything known of that Pokémon in the panel: both sides'
+   * watching a live battle; the opponent's in our own battles (B there goes back to the command panel).
+   */
+  protected readonly inspectable = computed(() => this.store.spectating() || (this.side() === 'p2' && !this.store.replay()));
 
   /** Our own team from the last request (the opponent's is never known). */
   private readonly ownTeam = computed(() => (this.side() === 'p1' ? this.store.team() : []));
@@ -225,9 +229,15 @@ export class BattleTeamPreview {
     // A forced switch is chosen here: focus the first Pokémon that can come in, for the controller.
     afterRenderEffect(() => {
       if (this.side() !== 'p1' || !this.choices.forceSwitch() || this.switches().length === 0) return;
-      const first = this.host.nativeElement.querySelector<HTMLButtonElement>(`button[${SWITCH_ATTRIBUTE}]:not([disabled])`);
-      first?.focus();
+      this.focusFirstSwitch();
     });
+  }
+
+  /** Focuses the first of our Pokémon that can come in; false when none can. */
+  focusFirstSwitch(): boolean {
+    const first = this.host.nativeElement.querySelector<HTMLButtonElement>(`button[${SWITCH_ATTRIBUTE}]:not([disabled])`);
+    first?.focus();
+    return !!first;
   }
 
   /**
