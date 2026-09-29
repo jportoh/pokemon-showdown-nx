@@ -43,6 +43,7 @@ import {
   fieldText,
   healReason,
   isProtection,
+  isSideGuard,
   itemText,
   perishCount,
   sideText,
@@ -108,6 +109,32 @@ export function timerSecondsLeft(timer: BattleTimer, now: number): number | null
 /** "+17", "-17", "±0". */
 export function signed(n: number): string {
   return n > 0 ? `+${n}` : n < 0 ? `${n}` : '±0';
+}
+
+/** Weather Ball's and Terrain Pulse's type in the weather or terrain; they're Normal otherwise. */
+const WEATHER_TYPES: Record<string, string> = {
+  SunnyDay: 'Fire',
+  DesolateLand: 'Fire',
+  RainDance: 'Water',
+  PrimordialSea: 'Water',
+  Sandstorm: 'Rock',
+  Snowscape: 'Ice',
+  Snow: 'Ice',
+  Hail: 'Ice',
+};
+const TERRAIN_TYPES: Record<string, string> = {
+  'Electric Terrain': 'Electric',
+  'Grassy Terrain': 'Grass',
+  'Misty Terrain': 'Fairy',
+  'Psychic Terrain': 'Psychic',
+};
+
+/** The type a move takes from the field (Weather Ball in the rain: Water), or null when it doesn't. */
+function fieldMoveType(move: string, field: BattleFieldState): string | null {
+  const id = toId(move);
+  if (id === 'weatherball') return (field.weather && WEATHER_TYPES[field.weather.id]) || null;
+  if (id === 'terrainpulse') return (field.terrain && TERRAIN_TYPES[field.terrain.id]) || null;
+  return null;
 }
 
 function escapeRegExp(text: string): string {
@@ -829,11 +856,13 @@ export class BattleStore {
         return this.say(`${this.label(args[0])} transformed into ${this.label(args[1], false)}!`);
       }
       case '-singleturn':
-        if (isProtection(args[1])) this.emit('protect', args[0]);
+        if (isSideGuard(args[1])) this.emit('side-guard', args[0]);
+        else if (isProtection(args[1])) this.emit('protect', args[0]);
         return this.sayIf(singleTurnText(args[0], args[1], names, tags));
       case '-activate':
         // Protect (and the like) blocking a move shows its shield again.
-        if (isProtection(args[1])) this.emit('protect', args[0]);
+        if (isSideGuard(args[1])) this.emit('side-guard', args[0]);
+        else if (isProtection(args[1])) this.emit('protect', args[0]);
         return this.sayIf(activateText(args[0], args[1], names));
       case '-start':
       case '-end':
@@ -938,7 +967,7 @@ export class BattleStore {
     else if ('notarget' in tags || !target) targets = [];
     else targets = [this.slotOf(target)].filter((slot): slot is string => !!slot);
     const dexMove = this.dex.move(move);
-    const type = dexMove?.type ?? moveType(move);
+    const type = fieldMoveType(move, this.fieldSignal()) ?? dexMove?.type ?? moveType(move);
     const category = dexMove?.category ?? moveInfo(move)?.category ?? '';
     const hits = this.upcomingHits().filter((slot) => slot !== from);
     hits.forEach((slot) => this.blinkedHits.add(slot));

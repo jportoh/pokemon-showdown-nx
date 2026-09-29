@@ -1,5 +1,6 @@
 import { Component, DestroyRef, ElementRef, WritableSignal, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { movePattern } from '@features/battle/animation/move-patterns';
 import { nextFrame, outAndBack, stepAnimation } from '@features/battle/animation/step-animation';
 import { BattleHpBox, HpBoxEmphasis } from '@features/battle/components/battle-hp-box/battle-hp-box';
 import { BattleResult } from '@features/battle/components/battle-result/battle-result';
@@ -17,6 +18,8 @@ import { toId } from '@shared/utils/to-id';
 // Animation lengths at normal speed; the replay speed divides them, as it does the log's steps
 // (a move's step lasts 1100 ms, an HP change 600 ms).
 const LUNGE_MS = 600;
+/** Priority and charging moves (Aqua Jet, Flare Blitz…) rush in faster, leaving a trail. */
+const RUSH_MS = 400;
 /**
  * How far the attacker lunges: a share of the way to its target, within bounds (a foe across the
  * field is ~750px away in doubles, an ally beside it ~270px).
@@ -31,6 +34,9 @@ const GLOW_MS = 420;
 const GLOW_BRIGHTNESS = 1.8;
 const BLINK_MS = 540;
 const BLINKS = 6;
+/** A flinching target (Fake Out) shakes sideways as it blinks. */
+const SHAKE_PX = 10;
+const SHAKES = 3;
 /** Blinks dim the sprite: Brewser ignores visibility changes, but opacity works (probe N1). */
 const BLINK_OPACITY = '0.2';
 const FAINT_MS = 500;
@@ -43,10 +49,6 @@ const IMAGE_WAIT_MS = 1500;
 /** Mega Evolution: the new sprite starts white and pulses back to its colours. */
 const MEGA_MS = 900;
 const MEGA_BRIGHTNESS = 4;
-/** Protect: a shield pulses around the Pokémon, three times. */
-const SHIELD_MS = 900;
-const SHIELD_PULSES = 3;
-const SHIELD_OPACITY = 0.55;
 /** The move banner, placed over its user. */
 const BANNER_WIDTH = 240;
 /** The player's banners stop short of their status boxes (x ≥ 600). */
@@ -200,7 +202,7 @@ interface FieldSlot {
  * "Attack +1" label; one lowered, red streaks falling and "Speed -1". A withdrawn Pokémon slides away towards its trainer's side
  * (left for the player's, right for the opponent's) and fades; the next one slides in from there,
  * once its sprite has loaded (preloaded from team preview). Mega Evolution flashes the new sprite
- * white, and Protect pulses a shield around the Pokémon. Abilities (Intimidate, Drizzle, Stamina…)
+ * white, Protect pulses a shield around the Pokémon and Wide Guard a barrier across its side. Abilities (Intimidate, Drizzle, Stamina…)
  * and held items (Sitrus Berry, Leftovers, Eject Button…) taking effect pop up over their Pokémon a
  * little below where moves show: gold-edged for abilities, teal with the item's icon for items.
  * Notices show the same way, grey-edged: "Missed!" or "No effect!" over the Pokémon a move didn't
@@ -275,18 +277,6 @@ interface FieldSlot {
       }
       <!-- The move's effect (bursts, orbs, rings), over the sprites. -->
       <app-move-effects />
-      @for (shield of shields(); track shield.key) {
-        <!-- Shown (display) only while its pulse plays. -->
-        <div
-          aria-hidden="true"
-          class="absolute hidden rounded-full border-4 border-[#67e8f9] bg-[#a5f3fc]"
-          [attr.data-shield]="shield.key"
-          [style.left.px]="shield.left"
-          [style.top.px]="shield.top"
-          [style.width.px]="shield.size"
-          [style.height.px]="shield.size"
-        ></div>
-      }
       @for (popup of popupBanners(); track popup.slot) {
         <div
           role="status"
@@ -502,16 +492,6 @@ export class BattleField {
     });
   });
 
-  /** Protect's shields, centred on the sprite's body (a little below its middle). */
-  protected readonly shields = computed(() => {
-    const { spriteSize, stands } = this.layout();
-    const size = Math.round(spriteSize * 0.83);
-    return Object.entries(stands).map(([key, stand]) => {
-      const { top } = spriteBox(stand, spriteSize);
-      return { key, size, left: Math.round(stand.x - size / 2), top: Math.round(top + spriteSize * 0.55 - size / 2) };
-    });
-  });
-
   protected readonly palette = computed(() => {
     const { weather, terrain } = this.store.field();
     const ground = (terrain && TERRAIN_COLORS[terrain.id]) || DEFAULT_GROUND;
@@ -555,7 +535,7 @@ export class BattleField {
         if (event.kind === 'hit') this.blink(event.slot);
         else if (event.kind === 'faint') this.faint(event);
         else if (event.kind === 'mega' || event.kind === 'tera') this.megaFlash(event);
-        else if (event.kind === 'protect') this.shieldPulse(event);
+        else if (event.kind === 'protect' || event.kind === 'side-guard') this.guard(event);
         else this.slide(event);
       });
     });
@@ -746,11 +726,15 @@ export class BattleField {
   }
 
   /**
-   * A move's animation, by its category, in its type's colour. Physical (or unknown): the attacker
-   * lunges at its targets and each one it damages blinks under a burst as the lunge reaches it.
-   * Special: the attacker glows while an orb gathers on it and flies to each target, which blinks
-   * under a burst as the orb lands (a missed one sees it fade). Status: the attacker lunges (hops,
-   * with no target) and rings spread around the Pokémon it affects (itself, with no target).
+   * A move's animation, in its type's colour: its own pattern if it has one (see move-patterns),
+   * otherwise by its category. Physical (or unknown): the attacker lunges at its targets and each one
+   * it damages blinks under a burst as the lunge reaches it (a rush comes in faster with a trail, a
+   * flurry lands a run of hits, a clap slams two orbs together on a target that flinches). Special:
+   * the attacker glows while an orb gathers on it and flies to each target, which blinks under a
+   * burst as it lands (a missed one sees it fade); a beam streams orbs there, a wave rolls rings out.
+   * Status: the attacker lunges (hops, with no target) and rings spread around the Pokémon it affects
+   * (itself, with no target); a room pulses the whole field; a protection only hops, as its shield
+   * shows with the next line.
    */
   private playMove(action: MoveAction): void {
     const effects = this.effects();
@@ -758,7 +742,8 @@ export class BattleField {
     effects.stop();
     const size = this.layout().spriteSize;
     const speed = this.store.speed();
-    if (action.category === 'Special') {
+    const pattern = movePattern(action.move);
+    if (action.category === 'Special' || pattern === 'beam' || pattern === 'wave') {
       this.glow(action.attacker);
       const from = this.effectPoint(action.attacker);
       const slots = new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits]);
@@ -766,25 +751,56 @@ export class BattleField {
         const at = this.effectPoint(slot);
         return at ? [{ slot, at, hit: action.hits.includes(slot) }] : [];
       });
-      if (from) effects.projectiles(from, targets, action.type, size, speed, (target) => {
-        if (target.hit) this.blink(target.slot);
-      });
-      else action.hits.forEach((slot) => this.blink(slot));
+      const style = pattern === 'beam' || pattern === 'wave' ? pattern : 'orb';
+      if (from) {
+        effects.projectiles(
+          from,
+          targets,
+          action.type,
+          size,
+          speed,
+          (target) => {
+            if (target.hit) this.blink(target.slot);
+          },
+          style,
+        );
+      } else {
+        action.hits.forEach((slot) => this.blink(slot));
+      }
       return;
     }
-    this.lunge(action, () => {
-      if (action.category === 'Status') {
-        for (const slot of action.targets.length > 0 ? action.targets : [action.attacker]) {
-          const at = this.effectPoint(slot);
-          if (at) effects.aura(at, action.type, size, speed);
+    if (pattern === 'room') effects.roomPulse(action.move, action.type, speed);
+    const rush = pattern === 'rush';
+    this.lunge(
+      action,
+      () => {
+        if (action.category === 'Status' && pattern !== 'guard' && pattern !== 'room') {
+          for (const slot of action.targets.length > 0 ? action.targets : [action.attacker]) {
+            const at = this.effectPoint(slot);
+            if (at) effects.aura(at, action.type, size, speed);
+          }
         }
-      }
-      for (const slot of action.hits) {
-        this.blink(slot);
-        const at = this.effectPoint(slot);
-        if (at) effects.impact(at, action.type, size, speed);
-      }
-    });
+        for (const slot of action.hits) {
+          const at = this.effectPoint(slot);
+          if (!at) {
+            this.blink(slot);
+          } else if (pattern === 'flurry') {
+            effects.flurry(at, action.type, size, speed, () => this.blink(slot));
+          } else if (pattern === 'clap') {
+            effects.clap(at, action.type, size, speed, () => this.blink(slot, true));
+          } else {
+            this.blink(slot);
+            effects.impact(at, action.type, size, speed);
+          }
+        }
+      },
+      rush
+        ? (dx, dy) => {
+            const from = this.effectPoint(action.attacker);
+            if (from) effects.trail(from, dx, dy, action.type, size, RUSH_MS, speed);
+          }
+        : undefined,
+    );
   }
 
   /** Where a move's effect centres on a slot's Pokémon (its body, a little below the sprite's middle); null for an empty slot. */
@@ -803,9 +819,10 @@ export class BattleField {
 
   /**
    * The attacker lunges at its targets (their middle, for a spread move) and comes back; `contact`
-   * runs as it reaches them.
+   * runs as it reaches them. With `rushing`, it goes faster, and `rushing` gets the lunge's reach
+   * as it starts (for the trail).
    */
-  private lunge(action: MoveAction, contact: () => void): void {
+  private lunge(action: MoveAction, contact: () => void, rushing?: (dx: number, dy: number) => void): void {
     const from = this.slotData(action.attacker);
     if (!from) return;
     const targets = action.targets.filter((t) => t !== action.attacker).map((t) => this.slotData(t)).filter((t): t is FieldSlot => !!t);
@@ -819,9 +836,10 @@ export class BattleField {
       dx = (x / length) * distance;
       dy = (y / length) * distance;
     }
+    rushing?.(dx, dy);
     // Whoever the move damages blinks as the lunge reaches them, not a log step later with their HP.
     let struck = false;
-    this.animate(action.attacker, LUNGE_MS, (el, base, progress) => {
+    this.animate(action.attacker, rushing ? RUSH_MS : LUNGE_MS, (el, base, progress) => {
       const amount = outAndBack(progress);
       el.style.left = `${Math.round(base.left + dx * amount)}px`;
       el.style.top = `${Math.round(base.top + dy * amount)}px`;
@@ -832,11 +850,12 @@ export class BattleField {
     });
   }
 
-  /** The target blinks as it takes the hit. */
-  private blink(slot: SlotKey): void {
-    this.animate(slot, BLINK_MS, (el, _base, progress) => {
+  /** The target blinks as it takes the hit; a flinching one shakes sideways too. */
+  private blink(slot: SlotKey, shake = false): void {
+    this.animate(slot, BLINK_MS, (el, base, progress) => {
       const phase = Math.min(BLINKS - 1, Math.floor(progress * BLINKS));
       el.style.opacity = progress < 1 && phase % 2 === 0 ? BLINK_OPACITY : '1';
+      if (shake) el.style.left = `${Math.round(base.left + Math.sin(progress * SHAKES * 2 * Math.PI) * SHAKE_PX * (1 - progress))}px`;
     });
   }
 
@@ -873,33 +892,23 @@ export class BattleField {
     );
   }
 
-  /** A shield pulses around the Pokémon, then hides again. */
-  private shieldPulse(event: FieldEvent): void {
-    const key = `shield-${event.slot}`;
-    this.running.get(key)?.();
-    const el = this.host.querySelector<HTMLElement>(`[data-shield="${event.slot}"]`);
-    if (!el) return;
-    const hide = () => {
-      el.style.display = '';
-      el.style.opacity = '';
-    };
-    el.style.display = 'block';
-    const stop = stepAnimation(
-      SHIELD_MS / this.store.speed(),
-      (progress) => {
-        const pulse = Math.sin(progress * SHIELD_PULSES * Math.PI);
-        el.style.opacity = String(Math.round(Math.abs(pulse) * SHIELD_OPACITY * 100) / 100);
-      },
-      () => {
-        hide();
-        this.running.delete(key);
-      },
-    );
-    this.running.set(key, () => {
-      stop();
-      hide();
-      this.running.delete(key);
-    });
+  /** Protect (and the like) pulses a shield around the Pokémon; Wide Guard (and the like), a barrier across its side. */
+  private guard(event: FieldEvent): void {
+    const effects = this.effects();
+    if (!effects) return;
+    const size = this.layout().spriteSize;
+    const speed = this.store.speed();
+    if (event.kind === 'protect') {
+      const at = this.effectPoint(event.slot);
+      if (at) effects.shield(at, size, speed);
+      return;
+    }
+    const side = event.slot.slice(0, 2);
+    const points = Object.keys(this.layout().stands)
+      .filter((slot) => slot.startsWith(side))
+      .map((slot) => this.effectPoint(slot))
+      .filter((point): point is EffectPoint => !!point);
+    effects.wall(points, size, speed);
   }
 
   /** The fainted Pokémon sinks and disappears; then its sprite is removed. */

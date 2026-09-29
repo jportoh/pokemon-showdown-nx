@@ -248,6 +248,13 @@ export function isProtection(effect: string): boolean {
   return PROTECTING.includes(effectName(effect));
 }
 
+/** The protections that guard the whole side rather than their user. */
+const SIDE_GUARDS = ['Wide Guard', 'Quick Guard', 'Mat Block', 'Crafty Shield'];
+
+export function isSideGuard(effect: string): boolean {
+  return SIDE_GUARDS.includes(effectName(effect));
+}
+
 /** `|-singleturn|`: a move that lasts the turn. Null for the ones the log doesn't mention. */
 export function singleTurnText(
   ident: string,

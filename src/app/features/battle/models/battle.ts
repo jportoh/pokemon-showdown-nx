@@ -197,11 +197,12 @@ export interface StatChange {
 /**
  * Something the field animates on a slot: a direct hit (the Pokémon blinks), a faint (it sinks out of
  * sight), a withdrawal (it leaves towards its trainer's side), a send-out (the new one comes in), a
- * Mega Evolution or Terastallization (it flashes) or a protection (a shield pulses around it).
+ * Mega Evolution or Terastallization (it flashes), a protection (a shield pulses around it) or one
+ * guarding its whole side, Wide Guard and the like (a barrier pulses across the side).
  */
 export interface FieldEvent {
   id: number;
-  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'tera' | 'protect';
+  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'tera' | 'protect' | 'side-guard';
   slot: SlotKey;
 }
 

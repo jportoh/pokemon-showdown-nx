@@ -3,10 +3,10 @@ import { stepAnimation } from '@features/battle/animation/step-animation';
 import { SlotKey } from '@features/battle/models/battle';
 
 /**
- * Pieces kept mounted: enough for a spread move's two impacts (2 × 7) plus the charge, and a stat
- * change's streaks alongside.
+ * Pieces kept mounted: enough for a spread wave's two impacts (2 × 7) and its rings still rolling
+ * (2 × 3), with a few to spare. Hidden ones cost nothing.
  */
-const POOL_SIZE = 20;
+const POOL_SIZE = 24;
 
 // Lengths at normal speed (a move's log step lasts 1100 ms); the replay speed divides them.
 /** A special move gathers at its user… */
@@ -20,6 +20,36 @@ const AURA_RING_GAP_MS = 180;
 const AURA_SPARK_MS = 640;
 const IMPACT_SPARKS = 5;
 const AURA_SPARKS = 4;
+/** A beam: a stream of orbs, one every BEAM_GAP_MS, each crossing in BEAM_FLIGHT_MS. */
+const BEAM_ORBS = 12;
+const BEAM_GAP_MS = 25;
+const BEAM_FLIGHT_MS = 240;
+/** A wave: rings rolling out one after another, growing as they go. */
+const WAVE_RINGS = 3;
+const WAVE_GAP_MS = 90;
+const WAVE_FLIGHT_MS = 380;
+/** A rush's trail: orbs lagging behind the user, each this much later along its lunge. */
+const TRAIL_ORBS = 4;
+const TRAIL_LAG = 0.06;
+/** A flurry: light hits landing one after another around the target's body. */
+const FLURRY_OFFSETS = [
+  [-0.12, -0.1],
+  [0.12, 0],
+  [-0.02, 0.12],
+] as const;
+const FLURRY_GAP_MS = 120;
+/** A clap: two orbs from either side meeting on the target. */
+const CLAP_MS = 160;
+/** A room: the whole field pulses twice in its colour (Trick Room in the violet of its frame). */
+const ROOM_MS = 800;
+const ROOM_PULSES = 2;
+const ROOM_OPACITY = 0.45;
+const ROOM_COLORS: Readonly<Record<string, Rgb>> = { trickroom: [168, 85, 247] };
+/** A protection: a shield (or the side's barrier) pulses three times. */
+const SHIELD_MS = 900;
+const SHIELD_PULSES = 3;
+const SHIELD_FILL = [165, 243, 252] as const;
+const SHIELD_EDGE = [103, 232, 249] as const;
 /** Stat changes: streaks rising (raised) or falling (lowered), in two waves, green and red as the stage chips. */
 const STAT_STREAKS = 5;
 const STAT_STREAK_MS = 620;
@@ -52,6 +82,9 @@ const EFFECT_COLORS: Readonly<Record<string, readonly [number, number, number]>>
   fairy: [238, 153, 172],
 };
 const DEFAULT_COLOR = [230, 230, 230] as const;
+/** The field's size, which the host covers. */
+const FIELD_WIDTH = 985;
+const FIELD_HEIGHT = 500;
 
 /** A point on the field (px from its top left corner). */
 export interface EffectPoint {
@@ -71,7 +104,8 @@ type Rgb = readonly [number, number, number];
 /**
  * A move's visual effect over the field, in its type's colour: a burst with sparks where a hit lands,
  * an orb that gathers at a special move's user and flies to each target, rings and rising sparks
- * around the Pokémon a status move affects. Every shape is a radial-gradient box (probe N2: they
+ * around the Pokémon a status move affects; and the patterns some moves have of their own (see
+ * move-patterns): beams, waves, trails, flurries, claps, rooms, shields and barriers. Every shape is a radial-gradient box (probe N2: they
  * render, and `border-radius` circles don't; a box sized by width/height grows fine where a scale()
  * transform gets clipped). The pieces are always mounted and hidden with display, since re-creating
  * DOM stutters on the console; frames move them by left/top on requestAnimationFrame.
@@ -103,27 +137,49 @@ export class MoveEffects {
     this.busy.clear();
   }
 
-  /** A hit landing: a ring bursting out of a flash, with sparks flying off. `size` is the sprite's. */
-  impact(at: EffectPoint, type: string, size: number, speed: number): void {
+  /**
+   * A hit landing: a ring bursting out of a flash, with sparks flying off. `size` is the sprite's; a
+   * `light` hit (one of a flurry) is smaller, with two sparks.
+   */
+  impact(at: EffectPoint, type: string, size: number, speed: number, light = false): void {
     const rgb = colorOf(type);
     const ms = IMPACT_MS / speed;
-    this.run(ms, gradient(rgb, 'ring'), (piece, p) => place(piece, at.x, at.y, size * (0.2 + 0.55 * p), 1 - p));
-    this.run(ms, gradient(rgb, 'orb'), (piece, p) => place(piece, at.x, at.y, size * (0.45 - 0.25 * p), p < 0.5 ? 1 - p * 2 : 0));
-    for (let i = 0; i < IMPACT_SPARKS; i++) {
-      const angle = (i / IMPACT_SPARKS) * 2 * Math.PI - Math.PI / 2;
+    const scale = light ? 0.6 : 1;
+    const sparks = light ? 2 : IMPACT_SPARKS;
+    this.run(ms, gradient(rgb, 'ring'), (piece, p) => place(piece, at.x, at.y, size * scale * (0.2 + 0.55 * p), 1 - p));
+    this.run(ms, gradient(rgb, 'orb'), (piece, p) => place(piece, at.x, at.y, size * scale * (0.45 - 0.25 * p), p < 0.5 ? 1 - p * 2 : 0));
+    for (let i = 0; i < sparks; i++) {
+      const angle = (i / sparks) * 2 * Math.PI - Math.PI / 2 + (light ? Math.PI / 4 : 0);
       this.run(ms, gradient(rgb, 'spark'), (piece, p) => {
-        const reach = size * 0.42 * easeOut(p);
+        const reach = size * scale * 0.42 * easeOut(p);
         place(piece, at.x + Math.cos(angle) * reach, at.y + Math.sin(angle) * reach, size * 0.11, 1 - p * p);
       });
     }
   }
 
   /**
-   * A special move: an orb gathers at the user, then one flies to each target along a low arc.
-   * `arrived` is called for each as it gets there, after the impact starts on the ones it hits.
+   * A special move: an orb gathers at the user, then one flies to each target along a low arc (a
+   * 'beam' streams orbs there instead; a 'wave' rolls rings out, with no gathering). `arrived` is
+   * called for each target as the attack gets there, after the impact starts on the ones it hits.
    */
-  projectiles(from: EffectPoint, targets: readonly EffectTarget[], type: string, size: number, speed: number, arrived: (target: EffectTarget) => void): void {
+  projectiles(
+    from: EffectPoint,
+    targets: readonly EffectTarget[],
+    type: string,
+    size: number,
+    speed: number,
+    arrived: (target: EffectTarget) => void,
+    style: 'orb' | 'beam' | 'wave' = 'orb',
+  ): void {
     const rgb = colorOf(type);
+    const land = (target: EffectTarget) => {
+      if (target.hit) this.impact(target.at, type, size, speed);
+      arrived(target);
+    };
+    if (style === 'wave') {
+      targets.forEach((target) => this.wave(from, target, rgb, size, speed, () => land(target)));
+      return;
+    }
     const chargeMs = CHARGE_MS / speed;
     this.run(chargeMs, gradient(rgb, 'orb'), (piece, p) => {
       const grow = Math.min(1, p / LAUNCH_AT);
@@ -131,6 +187,10 @@ export class MoveEffects {
     });
     this.after(chargeMs * LAUNCH_AT, () => {
       for (const target of targets) {
+        if (style === 'beam') {
+          this.beam(from, target, rgb, size, speed, () => land(target));
+          continue;
+        }
         const { at } = target;
         const lift = Math.hypot(at.x - from.x, at.y - from.y) * 0.18;
         this.run(
@@ -141,13 +201,112 @@ export class MoveEffects {
             const y = from.y + (at.y - from.y) * p - 4 * lift * p * (1 - p);
             place(piece, x, y, size * 0.27, target.hit || p < 0.8 ? 1 : (1 - p) * 5);
           },
-          () => {
-            if (target.hit) this.impact(at, type, size, speed);
-            arrived(target);
-          },
+          () => land(target),
         );
       }
     });
+  }
+
+  /**
+   * Orbs trailing a rushing user: they follow its lunge (`dx`, `dy` at the far end, out and back over
+   * `ms`) a little behind it, fading as it comes back.
+   */
+  trail(from: EffectPoint, dx: number, dy: number, type: string, size: number, ms: number, speed: number): void {
+    const rgb = colorOf(type);
+    for (let k = 1; k <= TRAIL_ORBS; k++) {
+      this.run(ms / speed, gradient(rgb, 'orb'), (piece, p) => {
+        const lagged = Math.max(0, p - k * TRAIL_LAG);
+        const amount = lagged < 0.5 ? lagged * 2 : (1 - lagged) * 2;
+        const fade = (1 - (k - 1) / TRAIL_ORBS) * (p < 0.5 ? 1 : (1 - p) * 2);
+        place(piece, from.x + dx * amount, from.y + dy * amount, size * 0.3 * (1 - k * 0.12), p < k * TRAIL_LAG ? 0 : fade);
+      });
+    }
+  }
+
+  /** A quick run of light hits around the target's body; `first` runs as the first lands. */
+  flurry(at: EffectPoint, type: string, size: number, speed: number, first: () => void): void {
+    FLURRY_OFFSETS.forEach(([x, y], i) =>
+      this.after((i * FLURRY_GAP_MS) / speed, () => {
+        this.impact({ x: at.x + x * size, y: at.y + y * size }, type, size, speed, true);
+        if (i === 0) first();
+      }),
+    );
+  }
+
+  /** Two orbs slam together on the target from either side; `met` runs as they meet, after its impact starts. */
+  clap(at: EffectPoint, type: string, size: number, speed: number, met: () => void): void {
+    const rgb = colorOf(type);
+    for (const side of [-1, 1]) {
+      this.run(
+        CLAP_MS / speed,
+        gradient(rgb, 'orb'),
+        (piece, p) => place(piece, at.x + side * size * 0.5 * (1 - p * p), at.y, size * 0.24, 1),
+        side === 1
+          ? () => {
+              this.impact(at, type, size, speed);
+              met();
+            }
+          : undefined,
+      );
+    }
+  }
+
+  /** A room (Trick Room…): the whole field pulses in its colour. */
+  roomPulse(move: string, type: string, speed: number): void {
+    const rgb = ROOM_COLORS[move.toLowerCase().replace(/[^a-z]/g, '')] ?? colorOf(type);
+    this.run(ROOM_MS / speed, rgba(rgb, 1), (piece, p) =>
+      placeBox(piece, FIELD_WIDTH / 2, FIELD_HEIGHT / 2, FIELD_WIDTH, FIELD_HEIGHT, ROOM_OPACITY * Math.abs(Math.sin(p * ROOM_PULSES * Math.PI))),
+    );
+  }
+
+  /** Protect (and the like): a shield pulses around the Pokémon. */
+  shield(at: EffectPoint, size: number, speed: number): void {
+    this.shieldPulse(at, size * 0.83, size * 0.83, 'circle', speed);
+  }
+
+  /** Wide Guard (and the like): a barrier pulses across the side, over all its Pokémon. */
+  wall(points: readonly EffectPoint[], size: number, speed: number): void {
+    if (points.length === 0) return;
+    const xs = points.map((point) => point.x);
+    const centre = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: points.reduce((sum, point) => sum + point.y, 0) / points.length };
+    this.shieldPulse(centre, Math.max(...xs) - Math.min(...xs) + size * 0.9, size * 0.8, 'ellipse', speed);
+  }
+
+  private shieldPulse(at: EffectPoint, width: number, height: number, shape: 'circle' | 'ellipse', speed: number): void {
+    // A see-through fill with a bright edge; an ellipse is the gradient's own shape on a wide box.
+    const form = shape === 'circle' ? 'circle, ' : '';
+    const background = `radial-gradient(${form}${rgba(SHIELD_FILL, 0.35)} 0%, ${rgba(SHIELD_FILL, 0.5)} 55%, ${rgba(SHIELD_EDGE, 1)} 64%, rgba(255, 255, 255, 1) 67%, ${rgba(SHIELD_EDGE, 0)} 71%)`;
+    this.run(SHIELD_MS / speed, background, (piece, p) => placeBox(piece, at.x, at.y, width, height, Math.abs(Math.sin(p * SHIELD_PULSES * Math.PI))));
+  }
+
+  /** A stream of orbs flying straight to the target; `landed` runs as the last one gets there. */
+  private beam(from: EffectPoint, target: EffectTarget, rgb: Rgb, size: number, speed: number, landed: () => void): void {
+    const { at } = target;
+    for (let i = 0; i < BEAM_ORBS; i++) {
+      this.after((i * BEAM_GAP_MS) / speed, () =>
+        this.run(
+          BEAM_FLIGHT_MS / speed,
+          gradient(rgb, 'orb'),
+          (piece, p) => place(piece, from.x + (at.x - from.x) * p, from.y + (at.y - from.y) * p, size * 0.26, target.hit || p < 0.8 ? 1 : (1 - p) * 5),
+          i === BEAM_ORBS - 1 ? landed : undefined,
+        ),
+      );
+    }
+  }
+
+  /** Rings rolling out to the target, growing as they go; `landed` runs as the first one gets there. */
+  private wave(from: EffectPoint, target: EffectTarget, rgb: Rgb, size: number, speed: number, landed: () => void): void {
+    const { at } = target;
+    for (let i = 0; i < WAVE_RINGS; i++) {
+      this.after((i * WAVE_GAP_MS) / speed, () =>
+        this.run(
+          WAVE_FLIGHT_MS / speed,
+          gradient(rgb, 'ring'),
+          (piece, p) => place(piece, from.x + (at.x - from.x) * p, from.y + (at.y - from.y) * p, size * (0.25 + 0.45 * p), 1 - 0.6 * p),
+          i === 0 ? landed : undefined,
+        ),
+      );
+    }
   }
 
   /** A status move taking effect: two rings spread out from the Pokémon and sparks drift up. */
