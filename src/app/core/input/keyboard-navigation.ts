@@ -51,6 +51,8 @@ type Source = 'keyboard' | 'gamepad';
 export type PageStep = 'up' | 'down' | 'first' | 'last';
 /** Pages an element for the focused control inside it (or itself); false leaves the press to normal navigation. */
 export type Pager = (step: PageStep, focused: HTMLElement) => boolean;
+/** Nudges a value (a slider's) for the focused control inside the element with left/right; false leaves the press to normal navigation. */
+export type Adjuster = (step: 1 | -1) => boolean;
 
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
@@ -81,6 +83,7 @@ export class KeyboardNavigation {
 
   private readonly backHandlers = new Map<Element, () => void>();
   private readonly pagers = new Map<Element, Pager>();
+  private readonly adjusters = new Map<Element, Adjuster>();
   private tabSwitcher: ((step: 1 | -1) => void) | null = null;
   /** L/R handlers by page, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
@@ -152,6 +155,12 @@ export class KeyboardNavigation {
   registerPager(element: Element, pager: Pager): () => void {
     this.pagers.set(element, pager);
     return () => this.pagers.delete(element);
+  }
+
+  /** An element whose value left/right change while focus is in it (a slider), instead of moving focus. */
+  registerAdjuster(element: Element, adjuster: Adjuster): () => void {
+    this.adjusters.set(element, adjuster);
+    return () => this.adjusters.delete(element);
   }
 
   /**
@@ -356,6 +365,9 @@ export class KeyboardNavigation {
       changeOption(active as HTMLSelectElement, direction === 'right' ? 1 : -1, false);
       return true;
     }
+    if (active && (direction === 'left' || direction === 'right') && this.nearest(this.adjusters, active)?.(direction === 'right' ? 1 : -1)) {
+      return true;
+    }
     // A focused scroll region (the chat log, the user list) or paged element scrolls first, then lets focus go.
     if (active && (direction === 'up' || direction === 'down')) {
       if (this.pagerFor(active)?.(direction, active)) return true;
@@ -425,9 +437,14 @@ export class KeyboardNavigation {
 
   /** The pager of the nearest element around `active` (itself included). */
   private pagerFor(active: HTMLElement): Pager | null {
+    return this.nearest(this.pagers, active);
+  }
+
+  /** The handler registered on the nearest element around `active` (itself included). */
+  private nearest<T>(handlers: Map<Element, T>, active: HTMLElement): T | null {
     for (let node: Element | null = active; node; node = node.parentElement) {
-      const pager = this.pagers.get(node);
-      if (pager) return pager;
+      const handler = handlers.get(node);
+      if (handler) return handler;
     }
     return null;
   }
