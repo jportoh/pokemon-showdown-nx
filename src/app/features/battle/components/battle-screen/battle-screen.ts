@@ -104,6 +104,13 @@ const FORFEIT_CONFIRM_MS = 4000;
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
       <!-- The opponent's open team sheet over the whole field, likewise always mounted. -->
       <app-battle-team-sheet class="absolute top-[48px] left-[12px]" [open]="sheetOpen()" (appBack)="closeSheet()" />
+
+      <!-- Until the server has the battle going (team preview, or its start), in place of an empty field. -->
+      @if (joining()) {
+        <div role="status" class="absolute top-0 left-0 block h-[720px] w-[1280px] bg-header">
+          <p class="absolute top-[330px] left-0 block h-[60px] w-[1280px] text-center text-4xl leading-[60px] font-bold">Joining battle…</p>
+        </div>
+      }
     </div>
   `,
 })
@@ -160,6 +167,11 @@ export class BattleScreen {
     const format = room && roomFormat(room);
     return this.challenges.incoming().find((c) => c.fromId === opponent && c.format === format && !c.needsTeam) ?? null;
   });
+
+  /** Our battle's room is open but nothing has come to show yet: no team preview, no start, no request. */
+  protected readonly joining = computed(
+    () => !!this.liveRoom() && !this.store.intro() && !this.store.started() && !this.store.request() && !this.store.result(),
+  );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
