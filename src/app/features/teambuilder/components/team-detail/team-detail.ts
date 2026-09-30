@@ -39,7 +39,7 @@ const SLOT_POSITIONS = [
           [attr.aria-label]="'Format: ' + formatText() + '. Change to the next format'"
         >
           <span aria-hidden="true" class="absolute top-0 left-[10px] block h-8 w-[290px] text-left leading-8">{{ formatText() }}</span>
-          <span aria-hidden="true" class="absolute top-0 left-[306px] block h-8 w-5 text-center leading-8">▶</span>
+          <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[9px] left-[312px] h-[14px] w-2 fill-retro-muted"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" /></svg>
         </button>
         <button type="button" (click)="startRename()" [class]="actionClass" class="left-[528px] w-[100px]">Rename</button>
         <!--

@@ -2,6 +2,7 @@ import { Component, ElementRef, Injector, afterNextRender, afterRenderEffect, co
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
 import { SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
+import { BattleRequest } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
@@ -43,7 +44,8 @@ interface TheirRow extends SheetRow {
  * shows them, on the right, laid out like ours (item, ability and moves from their open team sheet, when
  * there's one); "VS" in the gap between. Done sends the order (\`team 3142\`); B takes the last pick
  * back; ZL (or the button by their name) agrees to open team sheets or shows theirs. Shown while the
- * server asks for it and hidden with display:none otherwise (removed, big overlays stayed painted on
+ * server asks for it, and after Done "standing by" (the picks kept, nothing to change) until the
+ * battle starts, so both teams stay in view while the opponent picks; hidden with display:none otherwise (removed, big overlays stayed painted on
  * the console). Rows at fixed places, tracked by position.
  */
 @Component({
@@ -155,11 +157,19 @@ interface TheirRow extends SheetRow {
         #doneButton
         type="button"
         class="absolute top-[628px] left-[396px] h-10 w-[180px] rounded-md border-2 text-xl font-bold disabled:cursor-not-allowed disabled:border-gray-600 disabled:bg-gray-700 disabled:text-gray-400"
-        [class]="ready() ? 'cursor-pointer border-retro-bar bg-retro-accent text-white hover:bg-retro-accent-hover' : ''"
+        [class]="
+          standingBy()
+            ? 'cursor-default border-gray-600 bg-gray-700 text-gray-400'
+            : ready()
+              ? 'cursor-pointer border-retro-bar bg-retro-accent text-white hover:bg-retro-accent-hover'
+              : ''
+        "
         [disabled]="!ready()"
+        [attr.aria-disabled]="standingBy() ? 'true' : null"
         (click)="done()"
       >
-        Done
+        <!-- Standing by it stays enabled (aria-disabled): a disabled button would drop the focus. -->
+        {{ standingBy() ? 'Sent' : 'Done' }}
       </button>
       <p class="absolute top-[634px] left-[704px] block h-7 w-[560px] text-right text-base leading-7 text-retro-muted">{{ hint() }}</p>
     </div>
@@ -178,10 +188,24 @@ export class BattleTeamSelect {
 
   protected readonly pillWidth = MOVE_PILL_WIDTH;
 
-  private readonly request = computed(() => {
+  /** The server's team preview request, while it waits for our choice. */
+  private readonly pending = computed(() => {
     const request = this.store.request();
     return request?.teamPreview && !this.store.result() && !this.store.watching() ? request : null;
   });
+
+  /**
+   * The request we've answered (Done), kept until the battle starts: sending the choice clears the
+   * server's request, and the screen would otherwise go blank while the opponent still picks. Any
+   * change of team preview (the battle starting, a new game) forgets it.
+   */
+  private readonly answered = linkedSignal({ source: () => this.store.teamPreview(), computation: (): BattleRequest | null => null });
+
+  /** The request shown: the one waiting for us, or the one answered while the opponent chooses. */
+  private readonly request = computed(() => this.pending() ?? (this.store.teamPreview() ? this.answered() : null));
+
+  /** Our choice is sent: the opponent is still choosing theirs. */
+  protected readonly standingBy = computed(() => !this.pending() && this.request() !== null);
 
   protected readonly shown = computed(() => this.request() !== null);
 
@@ -205,15 +229,17 @@ export class BattleTeamSelect {
   });
 
   protected readonly instructions = computed(() => {
+    if (this.standingBy()) return `Standing by… ${this.opponent() || 'the opponent'} is choosing`;
     const leads = this.leads();
     return `Choose ${this.toBring()} Pokémon · the first ${leads === 1 ? 'one leads' : `${leads} lead`}`;
   });
 
   protected readonly opponent = computed(() => this.store.sides().p2.name);
 
-  protected readonly status = computed(() => `${this.order().length}/${this.toBring()} chosen`);
+  protected readonly status = computed(() => (this.standingBy() ? 'Team sent · standing by' : `${this.order().length}/${this.toBring()} chosen`));
   protected readonly hint = computed(() => {
     const sheet = this.sheet();
+    if (this.standingBy()) return sheet === 'sheet' ? 'ZL their full team sheet' : '';
     if (sheet === 'sheet') return 'A pick · B undo · ZL their full team sheet';
     if (sheet === 'accept') return 'A pick · B undo · ZL accept open team sheets';
     if (sheet === 'waiting') return 'A pick · B undo · Waiting for their answer on sheets';
@@ -272,6 +298,7 @@ export class BattleTeamSelect {
 
   /** A: adds the Pokémon to the order (while there's room), or takes it out. */
   protected toggle(index: number): void {
+    if (this.standingBy()) return;
     const order = this.order();
     if (order.includes(index)) this.order.set(order.filter((i) => i !== index));
     else if (order.length < this.toBring()) this.order.set([...order, index]);
@@ -283,11 +310,14 @@ export class BattleTeamSelect {
 
   /** B: takes the last pick back. */
   undo(): void {
+    if (this.standingBy()) return;
     this.order.update((order) => order.slice(0, -1));
   }
 
   protected done(): void {
-    if (!this.ready()) return;
+    const request = this.pending();
+    if (!request || !this.ready()) return;
+    this.answered.set(request);
     this.store.choose(`team ${this.order().map((i) => i + 1).join('')}`);
   }
 }

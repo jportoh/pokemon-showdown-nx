@@ -14,7 +14,7 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
  * challenger's Trainer Card if the player wants (the page shows it). B leaves it for later:
  * the page keeps a button to come back to it. Focus starts on Accept (or Reject when it can't be accepted),
  * again for each challenge in line. Once accepted, the box stays with "Joining battle…" in place of its
- * buttons until the battle has something to show (see BattleRooms), when App opens it.
+ * buttons (hidden, not removed) until the battle has something to show (see BattleRooms), when App opens it.
  */
 @Component({
   imports: [BackAction, RetroBox],
@@ -30,9 +30,14 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
           {{ challenge().formatName }}{{ others() }}
           <span class="block text-lg text-retro-muted">{{ teamLine() }}</span>
         </p>
-        @if (joining()) {
-          <p role="status" class="absolute top-[196px] left-[32px] block h-8 w-[712px] text-2xl leading-8 font-bold">Joining battle…</p>
-        } @else {
+        <!--
+          The text and the buttons stay mounted and swap with display:none: removing the buttons with
+          @if left them painted under "Joining battle…" on the console.
+        -->
+        <p #joiningText tabindex="-1" role="status" class="absolute top-[196px] left-[32px] block h-8 w-[712px] text-2xl leading-8 font-bold" [class.hidden]="!joining()">
+          {{ joining() ? 'Joining battle…' : '' }}
+        </p>
+        <div class="block" [class.hidden]="joining()">
           @if (canAccept()) {
             <button
               #accept
@@ -68,7 +73,7 @@ import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-c
           >
             Trainer Card
           </button>
-        }
+        </div>
       </div>
     </app-retro-box>
   `,
@@ -78,6 +83,7 @@ export class ChallengePopup {
   private readonly acceptButton = viewChild<ElementRef<HTMLButtonElement>>('accept');
   private readonly rejectButton = viewChild<ElementRef<HTMLButtonElement>>('reject');
   private readonly cardButton = viewChild<ElementRef<HTMLButtonElement>>('cardButton');
+  private readonly joiningText = viewChild.required<ElementRef<HTMLElement>>('joiningText');
 
   readonly challenge = input.required<Challenge>();
   /** How many other challenges wait behind this one. */
@@ -126,6 +132,10 @@ export class ChallengePopup {
     afterRenderEffect(() => {
       this.challenge().fromId;
       untracked(() => (this.acceptButton() ?? this.rejectButton())?.nativeElement.focus());
+    });
+    // Accepted: the buttons hide, so focus goes to the status text instead of staying on a hidden one.
+    afterRenderEffect(() => {
+      if (this.joining()) untracked(() => this.joiningText().nativeElement.focus());
     });
   }
 
