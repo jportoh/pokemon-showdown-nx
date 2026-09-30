@@ -18,6 +18,7 @@ import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { FormField, form } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
 import { KeyboardNavigation, PageStep } from '@core/input/keyboard-navigation';
+import { NgOptimizedImage } from '@angular/common';
 import { ItemIcon } from '@shared/components/item-icon';
 import { ScrollRegion } from '@shared/directives/scroll-region';
 import { toId } from '@shared/utils/to-id';
@@ -29,8 +30,12 @@ export interface ChooserOption {
   detail: string;
   /** Row background (e.g. the move's type colour) while it isn't the current choice. */
   color?: string;
-  /** An item's ID, whose icon goes at the row's start (see `withIcons`); a detail up to 3 lines fits beside it. */
+  /** An item's ID, whose icon goes at the row's start (see `withIcons`); a detail up to 2 lines fits beside it. */
   icon?: string;
+  /** A move's category icon (Showdown's, as in battle), before its detail (see `withCategories`). */
+  categoryIcon?: string;
+  /** What a screen reader says instead of the row's text, when that leaves something out (the category). */
+  label?: string;
 }
 
 /** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
@@ -46,23 +51,42 @@ const BATCH_DELAY_MS = 40;
 /** A list this close to the one shown (the next move slot's: one move in, one out) keeps its rows. */
 const SAME_LIST_CHANGES = 2;
 
-/** A list with icons shows this many fixed rows at a time: a name and up to 3 lines of detail each. */
-const PAGE_ROWS = 6;
-const PAGE_ROW_STEP = 78;
+/**
+ * A list with item icons shows this many fixed rows at a time (a name and up to 2 lines of detail
+ * each); a list of moves, more and shorter ones (a name, and the category icon before one line).
+ */
+const ICON_PAGE_ROWS = 6;
+const ICON_ROW_STEP = 72;
+const CATEGORY_PAGE_ROWS = 8;
+const CATEGORY_ROW_STEP = 59;
+/** The list's height under the search box, or without one: the chooser is 536 tall either way. */
+const LIST_HEIGHT = 436;
+const UNSEARCHABLE_LIST_HEIGHT = 476;
 
 @Component({
-  imports: [FormField, ItemIcon, ScrollRegion],
+  imports: [FormField, ItemIcon, NgOptimizedImage, ScrollRegion],
   selector: 'app-dex-chooser',
   host: { class: 'block' },
-  // Fixed 408x564 panel (see styles.css): title, search box and a scrolling list of plain block rows
+  // Fixed 408x536, inside the editor's framed panel: title, search box and a scrolling list of block rows
   // (Brewser layout rules, seen on device). Typing a few letters is the only writing needed; the
   // d-pad moves between the box and the results (KeyboardNavigation). A list that isn't searchable
-  // hides the box and shows every option in the room it leaves. A list with icons (items) is NOT a
+  // hides the box and shows every option in the room it leaves. A list with images (items, moves) is NOT a
   // scroll box: images in one stayed painted at their old places when it scrolled (device,
   // 2026-09-29), whether placed absolutely or in the line of text. It shows a page of fixed rows
   // instead, and moving past the first or last one shown moves it (a pager, as the option picker).
   template: `
-    <h3 [id]="titleId" class="h-8 text-lg font-bold text-white">{{ title() }}</h3>
+    <h3 [id]="titleId" class="h-8 p-[0_6px] text-lg font-bold text-retro-ink">{{ title() }}</h3>
+    <!-- "No item"/"No move" is ZL (the page binds it), so it isn't a row among the real choices. -->
+    <button
+      type="button"
+      data-kb-skip
+      [class.hidden]="!clearLabel()"
+      (click)="cleared.emit()"
+      class="absolute top-[2px] left-[280px] block h-6 w-[128px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button p-0 text-sm font-bold text-retro-ink hover:bg-retro-select"
+    >
+      <span aria-hidden="true" class="absolute top-[2px] left-[3px] block h-4 w-7 rounded-sm bg-retro-select text-center text-xs leading-4">ZL</span>
+      <span class="absolute top-0 left-[34px] block h-5 w-[86px] text-center leading-5">{{ clearLabel() }}</span>
+    </button>
     <input
       type="search"
       autocomplete="off"
@@ -72,17 +96,17 @@ const PAGE_ROW_STEP = 78;
       [formField]="searchForm.query"
       [class.hidden]="!searchable()"
       (keydown)="onSearchKey($event)"
-      class="block h-10 w-[408px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-lg text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      class="block h-10 w-[408px] rounded-md border-2 border-retro-outline bg-retro-input p-[0_12px] text-lg text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
     />
-    <p class="h-7 text-sm leading-7 text-gray-300">{{ summary() }}{{ paged() ? pageArrows() : '' }}</p>
+    <p class="h-7 p-[0_6px] text-sm leading-7 text-retro-muted">{{ summary() }}{{ paged() ? pageArrows() : '' }}</p>
     <ul
       #list
       appScrollRegion
       [id]="paged() ? null : listId"
       [attr.aria-labelledby]="titleId"
-      [style.height.px]="searchable() ? 476 : 516"
+      [style.height.px]="searchable() ? listHeight : unsearchableListHeight"
       [class.hidden]="paged()"
-      class="w-[408px] overflow-y-auto rounded-md border border-gray-600 bg-card"
+      class="w-[408px] overflow-y-auto rounded-md border-2 border-retro-rim bg-retro-bg"
     >
       @for (option of shownResults(); track option.id) {
         <li>
@@ -90,8 +114,8 @@ const PAGE_ROW_STEP = 78;
             type="button"
             [attr.aria-current]="option.id === selectedId() ? 'true' : null"
             (click)="picked.emit(option.id)"
-            class="block w-[406px] cursor-pointer border-b border-gray-700 p-[6px_12px] text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
-            [class.bg-tab-hover]="option.id === selectedId()"
+            class="block w-[404px] cursor-pointer border-b border-retro-rim p-[6px_12px] text-left text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+            [class.bg-retro-select]="option.id === selectedId()"
             [style.background-color]="option.id === selectedId() ? null : option.color || null"
           >
             <span class="block text-base font-bold">{{ option.name }}</span>
@@ -102,34 +126,52 @@ const PAGE_ROW_STEP = 78;
         </li>
       }
     </ul>
-    <!-- Rows with icons: a page of fixed rows, tracked by position (see PAGE_ROWS). -->
+    <!-- Rows with images (item icons, move categories): a page of fixed rows, tracked by position (see pageSize). -->
     <div
       #pages
       role="group"
       [id]="paged() ? listId : null"
       [attr.aria-labelledby]="titleId"
       [class.hidden]="!paged()"
-      [style.height.px]="searchable() ? 476 : 516"
-      class="relative block w-[408px] rounded-md border border-gray-600 bg-card"
+      [style.height.px]="searchable() ? listHeight : unsearchableListHeight"
+      class="relative block w-[408px] rounded-md border-2 border-retro-rim bg-retro-bg"
     >
       @for (row of pageRows(); track $index) {
         <button
           type="button"
           [attr.aria-current]="row.option.id === selectedId() ? 'true' : null"
+          [attr.aria-label]="row.option.label || null"
           [attr.data-index]="row.index"
           (click)="picked.emit(row.option.id)"
-          class="absolute left-0 block w-[406px] cursor-pointer border-b border-gray-700 p-0 text-left text-white hover:bg-tab-hover"
-          [class.bg-tab-hover]="row.option.id === selectedId()"
-          [style.top.px]="$index * pageRowStep"
-          [style.height.px]="pageRowStep"
+          class="absolute left-0 block w-[404px] cursor-pointer border-b border-retro-rim p-0 text-left text-retro-ink hover:bg-retro-select"
+          [class.bg-retro-select]="row.option.id === selectedId()"
+          [style.background-color]="row.option.id === selectedId() ? null : row.option.color || null"
+          [style.top.px]="$index * pageRowStep()"
+          [style.height.px]="pageRowStep()"
         >
-          <app-item-icon class="absolute top-[14px] left-[8px]" [item]="row.option.icon ?? ''" />
-          <span class="absolute top-[4px] left-[64px] block h-[22px] w-[330px] overflow-hidden text-base leading-[22px] font-bold whitespace-nowrap">{{
-            row.option.name
-          }}</span>
-          <span class="absolute top-[26px] left-[64px] block h-[48px] w-[330px] text-sm leading-4 text-gray-300">{{
-            row.option.detail
-          }}</span>
+          @if (withIcons()) {
+            <app-item-icon class="absolute top-[11px] left-[8px]" [item]="row.option.icon ?? ''" />
+            <span class="absolute top-[9px] left-[64px] block h-[22px] w-[330px] overflow-hidden text-base leading-[22px] font-bold whitespace-nowrap">{{
+              row.option.name
+            }}</span>
+            <span class="absolute top-[31px] left-[64px] block h-8 w-[330px] overflow-hidden text-sm leading-4 text-gray-300">{{
+              row.option.detail
+            }}</span>
+          } @else {
+            <span class="absolute top-[6px] left-[12px] block h-[22px] w-[380px] overflow-hidden text-base leading-[22px] font-bold whitespace-nowrap">{{
+              row.option.name
+            }}</span>
+            <!-- A new image per icon (tracked by URL): a changed src wasn't repainted on Brewser. -->
+            @for (src of row.option.categoryIcon ? [row.option.categoryIcon] : []; track src) {
+              <img [ngSrc]="src" width="32" height="14" alt="" class="absolute top-[33px] left-[12px] block" />
+            }
+            <span
+              class="absolute top-[30px] block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-300"
+              [style.left.px]="row.option.categoryIcon ? 50 : 12"
+              [style.width.px]="row.option.categoryIcon ? 342 : 380"
+              >{{ row.option.detail }}</span
+            >
+          }
         </button>
       }
     </div>
@@ -146,6 +188,8 @@ export class DexChooser {
   readonly selectedId = input('');
   /** Rows show the options' `icon`: listed a page at a time, not in a scroll box (see the template). */
   readonly withIcons = input(false);
+  /** Rows show the options' `categoryIcon` (moves): listed a page at a time too, for the same reason. */
+  readonly withCategories = input(false);
   /** Whether it has a search box; without one, every option is listed. */
   readonly searchable = input(true);
   /** A short list (and its name) to show instead of the first results until something is typed. */
@@ -154,6 +198,9 @@ export class DexChooser {
   /** Shown instead of the results while the data they come from loads or fails. */
   readonly unavailable = input('');
   readonly picked = output<string>();
+  /** A "none" choice (No item, No move) that ZL picks, shown by the title; none when empty. */
+  readonly clearLabel = input('');
+  readonly cleared = output<void>();
 
   protected readonly titleId = `chooser-title-${nextId}`;
   protected readonly listId = `chooser-list-${nextId++}`;
@@ -201,8 +248,12 @@ export class DexChooser {
   protected readonly shownResults = computed(() => (this.paged() ? [] : this.results().slice(0, this.rowCount())));
 
   /** Listed a page at a time (see the template). */
-  protected readonly paged = computed(() => this.withIcons());
-  protected readonly pageRowStep = PAGE_ROW_STEP;
+  protected readonly paged = computed(() => this.withIcons() || this.withCategories());
+  /** Rows a page shows, and how far apart. */
+  private readonly pageSize = computed(() => (this.withIcons() ? ICON_PAGE_ROWS : CATEGORY_PAGE_ROWS));
+  protected readonly pageRowStep = computed(() => (this.withIcons() ? ICON_ROW_STEP : CATEGORY_ROW_STEP));
+  protected readonly listHeight = LIST_HEIGHT;
+  protected readonly unsearchableListHeight = UNSEARCHABLE_LIST_HEIGHT;
 
   /** The first result shown on the page: at first, the page that shows the current choice. */
   private readonly pageStart = linkedSignal({
@@ -214,13 +265,13 @@ export class DexChooser {
     if (!this.paged()) return [];
     const start = this.pageStart();
     return this.results()
-      .slice(start, start + PAGE_ROWS)
+      .slice(start, start + this.pageSize())
       .map((option, i) => ({ option, index: start + i }));
   });
 
   protected readonly pageArrows = computed(() => {
     const start = this.pageStart();
-    return `${start > 0 ? ' ▲' : ''}${start + PAGE_ROWS < this.results().length ? ' ▼' : ''}`;
+    return `${start > 0 ? ' ▲' : ''}${start + this.pageSize() < this.results().length ? ' ▼' : ''}`;
   });
 
   /** The result to focus once the page has rendered (after moving it); the tick reruns the effect. */
@@ -334,7 +385,7 @@ export class DexChooser {
         target = index - 1;
         break;
       case 'down':
-        if (index < start + PAGE_ROWS - 1 || index >= last) return false;
+        if (index < start + this.pageSize() - 1 || index >= last) return false;
         target = index + 1;
         break;
       case 'first':
@@ -345,7 +396,7 @@ export class DexChooser {
         break;
     }
     if (target < 0) return false;
-    this.pageStart.set(this.clampStart(target < start ? target : target >= start + PAGE_ROWS ? target - PAGE_ROWS + 1 : start));
+    this.pageStart.set(this.clampStart(target < start ? target : target >= start + this.pageSize() ? target - this.pageSize() + 1 : start));
     this.focusIndex = target;
     this.focusTick.update((tick) => tick + 1);
     this.render.request();
@@ -359,7 +410,7 @@ export class DexChooser {
   }
 
   private clampStart(start: number, count = this.results().length): number {
-    return Math.max(0, Math.min(start, count - PAGE_ROWS));
+    return Math.max(0, Math.min(start, count - this.pageSize()));
   }
 
   private pageButton(index: number): HTMLElement | null {

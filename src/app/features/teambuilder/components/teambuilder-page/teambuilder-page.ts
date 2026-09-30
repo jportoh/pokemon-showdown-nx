@@ -52,10 +52,14 @@ export class TeambuilderPage {
     });
 
     // The panels stay mounted, so the buttons go to the one shown: on a team ZL validates and ZR
-    // deletes it; in the editor L/R switch Details/Stats and ZR removes the Pokémon.
+    // deletes it; in the editor L/R switch Details/Stats, ZL picks No item/No move in their lists and ZR
+    // removes the Pokémon.
     const navigation = inject(KeyboardNavigation);
     const unregister = [
-      navigation.registerButton('buttonZL', () => this.view() === 'team' && this.detail().pressValidate()),
+      navigation.registerButton('buttonZL', () => {
+        if (this.view() === 'team') return this.detail().pressValidate();
+        return this.view() === 'edit' && this.editor().pressClear();
+      }),
       navigation.registerButton('buttonZR', () => {
         if (this.view() === 'team') return this.detail().pressDelete();
         return this.view() === 'edit' && this.editor().pressRemove();

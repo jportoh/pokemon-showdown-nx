@@ -7,7 +7,6 @@ export const STAT_NAMES: Record<StatId, string> = { hp: 'HP', atk: 'Atk', def: '
 // total. Every Pokémon is level 50 (the format's Adjust Level = 50).
 export const MAX_STAT_POINTS = 32;
 export const MAX_TOTAL_STAT_POINTS = 66;
-export const MAX_NICKNAME_LENGTH = 18;
 
 export interface Nature {
   name: string;

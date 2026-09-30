@@ -1,19 +1,18 @@
 import { Component, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, output, signal, untracked, viewChild } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies, StatTable } from '@core/dex/champions-dex';
 import { ChooserOption, DexChooser } from '@features/teambuilder/components/dex-chooser/dex-chooser';
+import { DetailsField, SetDetails } from '@features/teambuilder/components/set-details/set-details';
 import { SetStats } from '@features/teambuilder/components/set-stats/set-stats';
-import { MAX_NICKNAME_LENGTH, STAT_IDS } from '@features/teambuilder/data/game-rules';
+import { STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet, StatSpread, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
-import { ItemIcon } from '@shared/components/item-icon';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
 import { typeRank } from '@shared/data/type-order';
 import { BackAction } from '@shared/directives/back-action';
 import { toId } from '@shared/utils/to-id';
 
 /** Fields picked from a list, in the order the chooser walks through them. */
-type ChooserField = 'species' | 'item' | 'ability' | 'move0' | 'move1' | 'move2' | 'move3';
+type ChooserField = DetailsField;
 const CHOOSER_ORDER: readonly ChooserField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
 /** Lists short enough to scroll through whole: no search box, so no on-screen keyboard. */
 const SEARCHABLE_FIELDS: readonly ChooserField[] = ['species', 'item'];
@@ -22,7 +21,7 @@ const MOVE_FIELDS: readonly ChooserField[] = ['move0', 'move1', 'move2', 'move3'
 const MAX_DETAIL_LENGTH = 90;
 
 @Component({
-  imports: [DexChooser, ItemIcon, SetStats, PokemonSprite, BackAction],
+  imports: [DexChooser, SetDetails, SetStats, BackAction],
   selector: 'app-set-editor',
   host: { class: 'block' },
   templateUrl: './set-editor.html',
@@ -62,16 +61,8 @@ export class SetEditor {
   });
   protected readonly confirmingRemove = linkedSignal({ source: this.slotKey, computation: () => false });
 
-  protected readonly moveFields = MOVE_FIELDS;
-  protected readonly maxNicknameLength = MAX_NICKNAME_LENGTH;
-  protected readonly fieldButtonClass =
-    'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_12px] text-left text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
   /** The controller button's pill at the start of a header button. */
   protected readonly shortcutClass = 'absolute top-[5px] left-[8px] block h-6 w-8 rounded-sm bg-gray-900 text-center text-sm leading-6 font-bold';
-  /** The item's field, with room for the item's icon before its name. */
-  protected readonly itemButtonClass = this.fieldButtonClass.replace('p-[0_12px]', 'p-[0_12px_0_44px]');
-  protected readonly selectClass =
-    'absolute top-1 left-[104px] h-9 w-[336px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400';
 
   protected readonly title = computed(
     () => `Slot ${this.index() + 1} · ${this.mega()?.name ?? this.species()?.name ?? this.pokemon()?.species ?? 'New Pokémon'}`,
@@ -89,24 +80,6 @@ export class SetEditor {
     return current && !abilities.includes(current) ? [current, ...abilities] : abilities;
   });
 
-  /** '' is "either"; single-gender and genderless species only offer what they can be. */
-  protected readonly genderOptions = computed(() => {
-    switch (this.species()?.gender) {
-      case 'N':
-        return [{ value: '', label: 'Genderless' }];
-      case 'M':
-        return [{ value: 'M', label: 'Male' }];
-      case 'F':
-        return [{ value: 'F', label: 'Female' }];
-      default:
-        return [
-          { value: '', label: 'Either' },
-          { value: 'M', label: 'Male' },
-          { value: 'F', label: 'Female' },
-        ];
-    }
-  });
-
   // Chooser options for the species and item lists, built once: the data only has what the format
   // allows (typing filters inside the chooser). Megas are listed as species too: picking one picks its
   // base species holding the Mega Stone.
@@ -115,19 +88,18 @@ export class SetEditor {
     ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, detail: megaDetail(mega, this.dex.item(mega.item)?.name ?? mega.item) })),
   ].sort((a, b) => a.name.localeCompare(b.name));
   private readonly itemOptions: readonly ChooserOption[] = [
-    { id: '', name: 'No item', detail: '' },
     ...this.dex.allItems.map((item) => ({ id: item.id, name: item.name, detail: shorten(item.desc), icon: item.id })),
   ];
   private readonly popularItemIds = new Set(this.dex.popularItems.map((item) => item.id));
 
   /**
-   * Until something is typed, the item list only shows "No item", the item it holds when that isn't
+   * Until something is typed, the item list only shows the item it holds when that isn't
    * a popular one (so the current choice is always there to keep) and Showdown's popular items.
    */
   protected readonly chooserSuggested = computed<readonly ChooserOption[] | null>(() => {
     if (this.activeField() !== 'item') return null;
     const held = toId(this.pokemon()?.item ?? '');
-    return this.itemOptions.filter((option) => option.id === '' || option.id === held || this.popularItemIds.has(option.id));
+    return this.itemOptions.filter((option) => option.id === held || this.popularItemIds.has(option.id));
   });
 
   protected readonly chooserTitle = computed(() => {
@@ -155,10 +127,16 @@ export class SetEditor {
     const slot = MOVE_FIELDS.indexOf(field);
     const taken = new Set((this.pokemon()?.moves ?? []).filter((_, i) => i !== slot).map(toId));
     return [
-      { id: '', name: 'No move', detail: '' },
       ...this.sortedMoves()
         .filter((move) => !taken.has(move.id))
-        .map((move) => ({ id: move.id, name: move.name, detail: moveDetail(move.type, move.category, move.basePower), color: typeColor(move.type) })),
+        .map((move) => ({
+          id: move.id,
+          name: move.name,
+          detail: moveDetail(move.type, move.basePower),
+          color: typeColor(move.type),
+          categoryIcon: `categories/${move.category.toLowerCase()}.png`,
+          label: [move.name, move.type, move.category, move.basePower ? `${move.basePower} BP` : ''].filter(Boolean).join(', '),
+        })),
     ];
   });
 
@@ -178,9 +156,6 @@ export class SetEditor {
     const choosingMove = field !== null && MOVE_FIELDS.includes(field);
     return choosingMove && !this.species() ? `${this.pokemon()?.species} isn't allowed in ${this.dex.format.name}: choose another species.` : '';
   });
-
-  /** The held item's ID when it's a legal one (only those have icons). */
-  protected readonly itemId = computed(() => this.dex.item(this.pokemon()?.item ?? '')?.id ?? '');
 
   protected readonly chooserSearchable = computed(() => {
     const field = this.activeField();
@@ -232,9 +207,30 @@ export class SetEditor {
     this.focusRequest.update((count) => count + 1);
   }
 
-  protected isActive(field: ChooserField): boolean {
-    return this.activeField() === field;
+  /**
+   * The "none" choice of the open list, on ZL rather than among its rows: "No item" while it holds
+   * one, "No move" while the slot has one; nothing to clear otherwise.
+   */
+  protected readonly chooserClearLabel = computed(() => {
+    const field = this.activeField();
+    const pokemon = this.pokemon();
+    if (field === 'item') return pokemon?.item ? 'No item' : '';
+    if (field === null || !MOVE_FIELDS.includes(field)) return '';
+    return pokemon?.moves[MOVE_FIELDS.indexOf(field)] ? 'No move' : '';
+  });
+
+  /** ZL: picks the open list's "none" choice. Returns whether there was one. */
+  pressClear(): boolean {
+    if (!this.chooserClearLabel()) return false;
+    this.pick('');
+    return true;
   }
+
+  /** A move's list is open: its rows show the category icons. */
+  protected readonly isMoveField = computed(() => {
+    const field = this.activeField();
+    return field !== null && MOVE_FIELDS.includes(field);
+  });
 
   protected pick(id: string): void {
     const field = this.activeField();
@@ -265,8 +261,12 @@ export class SetEditor {
     const current = this.pokemon() ?? newPokemon();
     const ability = species.abilities.includes(current.ability) ? current.ability : (species.abilities[0] ?? '');
     const gender = species.gender === 'N' ? '' : species.gender || current.gender;
-    const item = mega ? (this.dex.item(mega.item)?.name ?? mega.item) : current.item;
-    this.store.setPokemon(team.id, this.index(), { ...current, species: species.name, ability, gender, item });
+    // A Mega's stone comes with it; another species' Mega Stone goes.
+    const heldStone = this.dex.allMegas.find((m) => m.item === toId(current.item));
+    const item = mega ? (this.dex.item(mega.item)?.name ?? mega.item) : heldStone && heldStone.base !== species.id ? '' : current.item;
+    // Another species' moves may not be in its learnset: they start over (a Mega of the same one keeps them).
+    const moves = species.name === current.species ? current.moves : [];
+    this.store.setPokemon(team.id, this.index(), { ...current, species: species.name, ability, gender, item, moves });
   }
 
   private pickMove(slot: number, id: string): void {
@@ -282,15 +282,6 @@ export class SetEditor {
     const team = this.team();
     const pokemon = this.pokemon();
     if (team && pokemon) this.store.setPokemon(team.id, this.index(), { ...pokemon, ...changes });
-  }
-
-  protected updateNickname(value: string): void {
-    const name = value.trim().slice(0, MAX_NICKNAME_LENGTH);
-    this.update({ name: name === this.pokemon()?.species ? '' : name });
-  }
-
-  protected updateGender(value: string): void {
-    this.update({ gender: value === 'M' || value === 'F' ? value : '' });
   }
 
   protected updateStatPoints(evs: StatSpread): void {
@@ -341,8 +332,9 @@ function megaDetail(mega: DexMega, stoneName: string): string {
   return `${speciesDetail(mega)} · ${stoneName}`;
 }
 
-function moveDetail(type: string, category: string, basePower: number): string {
-  return [type, category, basePower ? `${basePower} BP` : ''].filter(Boolean).join(' · ');
+/** "Ground · 100 BP": the category goes before it, as an icon. */
+function moveDetail(type: string, basePower: number): string {
+  return [type, basePower ? `${basePower} BP` : ''].filter(Boolean).join(' · ');
 }
 
 function shorten(text: string): string {

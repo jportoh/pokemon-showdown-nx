@@ -1,8 +1,8 @@
 <!--
   Fixed 920x644 panel (see styles.css): a 64px header (back, slot title, tabs, remove) over either the
-  Details tab (11 fixed-height field rows on the left, the list chooser on the right) or the
-  Stats tab. Every control sits at a fixed absolute position, both tabs and the chooser stay mounted
-  and are only shown or hidden, and selects have fixed px sizes (Brewser layout rules, seen on device).
+  Details tab (the set's cards on the left, the list chooser on the right) or the Stats tab. Every
+  control sits at a fixed absolute position, and both tabs and the chooser stay mounted and are only
+  shown or hidden (Brewser layout rules, seen on device).
   Lists open in the chooser so picking takes the d-pad (and, for species and items, a few letters)
   instead of typing names.
 -->
@@ -16,12 +16,7 @@
     <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[10px] left-[36px] h-[14px] w-2 fill-white"><path d="M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z" /></svg>
     <span class="absolute top-0 left-[52px] block h-[34px] w-[60px] text-left leading-[34px]">Team</span>
   </button>
-  <app-pokemon-sprite
-    class="absolute top-2 left-[168px]"
-    [sprite]="(mega() ?? species())?.sprite ?? ''"
-    [size]="48"
-  />
-  <h2 class="absolute top-[14px] left-[226px] block h-7 w-[284px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap text-white">
+  <h2 class="absolute top-[14px] left-[168px] block h-7 w-[340px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap text-white">
     {{ title() }}
   </h2>
   <!--
@@ -71,172 +66,59 @@
   Tabs: toggled blocks in normal flow. On Brewser, an absolutely positioned element that is hidden and
   shown again loses its positioned descendants (seen on device), so only these plain wrappers toggle.
 -->
-<!-- Details tab: field rows (44px each) on the left. -->
+<!--
+  Details tab: the set's cards on the left (species with its gender, item, ability, the moves) and,
+  beside them, the list chooser for the card pressed, or a hint.
+-->
 <div [class.hidden]="tab() !== 'details'">
   <div class="relative h-[580px] w-[920px]">
-    <div class="absolute top-0 left-6 w-[440px]">
-      <div class="relative h-11">
-        <span id="field-species" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Species</span
-        >
-        <button
-          type="button"
-          aria-labelledby="field-species species-value"
-          aria-controls="set-chooser"
-          [attr.aria-expanded]="isActive('species')"
-          data-field="species"
-          (click)="openChooser('species')"
-          [class]="fieldButtonClass"
-          [class.bg-tab-hover]="isActive('species')"
-        >
-          <span id="species-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{
-            species()?.name ?? pokemon()?.species ?? 'Choose a species'
-          }}</span>
-        </button>
-      </div>
-      <div class="relative h-11">
-        <span id="field-item" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Item</span
-        >
-        <button
-          type="button"
-          aria-labelledby="field-item item-value"
-          aria-controls="set-chooser"
-          [attr.aria-expanded]="isActive('item')"
-          [disabled]="!pokemon()"
-          data-field="item"
-          (click)="openChooser('item')"
-          [class]="itemButtonClass"
-          [class.bg-tab-hover]="isActive('item')"
-        >
-          @if (itemId()) {
-            <app-item-icon class="absolute top-[5px] left-[10px]" [item]="itemId()" [size]="24" />
-          }
-          <span id="item-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.item || 'No item' }}</span>
-        </button>
-      </div>
-      <div class="relative h-11">
-        <span id="field-ability" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Ability</span
-        >
-        <button
-          type="button"
-          aria-labelledby="field-ability ability-value"
-          aria-controls="set-chooser"
-          [attr.aria-expanded]="isActive('ability')"
-          [disabled]="!pokemon()"
-          data-field="ability"
-          (click)="openChooser('ability')"
-          [class]="fieldButtonClass"
-          [class.bg-tab-hover]="isActive('ability')"
-        >
-          <span id="ability-value" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.ability || 'No ability' }}</span>
-        </button>
-      </div>
-      @for (field of moveFields; track field; let i = $index) {
-        <div class="relative h-11">
-          <span
-            [id]="'field-move-' + i"
-            class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-            >Move {{ i + 1 }}</span
-          >
-          <button
-            type="button"
-            [attr.aria-labelledby]="'field-move-' + i + ' move-value-' + i"
-            aria-controls="set-chooser"
-            [attr.aria-expanded]="isActive(field)"
-            [disabled]="!pokemon()"
-            [attr.data-field]="field"
-            (click)="openChooser(field)"
-            [class]="fieldButtonClass"
-            [class.bg-tab-hover]="isActive(field)"
-          >
-            <span [id]="'move-value-' + i" class="block h-[34px] overflow-hidden text-left leading-[34px] whitespace-nowrap">{{ pokemon()?.moves?.[i] || 'No move' }}</span>
-          </button>
-        </div>
-      }
-      <div class="relative h-11">
-        <label for="field-gender" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Gender</label
-        >
-        <select
-          #gender
-          id="field-gender"
-          [disabled]="!pokemon() || genderOptions().length === 1"
-          (change)="updateGender(gender.value)"
-          [class]="selectClass"
-        >
-          @for (option of genderOptions(); track option.value) {
-            <option [value]="option.value" [selected]="option.value === pokemon()?.gender">
-              {{ option.label }}
-            </option>
-          }
-        </select>
-      </div>
-      <div class="relative h-11">
-        <label for="field-shiny" class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Shiny</label
-        >
-        <!--
-          A select rather than a checkbox: on the console, a focused checkbox opened the on-screen
-          keyboard (with "true"/"false" in it), while A steps a select through its options.
-        -->
-        <select
-          #shiny
-          id="field-shiny"
-          [disabled]="!pokemon()"
-          (change)="update({ shiny: shiny.value === 'yes' })"
-          [class]="selectClass"
-        >
-          <option value="no" [selected]="!pokemon()?.shiny">No</option>
-          <option value="yes" [selected]="pokemon()?.shiny ?? false">Yes</option>
-        </select>
-      </div>
-      <!--
-        Last, off the d-pad's path through the fields: focusing a text field opens the console's
-        on-screen keyboard.
-      -->
-      <div class="relative h-11">
-        <label
-          for="field-nickname"
-          class="absolute top-[10px] left-0 w-[100px] text-sm text-gray-200"
-          >Nickname</label
-        >
-        <input
-          #nickname
-          id="field-nickname"
-          type="text"
-          autocomplete="off"
-          [disabled]="!pokemon()"
-          [maxLength]="maxNicknameLength"
-          [value]="pokemon()?.name ?? ''"
-          [attr.placeholder]="'Optional'"
-          (change)="updateNickname(nickname.value)"
-          class="absolute top-1 left-[104px] h-9 w-[336px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:text-gray-400"
-        />
-      </div>
+    <div class="absolute top-2 left-6 w-[420px]">
+      <app-set-details
+        [set]="pokemon()"
+        [species]="species()"
+        [mega]="mega()"
+        [activeField]="activeField()"
+        (fieldOpened)="openChooser($event)"
+        (genderChanged)="update({ gender: $event })"
+      />
     </div>
 
-    <!-- The chooser for the active list field, or a hint. -->
-    <div class="absolute top-0 left-[488px] w-[408px]">
-      <app-dex-chooser
-        id="set-chooser"
-        (appBack)="closeChooser()"
-        [class.hidden]="!activeField()"
-        [title]="chooserTitle()"
-        [options]="chooserOptions()"
-        [selectedId]="chooserSelectedId()"
-        [searchable]="chooserSearchable()"
-        [suggested]="chooserSuggested()"
-        suggestedLabel="Popular items"
-        [withIcons]="activeField() === 'item'"
-        [unavailable]="chooserUnavailable()"
-        (picked)="pick($event)"
-      />
-      <p class="text-base leading-7 text-gray-300" [class.hidden]="!!activeField()">
-        Select Species, Item, Ability or a Move to pick it from a list. For species and items,
-        typing a few letters in the search box narrows it down.
-      </p>
+    <div class="absolute top-2 left-[476px] w-[420px]">
+      <div class="block" [class.hidden]="!!activeField()">
+        <div class="absolute top-0 left-0 block h-[552px] w-[420px] rounded-lg border-2 border-dashed border-retro-rim">
+          <p class="absolute top-[196px] left-[24px] block h-8 w-[368px] text-center text-lg leading-8 text-retro-muted">Press A on a card to pick from a list.</p>
+          <p class="absolute top-[236px] left-[24px] block h-8 w-[368px] text-center text-base leading-8 text-retro-muted">For species and items, a few letters</p>
+          <p class="absolute top-[264px] left-[24px] block h-8 w-[368px] text-center text-base leading-8 text-retro-muted">in the search box narrow it down.</p>
+          <p class="absolute top-[304px] left-[24px] block h-8 w-[368px] text-center text-base leading-8 text-retro-muted">Left/right on the species change its gender.</p>
+        </div>
+      </div>
+    </div>
+    <!--
+      The chooser for the card pressed, in a panel that ends 20px above the screen's bottom (536 tall
+      plus the frame). Only the plain wrapper toggles (Brewser layout rules).
+    -->
+    <div class="absolute top-2 left-[476px] w-[420px]">
+      <div class="block" [class.hidden]="!activeField()">
+        <div class="absolute top-0 left-0 block h-[552px] w-[420px] rounded-lg border-2 border-retro-outline bg-retro-panel">
+          <app-dex-chooser
+            id="set-chooser"
+            class="absolute top-[6px] left-[4px]"
+            (appBack)="closeChooser()"
+            [title]="chooserTitle()"
+            [options]="chooserOptions()"
+            [selectedId]="chooserSelectedId()"
+            [searchable]="chooserSearchable()"
+            [suggested]="chooserSuggested()"
+            suggestedLabel="Popular items"
+            [withIcons]="activeField() === 'item'"
+            [withCategories]="isMoveField()"
+            [clearLabel]="chooserClearLabel()"
+            (cleared)="pressClear()"
+            [unavailable]="chooserUnavailable()"
+            (picked)="pick($event)"
+          />
+        </div>
+      </div>
     </div>
   </div>
 </div>
