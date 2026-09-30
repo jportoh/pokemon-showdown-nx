@@ -260,6 +260,13 @@ export class BattleStore {
   readonly intro = this.introSignal.asReadonly();
   /** The battle has begun and its title has gone: the teams at a glance show from then on. */
   readonly started = this.startedSignal.asReadonly();
+  /**
+   * Both teams are known (`|poke|`) and the players are picking theirs, until `|start|`. With open team
+   * sheets it can last minutes, and a spectator gets nothing else meanwhile.
+   */
+  readonly teamPreview = computed(
+    () => !this.startedSignal() && !this.introSignal() && !this.resultSignal() && this.sidesSignal().p1.preview.length > 0,
+  );
   /** The format's name, from the `|tier|` line ("[Gen 9] Champions VGC 2026 Reg M-C"); '' until then. */
   readonly format = this.formatSignal.asReadonly();
   /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */

@@ -6,8 +6,10 @@ import {
   afterNextRender,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
   viewChild,
   viewChildren,
 } from '@angular/core';
@@ -18,6 +20,8 @@ import { ReplaySummary } from '@features/battle/models/battle';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
+import { ReplayGame } from '@features/replays/data/replay-game';
+import { RowLookups } from '@shared/utils/row-lookups';
 import { OptionPicker, PickerOption } from '@shared/components/option-picker';
 import { RetroBox } from '@shared/components/retro-box';
 import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
@@ -26,12 +30,16 @@ import { RETRO_SECONDARY_BUTTON, RETRO_SHORTCUT_PILL } from '@shared/ui/retro-cl
 /** Rows shown at once, in fixed slots (as on Watch Live). */
 const ROWS = 8;
 
+/** Replay logs downloaded at once to rate the best-of-3 games shown (the list rates only a set's last one). */
+const LOOKUPS_AT_ONCE = 2;
+
 /** The format last picked, so coming back from a replay lists the same one. */
 let lastFormat: PlayableFormat = PLAYABLE_FORMATS[0];
 
 interface ReplayRow extends ReplaySummary {
   title: string;
-  detail: string;
+  /** "5 min ago". */
+  age: string;
 }
 
 /**
@@ -152,6 +160,8 @@ export class ReplayList {
   protected readonly opening = signal<string | null>(null);
   /** The replay that couldn't be downloaded, and why. */
   private readonly failed = signal<{ id: string; text: string } | null>(null);
+  /** Best-of-3 games the list doesn't rate, as their logs tell them (by replay ID). */
+  private readonly games = new RowLookups<ReplayGame>((id) => this.api.game(id), LOOKUPS_AT_ONCE, () => this.renderScheduler.request());
 
   /** The first row shown. */
   protected readonly start = signal(0);
@@ -220,6 +230,12 @@ export class ReplayList {
       }),
     ];
     destroyRef.onDestroy(() => unregisterButtons.forEach((fn) => fn()));
+    // The best-of-3 games shown without a rating: their logs have the players' (see ReplayGame).
+    effect(() => {
+      const ids = this.format().id.endsWith('bo3') ? this.visibleReplays().filter((row) => !row.rating).map((row) => row.id) : [];
+      untracked(() => this.games.show(ids));
+    });
+    destroyRef.onDestroy(() => this.games.stop());
     void this.refresh();
   }
 
@@ -246,6 +262,8 @@ export class ReplayList {
     const format = this.format();
     this.status.set('loading');
     this.failed.set(null);
+    // Logs that couldn't be read are tried again.
+    this.games.retryFailed();
     this.renderScheduler.request();
     try {
       const now = Date.now() / 1000;
@@ -282,7 +300,17 @@ export class ReplayList {
   protected rowDetail(row: ReplayRow): string {
     if (this.opening() === row.id) return 'Loading the replay…';
     const failed = this.failed();
-    return failed?.id === row.id ? failed.text : row.detail;
+    if (failed?.id === row.id) return failed.text;
+    return [...this.ratingDetail(row), row.age].join(' · ');
+  }
+
+  /** The list's rating, else what the replay's log tells (looked up for best-of-3 games only). */
+  private ratingDetail(row: ReplayRow): string[] {
+    if (row.rating) return [`Rating ${row.rating}`];
+    const game = this.games.results().get(row.id);
+    if (game === 'loading') return ['Rating…'];
+    if (game === 'failed') return [];
+    return game ? gameDetail(game) : ['Unrated'];
   }
 
   /** Previous/Next (L/R): the list moves by a whole page; true once handled, even at the ends. */
@@ -331,11 +359,20 @@ export class ReplayList {
 
 function toRow(replay: ReplaySummary, now: number): ReplayRow {
   const [p1, p2] = replay.players;
-  const details = [
-    replay.rating ? `Rating ${replay.rating}` : 'Unrated',
-    timeAgo(now - replay.uploadtime),
-  ];
-  return { ...replay, title: `${p1} vs ${p2}`, detail: details.join(' · ') };
+  return { ...replay, title: `${p1} vs ${p2}`, age: timeAgo(now - replay.uploadtime) };
+}
+
+/**
+ * "Game 2 · Avg rating 1190": the game's number in its set, and the average of the players' ratings as
+ * it started. In words: Brewser's font draws "~" as a raised accent.
+ */
+function gameDetail(game: ReplayGame): string[] {
+  const rating = !game.rated
+    ? 'Unrated'
+    : game.ratings.length > 0
+      ? `Avg rating ${Math.round(game.ratings.reduce((sum, value) => sum + value, 0) / game.ratings.length)}`
+      : 'Rated';
+  return game.game === null ? [rating] : [`Game ${game.game}`, rating];
 }
 
 /** "3 min ago", "2 h ago", "4 days ago". */

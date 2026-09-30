@@ -1,17 +1,23 @@
 import { Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { LiveBattle, LiveBattles } from '@features/live/state/live-battles';
+import { PlayerRatings } from '@features/live/state/player-ratings';
 import { OptionPicker, PickerOption } from '@shared/components/option-picker';
 import { RetroBox } from '@shared/components/retro-box';
 import { PLAYABLE_FORMATS, RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { RETRO_SECONDARY_BUTTON, RETRO_SHORTCUT_PILL } from '@shared/ui/retro-classes';
 import { keepFocusOnShownRow } from '@shared/utils/row-focus';
+import { RowLookups } from '@shared/utils/row-lookups';
 
 /** Rows per page: the list never scrolls (scroll boxes are fragile on Brewser). */
 const ROWS = 8;
+
+/** Battles whose players' ratings are downloaded at once (two requests each). */
+const LOOKUPS_AT_ONCE = 2;
 
 /**
  * The Watch Live page: the battles being played on Showdown in a format, the best rated first, eight
@@ -101,6 +107,15 @@ export class LivePage {
   private readonly session = inject(BattleSession);
   private readonly connection = inject(ShowdownConnection);
   protected readonly live = inject(LiveBattles);
+  private readonly playerRatings = inject(PlayerRatings);
+  private readonly renderScheduler = inject(RenderScheduler);
+  /**
+   * Best-of-3 battles' average rating, by room: the room list rates none of them (no `minElo`), so it's
+   * the players' ratings in the format now.
+   */
+  private readonly averages = new RowLookups<number>((roomId) => this.averageOf(roomId), LOOKUPS_AT_ONCE, () =>
+    this.renderScheduler.request(),
+  );
   private readonly formatButton = viewChild.required<ElementRef<HTMLButtonElement>>('formatButton');
 
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
@@ -152,6 +167,16 @@ export class LivePage {
       const format = this.shownFormat();
       if (this.connected()) untracked(() => this.live.load(format));
     });
+    // The best-of-3 battles shown without a rating.
+    effect(() => {
+      const rooms = this.shownFormat().endsWith('bo3')
+        ? this.shown()
+            .filter((battle) => battle.rating === null && !battle.tournament)
+            .map((battle) => battle.roomId)
+        : [];
+      untracked(() => this.averages.show(rooms));
+    });
+    inject(DestroyRef).onDestroy(() => this.averages.stop());
 
     // The console buttons, while the page shows (not over the format list): L/R page, ZR refreshes.
     const navigation = inject(KeyboardNavigation);
@@ -179,6 +204,7 @@ export class LivePage {
   }
 
   protected refresh(): void {
+    this.averages.retryFailed();
     this.live.load(this.shownFormat());
   }
 
@@ -194,7 +220,20 @@ export class LivePage {
 
   protected ratingText(battle: LiveBattle): string {
     if (battle.tournament) return 'Tournament';
-    return battle.rating === null ? 'Unrated' : `Rating ${battle.rating}`;
+    if (battle.rating !== null) return `Rating ${battle.rating}`;
+    const average = this.averages.results().get(battle.roomId);
+    if (average === undefined) return 'Unrated';
+    if (average === 'loading') return 'Rating…';
+    return average === 'failed' ? 'Rating unknown' : `Avg rating ${average}`;
+  }
+
+  /** The average of the battle's players' ratings in the format now. */
+  private async averageOf(roomId: string): Promise<number> {
+    const battle = this.battles().find((shown) => shown.roomId === roomId);
+    if (!battle) throw new Error('The battle is no longer listed.');
+    const format = this.shownFormat();
+    const ratings = await Promise.all([battle.p1, battle.p2].map((name) => this.playerRatings.rating(name, format)));
+    return Math.round((ratings[0] + ratings[1]) / 2);
   }
 
   /** Opens the battle on the battle screen, as a spectator. */

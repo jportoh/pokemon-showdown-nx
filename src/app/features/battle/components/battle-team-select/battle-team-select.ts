@@ -1,27 +1,20 @@
 import { Component, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, inject, input, linkedSignal, output, viewChild, viewChildren } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
-import { moveType } from '@core/dex/moves';
 import { SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { unpackTeamSheet } from '@features/battle/state/team-sheet';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
-import { typeColor } from '@shared/data/type-colors';
 import { spriteId } from '@shared/utils/sprite-id';
-import { toId } from '@shared/utils/to-id';
+import { MovePill, SheetRow, movePills, sheetRows } from './sheet-rows';
 
 const SLOTS = 6;
 /** Rows: ours on the left (buttons), theirs on the right, "VS" between them. */
 const ROW_TOP = 52;
 const ROW_STEP = 96;
 const MOVE_PILL_WIDTH = 150;
-
-interface MovePill {
-  name: string;
-  top: number;
-  color: string;
-}
+const PILL_TOP = 4;
+const PILL_STEP = 20;
 
 interface OwnRow {
   top: number;
@@ -37,14 +30,8 @@ interface OwnRow {
   label: string;
 }
 
-interface TheirRow {
+interface TheirRow extends SheetRow {
   top: number;
-  sprite: string;
-  name: string;
-  /** Item, ability and moves from their open team sheet; null without one (the types show instead). */
-  sheet: { item: string; itemId: string; ability: string; moves: readonly MovePill[] } | null;
-  types: string;
-  label: string;
 }
 
 /**
@@ -259,7 +246,7 @@ export class BattleTeamSelect {
         item: item || 'No item',
         itemId: pokemon.item,
         ability: abilityName(pokemon.ability ?? ''),
-        moves: movePills(moves),
+        moves: movePills(moves, PILL_TOP, PILL_STEP),
         order: place === -1 ? null : place + 1,
         lead: place !== -1 && place < this.leads(),
         label: `${species} @ ${item || 'no item'}${place === -1 ? '' : `: chosen ${place + 1}${place < this.leads() ? ', lead' : ''}`}`,
@@ -268,26 +255,8 @@ export class BattleTeamSelect {
   });
 
   protected readonly theirs = computed((): (TheirRow | null)[] => {
-    const preview = this.store.sides().p2.preview;
-    const packed = this.store.teamSheets().p2;
-    const sheet = packed ? unpackTeamSheet(packed, this.dex) : [];
-    return Array.from({ length: SLOTS }, (_, i) => {
-      const species = preview[i];
-      if (!species) return null;
-      const entry = sheet.find((pokemon) => pokemon.species === species) ?? sheet[i];
-      const types = this.dex.species(species)?.types.join(' / ') ?? '';
-      const itemId = entry ? toId(entry.item) : '';
-      return {
-        top: ROW_TOP + i * ROW_STEP,
-        sprite: spriteId(species),
-        name: species,
-        sheet: entry ? { item: entry.item || 'No item', itemId, ability: entry.ability, moves: movePills(entry.moves.slice(0, 4)) } : null,
-        types,
-        label: entry
-          ? `${species} @ ${entry.item || 'no item'}, ${entry.ability}. Moves: ${entry.moves.join(', ')}`
-          : `${species}, ${types}`,
-      };
-    });
+    const rows = sheetRows(this.store.sides().p2.preview, this.store.teamSheets().p2, this.dex, PILL_TOP, PILL_STEP);
+    return Array.from({ length: SLOTS }, (_, i) => (rows[i] ? { ...rows[i], top: ROW_TOP + i * ROW_STEP } : null));
   });
 
   constructor() {
@@ -321,9 +290,4 @@ export class BattleTeamSelect {
     if (!this.ready()) return;
     this.store.choose(`team ${this.order().map((i) => i + 1).join('')}`);
   }
-}
-
-/** Move names as pills, one under another, coloured by type. */
-function movePills(names: readonly string[]): MovePill[] {
-  return names.map((name, m) => ({ name, top: 4 + m * 20, color: typeColor(moveType(name)) }));
 }

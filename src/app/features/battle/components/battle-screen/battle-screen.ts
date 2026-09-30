@@ -8,6 +8,7 @@ import { BattleHeader, ForfeitState } from '@features/battle/components/battle-h
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview, SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleTeamSelect } from '@features/battle/components/battle-team-select/battle-team-select';
+import { BattleTeamsOverview } from '@features/battle/components/battle-team-select/battle-teams-overview';
 import { BattleTeamSheet } from '@features/battle/components/battle-team-sheet/battle-team-sheet';
 import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
@@ -53,6 +54,7 @@ const FORFEIT_CONFIRM_MS = 4000;
     BattleLog,
     BattleTeamPreview,
     BattleTeamSelect,
+    BattleTeamsOverview,
     BattleTeamSheet,
     ReplayControls,
     SpectatorControls,
@@ -106,6 +108,9 @@ const FORFEIT_CONFIRM_MS = 4000;
         (sheetPressed)="pressSheet()"
         (appBack)="teamSelect.undo()"
       />
+
+      <!-- Watching live: both teams while the players pick theirs, over the field and the side column. -->
+      <app-battle-teams-overview class="absolute top-[48px] left-0" />
 
       <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
       <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />

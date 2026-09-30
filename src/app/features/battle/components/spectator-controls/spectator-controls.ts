@@ -44,6 +44,7 @@ export class SpectatorControls {
     if (!p1.name || !p2.name) return 'Joining the battle…';
     const result = this.store.result();
     if (result) return `${p1.name} vs ${p2.name}: the battle is over.`;
+    if (this.store.teamPreview()) return 'Team preview: the players are picking their Pokémon.';
     return `Watching live: ${p1.name} vs ${p2.name}`;
   });
 

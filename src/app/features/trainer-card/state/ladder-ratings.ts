@@ -65,7 +65,8 @@ export class LadderRatings {
   }
 }
 
-async function fetchRatings(userId: string): Promise<LadderRating[]> {
+/** A player's ratings on every ladder they've played, the best first. */
+export async function fetchRatings(userId: string): Promise<LadderRating[]> {
   const response = await fetch(`${LADDER_URL}?user=${encodeURIComponent(userId)}`);
   if (!response.ok) throw new Error(`The login server answered ${response.status}.`);
   const data: unknown = JSON.parse((await response.text()).replace(/^\]/, ''));

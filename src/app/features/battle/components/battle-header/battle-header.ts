@@ -83,7 +83,7 @@ const MAX_NAME_CHARS = 20;
       }
 
       <span class="absolute top-[9px] left-[877px] block h-7 w-[110px] rounded-full bg-tab text-center text-sm leading-7 font-bold uppercase">
-        {{ store.turn() > 0 ? 'Turn ' + store.turn() : 'Starting…' }}
+        {{ store.turn() > 0 ? 'Turn ' + store.turn() : store.teamPreview() ? 'Preview' : 'Starting…' }}
       </span>
 
       @if (store.watching()) {
