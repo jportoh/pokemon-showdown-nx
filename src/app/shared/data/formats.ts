@@ -39,7 +39,8 @@ export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
 
 /**
  * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles), as
- * single games and as best-of-3 sets, and Random Battle (singles). The format picker lists them by category, in this order.
+ * single games and as best-of-3 sets, and the most played random formats (IDs checked against the
+ * server's `|formats|`, 2026-09-30). The format picker lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
   {
@@ -66,6 +67,30 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random teams',
+  },
+  {
+    id: 'gen9randomdoublesbattle',
+    name: '[Gen 9] Random Doubles Battle',
+    label: 'Gen 9 Random Doubles',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Doubles · random teams',
+  },
+  {
+    id: 'gen9championsrandombattle',
+    name: '[Gen 9 Champions] Random Battle',
+    label: 'Champions Random Battle',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Champions teams',
+  },
+  {
+    id: 'gen9championsrandomdoublesbattle',
+    name: '[Gen 9 Champions] Random Doubles Battle',
+    label: 'Champions Random Doubles',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Doubles · random Champions teams',
   },
 ];
 

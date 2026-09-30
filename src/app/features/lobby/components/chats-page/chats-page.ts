@@ -43,8 +43,8 @@ const PILL = 'absolute block h-7 w-9 rounded-sm bg-retro-select text-center text
             <button
               #roomButton
               type="button"
-              class="absolute left-[8px] h-[72px] w-[272px] cursor-pointer rounded-lg border-2 border-retro-panel bg-retro-panel text-left text-retro-ink hover:bg-retro-select"
-              [style.top.px]="64 + i * 80"
+              class="absolute left-[8px] h-[46px] w-[272px] cursor-pointer rounded-lg border-2 border-retro-panel bg-retro-panel text-left text-retro-ink hover:bg-retro-select"
+              [style.top.px]="60 + i * 48"
               [attr.data-menu-item]="room.id"
               [attr.data-autofocus]="room.id === autofocusRoom() ? '' : null"
               [attr.aria-current]="room.id === joinedRoom() ? 'true' : null"
@@ -53,12 +53,12 @@ const PILL = 'absolute block h-7 w-9 rounded-sm bg-retro-select text-center text
               (click)="pickRoom(room)"
             >
               <span class="block" [class.hidden]="focusedRoom() !== room.id">
-                <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[12px] left-[8px] h-7 w-4 fill-retro-accent-text"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" /></svg>
+                <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[10px] left-[10px] h-[21px] w-[12px] fill-retro-accent-text"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" /></svg>
               </span>
-              <span aria-hidden="true" class="absolute top-[6px] left-[32px] block h-8 w-[196px] text-2xl leading-8 font-bold whitespace-nowrap" [class]="offline() ? 'text-retro-muted' : 'text-retro-ink'">{{ room.title }}</span>
-              <span aria-hidden="true" class="absolute top-[40px] left-[32px] block h-6 w-[228px] overflow-hidden text-base leading-6 whitespace-nowrap text-retro-muted">{{ roomDetail(room.id) }}</span>
+              <span aria-hidden="true" class="absolute top-0 left-[32px] block h-6 w-[196px] text-xl leading-6 font-bold whitespace-nowrap" [class]="offline() ? 'text-retro-muted' : 'text-retro-ink'">{{ room.title }}</span>
+              <span aria-hidden="true" class="absolute top-[22px] left-[32px] block h-5 w-[228px] overflow-hidden text-sm leading-5 whitespace-nowrap text-retro-muted">{{ roomDetail(room.id) }}</span>
               <span class="block" [class.hidden]="room.id !== joinedRoom()">
-                <span aria-hidden="true" class="absolute top-[16px] left-[240px] block size-3 rounded-full bg-retro-accent-text"></span>
+                <span aria-hidden="true" class="absolute top-[6px] left-[240px] block size-3 rounded-full bg-retro-accent-text"></span>
               </span>
             </button>
           </li>
