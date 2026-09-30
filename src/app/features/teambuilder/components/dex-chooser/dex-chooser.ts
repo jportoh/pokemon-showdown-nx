@@ -41,7 +41,10 @@ export interface ChooserOption {
 /** Names the on-screen keyboard lists for a search, under its text. */
 const HINT_NAMES = 4;
 
-/** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
+/**
+ * Rows rendered at once from a searchable scroll list: few enough for the console. Typing narrows the
+ * rest. Paged lists build only the rows on the page, so they list every match.
+ */
 const MAX_RESULTS = 30;
 
 /**
@@ -56,11 +59,13 @@ const SAME_LIST_CHANGES = 2;
 
 /**
  * A list with item icons shows this many fixed rows at a time (a name and up to 2 lines of detail
- * each); a list of moves, more and shorter ones (a name, and the category icon before one line).
+ * each); a list of moves, more and shorter ones (a name, and the category icon before one line):
+ * one fewer under a search box.
  */
 const ICON_PAGE_ROWS = 6;
 const ICON_ROW_STEP = 72;
 const CATEGORY_PAGE_ROWS = 8;
+const SEARCHABLE_CATEGORY_PAGE_ROWS = 7;
 const CATEGORY_ROW_STEP = 59;
 /** The list's height under the search box, or without one: the chooser is 536 tall either way. */
 const LIST_HEIGHT = 436;
@@ -232,8 +237,11 @@ export class DexChooser {
   protected readonly results = computed(() => {
     if (this.unavailable()) return [];
     if (this.showingSuggested()) return this.suggested() ?? [];
-    return this.searchable() ? this.matches().slice(0, MAX_RESULTS) : this.matches();
+    return this.capped() ? this.matches().slice(0, MAX_RESULTS) : this.matches();
   });
+
+  /** A searchable scroll list shows the first MAX_RESULTS matches only. */
+  private readonly capped = computed(() => this.searchable() && !this.paged());
 
   /**
    * How many rows are built so far. A new list starts with the first batch (or up to the current
@@ -254,7 +262,10 @@ export class DexChooser {
   /** Listed a page at a time (see the template). */
   protected readonly paged = computed(() => this.withIcons() || this.withCategories());
   /** Rows a page shows, and how far apart. */
-  private readonly pageSize = computed(() => (this.withIcons() ? ICON_PAGE_ROWS : CATEGORY_PAGE_ROWS));
+  private readonly pageSize = computed(() => {
+    if (this.withIcons()) return ICON_PAGE_ROWS;
+    return this.searchable() ? SEARCHABLE_CATEGORY_PAGE_ROWS : CATEGORY_PAGE_ROWS;
+  });
   protected readonly pageRowStep = computed(() => (this.withIcons() ? ICON_ROW_STEP : CATEGORY_ROW_STEP));
   protected readonly listHeight = LIST_HEIGHT;
   protected readonly unsearchableListHeight = UNSEARCHABLE_LIST_HEIGHT;
@@ -337,7 +348,9 @@ export class DexChooser {
     if (!this.searchable()) return `${total} ${total === 1 ? 'option' : 'options'}`;
     if (this.showingSuggested()) return `${this.suggestedLabel()}; type to search all ${total}`;
     if (total === 0) return 'No matches';
-    return total > MAX_RESULTS ? `Showing ${MAX_RESULTS} of ${total}; type to narrow down` : `${total} ${total === 1 ? 'match' : 'matches'}`;
+    if (this.capped() && total > MAX_RESULTS) return `Showing ${MAX_RESULTS} of ${total}; type to narrow down`;
+    if (this.words().length === 0) return `${total} ${total === 1 ? 'option' : 'options'}; type to search`;
+    return `${total} ${total === 1 ? 'match' : 'matches'}`;
   });
 
   /**

@@ -14,8 +14,8 @@ import { toId } from '@shared/utils/to-id';
 /** Fields picked from a list, in the order the chooser walks through them. */
 type ChooserField = DetailsField;
 const CHOOSER_ORDER: readonly ChooserField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
-/** Lists short enough to scroll through whole: no search box, so no on-screen keyboard. */
-const SEARCHABLE_FIELDS: readonly ChooserField[] = ['species', 'item'];
+/** Lists with a search box (the on-screen keyboard); abilities are few enough to scroll through whole. */
+const SEARCHABLE_FIELDS: readonly ChooserField[] = ['species', 'item', 'move0', 'move1', 'move2', 'move3'];
 const MOVE_FIELDS: readonly ChooserField[] = ['move0', 'move1', 'move2', 'move3'];
 
 const MAX_DETAIL_LENGTH = 90;
