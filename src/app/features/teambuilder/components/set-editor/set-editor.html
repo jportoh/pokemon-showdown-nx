@@ -10,13 +10,13 @@
   <button
     type="button"
     (click)="closed.emit()"
-    class="absolute top-[10px] left-6 h-9 w-[132px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+    class="absolute top-[10px] left-6 h-9 w-[132px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
   >
     <!-- The Battle page's pixel triangle (Brewser draws ◀ as an emoji). -->
-    <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[10px] left-[36px] h-[14px] w-2 fill-white"><path d="M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z" /></svg>
-    <span class="absolute top-0 left-[52px] block h-[34px] w-[60px] text-left leading-[34px]">Team</span>
+    <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[9px] left-[36px] h-[14px] w-2 fill-retro-ink"><path d="M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z" /></svg>
+    <span class="absolute top-0 left-[52px] block h-8 w-[60px] text-left leading-8">Team</span>
   </button>
-  <h2 class="absolute top-[14px] left-[168px] block h-7 w-[340px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap text-white">
+  <h2 class="absolute top-[14px] left-[168px] block h-7 w-[340px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap text-retro-ink">
     {{ title() }}
   </h2>
   <!--
@@ -28,11 +28,11 @@
     data-kb-skip
     [attr.aria-pressed]="tab() === 'details'"
     (click)="tab.set('details')"
-    class="absolute top-[10px] left-[520px] h-9 w-[112px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-    [class.bg-tab-hover]="tab() === 'details'"
+    class="absolute top-[10px] left-[520px] h-9 w-[112px]"
+    [class]="tab() === 'details' ? tabPickedClass : tabClass"
   >
     <span aria-hidden="true" [class]="shortcutClass">L</span>
-    <span class="absolute top-0 left-[46px] block h-[34px] w-[58px] text-center leading-[34px]">Details</span>
+    <span class="absolute top-0 left-[46px] block h-8 w-[58px] text-center leading-8">Details</span>
   </button>
   <button
     type="button"
@@ -40,11 +40,11 @@
     [attr.aria-pressed]="tab() === 'stats'"
     [disabled]="!pokemon()"
     (click)="tab.set('stats')"
-    class="absolute top-[10px] left-[640px] h-9 w-[112px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-gray-800 disabled:text-gray-400"
-    [class.bg-tab-hover]="tab() === 'stats'"
+    class="absolute top-[10px] left-[640px] h-9 w-[112px]"
+    [class]="tab() === 'stats' ? tabPickedClass : tabClass"
   >
     <span aria-hidden="true" [class]="shortcutClass">R</span>
-    <span class="absolute top-0 left-[46px] block h-[34px] w-[58px] text-center leading-[34px]">Stats</span>
+    <span class="absolute top-0 left-[46px] block h-8 w-[58px] text-center leading-8">Stats</span>
   </button>
   <button
     type="button"
@@ -52,11 +52,11 @@
     (click)="pressRemove()"
     [class.hidden]="!pokemon()"
     [attr.aria-label]="confirmingRemove() ? 'Confirm removing ' + title() : 'Remove ' + title()"
-    class="absolute top-[10px] left-[764px] h-9 w-[132px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-    [class.bg-red-800]="confirmingRemove()"
+    class="absolute top-[10px] left-[764px] h-9 w-[132px]"
+    [class]="confirmingRemove() ? confirmClass : tabClass"
   >
     <span aria-hidden="true" [class]="shortcutClass">ZR</span>
-    <span aria-hidden="true" class="absolute top-0 left-[46px] block h-[34px] w-[78px] text-center leading-[34px]">
+    <span aria-hidden="true" class="absolute top-0 left-[46px] block h-8 w-[78px] text-center leading-8">
       {{ confirmingRemove() ? 'Confirm' : 'Remove' }}
     </span>
   </button>
@@ -139,7 +139,7 @@
         />
       }
     </div>
-    <p class="absolute top-2 left-[476px] block h-7 w-[420px] overflow-hidden text-sm leading-7 whitespace-nowrap text-gray-200">
+    <p class="absolute top-2 left-[476px] block h-7 w-[420px] overflow-hidden text-sm leading-7 whitespace-nowrap text-retro-muted">
       {{ megaSummary() }}
     </p>
   </div>

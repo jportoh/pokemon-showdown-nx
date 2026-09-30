@@ -4,7 +4,7 @@
   B (appBack) goes back one step: from a team to the list, from the editor or the validation to the team.
 -->
 <app-team-list
-  class="absolute top-0 left-0 h-[644px] w-[360px] border-r border-gray-600"
+  class="absolute top-0 left-0 h-[644px] w-[360px] border-r border-retro-outline"
   [teams]="store.teams()"
   [selectedId]="selectedId()"
   (select)="selectTeam($event)"
@@ -13,9 +13,9 @@
 
 <div class="absolute top-0 left-[360px] h-[644px] w-[920px]">
   <div class="h-[644px] w-[920px] p-8" [class.hidden]="view() !== 'empty'">
-    <p class="text-lg text-gray-200">Select a team, or build a new one with New.</p>
+    <p class="text-lg text-retro-muted">Select a team, or build a new one with New.</p>
     @if (store.saveFailed()) {
-      <p role="alert" class="text-base leading-8 text-red-300">Your last change couldn't be saved on this device.</p>
+      <p role="alert" class="text-base leading-8 font-bold text-retro-danger">Your last change couldn't be saved on this device.</p>
     }
   </div>
   <app-team-detail

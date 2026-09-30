@@ -16,7 +16,7 @@ type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'validationBack' | 'editor'
 @Component({
   imports: [TeamList, TeamDetail, TeamValidationPanel, SetEditor, BackAction],
   selector: 'app-teambuilder-page',
-  host: { class: 'relative block h-[644px] w-[1280px]' },
+  host: { class: 'relative block h-[644px] w-[1280px] bg-retro-bg text-retro-ink' },
   templateUrl: './teambuilder-page.html',
 })
 export class TeambuilderPage {

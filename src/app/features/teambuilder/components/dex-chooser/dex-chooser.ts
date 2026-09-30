@@ -120,7 +120,7 @@ const UNSEARCHABLE_LIST_HEIGHT = 476;
           >
             <span class="block text-base font-bold">{{ option.name }}</span>
             @if (option.detail) {
-              <span class="block text-sm text-gray-300">{{ option.detail }}</span>
+              <span class="block text-sm text-retro-muted">{{ option.detail }}</span>
             }
           </button>
         </li>
@@ -154,7 +154,7 @@ const UNSEARCHABLE_LIST_HEIGHT = 476;
             <span class="absolute top-[9px] left-[64px] block h-[22px] w-[330px] overflow-hidden text-base leading-[22px] font-bold whitespace-nowrap">{{
               row.option.name
             }}</span>
-            <span class="absolute top-[31px] left-[64px] block h-8 w-[330px] overflow-hidden text-sm leading-4 text-gray-300">{{
+            <span class="absolute top-[31px] left-[64px] block h-8 w-[330px] overflow-hidden text-sm leading-4 text-retro-muted">{{
               row.option.detail
             }}</span>
           } @else {
@@ -166,7 +166,7 @@ const UNSEARCHABLE_LIST_HEIGHT = 476;
               <img [ngSrc]="src" width="32" height="14" alt="" class="absolute top-[33px] left-[12px] block" />
             }
             <span
-              class="absolute top-[30px] block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-300"
+              class="absolute top-[30px] block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap text-retro-muted"
               [style.left.px]="row.option.categoryIcon ? 50 : 12"
               [style.width.px]="row.option.categoryIcon ? 342 : 380"
               >{{ row.option.detail }}</span

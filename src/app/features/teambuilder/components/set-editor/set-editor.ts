@@ -61,8 +61,16 @@ export class SetEditor {
   });
   protected readonly confirmingRemove = linkedSignal({ source: this.slotKey, computation: () => false });
 
+  /** The header's buttons: the tabs, and Remove. */
+  protected readonly tabClass = 'cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:border-retro-rim disabled:bg-retro-bg disabled:text-retro-muted';
+  /** The tab shown. */
+  protected readonly tabPickedClass =
+    'cursor-pointer rounded-md border-2 border-retro-accent-text bg-retro-select text-base font-bold text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
+  /** Remove waiting for its confirmation. */
+  protected readonly confirmClass =
+    'cursor-pointer rounded-md border-2 border-retro-bar bg-retro-accent text-base font-bold text-white hover:bg-retro-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
   /** The controller button's pill at the start of a header button. */
-  protected readonly shortcutClass = 'absolute top-[5px] left-[8px] block h-6 w-8 rounded-sm bg-gray-900 text-center text-sm leading-6 font-bold';
+  protected readonly shortcutClass = 'absolute top-[4px] left-[8px] block h-6 w-8 rounded-sm bg-retro-bg text-center text-sm leading-6 font-bold';
 
   protected readonly title = computed(
     () => `Slot ${this.index() + 1} · ${this.mega()?.name ?? this.species()?.name ?? this.pokemon()?.species ?? 'New Pokémon'}`,

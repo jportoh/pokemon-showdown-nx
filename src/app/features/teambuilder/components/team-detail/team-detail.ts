@@ -1,7 +1,7 @@
-import { Component, ElementRef, afterRenderEffect, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, inject, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
 import { FormField, form, maxLength, required } from '@angular/forms/signals';
+import { ChampionsDex } from '@core/dex/champions-dex';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
-import { MAX_TOTAL_STAT_POINTS, totalStatPoints } from '@features/teambuilder/data/game-rules';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
@@ -29,13 +29,13 @@ const SLOT_POSITIONS = [
   template: `
     <div class="relative h-[644px] w-[920px]">
       <div [class.hidden]="editing()">
-        <h2 #heading tabindex="-1" class="absolute top-2 left-6 w-[490px] text-xl font-bold text-white">{{ team()?.name }}</h2>
-        <label for="team-format" class="absolute top-[52px] left-6 text-sm text-gray-200">Format</label>
+        <h2 #heading tabindex="-1" class="absolute top-2 left-6 w-[490px] text-xl font-bold text-retro-ink">{{ team()?.name }}</h2>
+        <label for="team-format" class="absolute top-[52px] left-6 text-sm text-retro-muted">Format</label>
         <select
           #formatSelect
           id="team-format"
           (change)="formatChanged.emit(formatSelect.value)"
-          class="absolute top-[44px] left-[84px] h-9 w-[340px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 p-[0_8px] text-base text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          class="absolute top-[44px] left-[84px] h-9 w-[340px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-input p-[0_8px] text-base text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           @for (format of formatOptions; track format.id) {
             <option [value]="format.id" [selected]="format.id === team()?.format">{{ format.name }}</option>
@@ -55,19 +55,18 @@ const SLOT_POSITIONS = [
           [attr.aria-label]="'Validate ' + team()?.name + ' for its format'"
         >
           <span aria-hidden="true" [class]="shortcutClass">ZL</span>
-          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-[34px] w-[70px] text-center leading-[34px]">Validate</span>
+          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-8 w-[70px] text-center leading-8">Validate</span>
         </button>
         <button
           type="button"
           data-kb-skip
           (click)="pressDelete()"
-          [class]="actionClass"
+          [class]="confirmingDelete() ? confirmClass : actionClass"
           class="left-[776px] w-[120px]"
-          [class.bg-red-800]="confirmingDelete()"
           [attr.aria-label]="confirmingDelete() ? 'Confirm deleting ' + team()?.name : 'Delete ' + team()?.name"
         >
           <span aria-hidden="true" [class]="shortcutClass">ZR</span>
-          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-[34px] w-[68px] text-center leading-[34px]">
+          <span aria-hidden="true" class="absolute top-0 left-[44px] block h-8 w-[68px] text-center leading-8">
             {{ confirmingDelete() ? 'Confirm' : 'Delete' }}
           </span>
         </button>
@@ -85,12 +84,12 @@ const SLOT_POSITIONS = [
           [attr.aria-describedby]="showNameError() ? 'rename-error' : null"
           [formField]="renameForm.name"
           (keydown.enter)="saveRename($event)"
-          class="absolute top-3 left-6 h-10 w-[400px] rounded-md border border-gray-400 bg-gray-800 p-[0_12px] text-lg text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          class="absolute top-3 left-6 h-10 w-[400px] rounded-md border-2 border-retro-outline bg-retro-input p-[0_12px] text-lg text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         />
         <button #saveButton type="button" (click)="saveRename()" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
         <button type="button" (click)="cancelRename()" [class]="actionClass" class="left-[536px] w-[88px]">Cancel</button>
         @if (showNameError()) {
-          <p id="rename-error" class="absolute top-[54px] left-6 text-sm text-red-300">{{ renameForm.name().errors()[0]?.message }}</p>
+          <p id="rename-error" class="absolute top-[54px] left-6 text-sm font-bold text-retro-danger">{{ renameForm.name().errors()[0]?.message }}</p>
         }
       </div>
 
@@ -111,6 +110,7 @@ const SLOT_POSITIONS = [
   `,
 })
 export class TeamDetail {
+  private readonly dex = inject(ChampionsDex);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
   private readonly saveButton = viewChild.required<ElementRef<HTMLButtonElement>>('saveButton');
@@ -129,9 +129,12 @@ export class TeamDetail {
 
   protected readonly formatOptions = TEAM_FORMATS;
   protected readonly actionClass =
-    'absolute top-[14px] h-9 cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
+    'absolute top-[14px] h-9 cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
+  /** Delete waiting for its confirmation. */
+  protected readonly confirmClass =
+    'absolute top-[14px] h-9 cursor-pointer rounded-md border-2 border-retro-bar bg-retro-accent text-base font-bold text-white hover:bg-retro-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
   /** The controller button's pill at the start of an action button. */
-  protected readonly shortcutClass = 'absolute top-[5px] left-[8px] block h-6 w-8 rounded-sm bg-gray-900 text-center text-sm leading-6 font-bold';
+  protected readonly shortcutClass = 'absolute top-[4px] left-[8px] block h-6 w-8 rounded-sm bg-retro-bg text-center text-sm leading-6 font-bold';
 
   // Both reset whenever a different team is shown.
   protected readonly editing = linkedSignal({ source: () => this.team()?.id, computation: () => false });
@@ -164,9 +167,18 @@ export class TeamDetail {
   protected slotLabel(position: number): string {
     const pokemon = this.team()?.sets[position];
     if (!pokemon) return 'Add a Pokémon';
-    const name = pokemon.name ? `${pokemon.name} (${pokemon.species})` : pokemon.species;
-    // The card itself isn't read out (the label replaces it), so the EVs are told here.
-    return `Edit slot ${position + 1}: ${name}, ${totalStatPoints(pokemon.evs)} of ${MAX_TOTAL_STAT_POINTS} EVs`;
+    const form = this.dex.mega(pokemon.species, pokemon.item) ?? this.dex.species(pokemon.species);
+    const species = form?.name ?? pokemon.species;
+    const name = pokemon.name ? `${pokemon.name} (${species})` : species;
+    // The card itself isn't read out (the label replaces it), so what it shows is told here.
+    const parts = [
+      name,
+      form?.types.join('/'),
+      pokemon.item || 'no item',
+      pokemon.ability || 'no ability',
+      pokemon.moves.length ? pokemon.moves.join(', ') : 'no moves',
+    ];
+    return `Edit slot ${position + 1}: ${parts.filter(Boolean).join('. ')}`;
   }
 
   /** Focuses a slot card (the "Add a Pokémon" one past the end of the team). Call it once the team has rendered. */

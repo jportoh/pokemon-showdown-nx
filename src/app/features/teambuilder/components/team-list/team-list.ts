@@ -7,18 +7,18 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
 @Component({
   imports: [ScrollRegion],
   selector: 'app-team-list',
-  host: { class: 'block bg-card' },
+  host: { class: 'block bg-retro-panel text-retro-ink' },
   // Fixed 360x644 column (see styles.css): 64px header, 540px scrolling list, 40px footer. Controls sit
   // at fixed absolute positions and rows are plain blocks (Brewser layout rules, seen on device).
   template: `
-    <div class="relative h-16 w-[359px] border-b border-gray-600">
-      <h2 id="team-list-title" class="absolute top-[18px] left-4 text-xl font-bold text-white">Teams</h2>
+    <div class="relative h-16 w-[359px] border-b border-retro-rim">
+      <h2 id="team-list-title" class="absolute top-[18px] left-4 text-xl font-bold text-retro-ink">Teams</h2>
       <button
         #newTeamButton
         type="button"
         aria-label="New empty team"
         (click)="create.emit()"
-        class="absolute top-[14px] left-[259px] h-9 w-[88px] cursor-pointer rounded-md border border-blue-300 bg-blue-700 text-base text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        class="absolute top-[14px] left-[259px] h-9 w-[88px] cursor-pointer rounded-md border-2 border-retro-bar bg-retro-accent text-base font-bold text-white hover:bg-retro-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         New
       </button>
@@ -32,19 +32,19 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
             [attr.aria-current]="team.id === selectedId() ? 'true' : null"
             [attr.data-autofocus]="team.id === selectedId() ? '' : null"
             (click)="select.emit(team.id)"
-            class="block h-16 w-[359px] cursor-pointer border-b border-gray-700 p-[10px_16px] text-left text-white hover:bg-tab-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
-            [class.bg-tab-hover]="team.id === selectedId()"
+            class="block h-16 w-[359px] cursor-pointer border-b border-retro-rim p-[10px_16px] text-left text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+            [class.bg-retro-select]="team.id === selectedId()"
           >
             <span class="block text-base font-bold">{{ team.name }}</span>
-            <span class="block text-sm text-gray-300">{{ summary(team) }}</span>
+            <span class="block text-sm text-retro-muted">{{ summary(team) }}</span>
           </button>
         </li>
       } @empty {
-        <li class="p-4 text-base text-gray-300">No teams yet. Use New to build one.</li>
+        <li class="p-4 text-base text-retro-muted">No teams yet. Use New to build one.</li>
       }
     </ul>
-    <div class="relative h-10 w-[359px] border-t border-gray-600">
-      <p class="absolute top-[10px] left-4 text-sm text-gray-300">{{ dataSummary }}</p>
+    <div class="relative h-10 w-[359px] border-t border-retro-rim">
+      <p class="absolute top-[10px] left-4 text-sm text-retro-muted">{{ dataSummary }}</p>
     </div>
   `,
 })

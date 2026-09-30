@@ -69,11 +69,11 @@ body {
 
 /*
   A slot card fills its button, so on Brewser it covers the button's outline: the card itself shows
-  the focus with a yellow border and a lighter background.
+  the focus with a yellow border and the retro palette's selected background.
 */
 [data-kb-focus] [data-slot-card] {
   border-color: #facc15 !important;
-  background-color: #3b5176 !important;
+  background-color: var(--color-retro-select) !important;
   outline: 3px solid #facc15;
   outline-offset: -3px;
 }

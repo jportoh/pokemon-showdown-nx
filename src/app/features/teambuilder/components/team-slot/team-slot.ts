@@ -1,64 +1,76 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { MAX_TOTAL_STAT_POINTS, STAT_IDS, STAT_NAMES, totalStatPoints } from '@features/teambuilder/data/game-rules';
-import { PokemonSet } from '@features/teambuilder/models/team';
+import { MAX_MOVES, PokemonSet } from '@features/teambuilder/models/team';
 import { ItemIcon } from '@shared/components/item-icon';
 import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
 
-// Where each stat with points goes under the EV pill: two per row, lined up with the pill's text and
-// the move rows (21px apart). Six stats fill the three rows.
-const SPREAD_POSITIONS = [
-  'top-[101px] left-[288px]',
-  'top-[101px] left-[352px]',
-  'top-[122px] left-[288px]',
-  'top-[122px] left-[352px]',
-  'top-[143px] left-[288px]',
-  'top-[143px] left-[352px]',
-];
+/** The move pills: 2x2, 116x28, 120 and 32 apart, under the item and ability line. */
+const MOVES_TOP = 100;
+const MOVES_LEFT = 176;
+const MOVE_STEP_X = 120;
+const MOVE_STEP_Y = 32;
+
+interface MovePill {
+  name: string;
+  /** The type's colour; empty for a slot without a move. */
+  color: string;
+  top: number;
+  left: number;
+}
+
+interface TypeBadge {
+  name: string;
+  color: string;
+}
 
 @Component({
   imports: [ItemIcon, PokemonSprite],
   selector: 'app-team-slot',
   host: { class: 'block' },
-  // Fixed 424x172 card with absolutely placed parts (Brewser layout rules, seen on device): sprite, the
-  // item's 48x48 icon centred under it, a
-  // 3-line summary (name, item/ability, types/nature) and the 4 moves below it, each on its type's
-  // colour: 160x19 pills 2px apart, centred between the summary (which ends at 72px) and the bottom
-  // border (8px of space on each side). Right of the moves (x 280-412), a pill of the same size with
-  // the EVs (stat points) spent out of 66: grey with none, amber part-way, green once all are spent.
-  // Below it, in the rows of moves 2-4, the stats that have points, two per row.
-  // It lives inside a button, so it only uses phrasing elements (spans shown as blocks).
+  // Fixed 424x172 card in the Details tab's retro style, with absolutely placed parts (Brewser layout
+  // rules, seen on device); positions are inside the 2px border. On the left, the sprite (the form it
+  // battles in) at 1.5x on a 152px stage, with the held item's icon in the stage's bottom right corner.
+  // On the right (x 176-412): the name, the types as pills, the item and ability, and the four moves as
+  // a 2x2 grid of pills in their types' colours (dashed for an empty one). The stat points are left to
+  // the Stats tab. It lives inside a button, so it only uses phrasing elements (spans shown as blocks).
   template: `
-    <span data-slot-card class="relative block h-[172px] w-[424px] rounded-lg border border-gray-600 bg-card text-left">
-      @if (set(); as pokemon) {
-        <app-pokemon-sprite class="absolute top-2 left-2" [sprite]="(mega() ?? species())?.sprite ?? ''" [size]="96" />
-        <app-item-icon class="absolute top-[110px] left-8" [item]="itemId()" />
-        <span class="absolute top-2 left-[108px] block w-[304px]">
-          <span class="block text-lg leading-6 font-bold text-white">{{ title() }}</span>
-          <span class="block text-sm leading-5 text-gray-300">{{ details() }}</span>
-          <span class="block text-sm leading-5 text-gray-400">{{ typesAndNature() }}</span>
-        </span>
-        <span class="absolute top-[80px] left-[108px] block w-[160px] text-sm leading-[19px] text-white">
-          @for (move of moves(); track $index) {
-            <span class="mb-[2px] block h-[19px] w-[160px] overflow-hidden rounded-sm p-[0_8px] whitespace-nowrap" [style.background-color]="move.color || null">{{ move.name }}</span>
-          }
-        </span>
-        <span
-          class="absolute top-[80px] left-[280px] block h-[19px] w-[132px] rounded-sm p-[0_8px] text-sm leading-[19px] font-bold text-white"
-          [class.bg-gray-700]="evTotal() === 0"
-          [class.bg-amber-800]="evTotal() > 0 && evTotal() < maxEvs"
-          [class.bg-green-800]="evTotal() >= maxEvs"
-        >
-          {{ evTotal() }}/{{ maxEvs }} EVs
-        </span>
-        @for (stat of evSpread(); track stat.label) {
-          <span class="absolute block h-[19px] w-[60px] text-sm leading-[19px] text-gray-200" [class]="stat.position">{{ stat.label }}</span>
+    @if (set(); as pokemon) {
+      <span data-slot-card class="relative block h-[172px] w-[424px] rounded-lg border-2 border-retro-outline bg-retro-panel text-left text-retro-ink hover:bg-retro-select">
+        <span class="absolute top-2 left-2 block size-[152px] rounded-md border border-retro-rim bg-retro-bg"></span>
+        <app-pokemon-sprite class="absolute top-3 left-3" [sprite]="form()?.sprite ?? ''" [size]="144" />
+        <app-item-icon class="absolute top-[124px] left-[124px]" [item]="itemId()" [size]="32" />
+
+        <span class="absolute top-2 left-[176px] block h-7 w-[236px] overflow-hidden text-lg leading-7 font-bold whitespace-nowrap">{{ title() }}</span>
+        @for (badge of typeBadges(); track $index) {
+          <span
+            class="absolute top-[42px] block h-5 w-[72px] rounded-sm text-center text-xs leading-5 font-bold text-white"
+            [style.left.px]="176 + $index * 80"
+            [style.background-color]="badge.color"
+            >{{ badge.name }}</span
+          >
         }
-      } @else {
-        <span class="absolute top-[74px] left-0 block w-[424px] text-center text-base text-gray-300">+ Add Pokémon</span>
-      }
-    </span>
+        <span class="absolute top-[70px] left-[176px] block h-5 w-[236px] overflow-hidden text-sm leading-5 whitespace-nowrap text-retro-muted">{{
+          details()
+        }}</span>
+
+        <!-- Tracked by position: a pill never moves (Brewser leaves a moved box's children behind). -->
+        @for (move of moves(); track $index) {
+          <span
+            class="absolute block h-7 w-[116px] overflow-hidden rounded-md p-[0_5px] text-[13px] leading-7 whitespace-nowrap"
+            [class]="move.color ? 'text-white' : 'border border-dashed border-retro-rim'"
+            [style.top.px]="move.top"
+            [style.left.px]="move.left"
+            [style.background-color]="move.color || null"
+            >{{ move.name }}</span
+          >
+        }
+      </span>
+    } @else {
+      <span data-slot-card class="relative block h-[172px] w-[424px] rounded-lg border-2 border-dashed border-retro-outline bg-retro-bg text-retro-muted hover:bg-retro-select">
+        <span class="absolute top-[72px] left-0 block h-6 w-[420px] text-center text-base leading-6">+ Add Pokémon</span>
+      </span>
+    }
   `,
 })
 export class TeamSlot {
@@ -66,55 +78,48 @@ export class TeamSlot {
 
   readonly set = input<PokemonSet | undefined>(undefined);
 
-  protected readonly species = computed(() => {
+  private readonly species = computed(() => {
     const set = this.set();
     return set ? this.dex.species(set.species) : undefined;
   });
 
-  /** What it Mega Evolves into, when it holds its Mega Stone: its name and types are shown instead. */
-  protected readonly mega = computed(() => {
+  /** The form it battles in: what it Mega Evolves into when it holds its Mega Stone. */
+  protected readonly form = computed(() => {
     const set = this.set();
-    return set ? this.dex.mega(set.species, set.item) : undefined;
+    return (set ? this.dex.mega(set.species, set.item) : undefined) ?? this.species();
   });
 
-  protected readonly maxEvs = MAX_TOTAL_STAT_POINTS;
-  /** Stat points (Showdown's EVs in Champions) spent across all stats. */
-  protected readonly evTotal = computed(() => totalStatPoints(this.set()?.evs ?? {}));
-  /** Only the stats that have points, in stat order: "Atk 32", "Spe 32", "HP 2"… */
-  protected readonly evSpread = computed(() => {
-    const evs = this.set()?.evs ?? {};
-    return STAT_IDS.filter((stat) => (evs[stat] ?? 0) > 0).map((stat, i) => ({
-      label: `${STAT_NAMES[stat]} ${evs[stat]}`,
-      position: SPREAD_POSITIONS[i],
-    }));
-  });
+  protected readonly typeBadges = computed((): TypeBadge[] => (this.form()?.types ?? []).map((name) => ({ name, color: typeColor(name) })));
 
   /** The held item's id when it's a legal one (only those have icons). */
   protected readonly itemId = computed(() => this.dex.item(this.set()?.item ?? '')?.id ?? '');
 
-  /** Each move with its type's row colour, as in the move chooser. */
-  protected readonly moves = computed(() =>
-    (this.set()?.moves ?? []).map((name) => ({ name, color: typeColor(this.dex.move(name)?.type ?? '') })),
-  );
+  /** Always four, each with its type's colour; the empty ones are drawn dashed. */
+  protected readonly moves = computed((): MovePill[] => {
+    const moves = this.set()?.moves ?? [];
+    return Array.from({ length: MAX_MOVES }, (_, i) => {
+      const name = moves[i] ?? '';
+      return {
+        name,
+        color: name ? typeColor(this.dex.move(name)?.type ?? '') : '',
+        top: MOVES_TOP + Math.floor(i / 2) * MOVE_STEP_Y,
+        left: MOVES_LEFT + (i % 2) * MOVE_STEP_X,
+      };
+    });
+  });
 
   /** "Big Shark (Garchomp-Mega)", or just the species without a nickname. */
-  readonly title = computed(() => {
+  protected readonly title = computed(() => {
     const set = this.set();
     if (!set) return '';
-    const species = this.mega()?.name ?? this.species()?.name ?? set.species;
+    const species = this.form()?.name ?? set.species;
     return set.name ? `${set.name} (${species})` : species;
   });
 
+  /** "Garchompite · Rough Skin". */
   protected readonly details = computed(() => {
     const set = this.set();
     if (!set) return '';
     return [set.item || 'No item', set.ability || 'No ability'].join(' · ');
-  });
-
-  /** Types and nature: "Dragon / Ground · Jolly Nature". */
-  protected readonly typesAndNature = computed(() => {
-    const nature = this.set()?.nature;
-    const parts = [(this.mega() ?? this.species())?.types.join(' / '), nature ? `${nature} Nature` : undefined];
-    return parts.filter(Boolean).join(' · ');
   });
 }

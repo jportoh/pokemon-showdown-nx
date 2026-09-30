@@ -12,14 +12,14 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
   // list stays mounted and is only hidden, and its rows are blocks with the padding inside the region.
   template: `
     <div class="h-[644px] w-[920px] p-6">
-      <h2 class="h-10 text-xl font-bold text-white">Validate: {{ team()?.name }}</h2>
-      <p class="h-8 text-base text-gray-200">{{ format() }}</p>
+      <h2 class="h-10 text-xl font-bold text-retro-ink">Validate: {{ team()?.name }}</h2>
+      <p class="h-8 text-base text-retro-muted">{{ format() }}</p>
       <p
         role="status"
         class="h-10 text-lg font-bold"
-        [class.text-gray-200]="status() === 'checking'"
-        [class.text-green-300]="status() === 'valid'"
-        [class.text-red-300]="status() === 'invalid' || status() === 'error'"
+        [class.text-retro-muted]="status() === 'checking'"
+        [class.text-retro-teal]="status() === 'valid'"
+        [class.text-retro-danger]="status() === 'invalid' || status() === 'error'"
       >
         {{ message() }}
       </p>
@@ -30,10 +30,10 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
           tabindex="0"
           aria-label="Problems"
           [class.hidden]="problems().length === 0"
-          class="block h-[428px] w-[872px] overflow-y-auto rounded-md border border-gray-400 bg-gray-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          class="block h-[428px] w-[872px] overflow-y-auto rounded-md border-2 border-retro-rim bg-retro-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           @for (problem of problems(); track $index) {
-            <li class="block border-b border-gray-700 p-[8px_12px] text-base text-white">{{ problem }}</li>
+            <li class="block border-b border-retro-rim p-[8px_12px] text-base text-retro-ink">{{ problem }}</li>
           }
         </ul>
       </div>
@@ -41,7 +41,7 @@ import { ScrollRegion } from '@shared/directives/scroll-region';
         #backButton
         type="button"
         (click)="back.emit()"
-        class="block h-10 w-[120px] cursor-pointer rounded-md border border-gray-400 bg-gray-700 text-base text-white hover:bg-gray-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        class="block h-10 w-[120px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         Back
       </button>
