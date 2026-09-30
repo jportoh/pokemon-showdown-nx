@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # only used on tags, to publish the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # ng build + the Brewser re-bundle (classic IIFE, lowered CSS) and its zip.
+      - run: npm run build:brewser
+
+      # Named after the tag on releases and after the commit otherwise, so each zip tested on the
+      # console can be traced back to its code.
+      - name: Name the zip
+        id: zip
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then label="$GITHUB_REF_NAME"; else label="$(git rev-parse --short HEAD)"; fi
+          file="dist/pokemon-showdown-brewser/brewser-$label.zip"
+          mv dist/pokemon-showdown-brewser/brewser.zip "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      # Uploaded as-is (no zip inside a zip): the download is the file to upload to Brewser.
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.zip.outputs.file }}
+          archive: false
+          retention-days: 30
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "${{ steps.zip.outputs.file }}" --verify-tag --generate-notes
