@@ -14,3 +14,6 @@ export const RETRO_SECONDARY_BUTTON =
 
 /** A text field. */
 export const RETRO_INPUT = 'rounded-md border-2 border-retro-outline bg-retro-input p-[0_10px] text-base text-retro-ink placeholder:text-gray-400';
+
+/** The console button bound to a control (ZR, L…), in a pill at the left of a 48px-tall button. */
+export const RETRO_SHORTCUT_PILL = 'absolute top-[10px] left-[10px] block h-6 w-9 rounded-sm bg-retro-select text-center text-sm leading-6 font-bold';

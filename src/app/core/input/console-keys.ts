@@ -39,8 +39,8 @@ export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: st
   { button: 'D-pad', key: 'W / A / S / D', action: 'Move focus; left/right change a list box option' },
   { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
   { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
-  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: open team sheet / battle log; teambuilder: Validate / Delete or Remove)" },
-  { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit; teambuilder: Details / Stats)" },
+  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: open team sheet / battle log; teambuilder: Validate / Delete or Remove; Watch Live and Replays: ZR refreshes)" },
+  { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit; teambuilder: Details / Stats; Watch Live and Replays: previous / next page)" },
   { button: 'R3', key: 'R', action: "The right stick pressed: the page's own action (battle: battle timer)" },
 ];
 

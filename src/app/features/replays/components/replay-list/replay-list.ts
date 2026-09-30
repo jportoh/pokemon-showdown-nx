@@ -2,6 +2,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  Injector,
   afterNextRender,
   afterRenderEffect,
   computed,
@@ -17,10 +18,13 @@ import { ReplaySummary } from '@features/battle/models/battle';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
+import { OptionPicker, PickerOption } from '@shared/components/option-picker';
+import { RetroBox } from '@shared/components/retro-box';
 import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
+import { RETRO_SECONDARY_BUTTON, RETRO_SHORTCUT_PILL } from '@shared/ui/retro-classes';
 
-/** Rows shown at once: 64px each in the 579px under the bar. */
-const VISIBLE_ROWS = 9;
+/** Rows shown at once, in fixed slots (as on Watch Live). */
+const ROWS = 8;
 
 /** The format last picked, so coming back from a replay lists the same one. */
 let lastFormat: PlayableFormat = PLAYABLE_FORMATS[0];
@@ -31,113 +35,159 @@ interface ReplayRow extends ReplaySummary {
 }
 
 /**
- * The latest public replays of a format, from Showdown's replay server: the teambuilder's VGC format
- * (doubles) or Random Battle (singles), picked with the buttons in the bar. Picking a replay plays it
- * on the battle screen, watched from the first player's side. Fixed 1280x644: a 64px bar and a 579px
- * list of plain block rows (Brewser layout rules).
+ * The latest public replays of a format, from Showdown's replay server. Laid out as Watch Live: a format
+ * selector (opening the list of formats over the page, so any number of them fit), Refresh and the pager
+ * on top, and the replays in a box below. Picking a replay plays it on the battle screen, watched from
+ * the first player's side.
  *
  * The list is NOT a scroll box: on the console, a scroll box that first appears after load stays
- * blank (the battle log's test L1), and this list never showed. It shows VISIBLE_ROWS rows at a time;
- * the d-pad moves focus between them, and past the first or last one shown the list moves by a row
- * (it registers as a pager, see KeyboardNavigation). The mouse wheel moves it too.
+ * blank (the battle log's test L1). It shows ROWS rows at a time in fixed slots, tracked by position
+ * so no row ever moves or is re-created (moved absolute boxes left their text behind on Brewser). The
+ * d-pad moves focus between them, and past the first or last one shown the list moves by a row (it
+ * registers as a pager, see KeyboardNavigation); Previous/Next (L/R) and the mouse wheel move it too. ZR refreshes.
  */
 @Component({
+  imports: [OptionPicker, RetroBox],
   selector: 'app-replay-list',
-  host: { class: 'block h-[644px] w-[1280px] bg-card text-white' },
+  host: { class: 'bg-retro-bg relative block h-[644px] w-[1280px] text-retro-ink' },
   template: `
-    <div class="relative h-16 w-[1280px] border-b border-gray-600">
-      <h2
-        id="replay-list-title"
-        class="absolute top-[8px] left-6 block h-7 text-xl leading-7 font-bold"
-      >
-        Replays
-      </h2>
-      <p class="absolute top-[36px] left-6 block h-5 w-[440px] overflow-hidden text-sm leading-5 whitespace-nowrap text-gray-300">
-        {{ subtitle() }}
-      </p>
-      <div role="group" aria-label="Format">
-        @for (option of formats; track option.id; let i = $index) {
-          <button
-            type="button"
-            class="absolute top-[14px] h-9 w-[200px] rounded-md border text-base"
-            [class]="option.id === format().id ? 'border-sky-300 bg-[#2c4a78] font-bold hover:bg-[#35598f]' : 'border-gray-400 bg-gray-700 hover:bg-gray-600'"
-            [style.left.px]="480 + i * 212"
-            [attr.aria-pressed]="option.id === format().id"
-            (click)="pickFormat(option)"
-          >
-            {{ option.label }}
-          </button>
-        }
-      </div>
-      @if (replays().length > visibleRows) {
-        <p class="absolute top-[20px] left-[916px] block h-6 w-[200px] text-right text-sm leading-6 text-gray-300">{{ range() }}</p>
-      }
+    <!-- The page's controls hide while the format list is open over them (only normal-flow wrappers toggle on Brewser). -->
+    <div class="block" [class.hidden]="picking()">
       <button
+        #formatButton
+        data-autofocus
         type="button"
-        class="absolute top-[14px] left-[1136px] h-9 w-[120px] rounded-md border border-gray-400 bg-gray-700 text-base hover:bg-gray-600 disabled:cursor-not-allowed disabled:text-gray-400"
-        [disabled]="status() === 'loading'"
-        (click)="refresh()"
+        [class]="secondaryClass"
+        class="absolute top-[24px] left-[32px] h-12 w-[468px] p-0"
+        [attr.aria-label]="'Format: ' + format().label + '. Change'"
+        (click)="picking.set(true)"
       >
-        Refresh
+        <!-- Placed boxes: Brewser leaves a button's element children at its top left. -->
+        <span class="absolute top-[10px] left-[16px] block h-6 w-[72px] text-left text-base leading-6 font-normal text-retro-muted">Format</span>
+        <span class="absolute top-[8px] left-[92px] block h-7 w-[320px] truncate text-left text-xl leading-7">{{ format().label }}</span>
+        <svg aria-hidden="true" viewBox="0 0 7 4" class="absolute top-[16px] left-[424px] h-3 w-[21px] fill-retro-accent-text"><path d="M0 0h7v1h-1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h-1z" /></svg>
       </button>
+      <!-- ZR, L and R press these, so the d-pad skips them (data-kb-skip); the button shows in a pill. -->
+      <button type="button" data-kb-skip [class]="secondaryClass" class="absolute top-[24px] left-[516px] h-12 w-[160px] p-0 text-xl" [disabled]="status() === 'loading'" (click)="refresh()">
+        <span aria-hidden="true" [class]="pillClass">ZR</span>
+        <span class="absolute top-0 left-[50px] block h-11 w-[96px] text-center leading-[44px]">Refresh</span>
+      </button>
+      <p class="absolute top-[34px] left-[692px] block h-7 w-[232px] text-lg text-retro-muted">{{ range() }}</p>
+      <button type="button" data-kb-skip [class]="secondaryClass" class="absolute top-[24px] left-[940px] h-12 w-[150px] p-0 text-xl" [disabled]="start() === 0" (click)="movePage(-1)">
+        <span aria-hidden="true" [class]="pillClass">L</span>
+        <span class="absolute top-0 left-[48px] block h-11 w-[92px] text-center leading-[44px]">Previous</span>
+      </button>
+      <button type="button" data-kb-skip [class]="secondaryClass" class="absolute top-[24px] left-[1102px] h-12 w-[150px] p-0 text-xl" [disabled]="start() + rowCount >= replays().length" (click)="movePage(1)">
+        <span aria-hidden="true" [class]="pillClass">R</span>
+        <span class="absolute top-0 left-[48px] block h-11 w-[92px] text-center leading-[44px]">Next</span>
+      </button>
+
+      <app-retro-box class="absolute top-[92px] left-[32px]" [width]="1220" [height]="528">
+        <!-- Always mounted, shown with display (see Watch Live). The rows hide while it shows. -->
+        <p role="status" class="absolute top-[24px] left-[24px] block h-7 w-[1160px] text-xl" [style.display]="message() ? 'block' : 'none'">{{ message() }}</p>
+        <ul #list aria-label="Replays" class="block">
+          @for (row of slots(); track $index; let i = $index) {
+            <li class="block">
+              <button
+                #replayButton
+                type="button"
+                class="absolute left-[12px] h-14 w-[1184px] cursor-pointer rounded-lg border-2 border-retro-rim bg-retro-button text-left text-retro-ink hover:bg-retro-select"
+                [style.top.px]="12 + i * 62"
+                [style.display]="row ? 'block' : 'none'"
+                [disabled]="!row || opening() !== null"
+                [attr.aria-label]="row ? 'Watch the replay of ' + row.title + ', ' + rowDetail(row) : null"
+                (click)="row && open(row)"
+              >
+                <span class="absolute top-[12px] left-[20px] block h-7 w-[740px] overflow-hidden text-xl font-bold whitespace-nowrap">{{ row ? row.title : '' }}</span>
+                <span class="absolute top-[14px] left-[780px] block h-6 w-[380px] overflow-hidden text-lg whitespace-nowrap text-retro-muted">{{ row ? rowDetail(row) : '' }}</span>
+              </button>
+            </li>
+          }
+        </ul>
+      </app-retro-box>
     </div>
-    <ul #list aria-labelledby="replay-list-title" class="block h-[579px] w-[1280px]">
-      @for (replay of visibleReplays(); track replay.id) {
-        <li>
-          <button
-            #replayButton
-            type="button"
-            class="block h-16 w-[1280px] border-b border-gray-700 p-[10px_24px] text-left hover:bg-tab-hover disabled:text-gray-400"
-            [disabled]="opening() !== null"
-            (click)="open(replay)"
-          >
-            <span
-              class="block h-6 overflow-hidden text-base leading-6 font-bold whitespace-nowrap"
-              >{{ replay.title }}</span
-            >
-            <span class="block h-5 text-sm leading-5 text-gray-300">{{
-              opening() === replay.id ? 'Loading the replay…' : replay.detail
-            }}</span>
-          </button>
-        </li>
-      }
-    </ul>
+
+    @if (picking()) {
+      <app-option-picker
+        class="absolute top-[24px] left-[32px]"
+        title="Pick a format"
+        [options]="formatOptions"
+        [selected]="format().id"
+        (picked)="pickFormat($event)"
+        (closed)="closePicker()"
+      />
+    }
   `,
 })
 export class ReplayList {
   private readonly api = inject(ReplayApi);
   private readonly store = inject(BattleStore);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
   private readonly renderScheduler = inject(RenderScheduler);
   private readonly navigation = inject(KeyboardNavigation);
   private readonly rows = viewChildren<ElementRef<HTMLButtonElement>>('replayButton');
   private readonly list = viewChild.required<ElementRef<HTMLElement>>('list');
+  private readonly formatButton = viewChild.required<ElementRef<HTMLButtonElement>>('formatButton');
 
-  protected readonly visibleRows = VISIBLE_ROWS;
-  protected readonly formats = PLAYABLE_FORMATS;
+  protected readonly rowCount = ROWS;
+  protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
+  protected readonly pillClass = RETRO_SHORTCUT_PILL;
+  protected readonly formatOptions: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) => ({
+    id: format.id,
+    title: format.label,
+    detail: format.detail,
+    category: format.category,
+  }));
+
   protected readonly format = signal(lastFormat);
+  /** The list of formats is open over the page. */
+  protected readonly picking = signal(false);
   /** Counts searches, so an answer for a format no longer picked is dropped. */
   private searchId = 0;
   protected readonly status = signal<'loading' | 'ready' | 'error'>('loading');
+  private readonly searchError = signal('');
   protected readonly replays = signal<readonly ReplayRow[]>([]);
   /** The replay being downloaded. */
   protected readonly opening = signal<string | null>(null);
-  protected readonly subtitle = signal('');
+  /** The replay that couldn't be downloaded, and why. */
+  private readonly failed = signal<{ id: string; text: string } | null>(null);
 
   /** The first row shown. */
-  private readonly start = signal(0);
-  protected readonly visibleReplays = computed(() => this.replays().slice(this.start(), this.start() + VISIBLE_ROWS));
-  protected readonly range = computed(() => {
-    const first = this.start() + 1;
-    return `${first}–${first + this.visibleReplays().length - 1} of ${this.replays().length}`;
+  protected readonly start = signal(0);
+  private readonly visibleReplays = computed(() => this.replays().slice(this.start(), this.start() + ROWS));
+  /** Always ROWS slots (null: empty), all empty while the message shows. */
+  protected readonly slots = computed<readonly (ReplayRow | null)[]>(() => {
+    const shown = this.message() ? [] : this.visibleReplays();
+    return Array.from({ length: ROWS }, (_, i) => shown[i] ?? null);
   });
+  protected readonly range = computed(() => {
+    const total = this.replays().length;
+    if (total === 0) return '';
+    const first = this.start() + 1;
+    return `${first}–${first + this.visibleReplays().length - 1} of ${total}`;
+  });
+
+  protected readonly message = computed(() => {
+    switch (this.status()) {
+      case 'loading':
+        return 'Loading the latest replays…';
+      case 'error':
+        return `Couldn't reach the replay server: ${this.searchError()}`;
+      case 'ready':
+        return this.replays().length === 0 ? `No public replays of ${this.format().label} yet. Try Refresh.` : null;
+    }
+  });
+
   /** The row (by position among those shown) to focus once rendered: after a load or after moving the list. */
   private focusRow: number | null = null;
 
   constructor() {
     afterRenderEffect(() => {
+      // The slots are always the same elements: rerun when what they show changes.
+      this.slots();
       const row = this.focusRow === null ? undefined : this.rows()[this.focusRow]?.nativeElement;
-      if (row) {
+      if (row && !row.disabled) {
         this.focusRow = null;
         row.focus();
       }
@@ -159,12 +209,25 @@ export class ReplayList {
         list.removeEventListener('wheel', onWheel);
       });
     });
+    // The console buttons, while the page shows (not over the format list): L/R page, ZR refreshes.
+    const unregisterButtons = [
+      this.navigation.registerButton('buttonL', () => !this.picking() && this.movePage(-1)),
+      this.navigation.registerButton('buttonR', () => !this.picking() && this.movePage(1)),
+      this.navigation.registerButton('buttonZR', () => {
+        if (this.picking()) return false;
+        if (this.status() !== 'loading') void this.refresh();
+        return true;
+      }),
+    ];
+    destroyRef.onDestroy(() => unregisterButtons.forEach((fn) => fn()));
     void this.refresh();
   }
 
   /** Lists another format's replays (the list empties while they load). */
-  protected pickFormat(format: PlayableFormat): void {
-    if (format.id === this.format().id) return;
+  protected pickFormat(id: string): void {
+    this.closePicker();
+    const format = PLAYABLE_FORMATS.find((option) => option.id === id);
+    if (!format || format.id === this.format().id) return;
     lastFormat = format;
     this.format.set(format);
     this.replays.set([]);
@@ -172,11 +235,17 @@ export class ReplayList {
     void this.refresh();
   }
 
+  /** Back to the page, with focus on the format selector. */
+  protected closePicker(): void {
+    this.picking.set(false);
+    afterNextRender(() => this.formatButton().nativeElement.focus(), { injector: this.injector });
+  }
+
   protected async refresh(): Promise<void> {
     const search = ++this.searchId;
     const format = this.format();
     this.status.set('loading');
-    this.subtitle.set('Loading the latest replays…');
+    this.failed.set(null);
     this.renderScheduler.request();
     try {
       const now = Date.now() / 1000;
@@ -185,30 +254,41 @@ export class ReplayList {
       this.replays.set(replays.map((replay) => toRow(replay, now)));
       this.start.set(0);
       this.status.set('ready');
-      this.subtitle.set(
-        replays.length > 0 ? `The latest ${replays.length} public replays` : `No public replays of ${format.label} yet`,
-      );
-      this.focusRow = 0;
+      if (replays.length > 0) this.focusRow = 0;
     } catch (error) {
       if (search !== this.searchId) return;
+      this.searchError.set(errorText(error));
       this.status.set('error');
-      this.subtitle.set(`Couldn't reach the replay server: ${errorText(error)}`);
     }
     this.renderScheduler.request();
   }
 
-  protected async open(summary: ReplaySummary): Promise<void> {
+  protected async open(summary: ReplayRow): Promise<void> {
     this.opening.set(summary.id);
+    this.failed.set(null);
     this.renderScheduler.request();
     try {
       const replay = await this.api.load(summary.id);
       this.store.start(new ReplayBattleConnection({ ...summary, ...replay }));
       await this.router.navigateByUrl('/battle');
     } catch (error) {
-      this.subtitle.set(`Couldn't load that replay: ${errorText(error)}`);
+      this.failed.set({ id: summary.id, text: `Couldn't load it: ${errorText(error)}` });
     }
     this.opening.set(null);
     this.renderScheduler.request();
+  }
+
+  /** The line on a row's right: rating and age, or how opening it goes. */
+  protected rowDetail(row: ReplayRow): string {
+    if (this.opening() === row.id) return 'Loading the replay…';
+    const failed = this.failed();
+    return failed?.id === row.id ? failed.text : row.detail;
+  }
+
+  /** Previous/Next (L/R): the list moves by a whole page; true once handled, even at the ends. */
+  protected movePage(step: 1 | -1): true {
+    if (this.moveTo(this.start() + step * ROWS)) this.renderScheduler.request();
+    return true;
   }
 
   /** Up past the first row shown, or down past the last one, moves the list by a row; Home/End jump to its ends. */
@@ -229,7 +309,7 @@ export class ReplayList {
         this.focusAfterMove(this.moveTo(0), 0);
         return true;
       case 'last':
-        this.focusAfterMove(this.moveTo(this.replays().length - VISIBLE_ROWS), last);
+        this.focusAfterMove(this.moveTo(this.replays().length - ROWS), last);
         return true;
     }
   }
@@ -242,7 +322,7 @@ export class ReplayList {
 
   /** Moves the list so `start` is its first row shown (clamped); false if it didn't move. */
   private moveTo(start: number): boolean {
-    const clamped = Math.max(0, Math.min(start, this.replays().length - VISIBLE_ROWS));
+    const clamped = Math.max(0, Math.min(start, this.replays().length - ROWS));
     if (clamped === this.start()) return false;
     this.start.set(clamped);
     return true;

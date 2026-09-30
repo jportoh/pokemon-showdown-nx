@@ -12,6 +12,7 @@ import { packTeam } from '@features/teambuilder/data/packed-team';
 import { PlaySelection } from '@features/play/state/play-selection';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCard } from '@features/trainer-card/components/trainer-card/trainer-card';
+import { OptionPicker, PickerOption } from '@shared/components/option-picker';
 import { RetroBox } from '@shared/components/retro-box';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
 import { RETRO_PRIMARY_BUTTON } from '@shared/ui/retro-classes';
@@ -19,7 +20,6 @@ import { spriteId } from '@shared/utils/sprite-id';
 import { ChallengeForm } from '../challenge-panel/challenge-form';
 import { ChallengePanel } from '../challenge-panel/challenge-panel';
 import { ChallengePopup } from '../challenge-popup/challenge-popup';
-import { OptionPicker, PickerOption } from '../option-picker/option-picker';
 import { TeamPreview } from '../team-preview/team-preview';
 
 /** What opens over the page: a picker, or the form to challenge a player. */
