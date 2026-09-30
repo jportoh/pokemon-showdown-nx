@@ -53,6 +53,8 @@ export type PageStep = 'up' | 'down' | 'first' | 'last';
 export type Pager = (step: PageStep, focused: HTMLElement) => boolean;
 /** Nudges a value (a slider's) for the focused control inside the element with left/right; false leaves the press to normal navigation. */
 export type Adjuster = (step: 1 | -1) => boolean;
+/** Takes a computer keyboard's key while a text entry is open (see registerTextInput); false leaves it to navigation. */
+export type TextInput = (event: KeyboardEvent) => boolean;
 
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
@@ -87,6 +89,9 @@ export class KeyboardNavigation {
   private tabSwitcher: ((step: 1 | -1) => void) | null = null;
   /** L/R handlers by page, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
+  /** Where the d-pad stays while a view covers the page (the on-screen keyboard), or null for the whole page. */
+  private trapRoot: HTMLElement | null = null;
+  private textInput: TextInput | null = null;
 
   /** The focused control (virtual focus: see the class comment). */
   private current: HTMLElement | null = null;
@@ -189,6 +194,28 @@ export class KeyboardNavigation {
     };
   }
 
+  /**
+   * Keeps the d-pad inside `root` (a view covering the page, like the on-screen keyboard) until the
+   * returned function is called.
+   */
+  trapFocus(root: HTMLElement): () => void {
+    this.trapRoot = root;
+    return () => {
+      if (this.trapRoot === root) this.trapRoot = null;
+    };
+  }
+
+  /**
+   * Gives a computer keyboard's keys to `handler` first (the on-screen keyboard types them), except
+   * on the console with a controller, whose d-pad also sends letters. Returns the unregister function.
+   */
+  registerTextInput(handler: TextInput): () => void {
+    this.textInput = handler;
+    return () => {
+      if (this.textInput === handler) this.textInput = null;
+    };
+  }
+
   /** The focused control, or null when focus is lost. */
   focused(): HTMLElement | null {
     return this.activeControl();
@@ -241,6 +268,10 @@ export class KeyboardNavigation {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
+    if (this.textInput && !(ON_BREWSER && this.gamepadConnected) && this.textInput(event)) {
+      event.preventDefault();
+      return;
+    }
     const action = inputAction(event);
     const active = this.activeControl();
     const field = active && isTextField(active) ? active : null;
@@ -388,14 +419,14 @@ export class KeyboardNavigation {
       return;
     }
     const region = active ? regionOf(active) : this.lastFocused && regionOf(this.lastFocused);
-    const candidates = collectCandidates(document.body, region).filter((candidate) => candidate.element !== active);
+    const candidates = collectCandidates(this.trapRoot ?? document.body, region).filter((candidate) => candidate.element !== active);
     const next = origin && nearestInDirection(origin, direction, candidates);
     if (next) this.focus(next.element);
   }
 
   /** Without element boxes: down/right go to the next control in the document, up/left to the previous. */
   private moveInDocumentOrder(direction: Direction, active: HTMLElement | null): void {
-    const controls = collectCandidates(document.body, null, false).map((candidate) => candidate.element);
+    const controls = collectCandidates(this.trapRoot ?? document.body, null, false).map((candidate) => candidate.element);
     const index = active ? controls.indexOf(active) : -1;
     const step = direction === 'down' || direction === 'right' ? 1 : -1;
     const next = controls[index === -1 ? 0 : index + step];
@@ -467,7 +498,7 @@ export class KeyboardNavigation {
 
   /** Focus on a page reached with ZL/ZR: its `data-autofocus` control, or its first one. */
   private focusPageStart(): void {
-    const main = document.querySelector('main') ?? document.body;
+    const main = this.trapRoot ?? document.querySelector('main') ?? document.body;
     const candidates = collectCandidates(main, null, boxesSupported());
     const preferred = candidates.find((candidate) => candidate.element.getAttribute(AUTOFOCUS_ATTRIBUTE) !== null);
     const target = preferred ?? candidates[0];
@@ -476,7 +507,7 @@ export class KeyboardNavigation {
 
   /** Moves focus to the control nearest to where the lost one was, or to the page's start. */
   private recoverFocus(): void {
-    const candidates = this.lastBox && boxesSupported() ? collectCandidates(document.body, null) : [];
+    const candidates = this.lastBox && boxesSupported() ? collectCandidates(this.trapRoot ?? document.body, null) : [];
     const nearest = this.lastBox && nearestTo(this.lastBox, candidates);
     if (nearest) this.focus(nearest.element);
     else this.focusPageStart();

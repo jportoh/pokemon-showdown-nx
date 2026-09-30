@@ -1,22 +1,22 @@
 import { Component, ElementRef, afterNextRender, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { form, FormField, maxLength } from '@angular/forms/signals';
-import { isEnterKey } from '@core/input/console-keys';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { Team } from '@features/teambuilder/models/team';
 import { PlayableFormat } from '@shared/data/formats';
+import { KeyboardField } from '@shared/components/keyboard-field';
 import { BackAction } from '@shared/directives/back-action';
-import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
+import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 import { toId } from '@shared/utils/to-id';
 
 /**
  * Challenges a player by name in the format picked on the Battle page, with the team picked there
  * (none in random formats), in a box over the page (three rows).
- * Sending closes it: the panel then shows the challenge waiting for an answer. The name is read
- * from the input itself (the on-screen keyboard may skip the input events).
+ * Sending closes it: the panel then shows the challenge waiting for an answer. The name is typed
+ * with the app's on-screen keyboard, whose OK moves on to Send challenge.
  */
 @Component({
-  imports: [FormField, BackAction],
+  imports: [FormField, BackAction, KeyboardField],
   selector: 'app-challenge-form',
   host: { class: 'block' },
   template: `
@@ -29,16 +29,16 @@ import { toId } from '@shared/utils/to-id';
       >
         {{ error() ?? intro() }}
       </p>
-      <input
-        #nameInput
-        type="text"
-        aria-label="Player to challenge"
-        aria-describedby="challenge-status"
+      <app-keyboard-field
+        label="Player to challenge"
+        describedBy="challenge-status"
         placeholder="Player's name"
+        textSize="text-lg"
         [formField]="challengeForm.name"
-        (keydown)="onEnter($event)"
-        [class]="inputClass"
-        class="absolute top-[48px] left-0 h-11 w-[720px] text-lg"
+        [width]="720"
+        [height]="44"
+        (accepted)="sendButton.focus()"
+        class="absolute top-[48px] left-0"
       />
       <button #sendButton type="button" [class]="primaryClass" class="absolute top-[108px] left-0 h-11 w-[352px] text-2xl" (click)="submit()">
         Send challenge
@@ -56,13 +56,11 @@ import { toId } from '@shared/utils/to-id';
 })
 export class ChallengeForm {
   private readonly challenges = inject(ShowdownChallenges);
-  private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
   private readonly sendButton = viewChild.required<ElementRef<HTMLButtonElement>>('sendButton');
 
   /** The challenge went out, or the form was cancelled. */
   readonly closed = output<void>();
 
-  protected readonly inputClass = RETRO_INPUT;
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
@@ -88,14 +86,8 @@ export class ChallengeForm {
     afterNextRender(() => this.sendButton().nativeElement.focus());
   }
 
-  protected onEnter(event: KeyboardEvent): void {
-    if (!isEnterKey(event)) return;
-    event.preventDefault();
-    this.submit();
-  }
-
   protected submit(): void {
-    const name = this.nameInput().nativeElement.value.trim();
+    const name = this.model().name.trim();
     this.model.set({ name });
     if (!toId(name)) {
       this.error.set('Enter the name of the player to challenge.');

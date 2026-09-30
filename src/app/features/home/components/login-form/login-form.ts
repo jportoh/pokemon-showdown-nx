@@ -1,22 +1,20 @@
 import { Component, ElementRef, afterNextRender, computed, effect, inject, output, signal, viewChild } from '@angular/core';
-import { form, FormField, maxLength } from '@angular/forms/signals';
-import { isEnterKey } from '@core/input/console-keys';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { PasswordField } from '@shared/components/password-field';
+import { KeyboardField } from '@shared/components/keyboard-field';
 import { BackAction } from '@shared/directives/back-action';
-import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
+import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
 
 /**
  * Connects to Showdown, over a fixed 980x416 area (the home screen's login box): first as a guest (a
  * random name), or below it with the player's own name once the connection is ready: a registered
  * name with its password, a free one with the password left empty. B closes it. It closes itself only
  * once the server calls us by a name (the guest's or the player's), so the menu is never shown while
- * the connection is still on its way. The values are read from the inputs themselves: the console's
- * on-screen keyboard may fill them in without the input events that keep the form model up to date.
+ * the connection is still on its way. The fields type with the app's own on-screen keyboard, and OK
+ * on it moves on: from the name to the password, from the password to Log in.
  */
 @Component({
-  imports: [FormField, BackAction, PasswordField],
+  imports: [BackAction, KeyboardField],
   selector: 'app-login-form',
   // No `relative` here: the parent places it with `absolute` (both set `position`, and `relative` wins).
   host: { class: 'block h-[416px] w-[980px]' },
@@ -39,29 +37,31 @@ import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shar
 
       <div aria-hidden="true" class="absolute top-[148px] left-0 block h-[3px] w-[980px] bg-retro-outline"></div>
       <p class="absolute top-[168px] left-0 block h-9 w-[980px] text-2xl leading-9 font-bold">Or log in with your own name</p>
-      <input
-        #nameInput
-        type="text"
-        autocomplete="username"
-        aria-label="Showdown name"
-        aria-describedby="login-status"
-        placeholder="Name"
-        [formField]="loginForm.name"
-        (keydown)="onEnter($event)"
-        [class]="inputClass"
-        class="absolute top-[220px] left-0 h-16 w-[482px]"
-      />
-      <app-password-field
-        #passwordField
-        ariaLabel="Password (empty for an unregistered name)"
+      <app-keyboard-field
+        [(value)]="name"
+        label="Showdown name"
         describedBy="login-status"
-        placeholder="Password"
+        placeholder="Name"
+        [maxLength]="18"
         [width]="482"
         [height]="64"
-        (enter)="submit()"
+        (accepted)="passwordField.focus()"
+        class="absolute top-[220px] left-0"
+      />
+      <app-keyboard-field
+        #passwordField
+        [(value)]="password"
+        label="Password (empty for an unregistered name)"
+        describedBy="login-status"
+        placeholder="Password"
+        [masked]="true"
+        [width]="482"
+        [height]="64"
+        (accepted)="focusLogIn()"
         class="absolute top-[220px] left-[498px]"
       />
       <button
+        #logInButton
         type="button"
         [class]="primaryClass"
         class="absolute top-[300px] left-0 h-16 w-[980px] text-3xl"
@@ -84,22 +84,18 @@ import { RETRO_INPUT, RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shar
 })
 export class LoginForm {
   protected readonly login = inject(ShowdownLogin);
-  private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
-  private readonly passwordField = viewChild.required(PasswordField);
   private readonly guestButton = viewChild.required<ElementRef<HTMLButtonElement>>('guestButton');
+  private readonly logInButton = viewChild.required<ElementRef<HTMLButtonElement>>('logInButton');
 
   /** Backed out (B), or connected with a name. */
   readonly closed = output<void>();
 
-  // The retro input's text, larger for this box.
-  protected readonly inputClass = RETRO_INPUT.replace('text-base', 'text-2xl');
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
-  // The name last logged in with, when Settings remembers it.
-  private readonly model = signal({ name: inject(SavedLogin).name(), password: '' });
-  // Showdown's limit for names.
-  protected readonly loginForm = form(this.model, (path) => maxLength(path.name, 18));
+  // The name last logged in with, when Settings remembers it. At most 18 characters, Showdown's limit.
+  protected readonly name = signal(inject(SavedLogin).name());
+  protected readonly password = signal('');
   /** A login was asked for here: its success closes the form. */
   private readonly submitted = signal(false);
 
@@ -157,24 +153,22 @@ export class LoginForm {
     });
   }
 
+  /** After the password: Log in, unless it can't be pressed yet (focus would be lost on it). */
+  protected focusLogIn(): void {
+    if (this.canSubmit()) this.logInButton().nativeElement.focus();
+  }
+
   protected connectAsGuest(): void {
     if (!this.canConnectAsGuest()) return;
     this.submitted.set(false);
     this.login.connectAsGuest();
   }
 
-  protected onEnter(event: KeyboardEvent): void {
-    if (!isEnterKey(event)) return;
-    event.preventDefault();
-    this.submit();
-  }
-
   protected submit(): void {
     if (!this.canSubmit()) return;
-    const name = this.nameInput().nativeElement.value.trim();
-    const password = this.passwordField().value();
-    this.model.set({ name, password });
+    const name = this.name().trim();
+    this.name.set(name);
     this.submitted.set(true);
-    this.login.logIn(name, password);
+    this.login.logIn(name, this.password());
   }
 }

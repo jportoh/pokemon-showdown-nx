@@ -6,9 +6,10 @@ import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
+import { OnScreenKeyboardPanel } from '@shared/components/on-screen-keyboard/on-screen-keyboard-panel';
 
 @Component({
-  imports: [RouterOutlet],
+  imports: [OnScreenKeyboardPanel, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

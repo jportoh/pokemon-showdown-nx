@@ -4,6 +4,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
+import { KeyboardField } from '@shared/components/keyboard-field';
 import { BackAction } from '@shared/directives/back-action';
 
 export const MAX_TEAM_NAME_LENGTH = 30;
@@ -19,7 +20,7 @@ const SLOT_POSITIONS = [
 ];
 
 @Component({
-  imports: [TeamSlot, FormField, BackAction],
+  imports: [TeamSlot, FormField, BackAction, KeyboardField],
   selector: 'app-team-detail',
   host: { class: 'block' },
   // Fixed 920x644 panel (see styles.css): an 88px header (name and format select, or the rename form,
@@ -77,14 +78,15 @@ const SLOT_POSITIONS = [
         buttons worked, so Save and Enter are handled directly and read the text from the input.
       -->
       <div role="group" aria-label="Rename team" [class.hidden]="!editing()" (appBack)="cancelRename()">
-        <input
-          #nameInput
-          type="text"
-          aria-label="Team name"
-          [attr.aria-describedby]="showNameError() ? 'rename-error' : null"
+        <app-keyboard-field
+          label="Team name"
+          [describedBy]="showNameError() ? 'rename-error' : null"
+          textSize="text-lg"
           [formField]="renameForm.name"
-          (keydown.enter)="saveRename($event)"
-          class="absolute top-3 left-6 h-10 w-[400px] rounded-md border-2 border-retro-outline bg-retro-input p-[0_12px] text-lg text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          [width]="400"
+          [height]="40"
+          (accepted)="saveButton.focus()"
+          class="absolute top-3 left-6"
         />
         <button #saveButton type="button" (click)="saveRename()" [class]="actionClass" class="left-[436px] w-[88px]">Save</button>
         <button type="button" (click)="cancelRename()" [class]="actionClass" class="left-[536px] w-[88px]">Cancel</button>
@@ -112,7 +114,6 @@ const SLOT_POSITIONS = [
 export class TeamDetail {
   private readonly dex = inject(ChampionsDex);
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
-  private readonly nameInput = viewChild.required<ElementRef<HTMLInputElement>>('nameInput');
   private readonly saveButton = viewChild.required<ElementRef<HTMLButtonElement>>('saveButton');
   private readonly slotButtons = viewChildren<ElementRef<HTMLButtonElement>>('slotButton');
 
@@ -199,13 +200,8 @@ export class TeamDetail {
     this.focusAfterRender = 'save';
   }
 
-  /**
-   * Takes the name from the input itself: the console's on-screen keyboard may fill it in without
-   * the input events that keep the form model up to date.
-   */
-  protected saveRename(event?: Event): void {
-    event?.preventDefault();
-    this.renameModel.set({ name: this.nameInput().nativeElement.value.trim() });
+  protected saveRename(): void {
+    this.renameModel.update(({ name }) => ({ name: name.trim() }));
     const name = this.renameForm.name();
     name.markAsTouched();
     if (name.invalid()) return;

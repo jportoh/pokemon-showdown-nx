@@ -1,8 +1,8 @@
 import { NgOptimizedImage } from '@angular/common';
-import { Component, ElementRef, afterNextRender, computed, inject, output, signal, viewChild, viewChildren } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, inject, output, signal, viewChildren } from '@angular/core';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { PasswordField } from '@shared/components/password-field';
+import { KeyboardField } from '@shared/components/keyboard-field';
 import { RetroBox } from '@shared/components/retro-box';
 import { BackAction } from '@shared/directives/back-action';
 import { RETRO_PRIMARY_BUTTON, RETRO_SECONDARY_BUTTON } from '@shared/ui/retro-classes';
@@ -17,10 +17,11 @@ const ANSWERS = ['Eevee', 'Pikachu', 'Jigglypuff', 'Meowth'] as const;
  * Registers the player's unregistered name, over the home screen (1088x568, as the login box): a
  * password twice, Showdown's "What is this Pokémon?" question, and Register. Once the server has the
  * name registered, the home screen shows the Trainer Card in its place (L's box); B cancels.
- * The passwords are read from the fields when Register is pressed (see PasswordField).
+ * The passwords are typed with the app's on-screen keyboard, whose OK moves on: to the second
+ * password, then to the answers.
  */
 @Component({
-  imports: [BackAction, NgOptimizedImage, PasswordField, RetroBox],
+  imports: [BackAction, KeyboardField, NgOptimizedImage, RetroBox],
   selector: 'app-register-form',
   // No `relative` here: the parent places it with `absolute` (both set `position`, and `relative` wins).
   host: { class: 'block h-[568px] w-[1088px]' },
@@ -32,26 +33,27 @@ const ANSWERS = ['Eevee', 'Pikachu', 'Jigglypuff', 'Meowth'] as const;
           {{ intro() }}
         </p>
 
-        <app-password-field
-          #password
-          ariaLabel="New password"
+        <app-keyboard-field
+          [(value)]="password"
+          label="New password"
           describedBy="register-status"
           placeholder="New password"
-          autocomplete="new-password"
+          [masked]="true"
           [width]="482"
           [height]="64"
-          (enter)="submit()"
+          (accepted)="confirmationField.focus()"
           class="absolute top-[136px] left-[48px]"
         />
-        <app-password-field
-          #confirmation
-          ariaLabel="New password again"
+        <app-keyboard-field
+          #confirmationField
+          [(value)]="confirmation"
+          label="New password again"
           describedBy="register-status"
           placeholder="Password again"
-          autocomplete="new-password"
+          [masked]="true"
           [width]="482"
           [height]="64"
-          (enter)="submit()"
+          (accepted)="focusFirstAnswer()"
           class="absolute top-[136px] left-[552px]"
         />
 
@@ -103,8 +105,6 @@ const ANSWERS = ['Eevee', 'Pikachu', 'Jigglypuff', 'Meowth'] as const;
 export class RegisterForm {
   protected readonly login = inject(ShowdownLogin);
   private readonly navigation = inject(KeyboardNavigation);
-  private readonly password = viewChild.required<PasswordField>('password');
-  private readonly confirmation = viewChild.required<PasswordField>('confirmation');
   private readonly answerButtons = viewChildren<ElementRef<HTMLButtonElement>>('answerButton');
 
   /** Cancelled (B). */
@@ -114,18 +114,22 @@ export class RegisterForm {
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
+  protected readonly password = signal('');
+  protected readonly confirmation = signal('');
   protected readonly captcha = signal<string | null>(null);
   protected readonly intro = computed(() => `Keep "${this.login.state().name}" as yours: choose a password for it.`);
 
   constructor() {
     // Never a text field (it opens the console's keyboard): the answers, just under the passwords.
-    afterNextRender(() => {
-      const first = this.answerButtons()[0];
-      if (first) this.navigation.focus(first.nativeElement);
-    });
+    afterNextRender(() => this.focusFirstAnswer());
+  }
+
+  protected focusFirstAnswer(): void {
+    const first = this.answerButtons()[0];
+    if (first) this.navigation.focus(first.nativeElement);
   }
 
   protected submit(): void {
-    this.login.register(this.password().value(), this.confirmation().value(), this.captcha()?.toLowerCase() ?? '');
+    this.login.register(this.password(), this.confirmation(), this.captcha()?.toLowerCase() ?? '');
   }
 }

@@ -16,10 +16,10 @@ import {
 } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { FormField, form } from '@angular/forms/signals';
-import { isEnterKey } from '@core/input/console-keys';
 import { KeyboardNavigation, PageStep } from '@core/input/keyboard-navigation';
 import { NgOptimizedImage } from '@angular/common';
 import { ItemIcon } from '@shared/components/item-icon';
+import { KeyboardField } from '@shared/components/keyboard-field';
 import { ScrollRegion } from '@shared/directives/scroll-region';
 import { toId } from '@shared/utils/to-id';
 
@@ -37,6 +37,9 @@ export interface ChooserOption {
   /** What a screen reader says instead of the row's text, when that leaves something out (the category). */
   label?: string;
 }
+
+/** Names the on-screen keyboard lists for a search, under its text. */
+const HINT_NAMES = 4;
 
 /** Rows rendered at once from a searchable list: few enough for the console. Typing narrows the rest. */
 const MAX_RESULTS = 30;
@@ -64,12 +67,13 @@ const LIST_HEIGHT = 436;
 const UNSEARCHABLE_LIST_HEIGHT = 476;
 
 @Component({
-  imports: [FormField, ItemIcon, NgOptimizedImage, ScrollRegion],
+  imports: [FormField, ItemIcon, KeyboardField, NgOptimizedImage, ScrollRegion],
   selector: 'app-dex-chooser',
   host: { class: 'block' },
   // Fixed 408x536, inside the editor's framed panel: title, search box and a scrolling list of block rows
-  // (Brewser layout rules, seen on device). Typing a few letters is the only writing needed; the
-  // d-pad moves between the box and the results (KeyboardNavigation). A list that isn't searchable
+  // (Brewser layout rules, seen on device). Typing a few letters is the only writing needed, with the
+  // app's on-screen keyboard, which lists the matches as they're typed; its OK goes to the first result.
+  // The d-pad moves between the box and the results (KeyboardNavigation). A list that isn't searchable
   // hides the box and shows every option in the room it leaves. A list with images (items, moves) is NOT a
   // scroll box: images in one stayed painted at their old places when it scrolled (device,
   // 2026-09-29), whether placed absolutely or in the line of text. It shows a page of fixed rows
@@ -87,16 +91,16 @@ const UNSEARCHABLE_LIST_HEIGHT = 476;
       <span aria-hidden="true" class="absolute top-[2px] left-[3px] block h-4 w-7 rounded-sm bg-retro-select text-center text-xs leading-4">ZL</span>
       <span class="absolute top-0 left-[34px] block h-5 w-[86px] text-center leading-5">{{ clearLabel() }}</span>
     </button>
-    <input
-      type="search"
-      autocomplete="off"
-      spellcheck="false"
-      [attr.aria-label]="'Search ' + title()"
-      [attr.aria-controls]="listId"
+    <app-keyboard-field
+      [label]="'Search ' + title()"
+      placeholder="Search"
+      textSize="text-lg"
       [formField]="searchForm.query"
+      [hint]="searchHint"
+      [width]="408"
+      [height]="40"
       [class.hidden]="!searchable()"
-      (keydown)="onSearchKey($event)"
-      class="block h-10 w-[408px] rounded-md border-2 border-retro-outline bg-retro-input p-[0_12px] text-lg text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      (accepted)="focusFirstResult()"
     />
     <p class="h-7 p-[0_6px] text-sm leading-7 text-retro-muted">{{ summary() }}{{ paged() ? pageArrows() : '' }}</p>
     <ul
@@ -208,22 +212,22 @@ export class DexChooser {
   private readonly model = signal({ query: '' });
   protected readonly searchForm = form(this.model);
 
-  private readonly words = computed(() => this.model().query.toLowerCase().split(/\s+/).map(toId).filter(Boolean));
+  private readonly words = computed(() => searchWords(this.model().query));
   /** Nothing typed yet in a list with suggestions: those are shown. */
   private readonly showingSuggested = computed(() => this.searchable() && this.suggested() !== null && this.words().length === 0);
 
   /** All matches: every word of the query must appear in the name; names starting with it come first. */
-  private readonly matches = computed(() => {
-    const words = this.words();
-    const options = this.options();
-    if (!this.searchable() || words.length === 0) return options;
-    const matching = options.filter((option) => {
-      const name = toId(option.name);
-      return words.every((word) => name.includes(word));
-    });
-    const first = words[0];
-    return [...matching.filter((o) => toId(o.name).startsWith(first)), ...matching.filter((o) => !toId(o.name).startsWith(first))];
-  });
+  private readonly matches = computed(() => (this.searchable() ? matching(this.options(), this.words()) : this.options()));
+
+  /** The on-screen keyboard's line while searching: how many match, and the first few. */
+  protected readonly searchHint = (text: string): string => {
+    const words = searchWords(text);
+    if (words.length === 0) return 'Type part of a name';
+    const found = matching(this.options(), words);
+    if (found.length === 0) return 'No matches';
+    const names = found.slice(0, HINT_NAMES).map((option) => option.name).join(', ');
+    return `${found.length} ${found.length === 1 ? 'match' : 'matches'}: ${names}${found.length > HINT_NAMES ? '…' : ''}`;
+  };
 
   protected readonly results = computed(() => {
     if (this.unavailable()) return [];
@@ -417,15 +421,17 @@ export class DexChooser {
     return this.pages().nativeElement.querySelector(`[data-index="${index}"]`);
   }
 
-  /**
-   * Enter in the search box picks the first result (the A button's letter types while searching).
-   * The d-pad moves focus as everywhere else.
-   */
-  protected onSearchKey(event: KeyboardEvent): void {
-    if (!isEnterKey(event)) return;
-    event.preventDefault();
-    const first = this.results()[0];
-    if (first) this.picked.emit(first.id);
+  /** OK on the search's keyboard: focus goes to the first result, once the new results have rendered. */
+  protected focusFirstResult(): void {
+    if (this.results().length === 0) return;
+    if (this.paged()) {
+      this.pageStart.set(0);
+      this.focusIndex = 0;
+      this.focusTick.update((tick) => tick + 1);
+    } else {
+      afterNextRender(() => this.resultButtons()[0]?.focus(), { injector: this.injector });
+    }
+    this.render.request();
   }
 
   private resultButtons(): HTMLButtonElement[] {
@@ -435,6 +441,22 @@ export class DexChooser {
 }
 
 let nextId = 0;
+
+/** A query's words, as IDs (letters and digits only). */
+function searchWords(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).map(toId).filter(Boolean);
+}
+
+/** The options whose name has every word; names starting with the first word come first. */
+function matching(options: readonly ChooserOption[], words: readonly string[]): readonly ChooserOption[] {
+  if (words.length === 0) return options;
+  const found = options.filter((option) => {
+    const name = toId(option.name);
+    return words.every((word) => name.includes(word));
+  });
+  const first = words[0];
+  return [...found.filter((o) => toId(o.name).startsWith(first)), ...found.filter((o) => !toId(o.name).startsWith(first))];
+}
 
 /** Whether two lists differ by only a few options (in either direction). */
 function isSameList(before: readonly ChooserOption[], after: readonly ChooserOption[]): boolean {
