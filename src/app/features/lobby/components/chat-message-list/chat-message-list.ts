@@ -14,7 +14,7 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
   imports: [ScrollRegion, UsernameColorPipe],
   selector: 'app-chat-message-list',
   host: { class: 'block' },
-  // Fixed height matching the lobby chat panel: Brewser mis-sizes percentage and flex-grown
+  // Fixed size matching the Chats page's room box: Brewser mis-sizes percentage and flex-grown
   // boxes whose content (these messages) is inserted after load. See styles.css.
   template: `
     <div
@@ -23,7 +23,7 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
       role="log"
       aria-label="Chat messages"
       tabindex="0"
-      class="h-[564px] overflow-y-auto text-lg text-gray-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
+      class="h-[420px] w-[868px] overflow-y-auto rounded-md bg-retro-input text-lg text-retro-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white"
     >
       <!--
         Brewser layout rules this follows (seen on device): the padding lives on this inner block and
@@ -35,11 +35,15 @@ const IGNORE_SCROLL_AFTER_AUTO_MS = 500;
       -->
       <div class="p-[8px_12px]">
         @for (message of messages(); track message.id) {
-          <p class="leading-relaxed wrap-anywhere" [class.italic]="message.action">
-            <strong [class]="message.author | usernameColor"
-              >{{ message.author }}{{ message.action ? ' ' : ': ' }}</strong
-            >{{ message.text }}
-          </p>
+          @if (message.system) {
+            <p class="leading-relaxed wrap-anywhere text-retro-danger italic">{{ message.text }}</p>
+          } @else {
+            <p class="leading-relaxed wrap-anywhere" [class.italic]="message.action">
+              <strong [class]="message.author | usernameColor"
+                >{{ message.author }}{{ message.action ? ' ' : ': ' }}</strong
+              >{{ message.text }}
+            </p>
+          }
         }
       </div>
     </div>
@@ -69,7 +73,7 @@ export class ChatMessageList {
       if (!this.visible()) return;
       const el = this.log().nativeElement;
 
-      // On Brewser the log sometimes stayed blank when the history (~50 rows at once) first filled
+      // On Brewser the log sometimes stayed blank when the history (up to 30 rows at once) first filled
       // it. Hiding and showing it once forces a fresh paint (the technique that repainted scroll boxes
       // in on-device tests).
       if (!this.repaintedFirstContent && messages.length > 0) {

@@ -13,14 +13,14 @@ import { compareUsers, parseUserEntry } from './chat-users';
 const FLUSH_INTERVAL_MS = 150;
 /** Joins/leaves are frequent and low priority: the sorted user list is republished at most this often. */
 const USERS_PUBLISH_INTERVAL_MS = 1000;
-/** Visible history; older messages are dropped. The log shows ~20 at a time. */
-const MAX_MESSAGES = 50;
+/** Visible history; older messages are dropped. The log shows ~14 at a time. */
+const MAX_MESSAGES = 30;
 
 /** 'joining' lasts from the request until the server confirms the room with `|init|`. */
 export type RoomJoinState = 'idle' | 'joining' | 'joined';
 
 /**
- * Read-only state of the chat room the user is in (one at a time): who is in it and the recent chat.
+ * State of the chat room the user is in (one at a time): who is in it and the recent chat, plus `send()`.
  * Nothing connects until `join()` is called (the user picks a room); from then on the room is rejoined
  * whenever the server connection (re)opens, until `leave()`. Its protocol messages are applied in batches.
  */
@@ -108,6 +108,14 @@ export class ChatRoomStore {
     if (!this.joinRequested || !room) return;
     this.connection.send('', `/leave ${room.id}`);
     this.reset();
+  }
+
+  /** Says `text` in the room joined; the server echoes it back into the log. */
+  send(text: string): void {
+    const room = this.roomSignal();
+    const message = text.trim();
+    if (!room || this.joinStateSignal() !== 'joined' || !message) return;
+    this.connection.send(room.id, message);
   }
 
   private sendJoin(): void {
@@ -228,6 +236,12 @@ export class ChatRoomStore {
           this.pushMessage(added, author, text);
           break;
         }
+        case 'error': {
+          // The server refused something we said (e.g. guests can't talk in this room): shown as a notice.
+          const text = splitLine(line, 1)[1] ?? '';
+          if (text) added.push({ id: this.nextMessageId++, author: '', text, action: false, system: true });
+          break;
+        }
       }
     }
 
@@ -265,6 +279,6 @@ export class ChatRoomStore {
       return;
     }
     const author = parseUserEntry(authorEntry).name;
-    into.push({ id: this.nextMessageId++, author, text, action });
+    into.push({ id: this.nextMessageId++, author, text, action, system: false });
   }
 }

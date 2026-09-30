@@ -15,6 +15,8 @@ export interface ChatMessage {
   text: string;
   /** A `/me` message, shown as "author text". */
   action: boolean;
+  /** A notice from the server (e.g. why a message wasn't sent), shown without an author. */
+  system: boolean;
 }
 
 /** A Showdown chat room the user can join from the lobby. */

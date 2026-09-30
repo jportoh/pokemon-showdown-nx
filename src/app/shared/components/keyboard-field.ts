@@ -57,6 +57,12 @@ export class KeyboardField implements FormValueControl<string> {
   readonly textSize = input<'text-lg' | 'text-2xl'>('text-2xl');
   /** A line the keyboard shows for the text typed so far (a search's matches). */
   readonly hint = input<((text: string) => string) | null>(null);
+  /**
+   * Empties the field once OK hands over the text (a chat message, sent when accepted). Done here
+   * because a parent clearing its bound value from `accepted` wouldn't reach the field: to change
+   * detection the value goes from empty to empty.
+   */
+  readonly clearOnAccept = input(false);
 
   /** OK was pressed on the keyboard (after the value is set and focus is back on the field). */
   readonly accepted = output<string>();
@@ -80,7 +86,8 @@ export class KeyboardField implements FormValueControl<string> {
     this.navigation.focus(this.button().nativeElement);
   }
 
-  protected edit(): void {
+  /** Opens the keyboard on the field's text, as A on it does (a page's shortcut button calls it too). */
+  edit(): void {
     this.keyboard.open({
       label: this.label(),
       value: this.value(),
@@ -92,6 +99,7 @@ export class KeyboardField implements FormValueControl<string> {
         if (value === null) return;
         this.value.set(value);
         this.accepted.emit(value);
+        if (this.clearOnAccept()) this.value.set('');
       },
     });
   }

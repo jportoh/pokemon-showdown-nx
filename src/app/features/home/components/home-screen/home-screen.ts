@@ -131,7 +131,7 @@ export class HomeScreen {
       // Its second line already says to log in.
       random: { text: 'Gen 9 · Ladder', tone: offline ? 'faded' : 'muted' },
       teambuilder: fact(this.summary.teambuilder()),
-      chats: online(this.summary.chats()),
+      chats: online(this.summary.chats),
       live: online(this.summary.live()),
       settings: fact(this.summary.settingsLine()),
       replays: fact(''),

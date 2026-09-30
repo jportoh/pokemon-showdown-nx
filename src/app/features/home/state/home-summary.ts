@@ -4,7 +4,6 @@ import { AppSettings, THEMES } from '@core/settings/app-settings';
 import { ServerStats } from '@features/connection/server-stats';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { CHAT_ROOMS } from '@features/lobby/data/chat-rooms';
-import { ChatRoomStore } from '@features/lobby/state/chat-room-store';
 import { PlaySelection } from '@features/play/state/play-selection';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { groupDigits } from '@shared/utils/group-digits';
@@ -14,7 +13,7 @@ const plural = (count: number, word: string): string => `${count} ${word}${count
 
 /**
  * What the home menu's buttons show under their names: live facts rather than explanations (the
- * Battle page's format and default team, a challenge, how many teams, the chat room, the battles on
+ * Battle page's format and default team, a challenge, how many teams, the chat rooms, the battles on
  * now, the theme). Whether a page needs a connection is the home screen's to say.
  */
 @Service()
@@ -23,7 +22,6 @@ export class HomeSummary {
   private readonly selection = inject(PlaySelection);
   private readonly teamStore = inject(TeamStore);
   private readonly challenges = inject(ShowdownChallenges);
-  private readonly chat = inject(ChatRoomStore);
   private readonly stats = inject(ServerStats);
   private readonly settings = inject(AppSettings);
 
@@ -56,10 +54,8 @@ export class HomeSummary {
     return teams ? plural(teams, 'team') : 'No teams yet';
   });
 
-  readonly chats = computed(() => {
-    const room = this.chat.room();
-    return room ? `In ${room.title}` : plural(CHAT_ROOMS.length, 'room');
-  });
+  /** The rooms offered (the Chats page leaves the room joined when closed, so none is joined from here). */
+  readonly chats = plural(CHAT_ROOMS.length, 'room');
 
   readonly live = computed(() => {
     const counts = this.stats.counts();
