@@ -1,8 +1,9 @@
 import { Service, inject, signal } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { AppSettings } from '@core/settings/app-settings';
 import { merge } from 'rxjs';
 import { ShowdownConnection } from './showdown-connection';
-import { LOBBY_ROOM_ID, splitLine } from './showdown-protocol';
+import { LOBBY_ROOM_ID, spectatorsCommand, splitLine } from './showdown-protocol';
 
 /** How long a popup after searching is taken as the server's answer to it (a refusal). */
 const ANSWER_WINDOW_MS = 5000;
@@ -18,6 +19,7 @@ const ANSWER_WINDOW_MS = 5000;
 export class ShowdownSearch {
   private readonly connection = inject(ShowdownConnection);
   private readonly render = inject(RenderScheduler);
+  private readonly settings = inject(AppSettings);
   private readonly searchingSignal = signal<string | null>(null);
   private readonly errorSignal = signal<string | null>(null);
   /** When we last searched: a popup soon after is the server's refusal. */
@@ -46,6 +48,7 @@ export class ShowdownSearch {
   search(format: string, packedTeam: string | null = null): void {
     if (this.searchingSignal()) return;
     this.searchedAt = Date.now();
+    this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${packedTeam ?? 'null'}`);
     this.connection.send('', `/search ${format}`);
     // Shown at once; the server's `updatesearch` confirms it (or a popup refuses it).

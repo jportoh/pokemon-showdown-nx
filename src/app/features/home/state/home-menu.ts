@@ -10,14 +10,14 @@ export interface HomeMenuItem {
 
 /**
  * The home menu's items, two per row: each page next to its quick counterpart (Battle and Random
- * Battle, Replays and Watch Live).
+ * Battle), then Settings (which also opens the replays) and Watch Live.
  */
 export const HOME_MENU_ITEMS: readonly HomeMenuItem[] = [
   { id: 'battle', label: 'Battle', path: '/play' },
   { id: 'random', label: 'Random Battle', path: null },
   { id: 'teambuilder', label: 'Teambuilder', path: '/teambuilder' },
   { id: 'chats', label: 'Chats', path: '/chats' },
-  { id: 'replays', label: 'Replays', path: '/replays' },
+  { id: 'settings', label: 'Settings', path: '/settings' },
   { id: 'live', label: 'Watch Live', path: '/live' },
 ];
 

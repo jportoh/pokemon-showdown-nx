@@ -1,6 +1,7 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ChallengeNotice } from '@features/home/components/challenge-notice/challenge-notice';
 import { TrainerStatus } from '@features/home/components/trainer-status/trainer-status';
 import { BackAction } from '@shared/directives/back-action';
@@ -11,6 +12,8 @@ import { filter, map } from 'rxjs';
 export interface PageInfo {
   title: string;
   icon: PixelIconName;
+  /** Where B goes back to, when it isn't the home menu (a page opened from another page). */
+  back?: string;
 }
 
 /**
@@ -26,6 +29,7 @@ export interface PageInfo {
 })
 export class MainLayout {
   private readonly router = inject(Router);
+  private readonly navigation = inject(KeyboardNavigation);
 
   protected readonly page = toSignal(
     this.router.events.pipe(
@@ -35,9 +39,16 @@ export class MainLayout {
     { initialValue: pageInfo(this.router.routerState.snapshot.root) },
   );
 
-  /** B goes back to the home menu, which puts focus back on the item that opened this page. */
-  protected home(): void {
-    void this.router.navigateByUrl('/');
+  protected readonly backLabel = computed(() => (this.page()?.back ? 'Back to the previous page' : 'Back to the menu'));
+
+  /**
+   * B goes back to the home menu, which puts focus back on the item that opened this page, or to the
+   * page this one was opened from, which starts on its `data-autofocus` control.
+   */
+  protected back(): void {
+    const back = this.page()?.back;
+    if (back) this.navigation.focusPageAfterNavigation();
+    void this.router.navigateByUrl(back ?? '/');
   }
 }
 

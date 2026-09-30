@@ -1,12 +1,13 @@
 import { Service, inject, signal } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { AppSettings } from '@core/settings/app-settings';
 import { merge } from 'rxjs';
 import { formatName } from '@shared/data/formats';
 import { toId } from '@shared/utils/to-id';
 import { BattleRooms } from './battle-rooms';
 import { ShowdownConnection } from './showdown-connection';
 import { ShowdownLogin } from './showdown-login';
-import { splitLine } from './showdown-protocol';
+import { spectatorsCommand, splitLine } from './showdown-protocol';
 
 /** Another player asking us for a battle. */
 export interface Challenge {
@@ -46,6 +47,7 @@ export class ShowdownChallenges {
   private readonly login = inject(ShowdownLogin);
   private readonly render = inject(RenderScheduler);
   private readonly rooms = inject(BattleRooms);
+  private readonly settings = inject(AppSettings);
   private readonly incomingSignal = signal<readonly Challenge[]>([]);
   private readonly errorSignal = signal<string | null>(null);
   private readonly outgoingSignal = signal<OutgoingChallenge | null>(null);
@@ -91,6 +93,7 @@ export class ShowdownChallenges {
     this.answeredAt = Date.now();
     this.errorSignal.set(null);
     const id = toId(to);
+    this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/challenge ${id}, ${format}`);
     this.setOutgoing({ to, toId: id, format });
@@ -114,6 +117,7 @@ export class ShowdownChallenges {
   /** Accepts, with our packed team when the format needs one (null in random formats). */
   accept(challenge: Challenge, team: string | null = null): void {
     this.answer(challenge);
+    this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/accept ${challenge.fromId}`);
     this.setAccepted(challenge);

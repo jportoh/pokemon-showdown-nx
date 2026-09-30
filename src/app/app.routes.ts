@@ -40,8 +40,15 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'settings',
+        data: { page: { title: 'Settings', icon: 'settings' } satisfies PageInfo },
+        loadComponent: () =>
+          import('@features/settings/components/settings-page/settings-page').then((c) => c.SettingsPage),
+      },
+      {
+        // Opened from Settings, so B goes back there.
         path: 'replays',
-        data: { page: { title: 'Replays', icon: 'replays' } satisfies PageInfo },
+        data: { page: { title: 'Replays', icon: 'replays', back: '/settings' } satisfies PageInfo },
         loadComponent: () =>
           import('@features/replays/components/replay-list/replay-list').then((c) => c.ReplayList),
       },

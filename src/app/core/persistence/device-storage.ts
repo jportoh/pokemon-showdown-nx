@@ -9,6 +9,7 @@
 interface SwitchFileApi {
   readFileSync(path: string): ArrayBuffer | string | null;
   writeFileSync(path: string, data: string): void;
+  removeSync?(path: string): void;
 }
 
 /** A folder of our own, outside Brewser's, so app updates never touch it. */
@@ -59,6 +60,50 @@ export function writeJson(key: string, value: unknown): boolean {
     // Unavailable or full.
   }
   return saved;
+}
+
+/**
+ * Private values (a saved password) go ONLY to the app's file on the SD card: Brewser shares
+ * localStorage between its apps. Without the console's file API (a regular browser) they can't be
+ * kept at all.
+ */
+export function canStorePrivately(): boolean {
+  return switchFiles() !== null;
+}
+
+export function readPrivateJson<T>(key: string, fallback: T): T {
+  const files = switchFiles();
+  const text = files ? readFile(files, key) : null;
+  if (text === null) return fallback;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Returns false when the value couldn't be stored (no file API, no permission or no space). */
+export function writePrivateJson(key: string, value: unknown): boolean {
+  const files = switchFiles();
+  if (!files) return false;
+  try {
+    files.writeFileSync(filePath(key), JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Deletes a private value's file (or empties it, where files can't be deleted). */
+export function removePrivate(key: string): void {
+  const files = switchFiles();
+  if (!files) return;
+  try {
+    if (files.removeSync) files.removeSync(filePath(key));
+    else files.writeFileSync(filePath(key), 'null');
+  } catch {
+    // Already gone, or not writable: nothing more to do.
+  }
 }
 
 function switchFiles(): SwitchFileApi | null {

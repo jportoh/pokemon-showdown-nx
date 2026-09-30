@@ -1,6 +1,7 @@
 import { Component, ElementRef, afterNextRender, computed, effect, inject, output, signal, viewChild } from '@angular/core';
 import { form, FormField, maxLength } from '@angular/forms/signals';
 import { isEnterKey } from '@core/input/console-keys';
+import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { PasswordField } from '@shared/components/password-field';
 import { BackAction } from '@shared/directives/back-action';
@@ -95,7 +96,8 @@ export class LoginForm {
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly secondaryClass = RETRO_SECONDARY_BUTTON;
 
-  private readonly model = signal({ name: '', password: '' });
+  // The name last logged in with, when Settings remembers it.
+  private readonly model = signal({ name: inject(SavedLogin).name(), password: '' });
   // Showdown's limit for names.
   protected readonly loginForm = form(this.model, (path) => maxLength(path.name, 18));
   /** A login was asked for here: its success closes the form. */

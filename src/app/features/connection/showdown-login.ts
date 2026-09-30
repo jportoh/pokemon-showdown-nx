@@ -2,6 +2,7 @@ import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { toId } from '@shared/utils/to-id';
+import { SavedLogin } from './saved-login';
 import { ShowdownConnection } from './showdown-connection';
 import { LOGIN_ASSERTION_URL, LOGIN_URL, REGISTER_URL } from './showdown-config';
 import { splitLine } from './showdown-protocol';
@@ -56,8 +57,9 @@ const MAX_NAME_TRIES = 3;
  * before may still be held by an older connection the server hasn't dropped ("Someone is already
  * using the name…"), and then another one is tried. `newName()` asks for another one by hand.
  * `logIn()` claims the player's own name instead: with its password when it's registered (the login
- * server's `login` gives the assertion then). It's kept in memory only (never stored) to log in
- * again when the connection is replaced; `disconnect()` forgets it.
+ * server's `login` gives the assertion then). It's kept in memory to log in again when the connection
+ * is replaced; `disconnect()` forgets it. Settings may also keep the name and, to log in when the app
+ * starts (`logInSaved()`), a registered name's password (see SavedLogin).
  * The login server only allows CORS from Showdown's own site, so a regular browser can't read its
  * answer; the Brewser console doesn't enforce CORS (test P1, 2026-09-26), so there it works.
  */
@@ -65,6 +67,7 @@ const MAX_NAME_TRIES = 3;
 export class ShowdownLogin {
   private readonly connection = inject(ShowdownConnection);
   private readonly render = inject(RenderScheduler);
+  private readonly saved = inject(SavedLogin);
   private readonly stateSignal = signal<LoginState>({
     status: 'offline',
     mode: null,
@@ -133,6 +136,27 @@ export class ShowdownLogin {
     this.setState({ mode: 'login', status: 'connecting', error: null, loginError: null });
     if (this.challstr) this.onChallenge();
     else this.connection.connect();
+  }
+
+  /**
+   * Connects and logs in to the registered name Settings saved, when the player asked for that.
+   * Returns whether it did. A refusal (say, the password changed since) leaves it to the login box.
+   */
+  logInSaved(): boolean {
+    const credentials = this.saved.credentials();
+    if (!credentials || this.stateSignal().mode) return false;
+    this.credentials = credentials;
+    this.setState({ mode: 'login', status: 'connecting', error: null, loginError: null });
+    this.connection.connect();
+    return true;
+  }
+
+  /** Settings' "Log in automatically": turned on while logged in to a registered name, that login is saved. */
+  setAutoLogin(on: boolean): void {
+    const state = this.stateSignal();
+    const current =
+      state.status === 'named' && state.registered && this.credentials ? { name: state.name, password: this.credentials.password } : null;
+    this.saved.setAutoLogin(on, current);
   }
 
   /** Leaves a connection (a guest's or a login) that hasn't got its name yet: back offline. */
@@ -343,6 +367,9 @@ export class ShowdownLogin {
     const ownName = this.credentials !== null && toId(name) === toId(this.credentials.name);
     // Only a registered name needs its password, so one given means it's registered.
     const registered = ownName && this.credentials?.password !== '';
+    // Just logged in (or registered): kept as Settings say.
+    const previous = this.stateSignal();
+    if (ownName && this.credentials && (previous.loggingIn || previous.registering)) this.saved.loggedIn(name, this.credentials.password);
     this.setState({
       status: 'named',
       name,

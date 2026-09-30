@@ -1,11 +1,11 @@
 import { Component, DestroyRef, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { AppSettings } from '@core/settings/app-settings';
 import { TeamDetail } from '@features/teambuilder/components/team-detail/team-detail';
 import { SetEditor } from '@features/teambuilder/components/set-editor/set-editor';
 import { TeamList } from '@features/teambuilder/components/team-list/team-list';
 import { TeamValidationPanel } from '@features/teambuilder/components/team-validation-panel/team-validation-panel';
 import { TeamStore } from '@features/teambuilder/state/team-store';
-import { DEFAULT_TEAM_FORMAT } from '@shared/data/formats';
 import { BackAction } from '@shared/directives/back-action';
 
 type PanelView = 'empty' | 'team' | 'validate' | 'edit';
@@ -21,6 +21,7 @@ type FocusTarget = 'newTeam' | 'teamList' | 'slot' | 'validationBack' | 'editor'
 })
 export class TeambuilderPage {
   protected readonly store = inject(TeamStore);
+  private readonly settings = inject(AppSettings);
   private readonly list = viewChild.required(TeamList);
   private readonly detail = viewChild.required(TeamDetail);
   private readonly validator = viewChild.required(TeamValidationPanel);
@@ -78,7 +79,7 @@ export class TeambuilderPage {
 
   /** A new empty team with a default name, so building one starts without typing anything. */
   protected createTeam(): void {
-    const id = this.store.create(this.store.nextUntitledName(), DEFAULT_TEAM_FORMAT, []);
+    const id = this.store.create(this.store.nextUntitledName(), this.settings.settings().teamFormat, []);
     this.selectedId.set(id);
     this.showSlot(0);
   }

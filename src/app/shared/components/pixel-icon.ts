@@ -1,6 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 
-export type PixelIconName = 'battle' | 'random' | 'teambuilder' | 'replays' | 'chats' | 'live';
+export type PixelIconName = 'battle' | 'random' | 'teambuilder' | 'replays' | 'chats' | 'live' | 'settings';
 
 /** Each pixel's colour by letter; "." is transparent. */
 const COLORS: Record<string, string> = {
@@ -128,6 +128,25 @@ const ICONS: Record<PixelIconName, readonly string[]> = {
     '...kk...........',
     '................',
     '................',
+  ],
+  // A gear, lit from the top left, with a dark rim round its hole.
+  settings: [
+    '......wwwg......',
+    '......wwgg......',
+    '..www.wggg.ggg..',
+    '..wwwwgggggggg..',
+    '..wwwggggggggg..',
+    '...wggkkkkggg...',
+    'wwwggkk..kkggggg',
+    'wwgggk....kggggg',
+    'wggggk....kggggg',
+    'gggggkk..kkggggg',
+    '...gggkkkkggg...',
+    '..gggggggggggg..',
+    '..gggggggggggg..',
+    '..ggg.gggg.ggg..',
+    '......gggg......',
+    '......gggg......',
   ],
 };
 

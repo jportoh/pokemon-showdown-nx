@@ -9,8 +9,8 @@
     type="button"
     data-kb-skip
     class="absolute top-[20px] left-[360px] h-9 w-[112px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-lg font-bold text-retro-ink hover:bg-retro-select"
-    aria-label="Back to the menu"
-    (click)="home()"
+    [attr.aria-label]="backLabel()"
+    (click)="back()"
   >
     <!-- The shortcut and the label apart: an inline pill before the text threw the centring off on the console. -->
     <span aria-hidden="true" class="absolute top-[4px] left-[8px] block h-6 w-7 rounded-sm bg-retro-select text-center leading-6">B</span>
@@ -24,6 +24,6 @@
 </header>
 
 <!-- 644px = 720px stage - 76px bar. See styles.css for why sizes are fixed. -->
-<main class="block h-[644px] w-[1280px]" (appBack)="home()">
+<main class="block h-[644px] w-[1280px]" (appBack)="back()">
   <router-outlet />
 </main>
