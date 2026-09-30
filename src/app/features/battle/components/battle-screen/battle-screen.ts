@@ -188,9 +188,18 @@ export class BattleScreen {
     return this.challenges.incoming().find((c) => c.fromId === opponent && c.format === format && !c.needsTeam) ?? null;
   });
 
-  /** Our battle's room is open but nothing has come to show yet: no team preview, no start, no request. */
+  /**
+   * Our battle's room is open but nothing has come to show yet: no team preview (its teams, even once
+   * we've picked and the request is gone), no start, no request.
+   */
   protected readonly joining = computed(
-    () => !!this.liveRoom() && !this.store.intro() && !this.store.started() && !this.store.request() && !this.store.result(),
+    () =>
+      !!this.liveRoom() &&
+      !this.store.teamPreview() &&
+      !this.store.intro() &&
+      !this.store.started() &&
+      !this.store.request() &&
+      !this.store.result(),
   );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
