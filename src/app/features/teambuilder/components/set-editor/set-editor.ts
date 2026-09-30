@@ -326,7 +326,7 @@ export class SetEditor {
 }
 
 function newPokemon(): PokemonSet {
-  return { name: '', species: '', item: '', ability: '', gender: '', shiny: false, evs: {}, nature: '', moves: [] };
+  return { name: '', species: '', item: '', ability: '', gender: '', shiny: false, evs: {}, nature: 'Serious', moves: [] };
 }
 
 /** "Dragon / Ground · BST 600" */

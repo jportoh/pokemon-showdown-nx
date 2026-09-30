@@ -10,19 +10,20 @@ const FULL_NAMES: Record<StatId, string> = { hp: 'HP', atk: 'Attack', def: 'Defe
 /** The list's rows: 60px buttons, 68px apart, under the 36px header; the nature's row under them. */
 const ROW_TOP = 36;
 const ROW_STEP = 68;
-/** The nature's choices, in order: none, then the natures by name. */
-const NATURE_CHOICES = ['', ...NATURES.map((nature) => nature.name)];
+/** The natures by name, in order. A set without one battles as Serious (Showdown's default). */
+const NATURE_CHOICES = NATURES.map((nature) => nature.name);
+const DEFAULT_NATURE = 'Serious';
 /**
  * The natures' grid, as the games' charts lay it out: a row per stat raised, a column per stat lowered,
- * the neutral natures on the diagonal. Cells 64x50, 68 and 56 apart, after the row labels and the column
- * labels' line.
+ * the neutral natures on the diagonal. Cells 70x56, 74 and 64 apart (wide enough for "Adamant" on the
+ * console), after the row labels and the column labels' line.
  */
 const GRID_STATS: readonly StatId[] = ['atk', 'def', 'spa', 'spd', 'spe'];
 const NEUTRAL_NATURES: Partial<Record<StatId, string>> = { atk: 'Hardy', def: 'Docile', spa: 'Bashful', spd: 'Quirky', spe: 'Serious' };
-const GRID_LEFT = 72;
+const GRID_LEFT = 40;
 const GRID_TOP = 68;
-const CELL_STEP_X = 68;
-const CELL_STEP_Y = 56;
+const CELL_STEP_X = 74;
+const CELL_STEP_Y = 64;
 
 interface NatureCell {
   name: string;
@@ -44,10 +45,16 @@ const NATURE_GRID: readonly NatureCell[] = GRID_STATS.flatMap((plus, row) =>
     };
   }),
 );
-/** The bar in each row, and the gauge's segments (one per point). */
+/**
+ * The bar in each row, and the gauge's segments (one per point). The segments sit beside the gauge, not in it:
+ * Brewser places an absolute child from its container's outer border edge rather than inside the border, which
+ * left them off-centre in the bordered gauge. Siblings share the panel's offset, so they line up everywhere.
+ */
 const BAR_WIDTH = 152;
 const SEGMENT_WIDTH = 7;
 const SEGMENT_STEP = 9;
+/** The gauge's inside, in the panel: its 58/200 place plus the 2px border and a 6px margin. */
+const SEGMENTS_LEFT = 66;
 /** The Battle page's pixel triangles: 4x7 pointing left/right, 7x4 pointing up/down. */
 const LEFT_ARROW = 'M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z';
 const RIGHT_ARROW = 'M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z';
@@ -112,7 +119,7 @@ interface Segment {
         >
         <span aria-hidden="true" class="absolute top-[12px] left-[132px] block h-8 w-[56px] text-right text-2xl leading-8 font-bold">{{ row.total }}</span>
         <span aria-hidden="true" class="absolute top-[20px] left-[204px] block h-4 w-[156px] rounded-sm border border-retro-outline bg-retro-bar"></span>
-        <span aria-hidden="true" class="absolute top-[22px] left-[206px] block h-3 bg-[#e8c547]" [style.width.px]="row.barWidth"></span>
+        <span aria-hidden="true" class="absolute top-[22px] left-[206px] block h-3" [class]="fillClass()" [style.width.px]="row.barWidth"></span>
         <span aria-hidden="true" class="absolute top-[14px] left-[366px] block h-7 w-[40px] text-right text-lg leading-7 font-bold">{{ row.points }}</span>
       </button>
     }
@@ -131,7 +138,7 @@ interface Segment {
       <span aria-hidden="true" class="absolute top-[16px] left-[14px] block h-6 w-[64px] text-left text-sm leading-6 font-bold text-retro-muted">Nature</span>
       <!-- Pixel triangles, as on the Battle page (Brewser draws ◀ ▶ as emoji and CSS triangles not at all). -->
       <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[21px] left-[92px] h-[14px] w-2 fill-retro-muted"><path [attr.d]="leftArrow" /></svg>
-      <span aria-hidden="true" class="absolute top-[4px] left-[112px] block h-7 w-[256px] text-center text-xl leading-7 font-bold">{{ natureName() }}</span>
+      <span aria-hidden="true" class="absolute top-[4px] left-[112px] block h-7 w-[256px] text-center text-xl leading-7 font-bold">{{ nature() }}</span>
       <span aria-hidden="true" class="absolute top-[32px] left-[112px] block h-5 w-[256px] text-center text-xs leading-5 text-retro-muted">{{ natureEffect() }}</span>
       <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[21px] left-[384px] h-[14px] w-2 fill-retro-muted"><path [attr.d]="rightArrow" /></svg>
     </button>
@@ -149,32 +156,23 @@ interface Segment {
         <p class="absolute top-[8px] left-[16px] block h-7 w-[240px] text-left text-lg leading-7 font-bold">Nature</p>
         <p class="absolute top-[8px] left-[276px] block h-7 w-[128px] text-right text-sm leading-7 text-retro-muted">B keeps it</p>
         @for (stat of gridStats; track stat; let i = $index) {
-          <span aria-hidden="true" class="absolute top-[44px] block h-5 w-[64px] text-center text-xs leading-5 font-bold text-[#8fb8ee]" [style.left.px]="gridLeft + i * cellStepX">−{{ statNames[stat] }}</span>
-          <span aria-hidden="true" class="absolute left-[8px] block h-[50px] w-[56px] text-left text-xs leading-[50px] font-bold text-retro-accent-text" [style.top.px]="gridTop + i * cellStepY">+{{ statNames[stat] }}</span>
+          <span aria-hidden="true" class="absolute top-[44px] block h-5 w-[70px] text-center text-xs leading-5 font-bold text-[#8fb8ee]" [style.left.px]="gridLeft + i * cellStepX">−{{ statNames[stat] }}</span>
+          <span aria-hidden="true" class="absolute left-[6px] block h-14 w-[32px] text-left text-xs leading-[56px] font-bold text-retro-accent-text" [style.top.px]="gridTop + i * cellStepY">+{{ statNames[stat] }}</span>
         }
         @for (cell of natureGrid; track cell.name) {
           <button
             type="button"
-            class="absolute block h-[50px] w-[64px] cursor-pointer rounded-md border-2 p-0 text-sm font-bold"
-            [class]="cell.name === set().nature ? 'border-retro-accent-text bg-retro-select' : cell.neutral ? 'border-retro-rim bg-retro-bg text-retro-muted hover:bg-retro-select' : 'border-retro-outline bg-retro-button hover:bg-retro-select'"
+            class="absolute block h-14 w-[70px] cursor-pointer rounded-md border-2 p-0 text-sm font-bold"
+            [class]="cell.name === nature() ? 'border-retro-accent-text bg-retro-select' : cell.neutral ? 'border-retro-rim bg-retro-bg text-retro-muted hover:bg-retro-select' : 'border-retro-outline bg-retro-button hover:bg-retro-select'"
             [style.top.px]="cell.top"
             [style.left.px]="cell.left"
-            [attr.aria-pressed]="cell.name === set().nature"
+            [attr.aria-pressed]="cell.name === nature()"
             [attr.aria-label]="cell.label"
             (click)="pickNature(cell.name)"
           >
-            <span aria-hidden="true" class="absolute top-[12px] left-0 block h-5 w-[60px] text-center leading-5">{{ cell.name }}</span>
+            <span aria-hidden="true" class="absolute top-[16px] left-0 block h-5 w-[66px] text-center leading-5 whitespace-nowrap">{{ cell.name }}</span>
           </button>
         }
-        <button
-          type="button"
-          class="absolute top-[348px] left-[72px] block h-10 w-[336px] cursor-pointer rounded-md border-2 p-0 text-sm font-bold"
-          [class]="!set().nature ? 'border-retro-accent-text bg-retro-select' : 'border-retro-outline bg-retro-button hover:bg-retro-select'"
-          [attr.aria-pressed]="!set().nature"
-          (click)="pickNature('')"
-        >
-          <span class="absolute top-[8px] left-0 block h-5 w-[332px] text-center leading-5">No nature</span>
-        </button>
       </div>
     </div>
     <div class="block" [class.hidden]="editing() === null">
@@ -210,17 +208,17 @@ interface Segment {
           [attr.aria-valuetext]="valueText()"
           [attr.aria-label]="(current()?.name ?? '') + ' stat points'"
           (click)="confirm()"
-        >
-          @for (segment of segments(); track $index) {
-            <span
-              aria-hidden="true"
-              class="absolute top-[6px] block h-8"
-              [class]="segment.state === 'on' ? 'bg-[#e8c547]' : segment.state === 'free' ? 'bg-[#3d5064]' : 'bg-retro-bg'"
-              [style.left.px]="segment.left"
-              [style.width.px]="segmentWidth"
-            ></span>
-          }
-        </div>
+        ></div>
+        <!-- Over the gauge, as its siblings (see SEGMENTS_LEFT); clicks go through to it. -->
+        @for (segment of segments(); track $index) {
+          <span
+            aria-hidden="true"
+            class="pointer-events-none absolute top-[208px] block h-8"
+            [class]="segment.state === 'on' ? fillClass() : segment.state === 'free' ? 'bg-[#3d5064]' : 'bg-retro-bg'"
+            [style.left.px]="segment.left"
+            [style.width.px]="segmentWidth"
+          ></span>
+        }
         <button type="button" data-kb-skip aria-label="One point more" class="absolute top-[204px] left-[366px] block h-10 w-10 cursor-pointer rounded-full border-2 border-retro-outline bg-retro-button p-0 hover:bg-retro-select" (click)="adjust(1)">
           <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[8px] left-[13px] h-[21px] w-3 fill-retro-ink"><path [attr.d]="rightArrow" /></svg>
         </button>
@@ -288,6 +286,8 @@ export class SetStats {
 
   private readonly spread = computed(() => this.draft() ?? this.set().evs);
   protected readonly used = computed(() => totalStatPoints(this.spread()));
+  /** The bars' and the gauge's fill: yellow, or orange once all 66 points are placed. */
+  protected readonly fillClass = computed(() => (this.used() >= MAX_TOTAL_STAT_POINTS ? 'bg-[#f0883e]' : 'bg-[#e8c547]'));
 
   protected readonly rows = computed((): StatRow[] => {
     const spread = this.spread();
@@ -312,16 +312,17 @@ export class SetStats {
     });
   });
 
-  protected readonly natureName = computed(() => this.set().nature || 'No nature');
+  /** The set's nature, or the one it battles with when it has none. */
+  protected readonly nature = computed(() => this.set().nature || DEFAULT_NATURE);
   protected readonly natureEffect = computed(() => {
-    const nature = NATURES.find((n) => n.name === this.set().nature);
-    if (!nature) return 'Changes no stat';
+    const nature = NATURES.find((n) => n.name === this.nature());
+    if (!nature) return 'Neutral';
     return nature.plus && nature.minus ? `+${STAT_NAMES[nature.plus]}  −${STAT_NAMES[nature.minus]}` : 'Neutral';
   });
   protected readonly natureLabel = computed(() => {
-    const nature = NATURES.find((n) => n.name === this.set().nature);
+    const nature = NATURES.find((n) => n.name === this.nature());
     const effect = nature?.plus && nature.minus ? `, raises ${FULL_NAMES[nature.plus]}, lowers ${FULL_NAMES[nature.minus]}` : '';
-    return `Nature: ${this.natureName()}${effect}. Choose`;
+    return `Nature: ${this.nature()}${effect}. Choose`;
   });
 
   protected readonly current = computed(() => this.rows().find((row) => row.id === this.editing()) ?? null);
@@ -336,7 +337,7 @@ export class SetStats {
     const points = this.current()?.points ?? 0;
     const reachable = this.reachable();
     return Array.from({ length: MAX_STAT_POINTS }, (_, i) => ({
-      left: 6 + i * SEGMENT_STEP,
+      left: SEGMENTS_LEFT + i * SEGMENT_STEP,
       state: i < points ? 'on' : i < reachable ? 'free' : 'off',
     }));
   });
@@ -406,7 +407,7 @@ export class SetStats {
 
   /** The previous or next nature (wrapping around). */
   protected changeNature(step: 1 | -1): void {
-    const index = Math.max(0, NATURE_CHOICES.indexOf(this.set().nature));
+    const index = Math.max(0, NATURE_CHOICES.indexOf(this.nature()));
     this.natureChanged.emit(NATURE_CHOICES[(index + step + NATURE_CHOICES.length) % NATURE_CHOICES.length]);
   }
 

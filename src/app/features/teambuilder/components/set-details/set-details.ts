@@ -17,12 +17,20 @@ type Gender = '' | 'M' | 'F';
 const LEFT_ARROW = 'M3 0h1v7h-1v-1h-1v-1h-1v-1h-1v-1h1v-1h1v-1h1z';
 const RIGHT_ARROW = 'M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z';
 
-/** The move cards: 2x2, 206x88, 214 and 96 apart, under the ability. */
-const MOVES_TOP = 368;
+/** The move cards: 2x2, 206x72, 214 and 80 apart, under the ability. */
+const MOVES_TOP = 400;
 const MOVE_STEP_X = 214;
-const MOVE_STEP_Y = 96;
-/** A description line's length, cut in code: a CSS-truncated line sat off-centre on Brewser. */
-const MAX_DESC_LENGTH = 62;
+const MOVE_STEP_Y = 80;
+/**
+ * The item's and the ability's descriptions: two lines at most, cut in code (a CSS-truncated line sat
+ * off-centre on Brewser). The console's font fits ~55 characters on the item's line and ~60 on the
+ * ability's, less a word lost to wrapping.
+ */
+const MAX_ITEM_DESC_LENGTH = 96;
+const MAX_ABILITY_DESC_LENGTH = 104;
+/** An empty move slot's background, inline like a move's colour: Brewser kept the old colour when it was removed. */
+const EMPTY_MOVE_COLOR = '#121821';
+const ACTIVE_EMPTY_MOVE_COLOR = '#2c4157';
 
 interface MoveCard {
   field: DetailsField;
@@ -105,15 +113,15 @@ interface TypeBadge {
       [disabled]="!set()"
       (click)="fieldOpened.emit('item')"
       [class]="cardClass('item')"
-      class="absolute top-[216px] left-0 block h-[68px] w-[420px] cursor-pointer rounded-lg border-2 p-0"
+      class="absolute top-[216px] left-0 block h-[84px] w-[420px] cursor-pointer rounded-lg border-2 p-0"
     >
       @if (itemId()) {
-        <app-item-icon class="absolute top-[16px] left-[8px]" [item]="itemId()" [size]="32" />
+        <app-item-icon class="absolute top-[24px] left-[8px]" [item]="itemId()" [size]="32" />
       }
       <span aria-hidden="true" class="absolute top-[8px] left-[48px] block h-7 w-[356px] overflow-hidden text-left text-lg leading-7 font-bold whitespace-nowrap">{{
         itemName()
       }}</span>
-      <span aria-hidden="true" class="absolute top-[36px] left-[48px] block h-5 w-[356px] text-left text-xs leading-5 text-retro-muted">{{ itemDesc() }}</span>
+      <span aria-hidden="true" class="absolute top-[36px] left-[48px] block h-9 w-[356px] text-left text-xs leading-[18px] text-retro-muted">{{ itemDesc() }}</span>
     </button>
 
     <button
@@ -125,12 +133,12 @@ interface TypeBadge {
       [disabled]="!set()"
       (click)="fieldOpened.emit('ability')"
       [class]="cardClass('ability')"
-      class="absolute top-[292px] left-0 block h-[68px] w-[420px] cursor-pointer rounded-lg border-2 p-0"
+      class="absolute top-[308px] left-0 block h-[84px] w-[420px] cursor-pointer rounded-lg border-2 p-0"
     >
       <span aria-hidden="true" class="absolute top-[8px] left-[14px] block h-7 w-[390px] overflow-hidden text-left text-lg leading-7 font-bold whitespace-nowrap">{{
         abilityName()
       }}</span>
-      <span aria-hidden="true" class="absolute top-[36px] left-[14px] block h-5 w-[390px] text-left text-xs leading-5 text-retro-muted">{{ abilityDesc() }}</span>
+      <span aria-hidden="true" class="absolute top-[36px] left-[14px] block h-9 w-[390px] text-left text-xs leading-[18px] text-retro-muted">{{ abilityDesc() }}</span>
     </button>
 
     <!-- Tracked by position: a card never moves (Brewser leaves a moved card's children behind). -->
@@ -143,13 +151,13 @@ interface TypeBadge {
         [attr.aria-label]="card.label"
         [disabled]="!set()"
         (click)="fieldOpened.emit(card.field)"
-        class="absolute block h-[88px] w-[206px] cursor-pointer rounded-lg border-2 p-0"
+        class="absolute block h-[72px] w-[206px] cursor-pointer rounded-lg border-2 p-0"
         [class]="moveClass(card)"
         [style.top.px]="card.top"
         [style.left.px]="card.left"
-        [style.background-color]="card.color || null"
+        [style.background-color]="moveColor(card)"
       >
-        <span aria-hidden="true" class="absolute top-[14px] left-[12px] block h-7 w-[178px] overflow-hidden text-left text-lg leading-7 font-bold whitespace-nowrap">{{
+        <span aria-hidden="true" class="absolute top-[8px] left-[12px] block h-7 w-[178px] overflow-hidden text-left text-lg leading-7 font-bold whitespace-nowrap">{{
           card.name
         }}</span>
         <!--
@@ -157,11 +165,11 @@ interface TypeBadge {
           Brewser). A new image per icon (tracked by URL): a changed src wasn't repainted on Brewser.
         -->
         @for (src of card.categoryIcon ? [card.categoryIcon] : []; track src) {
-          <img [ngSrc]="src" width="32" height="14" alt="" class="absolute top-[53px] left-[12px] block" />
+          <img [ngSrc]="src" width="32" height="14" alt="" class="absolute top-[45px] left-[12px] block" />
         }
         <span
           aria-hidden="true"
-          class="absolute top-[50px] block h-5 text-left text-sm leading-5 whitespace-nowrap"
+          class="absolute top-[42px] block h-5 text-left text-sm leading-5 whitespace-nowrap"
           [class]="card.color ? 'text-[#d1d5db]' : 'text-retro-muted'"
           [style.left.px]="card.categoryIcon ? 50 : 12"
           [style.width.px]="card.categoryIcon ? 140 : 178"
@@ -230,7 +238,7 @@ export class SetDetails {
   protected readonly itemName = computed(() => this.set()?.item || 'No item');
   protected readonly itemDesc = computed(() => {
     if (!this.set()?.item) return 'Choose an item';
-    return shorten(this.dex.item(this.set()?.item ?? '')?.desc ?? '');
+    return shorten(this.dex.item(this.set()?.item ?? '')?.desc ?? '', MAX_ITEM_DESC_LENGTH);
   });
 
   protected readonly abilityName = computed(() => this.set()?.ability || 'No ability');
@@ -240,7 +248,7 @@ export class SetDetails {
     if (mega) return `Becomes ${mega.ability} when it Mega Evolves`;
     const ability = this.set()?.ability;
     if (!ability) return 'Choose an ability';
-    return shorten(this.dex.ability(ability)?.desc ?? '');
+    return shorten(this.dex.ability(ability)?.desc ?? '', MAX_ABILITY_DESC_LENGTH);
   });
 
   protected readonly moveCards = computed((): MoveCard[] => {
@@ -284,9 +292,15 @@ export class SetDetails {
 
   /** A move keeps its type's colour; an empty slot looks like a space to fill. */
   protected moveClass(card: MoveCard): string {
-    if (this.activeField() === card.field) return card.color ? 'border-retro-accent-text' : 'border-retro-accent-text bg-retro-select';
+    if (this.activeField() === card.field) return 'border-retro-accent-text';
     if (card.color) return 'border-retro-outline';
-    return 'border-dashed border-retro-outline bg-retro-bg text-retro-muted hover:bg-retro-select disabled:cursor-not-allowed disabled:border-retro-rim';
+    return 'border-dashed border-retro-outline text-retro-muted disabled:cursor-not-allowed disabled:border-retro-rim';
+  }
+
+  /** Always a colour, never none: Brewser doesn't repaint an inline background that's taken away. */
+  protected moveColor(card: MoveCard): string {
+    if (card.color) return card.color;
+    return this.activeField() === card.field ? ACTIVE_EMPTY_MOVE_COLOR : EMPTY_MOVE_COLOR;
   }
 
   private changeGender(step: 1 | -1): void {
@@ -296,6 +310,6 @@ export class SetDetails {
   }
 }
 
-function shorten(text: string): string {
-  return text.length > MAX_DESC_LENGTH ? `${text.slice(0, MAX_DESC_LENGTH - 1)}…` : text;
+function shorten(text: string, maxLength: number): string {
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
