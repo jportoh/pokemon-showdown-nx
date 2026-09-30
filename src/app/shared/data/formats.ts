@@ -6,11 +6,15 @@ export interface BattleFormat {
 }
 
 /**
- * Formats teams can be built for. For now only the official VGC circuit format: the teambuilder's
- * data and rules (core/dex/champions-regmc.json, teambuilder/data/game-rules.ts) are specific to it.
- * The ID is checked against the server's `|formats|` list (2026-09-25); VGC regulations rotate.
+ * Formats teams can be built for: the official VGC circuit format (doubles) and Battle Stadium
+ * Singles. Both are Flat Rules on Showdown's champions mod, so the teambuilder's Reg M-C data and
+ * rules (core/dex/champions-regmc.json, teambuilder/data/game-rules.ts) serve both. IDs checked
+ * against the server's `|formats|` list (2026-09-30); regulations rotate.
  */
-export const TEAM_FORMATS: readonly BattleFormat[] = [{ id: 'gen9championsvgc2026regmc', name: '[Gen 9 Champions] VGC 2026 Reg M-C' }];
+export const TEAM_FORMATS: readonly BattleFormat[] = [
+  { id: 'gen9championsvgc2026regmc', name: '[Gen 9 Champions] VGC 2026 Reg M-C' },
+  { id: 'gen9championsbssregmc', name: '[Gen 9 Champions] BSS Reg M-C' },
+];
 
 /** The format of new and imported teams. */
 export const DEFAULT_TEAM_FORMAT = TEAM_FORMATS[0].id;
@@ -39,7 +43,7 @@ export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
 
 /**
  * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles), as
- * single games and as best-of-3 sets, and the most played random formats (IDs checked against the
+ * single games and as best-of-3 sets, its Battle Stadium Singles format, and the most played random formats (IDs checked against the
  * server's `|formats|`, 2026-09-30). The format picker lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
@@ -59,6 +63,14 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     category: 'Doubles',
     detail: 'Best of 3 · open team sheets',
     teamFormat: DEFAULT_TEAM_FORMAT,
+  },
+  {
+    id: TEAM_FORMATS[1].id,
+    name: TEAM_FORMATS[1].name,
+    label: 'BSS Reg M-C',
+    randomTeams: false,
+    category: 'Singles',
+    detail: 'Singles · bring 6, pick 3 · one of your teams',
   },
   {
     id: RANDOM_BATTLE_FORMAT,

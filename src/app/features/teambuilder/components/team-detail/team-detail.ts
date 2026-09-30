@@ -1,9 +1,9 @@
-import { Component, ElementRef, afterRenderEffect, inject, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
+import { Component, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, output, signal, viewChild, viewChildren } from '@angular/core';
 import { FormField, form, maxLength, required } from '@angular/forms/signals';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { TeamSlot } from '@features/teambuilder/components/team-slot/team-slot';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
-import { TEAM_FORMATS } from '@shared/data/formats';
+import { TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 import { KeyboardField } from '@shared/components/keyboard-field';
 import { BackAction } from '@shared/directives/back-action';
 
@@ -23,25 +23,24 @@ const SLOT_POSITIONS = [
   imports: [TeamSlot, FormField, BackAction, KeyboardField],
   selector: 'app-team-detail',
   host: { class: 'block' },
-  // Fixed 920x644 panel (see styles.css): an 88px header (name and format select, or the rename form,
-  // plus actions) over the six slot cards. Everything is absolutely placed at fixed positions, and the
-  // select has a fixed px size: on Brewser a select whose options are rendered by @for gets a wrong
-  // size when its width is a percentage (all seen on device).
+  // Fixed 920x644 panel (see styles.css): an 88px header (name and format button, or the rename form,
+  // plus actions) over the six slot cards. Everything is absolutely placed at fixed positions (seen on
+  // device: sizes in percentages go wrong on Brewser).
   template: `
     <div class="relative h-[644px] w-[920px]">
       <div [class.hidden]="editing()">
         <h2 #heading tabindex="-1" class="absolute top-2 left-6 w-[490px] text-xl font-bold text-retro-ink">{{ team()?.name }}</h2>
-        <label for="team-format" class="absolute top-[52px] left-6 text-sm text-retro-muted">Format</label>
-        <select
-          #formatSelect
-          id="team-format"
-          (change)="formatChanged.emit(formatSelect.value)"
-          class="absolute top-[44px] left-[84px] h-9 w-[340px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-input p-[0_8px] text-base text-retro-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+        <span aria-hidden="true" class="absolute top-[52px] left-6 text-sm text-retro-muted">Format</span>
+        <!-- A button that moves to the next format, not a <select>: a native picker can't be driven with the controller. -->
+        <button
+          type="button"
+          (click)="nextFormat()"
+          class="absolute top-[44px] left-[84px] h-9 w-[340px] cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          [attr.aria-label]="'Format: ' + formatText() + '. Change to the next format'"
         >
-          @for (format of formatOptions; track format.id) {
-            <option [value]="format.id" [selected]="format.id === team()?.format">{{ format.name }}</option>
-          }
-        </select>
+          <span aria-hidden="true" class="absolute top-0 left-[10px] block h-8 w-[290px] text-left leading-8">{{ formatText() }}</span>
+          <span aria-hidden="true" class="absolute top-0 left-[306px] block h-8 w-5 text-center leading-8">▶</span>
+        </button>
         <button type="button" (click)="startRename()" [class]="actionClass" class="left-[528px] w-[100px]">Rename</button>
         <!--
           Validate and Delete are ZL and ZR on the controller, so the d-pad skips them (data-kb-skip).
@@ -128,7 +127,8 @@ export class TeamDetail {
 
   protected readonly slotPositions = SLOT_POSITIONS.slice(0, MAX_TEAM_SIZE);
 
-  protected readonly formatOptions = TEAM_FORMATS;
+  /** The team's format by its short label ("BSS Reg M-C"). */
+  protected readonly formatText = computed(() => formatLabel(this.team()?.format ?? ''));
   protected readonly actionClass =
     'absolute top-[14px] h-9 cursor-pointer rounded-md border-2 border-retro-outline bg-retro-button text-base text-retro-ink hover:bg-retro-select focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white';
   /** Delete waiting for its confirmation. */
@@ -213,6 +213,12 @@ export class TeamDetail {
   protected cancelRename(): void {
     this.editing.set(false);
     this.focusAfterRender = 'heading';
+  }
+
+  /** Moves the team to the next format teams can be built for (after the last, the first again). */
+  protected nextFormat(): void {
+    const current = TEAM_FORMATS.findIndex((format) => format.id === this.team()?.format);
+    this.formatChanged.emit(TEAM_FORMATS[(current + 1) % TEAM_FORMATS.length].id);
   }
 
   /** ZL, or a click: checks the team, except while it's being renamed. Returns whether it did. */
