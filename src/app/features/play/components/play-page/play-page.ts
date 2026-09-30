@@ -201,7 +201,7 @@ export class PlayPage {
   protected readonly primaryClass = RETRO_PRIMARY_BUTTON;
   protected readonly selectorClass = SELECTOR_BUTTON;
 
-  protected readonly format = computed(() => PLAYABLE_FORMATS.find((f) => f.id === this.selection.format()) ?? PLAYABLE_FORMATS[0]);
+  protected readonly format = this.selection.playFormat;
   protected readonly randomTeams = computed(() => this.format().randomTeams);
 
   protected readonly formatOptions: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) => ({
@@ -212,9 +212,7 @@ export class PlayPage {
   }));
 
   /** The player's teams for the format, with at least one Pokémon. */
-  protected readonly teams = computed(() =>
-    this.teamStore.teams().filter((team) => team.format === (this.format().teamFormat ?? this.format().id) && team.sets.length > 0),
-  );
+  protected readonly teams = this.selection.teams;
 
   protected readonly teamOptions = computed((): PickerOption[] =>
     this.teams().map((team) => ({
@@ -226,11 +224,7 @@ export class PlayPage {
   );
 
   /** The team picked, or the first one that fits while none is (or the picked one is gone); none with random teams. */
-  protected readonly chosenTeam = computed(() => {
-    if (this.randomTeams()) return null;
-    const teams = this.teams();
-    return teams.find((team) => team.id === this.selection.teamId()) ?? teams[0] ?? null;
-  });
+  protected readonly chosenTeam = this.selection.team;
 
   protected readonly teamPosition = computed(() => {
     const teams = this.teams();

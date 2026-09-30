@@ -1,116 +1,102 @@
-<!-- The bar: 76px, as the pages' frame. Logo on the left, a challenge notice, the connection on the right. -->
+<!-- The bar: 76px, as the pages' frame. The logo on the left, who we are on the right; ZR's and L's buttons are in the bar under the menu. -->
 <header class="absolute top-0 left-0 block h-19 w-[1280px] bg-retro-bar">
-  <img
-    ngSrc="https://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png"
-    alt="Pokémon Showdown"
-    width="146"
-    height="44"
-    priority
-    class="absolute top-[16px] left-[24px] h-11 w-[146px] max-w-none"
-  />
-  <app-challenge-notice class="absolute top-[20px] left-[200px]" />
+  <app-showdown-logo class="absolute top-0 left-[24px]" />
 
   <!--
-    On the right: [name • connection] [ZR button]. Each state has its own wrapper with fixed positions
-    (swapped as normal-flow wrappers, which toggle reliably on Brewser, rather than moving anything),
-    the status line right-aligned against its button. The buttons are for ZR (and clicks), not the
-    d-pad (data-kb-skip). Their shortcut and label sit apart, the label centred in the rest: an inline
-    pill before the text threw the centring off on the console.
+    On the right: [name • connection] and, once we have a name, our avatar. Each case has its own
+    wrapper with fixed positions (normal-flow wrappers toggle reliably on Brewser, rather than moving
+    anything), the status line ending right against the avatar or the bar's edge.
   -->
-  <!-- Offline, the Log in button alone says so. Nothing while the login box is open: not connected yet, for the player. -->
-  <div class="block" [class.hidden]="!offline() || loginOpen()">
-    <button type="button" data-kb-skip [class]="secondaryClass" class="absolute top-[14px] left-[1106px] h-12 w-[150px] text-xl" (click)="openLogin()">
-      <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7">ZR</span>
-      <span class="absolute top-0 left-[54px] block h-11 w-[82px] text-center leading-[44px]">Log in</span>
-    </button>
+  <div class="block" [class.hidden]="named()">
+    <app-trainer-status class="absolute top-[24px] left-[896px]" />
   </div>
-  <div class="block" [class.hidden]="offline() || loginOpen()">
-    <!--
-      L (or a click), as ZR, not the d-pad: the Trainer Card for a registered name, registering for the
-      player's own unregistered one. It sits between the status line and ZR, the status line ending
-      right against it, so each case has its own status line (nothing moves on Brewser).
-    -->
-    <div class="block" [class.hidden]="!canShowCard()">
-      <button
-        type="button"
-        data-kb-skip
-        [class]="cardShown() ? primaryClass : secondaryClass"
-        class="absolute top-[14px] left-[882px] h-12 w-[166px] text-xl"
-        aria-label="Trainer Card"
-        [attr.aria-pressed]="cardShown()"
-        (click)="toggleLBox()"
-      >
-        <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">L</span>
-        <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[98px] text-center leading-[44px]">Card</span>
-      </button>
-    </div>
-    <div class="block" [class.hidden]="!canRegister()">
-      <button
-        type="button"
-        data-kb-skip
-        [class]="registerShown() ? primaryClass : secondaryClass"
-        class="absolute top-[14px] left-[882px] h-12 w-[166px] text-xl"
-        aria-label="Register your name"
-        [attr.aria-pressed]="registerShown()"
-        (click)="toggleLBox()"
-      >
-        <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">L</span>
-        <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[98px] text-center leading-[44px]">Register</span>
-      </button>
-    </div>
-    <div class="block" [class.hidden]="!hasLButton()">
-      <app-trainer-status class="absolute top-[24px] left-[506px]" />
-    </div>
-    <div class="block" [class.hidden]="hasLButton()">
-      <app-trainer-status class="absolute top-[24px] left-[684px]" />
-    </div>
-    <!-- Two steps, as forfeiting a battle: ZR (or a click) asks, a second one within a few seconds does it. -->
-    <button
-      type="button"
-      data-kb-skip
-      [class]="confirmingDisconnect() ? primaryClass : secondaryClass"
-      class="absolute top-[14px] left-[1060px] h-12 w-[196px] text-xl"
-      [attr.aria-label]="disconnectLabel()"
-      (click)="disconnect()"
-    >
-      <span aria-hidden="true" class="absolute top-[8px] left-[10px] block h-7 w-10 rounded-sm bg-retro-select text-center leading-7 text-retro-ink">ZR</span>
-      <span aria-hidden="true" class="absolute top-0 left-[54px] block h-11 w-[128px] text-center leading-[44px]">
-        {{ confirmingDisconnect() ? 'Press again' : login.state().ownName ? 'Log out' : 'Disconnect' }}
-      </span>
-    </button>
+  <div class="block" [class.hidden]="!named()">
+    <app-trainer-status class="absolute top-[24px] left-[820px]" />
+    <!-- One new img per avatar (Brewser doesn't repaint a changed src), created only with a name: an img made inside a hidden wrapper was drawn anyway. -->
+    <div aria-hidden="true" class="absolute top-[6px] left-[1192px] block size-16 rounded-lg bg-retro-select"></div>
+    @if (named()) {
+      @for (src of avatarSrc(); track src) {
+        <img [ngSrc]="src" width="80" height="80" alt="" class="absolute top-[6px] left-[1192px] block size-16 max-w-none [image-rendering:pixelated]" />
+      }
+    }
   </div>
 </header>
 
 <main class="block h-[720px] w-[1280px]">
   <!--
-    The pages as big buttons, two per row, each with its icon beside its name; Random Battle also has
-    a line for its search. The one pointed at gets the accent border and the lighter panel from
-    styles.css ([data-kb-focus][data-menu-item]), without any rendering. Hidden (not removed) while
-    the login box is open, so returning to it is instant.
+    The menu: Battle and Random Battle as two big buttons, the other pages as four smaller ones under
+    them, each with a live fact under its name. The one pointed at gets the accent border and the
+    lighter panel from styles.css ([data-kb-focus][data-menu-item]), without any rendering, and its ▶
+    from the focus the controller reports (Brewser applied a CSS rule on the focus attribute to the
+    button's children only once). Pages that need a connection are drawn in greys while offline.
+    Hidden (not removed) while a box is open over it, so returning is instant.
   -->
   <nav aria-label="Main menu" class="block" [class.hidden]="loginOpen() || cardShown() || registerShown()">
     @for (item of items; track item.id; let i = $index) {
-      <button
-        #tile
-        type="button"
-        class="absolute h-[140px] w-[568px] cursor-pointer rounded-2xl border-4 border-retro-outline bg-retro-panel text-retro-ink hover:bg-retro-select focus-visible:border-retro-accent-text focus-visible:bg-retro-select focus-visible:outline-none"
-        [style.left.px]="48 + (i % 2) * 616"
-        [style.top.px]="116 + Math.floor(i / 2) * 164"
-        [attr.data-menu-item]="item.id"
-        (click)="open(item)"
-      >
-        <app-pixel-icon class="absolute top-[18px] left-[32px]" [name]="item.id" [size]="96" />
-        @if (item.path) {
-          <span class="absolute top-[38px] left-[160px] block h-14 w-[392px] text-left text-[44px] leading-[56px] font-bold">{{ item.label }}</span>
-        } @else {
-          <span class="absolute top-[22px] left-[160px] block h-14 w-[392px] text-left text-[44px] leading-[56px] font-bold">{{ item.label }}</span>
-          <span role="status" class="absolute top-[82px] left-[160px] block h-7 w-[392px] overflow-hidden text-left text-lg whitespace-nowrap" [class]="randomLine().error ? 'text-retro-danger' : 'text-retro-muted'">
-            {{ randomLine().text }}
+      @let line = lines()[item.id];
+      @let faded = offline() && item.needsConnection;
+      @if (i < 2) {
+        <button
+          #tile
+          type="button"
+          class="absolute top-[100px] h-[244px] w-[584px] cursor-pointer rounded-2xl border-4 border-retro-outline bg-retro-panel text-retro-ink hover:bg-retro-select focus-visible:border-retro-accent-text focus-visible:bg-retro-select focus-visible:outline-none"
+          [style.left.px]="48 + i * 600"
+          [attr.data-menu-item]="item.id"
+          [attr.aria-label]="item.label + '. ' + line.text"
+          (click)="open(item)"
+        >
+          <span class="block" [class.hidden]="focusedItem() !== item.id">
+            <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[80px] left-[14px] h-7 w-4 fill-retro-accent-text"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" /></svg>
           </span>
-        }
-      </button>
+          <span aria-hidden="true" class="absolute top-[28px] left-[44px] block size-[132px] rounded-xl" [style.background-color]="faded ? fadedPlate : item.plate"></span>
+          <app-pixel-icon class="absolute top-[34px] left-[50px]" [muted]="faded" [name]="item.id" [size]="120" />
+          <span aria-hidden="true" class="absolute top-[40px] left-[204px] block h-14 w-[364px] text-left text-[44px] leading-[56px] font-bold" [class]="faded ? 'text-retro-muted' : 'text-retro-ink'">{{ item.label }}</span>
+          <span aria-hidden="true" class="absolute top-[104px] left-[206px] block h-7 w-[362px] overflow-hidden text-left text-xl leading-7 whitespace-nowrap" [class]="toneClass[line.tone]">{{ line.text }}</span>
+
+          @if (item.id === 'battle') {
+            <!-- The Battle page's team: six fixed slots, the sprites tracked by position so no slot ever moves. -->
+            <div class="block" [class.hidden]="!summary.team()">
+              @for (sprite of teamSprites(); track $index) {
+                <span aria-hidden="true" class="absolute top-[144px] block size-[52px] rounded-lg bg-retro-rim" [style.left.px]="204 + $index * 60"></span>
+                <app-pokemon-sprite class="absolute top-[146px]" [style.left.px]="206 + $index * 60" [sprite]="sprite" [size]="48" />
+              }
+              <span aria-hidden="true" class="absolute top-[204px] left-[206px] block h-6 w-[362px] overflow-hidden text-left text-base leading-6 whitespace-nowrap text-retro-muted">{{ summary.team()?.name }}</span>
+            </div>
+            <div class="block" [class.hidden]="!summary.challenger()">
+              <span aria-hidden="true" class="absolute top-[16px] left-[418px] block h-9 w-[150px] rounded-md bg-retro-teal text-center text-xl leading-9 font-bold text-retro-bar">Challenge!</span>
+            </div>
+          } @else {
+            <span role="status" class="absolute top-[144px] left-[206px] block h-7 w-[362px] overflow-hidden text-left text-xl leading-7 whitespace-nowrap" [class]="toneClass[randomStatus().tone]">
+              {{ randomStatus().text }}
+            </span>
+          }
+        </button>
+      } @else {
+        <button
+          #tile
+          type="button"
+          class="absolute top-[360px] h-[236px] w-[284px] cursor-pointer rounded-2xl border-4 border-retro-outline bg-retro-panel text-retro-ink hover:bg-retro-select focus-visible:border-retro-accent-text focus-visible:bg-retro-select focus-visible:outline-none"
+          [style.left.px]="48 + (i - 2) * 300"
+          [attr.data-menu-item]="item.id"
+          [attr.aria-label]="item.label + '. ' + line.text"
+          (click)="open(item)"
+        >
+          <span class="block" [class.hidden]="focusedItem() !== item.id">
+            <svg aria-hidden="true" viewBox="0 0 4 7" class="absolute top-[62px] left-[14px] h-7 w-4 fill-retro-accent-text"><path d="M0 0h1v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-1z" /></svg>
+          </span>
+          <span aria-hidden="true" class="absolute top-[22px] left-[88px] block size-[108px] rounded-xl" [style.background-color]="faded ? fadedPlate : item.plate"></span>
+          <app-pixel-icon class="absolute top-[28px] left-[94px]" [muted]="faded" [name]="item.id" [size]="96" />
+          <span aria-hidden="true" class="absolute top-[144px] left-[12px] block h-10 w-[260px] text-center text-[30px] leading-10 font-bold" [class]="faded ? 'text-retro-muted' : 'text-retro-ink'">{{ item.label }}</span>
+          <span aria-hidden="true" class="absolute top-[188px] left-[12px] block h-7 w-[260px] overflow-hidden text-center text-xl leading-7 whitespace-nowrap" [class]="toneClass[line.tone]">{{ line.text }}</span>
+        </button>
+      }
     }
   </nav>
+
+  <!-- Under the menu (which ends at 596): the buttons and Showdown's counts. The boxes cover it, so it hides with the menu. -->
+  <div class="block" [class.hidden]="loginOpen() || cardShown() || registerShown()">
+    <app-home-footer class="absolute top-[620px] left-[48px]" [offline]="offline()" [zrLabel]="zrLabel()" [lLabel]="lLabel()" (zr)="pressZR()" (l)="toggleLBox()" />
+  </div>
 
   @if (loginOpen()) {
     <!-- Most of the stage under the bar: 1088x568 from (96, 116), the inside 1082x562. -->
