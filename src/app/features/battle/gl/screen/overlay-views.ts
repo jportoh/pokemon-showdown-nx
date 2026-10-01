@@ -1,4 +1,5 @@
 import { computed, inject } from '@angular/core';
+import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveType } from '@core/dex/moves';
 import { sheetRows } from '@features/battle/components/battle-team-select/sheet-rows';
@@ -142,25 +143,9 @@ export class LogView {
   }
 }
 
-/** The retro palette of the current theme, from <body>'s variables (see styles.css). */
-export function retroPalette(): Record<'bg' | 'bar' | 'panel' | 'outline' | 'select' | 'ink' | 'muted' | 'accent' | 'accentText' | 'teal', Rgba> {
-  const style = getComputedStyle(document.body);
-  const read = (name: string, fallback: string) => {
-    const value = style.getPropertyValue(name).trim();
-    return rgba(/^#[0-9a-f]{6}$/i.test(value) ? value : fallback);
-  };
-  return {
-    bg: read('--retro-bg', '#0a1620'),
-    bar: read('--retro-bar', '#050e16'),
-    panel: read('--retro-panel', '#102332'),
-    outline: read('--retro-outline', '#3f88ad'),
-    select: read('--retro-select', '#1a4562'),
-    ink: read('--retro-ink', '#e3f2fa'),
-    muted: read('--retro-muted', '#9ec3d5'),
-    accent: read('--retro-accent', '#0b76a0'),
-    accentText: read('--retro-accent-text', '#6fd3ff'),
-    teal: read('--retro-teal', '#ffc46b'),
-  };
+/** The retro palette of the theme chosen in Settings (GlTheme); call it in an injection context. */
+export function retroPalette(): Palette {
+  return inject(GlTheme).palette();
 }
 
 /**
@@ -197,8 +182,7 @@ export class TeamsOverviewView {
         if (sprite) renderer.rect(x + 6, y + 1, 72, 72, { fill: INK.white, texture: sprite });
         write(ctx, row.name, x + 84, y + 16, { size: 20, bold: true }, p.ink, 'left', 320);
         if (row.sheet) {
-          const icon = row.sheet.itemId ? ctx.images.image(`items/${row.sheet.itemId}.png`) : null;
-          if (icon) renderer.rect(x + 82, y + 30, 24, 24, { fill: INK.white, texture: icon });
+          ctx.images.drawItem(row.sheet.itemId, x + 82, y + 30, 24);
           write(ctx, row.sheet.item, x + 110, y + 42, { size: 16 }, p.muted, 'left', 296);
           write(ctx, row.sheet.ability, x + 84, y + 64, { size: 14 }, p.muted, 'left', 320);
           for (const move of row.sheet.moves) {

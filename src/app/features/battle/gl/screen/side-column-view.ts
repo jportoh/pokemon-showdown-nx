@@ -183,8 +183,7 @@ export class SideColumnView {
       renderer.rect(box.x, box.y, TILE, TILE, { fill, stroke: border, radius: 6, border: 1 });
       const sprite = ctx.images.sprite(tile.sprite, false, ImagePriority.Screen);
       if (sprite) renderer.rect(box.x + 4, box.y + 1, 64, 64, { fill: [1, 1, 1, tile.fainted ? 0.3 : 1], texture: sprite });
-      const icon = tile.item ? ctx.images.image(`items/${tile.item}.png`) : null;
-      if (icon) renderer.rect(box.x + 45, box.y + 35, 24, 24, { fill: INK.white, texture: icon });
+      ctx.images.drawItem(tile.item, box.x + 45, box.y + 35, 24);
       if (tile.bar) {
         renderer.rect(box.x + 8, box.y + 63, BAR_W, 4, { fill: INK.gray700, radius: 1 });
         renderer.rect(box.x + 8, box.y + 63, tile.bar.width, 4, { fill: tile.bar.color, radius: 1 });

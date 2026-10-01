@@ -2,6 +2,7 @@ import { Component, DestroyRef, ElementRef, afterNextRender, computed, inject, v
 import { Router } from '@angular/router';
 import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageResources } from '@core/gl/gl-stage';
+import { GlTheme, Palette as GlPalette } from '@core/gl/ui/gl-theme';
 import { TextStyle, TextTextures, iconTexture } from '@core/gl/gl-textures';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -33,48 +34,8 @@ const TILES: readonly TileBox[] = HOME_MENU_ITEMS.map((item, i) =>
     : { item, x: 48 + (i - 2) * 300, y: 360, w: 284, h: 236, big: false },
 );
 
-/** The palette, read from the theme's CSS variables on <body> (Brewser may not report them: defaults). */
-interface Palette {
-  bg: Rgba;
-  bar: Rgba;
-  panel: Rgba;
-  outline: Rgba;
-  rim: Rgba;
-  select: Rgba;
-  ink: Rgba;
-  muted: Rgba;
-  accentText: Rgba;
-  danger: Rgba;
-  teal: Rgba;
-}
-
-const DEFAULT_PALETTE: Record<keyof Palette, string> = {
-  bg: '#0a1620',
-  bar: '#050e16',
-  panel: '#102332',
-  outline: '#3f88ad',
-  rim: '#1b3a50',
-  select: '#1a4562',
-  ink: '#e3f2fa',
-  muted: '#9ec3d5',
-  accentText: '#6fd3ff',
-  danger: '#ff8a80',
-  teal: '#ffc46b',
-};
-
-const CSS_NAMES: Record<keyof Palette, string> = {
-  bg: '--retro-bg',
-  bar: '--retro-bar',
-  panel: '--retro-panel',
-  outline: '--retro-outline',
-  rim: '--retro-rim',
-  select: '--retro-select',
-  ink: '--retro-ink',
-  muted: '--retro-muted',
-  accentText: '--retro-accent-text',
-  danger: '--retro-danger',
-  teal: '--retro-teal',
-};
+/** The theme's colours (GlTheme). */
+type Palette = GlPalette;
 
 /** The ▶ cursor: 4x7 pixels, as the DOM menu's SVG. */
 const CURSOR_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
@@ -170,7 +131,7 @@ export class GlHomeScreen {
   // Drawing state, outside Angular: the frame loop never renders the component.
   private renderer: GlRenderer | null = null;
   private text: TextTextures | null = null;
-  private palette: Palette = paletteFrom(DEFAULT_PALETTE);
+  private readonly theme = inject(GlTheme);
   private icons = new Map<string, Texture>();
   private cursorTexture: Texture | null = null;
   private start = 0;
@@ -200,7 +161,7 @@ export class GlHomeScreen {
     });
     const unregister = [
       this.navigation.registerButton('buttonR', () => this.toDomMenu()),
-      this.navigation.registerButton('buttonL', () => this.nextParticleLevel()),
+      this.navigation.registerButton('buttonL', () => (void this.router.navigateByUrl('/gl-kit'), true)),
       this.navigation.registerButton('buttonR3', () => this.toggleDomParticles()),
       this.navigation.registerButton('buttonZL', () => this.toggleReport()),
     ];
@@ -239,12 +200,6 @@ export class GlHomeScreen {
     return true;
   }
 
-  private nextParticleLevel(): boolean {
-    this.particleLevel = (this.particleLevel + 1) % PARTICLE_LEVELS.length;
-    this.resetParticles();
-    return true;
-  }
-
   private toggleDomParticles(): boolean {
     this.particlesInDom = !this.particlesInDom;
     this.resetParticles();
@@ -264,7 +219,6 @@ export class GlHomeScreen {
 
   private startGl({ renderer, text }: StageResources): void {
     this.renderer = renderer;
-    this.palette = readPalette();
     this.text = text;
     for (const tile of TILES) {
       this.icons.set(`${tile.item.id}`, iconTexture(renderer, tile.item.id, false));
@@ -327,7 +281,7 @@ export class GlHomeScreen {
     this.measure(now, now - this.last);
     this.last = now;
     const time = (now - this.start) / 1000;
-    const pal = this.palette;
+    const pal = this.theme.palette();
     const focusedId = this.navigation.lastFocusedControl()?.getAttribute('data-gl-item') ?? null;
     const offline = this.offline();
 
@@ -505,7 +459,7 @@ export class GlHomeScreen {
     const shown = this.particles.length / 6;
     renderer.rect(32, 606, STAGE_W - 64, 92, { fill: withAlpha(pal.bar, 0.9), radius: 12 });
     const where = this.particlesInDom ? `DOM${shown < count ? ` (capped at ${shown})` : ''}` : 'WebGL';
-    const legend = this.label(`A Select · R Normal menu · L Particles · R3 Particles in WebGL/DOM · ZL Report`, { size: 18 });
+    const legend = this.label(`A Select · R Normal menu · L UI kit · R3 Particles in WebGL/DOM · ZL Report`, { size: 18 });
     if (legend) renderer.image(legend, 48, 628 - legend.height / 2, 1, pal.muted);
     const fps = this.fps;
     const color = fps.value >= 55 ? pal.accentText : fps.value >= 30 ? pal.teal : pal.danger;
@@ -543,23 +497,6 @@ export class GlHomeScreen {
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
-}
-
-function paletteFrom(hexes: Record<keyof Palette, string>): Palette {
-  const result = {} as Record<keyof Palette, Rgba>;
-  for (const key of Object.keys(hexes) as (keyof Palette)[]) result[key] = rgba(hexes[key]);
-  return result;
-}
-
-/** The theme's colours from <body>'s variables, each falling back to the default theme's. */
-function readPalette(): Palette {
-  const style = getComputedStyle(document.body);
-  const hexes = { ...DEFAULT_PALETTE };
-  for (const key of Object.keys(CSS_NAMES) as (keyof Palette)[]) {
-    const value = style.getPropertyValue(CSS_NAMES[key]).trim();
-    if (/^#[0-9a-f]{6}$/i.test(value)) hexes[key] = value;
-  }
-  return paletteFrom(hexes);
 }
 
 /** White pixels where a row has an x. */

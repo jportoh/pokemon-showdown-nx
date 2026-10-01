@@ -14,6 +14,11 @@ export const routes: Routes = [
     loadComponent: () => import('@features/home/components/home-screen/home-screen').then((c) => c.HomeScreen),
   },
   {
+    // EXPERIMENT (migration phase 1): the canvas UI kit on show, opened with L from the WebGL menu.
+    path: 'gl-kit',
+    loadComponent: () => import('@features/gl-home/components/gl-kit-screen/gl-kit-screen').then((c) => c.GlKitScreen),
+  },
+  {
     // EXPERIMENT (feat/webgl-probe): the home menu drawn with WebGL.
     path: 'gl',
     loadComponent: () =>

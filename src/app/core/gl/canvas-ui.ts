@@ -6,7 +6,8 @@ export type Align = 'left' | 'center' | 'right';
 
 /**
  * Text on a canvas: drawn with its middle at `cy`, from `x` (or centred on it, or ending at it), cut
- * with an ellipsis past `maxWidth`. Returns how wide it came out.
+ * with an ellipsis past `maxWidth`. Returns how wide it came out. `fast` draws it from the glyph
+ * atlas (text that changes every frame or so: no new texture per string), when it covers the text.
  */
 export function drawText(
   renderer: GlRenderer,
@@ -16,9 +17,18 @@ export function drawText(
   cy: number,
   style: TextStyle,
   color: Rgba,
-  options: { align?: Align; maxWidth?: number } = {},
+  options: { align?: Align; maxWidth?: number; fast?: boolean } = {},
 ): number {
   if (!value) return 0;
+  // Text that changes all the time: glyph by glyph from the atlas, no texture of its own.
+  const glyphs = options.fast ? text.glyphs : null;
+  if (glyphs?.covers(value)) {
+    const shown = options.maxWidth !== undefined ? glyphs.fit(value, style, options.maxWidth) : value;
+    const width = glyphs.measure(shown, style);
+    const align = options.align ?? 'left';
+    const left = align === 'left' ? x : align === 'center' ? x - width / 2 : x - width;
+    return glyphs.draw(shown, left, cy, style, color);
+  }
   const shown = options.maxWidth !== undefined ? text.fit(value, style, options.maxWidth) : value;
   const texture = text.get(shown, style);
   if (!texture) return 0;
@@ -39,6 +49,11 @@ export interface UiControl {
   accept?: () => void;
   /** Pressed with a click only: the d-pad never lands on it (as data-kb-skip). */
   skip?: boolean;
+  /**
+   * The d-pad while it has the focus, before moving away: true when it used it (an option picker's
+   * left/right change its value; a list's row past the shown ones pages the list).
+   */
+  move?: (direction: 'up' | 'down' | 'left' | 'right') => boolean;
 }
 
 /** The yellow focus ring of the whole app (styles.css: 3px #facc15 inside the control). */
@@ -58,6 +73,14 @@ export class CanvasFocus {
 
   /** Before drawing a frame. */
   begin(): void {
+    this.building = [];
+  }
+
+  /**
+   * A modal view is being drawn over what's been declared so far this frame: those controls can't be
+   * reached until it's gone (its own, declared next, are the only ones).
+   */
+  trap(): void {
     this.building = [];
   }
 
@@ -93,6 +116,7 @@ export class CanvasFocus {
   move(direction: 'up' | 'down' | 'left' | 'right', among?: (control: UiControl) => boolean): boolean {
     const candidates = this.controls.filter((c) => !c.skip && (!among || among(c)));
     const current = this.controls.find((c) => c.id === this.focused);
+    if (current?.move?.(direction)) return true;
     if (!current) {
       if (candidates.length === 0) return false;
       this.focused = candidates[0].id;
@@ -183,4 +207,17 @@ function directionalScore(from: UiControl, to: UiControl, direction: 'up' | 'dow
   // shouldn't land on the command panel across the screen).
   if (across > 0 && offCentre > ahead * 3) return Infinity;
   return gap + across * 3 + offCentre * 0.1;
+}
+
+/**
+ * The usual handling of the controller in a canvas scene: the d-pad moves the focus (or goes to the
+ * focused control, see UiControl.move), A presses. B and the jumps are the scene's: null hands them back.
+ */
+export function focusInput(focus: CanvasFocus, action: CanvasAction): boolean | null {
+  if (isDirection(action)) {
+    focus.move(action);
+    return true;
+  }
+  if (action === 'accept') return focus.accept();
+  return null;
 }

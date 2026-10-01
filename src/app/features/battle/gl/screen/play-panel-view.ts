@@ -266,8 +266,7 @@ export class PlayPanelView {
     const moves = v.mode === 'moves';
     renderer.rect(x, y, CARD_W, 112, { fill: rgba(moves ? '#1b3354' : '#1f2937'), stroke: moves ? INK.sky300 : INK.gray500, radius: 6, border: 1 });
     if (!v.name) return;
-    const icon = v.itemId ? ctx.images.image(`items/${v.itemId}.png`) : null;
-    if (icon) renderer.rect(x + 9, y + 8, 32, 32, { fill: INK.white, texture: icon });
+    ctx.images.drawItem(v.itemId, x + 9, y + 8, 32);
     write(ctx, v.name, x + 50, y + 17, { size: 16, bold: true }, INK.white, 'left', 184);
     if (v.tera) {
       renderer.rect(x + 240, y + 7, 90, 20, { fill: rgba(v.tera.color), stroke: v.tera.done ? INK.white : [0, 0, 0, 0], radius: 10, border: v.tera.done ? 1 : 0 });

@@ -145,8 +145,7 @@ export class TeamSelectView {
       const sprite = ctx.images.sprite(row.sprite, false, ImagePriority.Screen);
       if (sprite) renderer.rect(box.x + 58, box.y + 2, 80, 80, { fill: INK.white, texture: sprite });
       write(ctx, row.name, box.x + 146, box.y + 18, { size: 20, bold: true }, p.ink, 'left', 232);
-      const icon = row.itemId ? ctx.images.image(`items/${row.itemId}.png`) : null;
-      if (icon) renderer.rect(box.x + 144, box.y + 34, 24, 24, { fill: INK.white, texture: icon });
+      ctx.images.drawItem(row.itemId, box.x + 144, box.y + 34, 24);
       write(ctx, row.item, box.x + 172, box.y + 46, { size: 16 }, p.muted, 'left', 206);
       write(ctx, row.ability, box.x + 146, box.y + 70, { size: 14 }, p.muted, 'left', 176);
       if (row.lead) write(ctx, 'LEAD', box.x + 378, box.y + 70, { size: 12, bold: true }, p.accentText, 'right');
@@ -164,8 +163,7 @@ export class TeamSelectView {
       if (sprite) renderer.rect(x + 10, y + 2, 80, 80, { fill: INK.white, texture: sprite });
       write(ctx, row.name, x + 98, y + 18, { size: 20, bold: true }, p.ink, 'left', 280);
       if (row.sheet) {
-        const icon = row.sheet.itemId ? ctx.images.image(`items/${row.sheet.itemId}.png`) : null;
-        if (icon) renderer.rect(x + 96, y + 34, 24, 24, { fill: INK.white, texture: icon });
+        ctx.images.drawItem(row.sheet.itemId, x + 96, y + 34, 24);
         write(ctx, row.sheet.item, x + 124, y + 46, { size: 16 }, p.muted, 'left', 254);
         write(ctx, row.sheet.ability, x + 98, y + 70, { size: 14 }, p.muted, 'left', 280);
         this.drawPills(ctx, x + 378, y, row.sheet.moves);

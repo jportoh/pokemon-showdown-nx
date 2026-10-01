@@ -8,23 +8,19 @@
 // used (no battle-only or cosmetic formes), their learnsets as indexes into one move list (sorted by
 // name), the legal items in Showdown's order (popular ones first), and the Megas: each one is its base
 // species holding a Mega Stone, with the stats, types and ability it Mega Evolves into, and the short
-// descriptions of the abilities they all have. It also writes each legal item's icon to public/items.
-// Run it again when Showdown updates the format. Downloaded files are only read as data, never run.
+// descriptions of the abilities they all have. Item icons come from Showdown's icon sheet at runtime
+// (see update-names.mjs, which records each item's place in it). Run it again when Showdown updates
+// the format. Downloaded files are only read as data, never run.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { cropScaled, decodePng, encodePng, isBlank } from './png.mjs';
 
 const DATA_URL = 'https://play.pokemonshowdown.com/data';
 /** Showdown's Black/White-style sprites (96x96), the ones it has for every species and most formes. */
 const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites/gen5';
 const FORMAT = { id: 'gen9championsvgc2026regmc', name: '[Gen 9 Champions] VGC 2026 Reg M-C' };
-const ITEM_SHEET_URL = 'https://play.pokemonshowdown.com/sprites/itemicons-sheet.png';
-const ITEM_ICON_SIZE = 24;
 const OUTPUT = join(dirname(fileURLToPath(import.meta.url)), '../src/app/core/dex/champions-regmc.json');
-/** Served as items/<id>.png (48x48), bundled with the app like the data. */
-const ITEM_ICONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '../public/items');
 const ABILITY_SLOTS = ['0', '1', 'H', 'S'];
 const STATS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 /** Items listed with Showdown's popular ones although it doesn't count them as such. */
@@ -214,24 +210,6 @@ for (let i = 0; i < entries.length; i += 16) {
       }
     }),
   );
-}
-
-// Item icons: cells of Showdown's sheet (24x24, 16 per row, at the item's spritenum) saved as one
-// file per item, at twice the size so they stay crisp. Showdown has no single files for most of
-// them (none for Mega Stones), and Brewser can't draw a cell of the sheet itself.
-const sheetResponse = await fetch(ITEM_SHEET_URL);
-if (!sheetResponse.ok) throw new Error(`itemicons-sheet.png: HTTP ${sheetResponse.status}`);
-const sheet = decodePng(Buffer.from(await sheetResponse.arrayBuffer()));
-// Not emptied first: update-names.mjs writes the other formats' icons there too.
-mkdirSync(ITEM_ICONS_DIR, { recursive: true });
-for (const item of items) {
-  const spritenum = Number(/[{,]spritenum:(\d+)/.exec(entryBody(itemsText, item.id))?.[1] ?? NaN);
-  const left = (spritenum % 16) * ITEM_ICON_SIZE;
-  const top = Math.floor(spritenum / 16) * ITEM_ICON_SIZE;
-  if (!Number.isInteger(spritenum) || top + ITEM_ICON_SIZE > sheet.height) throw new Error(`items.js: no icon for ${item.id}`);
-  const icon = cropScaled(sheet, left, top, ITEM_ICON_SIZE, 2);
-  if (isBlank(icon)) throw new Error(`itemicons-sheet.png: empty cell for ${item.id}`);
-  writeFileSync(join(ITEM_ICONS_DIR, `${item.id}.png`), encodePng(icon));
 }
 
 const data = { format: FORMAT, generated: new Date().toISOString().slice(0, 10), species, megas, moves: moveList, items, popularItems, abilities };

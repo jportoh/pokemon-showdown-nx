@@ -1,6 +1,7 @@
 import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, untracked, viewChildren } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { DecodedImage, ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
+import { ItemIcon } from '@shared/components/item-icon';
 import { spriteUrl } from '@shared/components/pokemon-sprite';
 
 /**
@@ -79,15 +80,14 @@ export class SharedSprite {
   protected readonly fallback = computed(() => (this.sprite() && this.back() ? spriteUrl(this.sprite(), false) : ''));
 }
 
-/** An item's icon (public/items), from the shared decoded images. */
+/** An item's icon, as ItemIcon draws it (a cell of Showdown's sheet, decoded once for the whole app). */
 @Component({
   selector: 'app-shared-item-icon',
-  imports: [SharedImage],
+  imports: [ItemIcon],
   host: { class: 'block' },
-  template: `<app-shared-image [src]="src()" [size]="size()" />`,
+  template: `<app-item-icon [item]="item()" [size]="size()" />`,
 })
 export class SharedItemIcon {
   readonly item = input('');
   readonly size = input(48);
-  protected readonly src = computed(() => (this.item() ? `items/${this.item()}.png` : ''));
 }

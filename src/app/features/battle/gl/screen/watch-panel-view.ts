@@ -3,7 +3,6 @@ import { pokemonInfoView } from '@features/battle/components/battle-pokemon-info
 import { BattleStore } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { rgba } from '@core/gl/gl-renderer';
-import { toId } from '@shared/utils/to-id';
 import { INK, ScreenContext, button, write, writeLines } from './screen-context';
 
 const PANEL_X = 12;
@@ -118,8 +117,7 @@ export function drawPokemonInfo(ctx: ScreenContext, x: number, y: number, v: Ret
   }
   renderer.rect(x + 438, y + 8, 1, 130, { fill: INK.gray600 });
 
-  const icon = v.itemId ? ctx.images.image(`items/${toId(v.itemId)}.png`) : null;
-  if (icon) renderer.rect(x + 446, y + 6, 24, 24, { fill: INK.white, texture: icon });
+  ctx.images.drawItem(v.itemId, x + 446, y + 6, 24);
   write(ctx, v.item, x + (v.itemKnown ? 474 : 448), y + 18, { size: 14, bold: v.itemKnown }, v.itemKnown ? INK.white : INK.gray400, 'left', v.itemKnown ? 160 : 186);
   if (v.abilityKnown) write(ctx, v.ability, x + 448, y + 44, { size: 14, bold: true }, INK.white, 'left', 186);
   else writeLines(ctx, v.ability, x + 448, y + 32, 186, 13, { size: 12 }, INK.gray400, 2);

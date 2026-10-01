@@ -4,6 +4,7 @@ import { GlDiagnostics } from './gl-diagnostics';
 import { GlRenderer, Texture } from './gl-renderer';
 import { GlSprites } from './gl-sprites';
 import { TextTextures, discTexture } from './gl-textures';
+import { GlyphAtlas } from './glyph-atlas';
 import { SpriteBitmaps } from './sprite-bitmaps';
 
 export const STAGE_W = 1280;
@@ -63,6 +64,8 @@ export class GlStage {
   private resources: StageResources | null = null;
   private readonly waiting: ((resources: StageResources) => void)[] = [];
   private readonly scenes: GlScene[] = [];
+  /** Drawn over the top scene and given the controller first (the on-screen keyboard). */
+  private overlay: GlScene | null = null;
   private frame = 0;
   private last = 0;
   private releaseInput: (() => void) | null = null;
@@ -81,6 +84,7 @@ export class GlStage {
     }
     const family = getComputedStyle(document.body).fontFamily || 'Roboto, sans-serif';
     const text = new TextTextures(renderer, this.scale, family);
+    text.glyphs = new GlyphAtlas(renderer, this.scale, family);
     const images = new GlSprites(renderer, this.bitmaps);
     text.onUpload = (ms) => this.diagnostics.record('text', ms);
     images.onUpload = (ms) => this.diagnostics.record('sprite', ms);
@@ -102,7 +106,7 @@ export class GlStage {
     this.active.set(true);
     // A scene without input of its own (the menu, still on DOM buttons) leaves the d-pad to the DOM.
     this.releaseInput ??= this.navigation.captureInput((action) => {
-      const scene = this.top();
+      const scene = this.overlay ?? this.top();
       return scene?.input ? scene.input(action) : null;
     });
     this.start();
@@ -118,13 +122,18 @@ export class GlStage {
     };
   }
 
-  /** The mouse (browsers): the top scene's. */
+  /** Shows a view over whatever scene is shown (the on-screen keyboard), or takes it away (null). */
+  setOverlay(overlay: GlScene | null): void {
+    this.overlay = overlay;
+  }
+
+  /** The mouse (browsers): the overlay's, else the top scene's. */
   click(x: number, y: number): void {
-    this.top()?.click?.(x, y);
+    (this.overlay ?? this.top())?.click?.(x, y);
   }
 
   hover(x: number, y: number): void {
-    this.top()?.hover?.(x, y);
+    (this.overlay ?? this.top())?.hover?.(x, y);
   }
 
   private top(): GlScene | undefined {
@@ -147,7 +156,10 @@ export class GlStage {
       const interval = now - this.last;
       this.last = now;
       resources.images.startFrame();
-      scene.draw({ ...resources, now, dt: Math.min(0.1, interval / 1000) });
+      const frame = { ...resources, now, dt: Math.min(0.1, interval / 1000) };
+      scene.draw(frame);
+      // The overlay draws over the finished scene (end() only flushes, nothing is cleared) and ends its own drawing.
+      this.overlay?.draw(frame);
       this.diagnostics.frame(interval, performance.now() - started);
     };
     this.frame = requestAnimationFrame(loop);

@@ -114,6 +114,8 @@ export interface QuadStyle {
   angle?: number;
   /** Adds its light to what's under it (glows, sparks) instead of covering it. */
   additive?: boolean;
+  /** The part of the texture drawn (u0, v0, u1, v1); the whole of it by default (a glyph of an atlas). */
+  uv?: readonly [number, number, number, number];
 }
 
 /** '#rrggbb' to [r, g, b, a] in 0..1. */
@@ -312,6 +314,7 @@ export class GlRenderer {
     const fill = style.fill;
     const stroke = style.stroke ?? NO_STROKE;
     const textured = (style.texture ? 1 : 0) + (style.additive ? 2 : 0);
+    const uv = style.uv;
     const angle = style.angle ?? 0;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
@@ -341,8 +344,8 @@ export class GlRenderer {
       data[i++] = stroke[1];
       data[i++] = stroke[2];
       data[i++] = stroke[3];
-      data[i++] = right;
-      data[i++] = bottom;
+      data[i++] = uv ? (right ? uv[2] : uv[0]) : right;
+      data[i++] = uv ? (bottom ? uv[3] : uv[1]) : bottom;
       data[i++] = textured;
     }
     this.quads++;

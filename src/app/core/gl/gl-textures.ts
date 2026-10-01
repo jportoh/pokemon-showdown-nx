@@ -1,5 +1,6 @@
 import { COLORS, ICONS, PixelIconName, greyed } from '@shared/components/pixel-icon';
 import { GlRenderer, Texture } from './gl-renderer';
+import type { GlyphAtlas } from './glyph-atlas';
 
 /** Texts kept at once: a whole battle screen shows a few hundred (names, chips, the log's lines). */
 const MAX_TEXTS = 600;
@@ -26,6 +27,8 @@ export class TextTextures {
   private readonly context: CanvasRenderingContext2D | null = this.canvas.getContext('2d');
   /** Told how long each new text took to draw and upload (diagnostics). */
   onUpload: ((ms: number) => void) | null = null;
+  /** Glyphs for text that changes all the time (drawText's `fast`); the stage sets it. */
+  glyphs: GlyphAtlas | null = null;
 
   constructor(
     private readonly renderer: GlRenderer,
