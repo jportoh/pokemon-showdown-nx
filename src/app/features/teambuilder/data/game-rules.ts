@@ -42,11 +42,6 @@ export const NATURES: readonly Nature[] = [
   { name: 'Timid', plus: 'spe', minus: 'atk' },
 ];
 
-/** "Adamant (+Atk, −SpA)"; neutral natures are just their name. */
-export function natureLabel(nature: Nature): string {
-  return nature.plus && nature.minus ? `${nature.name} (+${STAT_NAMES[nature.plus]}, −${STAT_NAMES[nature.minus]})` : nature.name;
-}
-
 /**
  * A stat at level 50 with Champions' formula (Showdown's champions mod): HP is base + points + 75,
  * other stats base + points + 20, then natures add or take 10% (rounded down).

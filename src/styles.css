@@ -1,217 +1,57 @@
-/* You can add global styles to this file, and also import other style files */
-
-@import 'tailwindcss';
-
-/* Build scripts mention class names in comments; they aren't app markup. */
-@source not "../scripts";
-
-/* App palette: soft blue-grays in the spirit of the original Showdown client. */
-@theme {
-  --color-stage: #34496b;
-  --color-header: #1f2d45;
-  --color-tab: #2a3b58;
-  --color-tab-hover: #3b5176;
-  --color-card: #22304a;
-}
-
 /*
-  "Retro" palette of the home menu, its pages' frame and the Battle page, by role, so a theme is
-  just these values. The utilities (bg-retro-panel…) read --retro-* variables that live only on
-  <body>, never on the root: on Brewser a variable also declared on the root element always resolves
-  to its root value, so a theme redefining it on <body> is ignored (test V1: M1 failed, M3 worked;
-  the first Settings build, n24, had the default palette on the root and didn't change theme).
-  `inline` keeps Tailwind from declaring the --color-retro-* names on the root.
-*/
-@theme inline {
-  --color-retro-bg: var(--retro-bg);
-  --color-retro-bar: var(--retro-bar);
-  --color-retro-panel: var(--retro-panel);
-  --color-retro-outline: var(--retro-outline);
-  --color-retro-rim: var(--retro-rim);
-  --color-retro-select: var(--retro-select);
-  --color-retro-button: var(--retro-button);
-  --color-retro-input: var(--retro-input);
-  --color-retro-ink: var(--retro-ink);
-  --color-retro-muted: var(--retro-muted);
-  --color-retro-accent: var(--retro-accent);
-  --color-retro-accent-hover: var(--retro-accent-hover);
-  --color-retro-accent-text: var(--retro-accent-text);
-  --color-retro-danger: var(--retro-danger);
-  --color-retro-teal: var(--retro-teal);
-}
-
-/*
-  The default theme, "Sapphire": navy panels with a steel-blue outline, light text, a cyan accent
-  and an amber one in the `teal` slot. Checked for WCAG AA: ink and muted text on panel/select,
-  white on accent, accent-text/danger/teal on panel and bar.
-*/
-body {
-  --retro-bg: #0a1620;
-  --retro-bar: #050e16;
-  --retro-panel: #102332;
-  --retro-outline: #3f88ad;
-  --retro-rim: #1b3a50;
-  --retro-select: #1a4562;
-  --retro-button: #153246;
-  --retro-input: #071118;
-  --retro-ink: #e3f2fa;
-  --retro-muted: #9ec3d5;
-  --retro-accent: #0b76a0;
-  --retro-accent-hover: #085f82;
-  --retro-accent-text: #6fd3ff;
-  --retro-danger: #ff8a80;
-  --retro-teal: #ffc46b;
-}
-
-/*
-  The other themes (Settings; the class is set by AppSettings), redefining the palette on <body>.
-  Being defined more than once also keeps them as var() in the Brewser build, which otherwise writes
-  in the value of a variable defined once. Each is checked for WCAG AA like the one above.
-*/
-body.theme-noche {
-  --retro-bg: #121821;
-  --retro-bar: #0b1016;
-  --retro-panel: #1c2632;
-  --retro-outline: #5b7690;
-  --retro-rim: #2b3a4a;
-  --retro-select: #2c4157;
-  --retro-button: #26374a;
-  --retro-input: #0f151c;
-  --retro-ink: #e8eef3;
-  --retro-muted: #a9b8c6;
-  --retro-accent: #c94e39;
-  --retro-accent-hover: #a83e2c;
-  --retro-accent-text: #ff9a85;
-  --retro-danger: #ff8a80;
-  --retro-teal: #7fd1b9;
-}
-
-body.theme-ciruela {
-  --retro-bg: #16111e;
-  --retro-bar: #0d0913;
-  --retro-panel: #221a2e;
-  --retro-outline: #8467b0;
-  --retro-rim: #352946;
-  --retro-select: #3c2d55;
-  --retro-button: #2d2240;
-  --retro-input: #110c17;
-  --retro-ink: #f1ebf8;
-  --retro-muted: #bcb0cf;
-  --retro-accent: #b8336a;
-  --retro-accent-hover: #982955;
-  --retro-accent-text: #ff8cc0;
-  --retro-danger: #ff8a80;
-  --retro-teal: #f3c56b;
-}
-
-body.theme-esmeralda {
-  --retro-bg: #0e1915;
-  --retro-bar: #08110d;
-  --retro-panel: #15261e;
-  --retro-outline: #4f8f6d;
-  --retro-rim: #22392d;
-  --retro-select: #23432f;
-  --retro-button: #1d3427;
-  --retro-input: #0a130f;
-  --retro-ink: #e5f3ea;
-  --retro-muted: #a5c4b2;
-  --retro-accent: #b8432b;
-  --retro-accent-hover: #963522;
-  --retro-accent-text: #ff9f80;
-  --retro-danger: #ff8a80;
-  --retro-teal: #f0d36b;
-}
-
-/* Errors in orange, as the accent is red. */
-body.theme-pokeball {
-  --retro-bg: #151313;
-  --retro-bar: #0c0b0b;
-  --retro-panel: #221e1e;
-  --retro-outline: #7a6f6f;
-  --retro-rim: #342e2e;
-  --retro-select: #403434;
-  --retro-button: #2d2727;
-  --retro-input: #0f0e0e;
-  --retro-ink: #f3efef;
-  --retro-muted: #c0b6b6;
-  --retro-accent: #c62a2a;
-  --retro-accent-hover: #a32121;
-  --retro-accent-text: #ff8f85;
-  --retro-danger: #ffa24d;
-  --retro-teal: #ffd35c;
-}
-
-body.theme-ocaso {
-  --retro-bg: #12122a;
-  --retro-bar: #0a0a1b;
-  --retro-panel: #1c1c3c;
-  --retro-outline: #6f6fc0;
-  --retro-rim: #2b2b55;
-  --retro-select: #30305f;
-  --retro-button: #24244a;
-  --retro-input: #0c0c1f;
-  --retro-ink: #eceaff;
-  --retro-muted: #b4b2de;
-  --retro-accent: #c0400f;
-  --retro-accent-hover: #9e340c;
-  --retro-accent-text: #ffa577;
-  --retro-danger: #ff8a9a;
-  --retro-teal: #7de3cf;
-}
-
-/*
-  The app is a fixed 1280x720 stage: the Brewser console renders at exactly that size, and its
-  engine mis-sizes percentage and flex-grown boxes whose content Angular inserts after load (and
-  loses what's painted below the first viewport when the page scrolls). Layout sizes are therefore
-  fixed pixels, and only inner regions such as the chat scroll.
+  The whole app is one 1280x720 WebGL canvas (GlStage), the Brewser console's resolution: every screen
+  is drawn on it, so the page itself only holds the canvas. Plain CSS, which Brewser's engine renders
+  as written (no layers, nesting or modern colour functions).
 */
 html {
   height: 720px;
-  background-color: var(--color-stage);
+  background-color: #0a1620;
 }
 
 body {
   width: 1280px;
   height: 720px;
   margin: 0 auto;
-  font-family: Roboto, sans-serif;
   overflow: hidden;
-  background-color: var(--color-stage);
+  font-family: Roboto, sans-serif;
+  background-color: #0a1620;
 }
 
-/*
-  Focus ring while the console's buttons (mapped to keys) are in use: KeyboardNavigation marks the
-  focused control with this attribute. An attribute selector rather than :focus-visible, which hasn't
-  been checked on Brewser (attribute selectors have). Drawn inside the control so scroll regions
-  don't clip it, in yellow so it stands out from the white text and borders.
-*/
-[data-kb-focus] {
-  outline: 3px solid #facc15 !important;
-  outline-offset: -3px !important;
+app-gl-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
 }
 
-/*
-  A slot card fills its button, so on Brewser it covers the button's outline: the card itself shows
-  the focus with a yellow border and the retro palette's selected background.
-*/
-[data-kb-focus] [data-slot-card] {
-  border-color: #facc15 !important;
-  background-color: var(--retro-select) !important;
-  outline: 3px solid #facc15;
-  outline-offset: -3px;
+/* Hidden by a wrapper toggled by display, which Brewser toggles reliably. */
+.gl-stage {
+  display: block;
 }
 
-/*
-  The home menu's big buttons show focus as a pressed-in tile: the accent border and a lighter panel,
-  instead of the yellow ring. Pure CSS from the focus attribute, so moving between them doesn't render.
-*/
-[data-kb-focus][data-menu-item] {
-  outline: none !important;
-  border-color: var(--retro-accent-text) !important;
-  background-color: var(--retro-select) !important;
+.gl-stage.off {
+  display: none;
 }
 
-/* A text field being typed in (A pressed on it): the buttons type instead of navigating. */
-[data-kb-editing][data-kb-focus] {
-  outline-color: #4ade80 !important;
+.gl-stage canvas {
+  display: block;
+  width: 1280px;
+  height: 720px;
+}
+
+/* Shown over the stage when WebGL can't start, the one message drawn in HTML. */
+.gl-failure {
+  position: absolute;
+  top: 320px;
+  left: 240px;
+  width: 800px;
+  height: 60px;
+  margin: 0;
+  border: 2px solid #ffffff;
+  border-radius: 6px;
+  background-color: #1f2937;
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 56px;
+  text-align: center;
 }

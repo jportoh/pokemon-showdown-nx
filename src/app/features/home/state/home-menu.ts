@@ -1,5 +1,5 @@
 import { Service, signal } from '@angular/core';
-import { PixelIconName } from '@shared/components/pixel-icon';
+import { PixelIconName } from '@core/gl/ui/pixel-icons';
 
 export interface HomeMenuItem {
   id: PixelIconName;

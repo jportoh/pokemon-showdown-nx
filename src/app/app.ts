@@ -1,15 +1,14 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
-import { AppSettings } from '@core/settings/app-settings';
+import { GlStageHost } from '@core/gl/gl-stage-host';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { OnScreenKeyboardPanel } from '@shared/components/on-screen-keyboard/on-screen-keyboard-panel';
 
 @Component({
-  imports: [OnScreenKeyboardPanel, RouterOutlet],
+  imports: [GlStageHost, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
@@ -20,8 +19,6 @@ export class App {
   constructor() {
     const router = inject(Router);
     const session = inject(BattleSession);
-    // The theme, before anything is shown.
-    inject(AppSettings);
     // Nothing connects until the player asks (on the home screen), or asked in Settings to log in
     // when the app starts. From then on other players can challenge us whichever page is open: the
     // name and the challenges are tracked app-wide.

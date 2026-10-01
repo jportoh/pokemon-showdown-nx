@@ -1,27 +1,17 @@
-import { Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
-import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
-import { BattleField } from '@features/battle/components/battle-field/battle-field';
-import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
-import { BattleLog } from '@features/battle/components/battle-log/battle-log';
-import { BattleTeamPreview, SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
-import { BattleTeamSelect } from '@features/battle/components/battle-team-select/battle-team-select';
-import { BattleTeamsOverview } from '@features/battle/components/battle-team-select/battle-teams-overview';
-import { BattleTeamSheet } from '@features/battle/components/battle-team-sheet/battle-team-sheet';
-import { ReplayControls } from '@features/battle/components/replay-controls/replay-controls';
+import { GlBattleScreen } from '@features/battle/components/gl-battle-screen/gl-battle-screen';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
 import { SpectateBattleConnection } from '@features/battle/live/spectate-battle-connection';
-import { SpectatorControls } from '@features/battle/components/spectator-controls/spectator-controls';
 import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
+import { ForfeitState } from '@features/battle/gl/screen/header-view';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { BackAction } from '@shared/directives/back-action';
 import { toId } from '@shared/utils/to-id';
 
 /** How long the forfeit confirmation waits for the second press. */
@@ -29,112 +19,40 @@ const FORFEIT_CONFIRM_MS = 4000;
 
 /**
  * A battle (doubles, or singles with one Pokémon a side) against a real player on Showdown (a ladder
- * match, a challenge we accepted), a live battle watched as a spectator, or a replay
- * from Showdown's replay server. It takes the whole 1280x720 stage (no app header: a battle can't be
- * left until it's over). Along the top, the match header (players, format, turn, Forfeit, the battle log's button). Below it on the
- * left, framed by a 12px strip, the battle box: the field (third-generation style, 985x500) and the
- * command panel (172px tall). On the right, a 283px column mirroring the field: the opponent's team,
- * its side's conditions, the field's (weather, terrain, rooms… with their turns left), the player's
- * side's and the player's team. The battle log shows over the field's right part only on request
- * (hidden, not removed: see BattleLog). The battle itself lives in root services.
- * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed twice), ZL
- * shows or hides the opponent's open team sheet (formats that have one; where both players must agree to them,
- * the first press agrees), ZR shows or hides the battle log (B hides
- * either too), R3 turns the battle timer on or off (real battles). A replay swaps the command panel for playback
- * controls and has nothing to forfeit.
+ * match, a challenge we accepted), a live battle watched as a spectator, or a replay from Showdown's
+ * replay server. It takes the whole 1280x720 stage (no app header: a battle can't be left until it's
+ * over), drawn on one WebGL canvas (GlBattleScreen: header, field, the right column with both teams
+ * and the conditions, the command panel, and the log, team sheet and team preview over them). This
+ * component starts the battle and owns what lies beyond the screen: the forfeit's confirmation, the
+ * rematch or the next game of a set, leaving. The battle itself lives in root services.
+ * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed
+ * twice), R3 turns the battle timer on or off (real battles); ZL (the opponent's open team sheet) and
+ * ZR (the battle log) are the canvas screen's.
  */
 @Component({
   selector: 'app-battle-screen',
-  imports: [
-    BackAction,
-    BattleConditions,
-    BattleControls,
-    BattleField,
-    BattleHeader,
-    BattleLog,
-    BattleTeamPreview,
-    BattleTeamSelect,
-    BattleTeamsOverview,
-    BattleTeamSheet,
-    ReplayControls,
-    SpectatorControls,
-  ],
-  host: { class: 'block h-[720px] w-[1280px] bg-header' },
+  imports: [GlBattleScreen],
   template: `
-    <div class="relative h-[720px] w-[1280px]">
-      <app-battle-header
-        class="absolute top-0 left-0"
-        [forfeitState]="forfeitState()"
-        [logOpen]="logOpen()"
-        (forfeit)="forfeit()"
-        (toggleLog)="toggleLog()"
-        (toggleTimer)="toggleTimer()"
-      />
-
-      <app-battle-field class="absolute top-[48px] left-[12px]" />
-
-      <div class="absolute top-[548px] left-[12px] h-[172px] w-[985px] bg-[#283040]">
-        @if (store.replay()) {
-          <app-replay-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveReplay()" (again)="watchAgain()" (leave)="leaveReplay()" />
-        } @else if (store.spectating()) {
-          <app-spectator-controls class="absolute top-[12px] left-[12px]" (appBack)="leaveLive()" (leave)="leaveLive()" />
-        } @else {
-          <app-battle-controls
-            class="absolute top-[12px] left-[12px]"
-            (appBack)="back()"
-            [canRematch]="rematchView().can"
-            [rematchLabel]="rematchView().label"
-            [rematchNote]="rematchView().note"
-            (rematch)="rematch()"
-            (leave)="leave()"
-          />
-        }
-      </div>
-
-      <!-- From 8px under the header to the bottom of the command buttons (708). -->
-      <!-- Its tiles can be pointed at, to see what's known of them: B there goes back to the command panel (to its button, watching live). -->
-      <app-battle-team-preview class="absolute top-[56px] left-[1003px]" side="p2" [sheet]="sheetButton()" [sheetOpen]="sheetOpen()" (toggleSheet)="pressSheet()" (appBack)="leaveOpponentTeam()" />
-      <app-battle-conditions class="absolute top-[265px] left-[1003px]" of="p2" />
-      <app-battle-conditions class="absolute top-[350px] left-[1003px]" of="field" />
-      <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
-      <!-- Our tiles pick switches: B there works as in the command panel. -->
-      <app-battle-team-preview #ownTeam class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
-
-      <!-- Team preview: picking the Pokémon to bring, over everything under the header while the server asks. -->
-      <app-battle-team-select
-        #teamSelect
-        class="absolute top-[48px] left-0"
-        [sheet]="sheetButton()"
-        (sheetPressed)="pressSheet()"
-        (appBack)="teamSelect.undo()"
-      />
-
-      <!-- Watching live: both teams while the players pick theirs, over the field and the side column. -->
-      <app-battle-teams-overview class="absolute top-[48px] left-0" />
-
-      <!-- Always mounted and hidden while closed (removing it left its text painted on the console). -->
-      <app-battle-log class="absolute top-[48px] left-[582px]" [open]="logOpen()" (appBack)="closeLog()" />
-      <!-- The opponent's open team sheet over the whole field, likewise always mounted. -->
-      <app-battle-team-sheet class="absolute top-[48px] left-[12px]" [open]="sheetOpen()" (appBack)="closeSheet()" />
-
-      <!--
-        Until the server has the battle going (team preview, or its start), in place of an empty field. Battles
-        normally open once they have something to show (see BattleRooms): this covers one slow to.
-      -->
-      @if (joining()) {
-        <div role="status" class="absolute top-0 left-0 block h-[720px] w-[1280px] bg-header">
-          <p class="absolute top-[330px] left-0 block h-[60px] w-[1280px] text-center text-4xl leading-[60px] font-bold">Joining battle…</p>
-        </div>
-      }
-    </div>
+    <app-gl-battle-screen
+      [forfeitState]="forfeitState()"
+      [canRematch]="rematchView().can"
+      [rematchLabel]="rematchView().label"
+      [rematchNote]="rematchView().note"
+      [joining]="joining()"
+      (again)="watchAgain()"
+      (leaveReplay)="leaveReplay()"
+      (leaveLive)="leaveLive()"
+      (rematch)="rematch()"
+      (leave)="leave()"
+      (back)="back()"
+      (forfeit)="forfeit()"
+      (toggleTimer)="toggleTimer()"
+    />
   `,
 })
 export class BattleScreen {
   private readonly router = inject(Router);
   protected readonly store = inject(BattleStore);
-  private readonly spectatorControls = viewChild(SpectatorControls);
-  private readonly controls = viewChild(BattleControls);
-  private readonly ownTeam = viewChild<BattleTeamPreview>('ownTeam');
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
@@ -205,18 +123,6 @@ export class BattleScreen {
   protected readonly forfeitState = signal<ForfeitState>('idle');
   private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly logOpen = signal(false);
-  /** Where focus was when the log or the team sheet opened (they take it), to give it back on closing. */
-  private focusBeforeLog: HTMLElement | null = null;
-
-  protected readonly sheetOpen = signal(false);
-  /** What ZL does: shows the opponent's open team sheet once it's here, or agrees to them while offered. */
-  protected readonly sheetButton = computed((): SheetButton | null => {
-    if (this.store.teamSheets().p2) return 'sheet';
-    const offer = this.store.sheetOffer();
-    return offer === 'offered' ? 'accept' : offer === 'accepted' ? 'waiting' : null;
-  });
-
   constructor() {
     // After a ladder match or an accepted challenge: the real battle in its server room. From the list
     // of live battles: that battle, as a spectator.
@@ -235,8 +141,6 @@ export class BattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.forfeit()),
-      this.navigation.registerButton('buttonZL', () => this.pressSheet()),
-      this.navigation.registerButton('buttonZR', () => this.toggleLog()),
       this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
     ];
     inject(DestroyRef).onDestroy(() => {
@@ -251,8 +155,6 @@ export class BattleScreen {
     this.liveRoom.set(roomId);
     this.rematchAsked.set(false);
     this.cancelForfeit();
-    // A new game (a rematch, the next of a set) brings its own team sheet.
-    if (this.sheetOpen()) this.closeSheet();
     this.store.start(new ShowdownBattleConnection(this.rooms, roomId, this.login.userId()));
   }
 
@@ -279,30 +181,14 @@ export class BattleScreen {
   }
 
   /**
-   * B: takes back the choices sent while the opponent is still choosing, or steps back while choosing.
-   * At the end, it withdraws the rematch waiting for an answer. Watching live, it leaves the team
-   * tiles for the way out.
+   * B (from the canvas screen, with nothing of its own to close): takes back the choices sent while
+   * the opponent is still choosing, or steps back while choosing. At the end, it withdraws the
+   * rematch waiting for an answer.
    */
   protected back(): void {
-    if (this.store.spectating()) {
-      this.spectatorControls()?.focusLeave();
-      return;
-    }
     if (this.store.result()) this.challenges.cancelChallenge();
     else if (this.store.canUndo()) this.store.undo();
     else this.choices.back();
-  }
-
-  /**
-   * B on the opponent's tiles: back to the command panel's first choice (the first move), or to the
-   * first Pokémon that can come in on a forced switch. Watching live, to the way out.
-   */
-  protected leaveOpponentTeam(): void {
-    if (this.store.spectating()) {
-      this.spectatorControls()?.focusLeave();
-      return;
-    }
-    if (!this.controls()?.focusFirst()) this.ownTeam()?.focusFirstSwitch();
   }
 
   /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */
@@ -344,54 +230,6 @@ export class BattleScreen {
     if (!this.store.canToggleTimer() || this.store.result()) return false;
     this.store.toggleTimer();
     return true;
-  }
-
-  /** ZR or the button: shows the log (which takes focus) or hides it. */
-  protected toggleLog(): boolean {
-    if (this.logOpen()) {
-      this.closeLog();
-    } else {
-      if (this.sheetOpen()) this.closeSheet();
-      this.focusBeforeLog = this.navigation.focused();
-      this.logOpen.set(true);
-    }
-    return true;
-  }
-
-  /** ZL or the opponent's card's button: agrees to open team sheets, or shows or hides the opponent's. */
-  protected pressSheet(): boolean {
-    const button = this.sheetButton();
-    if (button === 'accept') this.store.acceptTeamSheets();
-    else if (button === 'sheet') this.toggleSheet();
-    return button !== null;
-  }
-
-  /** Shows the opponent's team sheet (which takes focus) or hides it. */
-  private toggleSheet(): boolean {
-    if (this.sheetOpen()) {
-      this.closeSheet();
-    } else {
-      if (this.logOpen()) this.closeLog();
-      this.focusBeforeLog = this.navigation.focused();
-      this.sheetOpen.set(true);
-    }
-    return true;
-  }
-
-  /** Hides the team sheet, giving focus back to where it was if that control is still there. */
-  protected closeSheet(): void {
-    this.sheetOpen.set(false);
-    const previous = this.focusBeforeLog;
-    this.focusBeforeLog = null;
-    if (previous?.isConnected) this.navigation.focus(previous);
-  }
-
-  /** Hides the log, giving focus back to where it was if that control is still there. */
-  protected closeLog(): void {
-    this.logOpen.set(false);
-    const previous = this.focusBeforeLog;
-    this.focusBeforeLog = null;
-    if (previous?.isConnected) this.navigation.focus(previous);
   }
 
   /** The same replay again, from the start. */

@@ -19,9 +19,6 @@ const TARGET_LABELS: Record<string, string> = {
 /** Move targets the player picks in doubles; every other kind hits fixed Pokémon (itself, all foes…). */
 const CHOSEN_TARGETS = ['normal', 'any', 'adjacentFoe', 'adjacentAlly', 'adjacentAllyOrSelf'];
 
-/** Marks the team tiles on the right that switch a Pokémon in, with its switch number (see BattleTeamPreview). */
-export const SWITCH_ATTRIBUTE = 'data-switch';
-
 export interface TargetOption {
   /** Showdown's target number: 1, 2 for the foes' slots; -1, -2 for the player's. */
   target: number;

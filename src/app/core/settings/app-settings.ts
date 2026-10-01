@@ -9,7 +9,7 @@ export interface Theme {
   name: string;
 }
 
-/** The colour themes, in the order Settings steps through them. Their colours are in styles.css. */
+/** The colour themes, in the order Settings steps through them. Their colours are in GlTheme. */
 export const THEMES: readonly Theme[] = [
   { id: 'zafiro', name: 'Sapphire' },
   { id: 'noche', name: 'Night' },
@@ -44,31 +44,18 @@ const DEFAULTS: Settings = {
   autoLogin: false,
 };
 
-/**
- * The player's settings, kept on the device. The theme is a class on `<body>` that redefines the
- * palette's variables: on Brewser, variables declared on the root element never change after load,
- * while ones redefined on `<body>` do (test V1, 2026-09-30).
- */
+/** The player's settings, kept on the device. The screens read the theme's palette from GlTheme. */
 @Service()
 export class AppSettings {
   private readonly settingsSignal = signal<Settings>(loadSettings());
 
   readonly settings = this.settingsSignal.asReadonly();
 
-  constructor() {
-    applyTheme(this.settingsSignal().theme);
-  }
-
   set<K extends keyof Settings>(key: K, value: Settings[K]): void {
     if (this.settingsSignal()[key] === value) return;
     this.settingsSignal.update((settings) => ({ ...settings, [key]: value }));
     writeJson(STORAGE_KEY, this.settingsSignal());
-    if (key === 'theme') applyTheme(value as ThemeId);
   }
-}
-
-function applyTheme(theme: ThemeId): void {
-  document.body.className = `theme-${theme}`;
 }
 
 /** Stored settings over the defaults; values the app no longer offers go back to theirs. */

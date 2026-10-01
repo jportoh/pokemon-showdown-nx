@@ -44,11 +44,11 @@ example Chrome started with `--disable-web-security`. The Brewser console doesn'
 
 ## Building for Brewser
 
-The console runs a custom engine, not Chrome. It runs every script as a classic script (no ES modules)
-and has a limited CSS engine (no `@layer`, no escaped class selectors, no `oklch()`, and more).
-`scripts/build-brewser.mjs` post-processes the normal Angular build so it can run there. It re-bundles
-the app into a single classic `app.js`, lowers Tailwind v4's CSS, and adds a few runtime polyfills and
-patches.
+The console runs a custom engine, not Chrome. It runs every script as a classic script (no ES modules),
+and its HTML/CSS layout is fragile and slow. So the whole app is drawn with WebGL on one 1280×720 canvas
+(`GlStage`), and the page holds nothing else. `scripts/build-brewser.mjs` post-processes the normal
+Angular build so it can run there: it re-bundles the app into a single classic `app.js` and adds a
+few runtime polyfills and patches.
 
 ```bash
 npm run build:brewser        # → dist/pokemon-showdown-brewser/brewser.zip
@@ -64,12 +64,11 @@ allow-list must include:
 
 ### Things to keep in mind on Brewser
 
-- The app is a fixed 1280×720 stage with fixed pixel sizes. Avoid percentage or flex-grown sizes
-  around dynamic content.
-- Use `p-*` padding shorthands. Brewser ignores padding longhands such as `px-*`.
-- Add the `appScrollRegion` directive to every scrollable region, or its content stays painted after
-  navigation.
-- Don't use shadows or gradients, and keep DOM counts small, for performance.
+- Every screen is a scene drawn on the canvas, built from the kit in `src/app/core/gl/` (focus,
+  text, retro boxes and buttons, lists, pickers, the on-screen keyboard). Don't add DOM UI.
+- The d-pad, A and B reach the top scene through `KeyboardNavigation.captureInput`; L, R, ZL, ZR and
+  R3 through `registerButton`.
+- The controller is read every frame: Brewser's timers fire only 20 to 25 times a second.
 
 ## Game data
 
