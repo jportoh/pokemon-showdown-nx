@@ -1,23 +1,23 @@
-// Full class names so Tailwind can detect them. All pass AA contrast on the dark chat background.
+// Tailwind's 400 shades: all pass AA contrast on the dark chat background.
 const USERNAME_COLORS = [
-  'text-pink-400',
-  'text-rose-400',
-  'text-orange-400',
-  'text-amber-400',
-  'text-lime-400',
-  'text-green-400',
-  'text-emerald-400',
-  'text-teal-400',
-  'text-cyan-400',
-  'text-sky-400',
-  'text-blue-400',
-  'text-indigo-400',
-  'text-violet-400',
-  'text-purple-400',
-  'text-fuchsia-400',
+  '#f472b6', // pink
+  '#fb7185', // rose
+  '#fb923c', // orange
+  '#fbbf24', // amber
+  '#a3e635', // lime
+  '#4ade80', // green
+  '#34d399', // emerald
+  '#2dd4bf', // teal
+  '#22d3ee', // cyan
+  '#38bdf8', // sky
+  '#60a5fa', // blue
+  '#818cf8', // indigo
+  '#a78bfa', // violet
+  '#c084fc', // purple
+  '#e879f9', // fuchsia
 ];
 
-/** Returns a stable Tailwind text color class for a username, so each user keeps the same color. */
+/** A stable colour (hex) for a username, so each user keeps the same one. */
 export function usernameColor(name: string): string {
   let hash = 0;
   for (const char of name.toLowerCase()) {

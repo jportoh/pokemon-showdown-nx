@@ -7,7 +7,9 @@ import { AVATAR_ALIASES } from '@features/trainer-card/data/avatar-aliases';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRating, LadderRatings } from '@features/trainer-card/state/ladder-ratings';
-import { BOX, INNER_X, INNER_Y } from './login-view';
+import { PlayerDetails } from '@features/trainer-card/state/player-details';
+import { toId } from '@shared/utils/to-id';
+import { BOX, INNER_X, INNER_Y } from '@features/home/gl/login-view';
 
 /** Ladder rows the card has room for: the best ones. */
 const SHOWN_RATINGS = 4;
@@ -23,8 +25,9 @@ export const CARD_CLOSE_ID = 'card-close';
 export const CARD_AVATAR_ID = 'card-avatar';
 
 /**
- * The player's own Trainer Card, Gen 3 style, as the DOM's TrainerCard: the avatar in a frame (A
- * opens the avatar picker over the card), the name and totals across every ladder (battles, wins and
+ * A Trainer Card, Gen 3 style, as the DOM's TrainerCard: the player's own, or someone else's (a
+ * challenger's, by name: their avatar from the server, and no picker). The avatar in a frame (our own:
+ * A opens the avatar picker over the card), the name and totals across every ladder (battles, wins and
  * losses, win rate), and the best ladder ratings, loaded each time it's shown. B or Close closes it
  * (L too, from the menu). The picker shows Showdown's avatars 10x4 a page: the d-pad turns the page
  * past its top or bottom row, L/R turn pages too, A picks, B goes back to the card.
@@ -33,6 +36,7 @@ export class TrainerCardView {
   private readonly login = inject(ShowdownLogin);
   private readonly formats = inject(ShowdownFormats);
   private readonly ladder = inject(LadderRatings);
+  private readonly playerDetails = inject(PlayerDetails);
 
   /** The avatar picker is shown over the card. */
   readonly picking = signal(false);
@@ -40,9 +44,26 @@ export class TrainerCardView {
 
   constructor(private readonly focus: CanvasFocus) {}
 
+  /** Whose card: someone else's by name, or the player's own (null). */
+  private readonly player = signal<string | null>(null);
+  private readonly userId = computed(() => toId(this.player() ?? '') || this.login.userId());
+  private readonly isSelf = computed(() => this.userId() === this.login.userId());
+  /** The details loaded for someone else (none while another player's are still there). */
+  private readonly others = computed(() => {
+    const state = this.playerDetails.state();
+    return state.userId === this.userId() ? state : null;
+  });
+  private readonly name = computed(() => (this.isSelf() ? this.login.state().name : this.others()?.name || (this.player() ?? '')));
+  /** The avatar to show; empty while someone else's isn't known yet. */
+  private readonly avatar = computed(() => {
+    if (this.isSelf()) return this.login.state().avatar;
+    const others = this.others();
+    return others?.status === 'loaded' ? others.avatar : '';
+  });
+
   private readonly ratings = computed(() => {
     const state = this.ladder.state();
-    return state.userId === this.login.userId() ? state.ratings : [];
+    return state.userId === this.userId() ? state.ratings : [];
   });
 
   private readonly details = computed(() => {
@@ -52,7 +73,7 @@ export class TrainerCardView {
     const losses = sum(ratings, (r) => r.losses);
     const ties = sum(ratings, (r) => r.ties);
     return [
-      { label: 'Name', value: this.login.state().name },
+      { label: 'Name', value: this.name() },
       { label: 'Battles', value: pending ?? String(wins + losses + ties) },
       { label: 'Wins – Losses', value: pending ?? `${wins} – ${losses}` },
       { label: 'Win rate', value: pending ?? (wins + losses === 0 ? '—' : `${Math.round((wins / (wins + losses)) * 100)}%`) },
@@ -61,10 +82,12 @@ export class TrainerCardView {
 
   private readonly current = computed(() => AVATAR_ALIASES[this.login.state().avatar] ?? this.login.state().avatar);
 
-  /** Showing: the ratings loaded again, Close focused. */
-  open(): void {
+  /** Showing someone's card (our own: null): their ratings (and details) loaded again, Close focused. */
+  open(player: string | null = null): void {
+    this.player.set(player);
     this.picking.set(false);
-    this.ladder.load(this.login.userId());
+    this.ladder.load(this.userId());
+    if (!this.isSelf()) this.playerDetails.load(player ?? this.userId());
     this.focus.focus(CARD_CLOSE_ID);
   }
 
@@ -105,9 +128,10 @@ export class TrainerCardView {
       ctx.renderer.rect(x, y + 36, 740, 2, { fill: p.select });
     });
 
-    // The avatar, twice its 80px, in a frame that's the button to change it.
+    // The avatar, twice its 80px, in a frame that's the button to change it (on our own card).
     const frame = { x: INNER_X + 826, y: INNER_Y + 112, w: 208, h: 208 };
-    const focused = ctx.focus.control({
+    const self = this.isSelf();
+    const focused = self && ctx.focus.control({
       id: CARD_AVATAR_ID,
       ...frame,
       accept: () => {
@@ -118,10 +142,12 @@ export class TrainerCardView {
       },
     });
     ctx.renderer.rect(frame.x, frame.y, frame.w, frame.h, { fill: focused ? p.select : p.bg, stroke: p.outline, radius: 8, border: 4 });
-    const avatar = ctx.images.pixelArt(avatarUrl(this.login.state().avatar));
-    if (avatar) ctx.renderer.rect(frame.x + 24, frame.y + 8, 160, 160, { fill: [1, 1, 1, 1], texture: avatar });
-    ctx.renderer.rect(frame.x + 12, frame.y + 172, 184, 28, { fill: p.select, radius: 3 });
-    label(ctx, 'Change avatar', frame.x + 104, frame.y + 186, { size: 18, bold: true }, p.ink, { align: 'center' });
+    const avatar = this.avatar() ? ctx.images.pixelArt(avatarUrl(this.avatar())) : null;
+    if (avatar) ctx.renderer.rect(frame.x + 24, frame.y + (self ? 8 : 24), 160, 160, { fill: [1, 1, 1, 1], texture: avatar });
+    if (self) {
+      ctx.renderer.rect(frame.x + 12, frame.y + 172, 184, 28, { fill: p.select, radius: 3 });
+      label(ctx, 'Change avatar', frame.x + 104, frame.y + 186, { size: 18, bold: true }, p.ink, { align: 'center' });
+    }
     if (focused) focusRing(ctx, frame, 8);
 
     ctx.renderer.rect(x, INNER_Y + 336, 986, 3, { fill: p.outline });

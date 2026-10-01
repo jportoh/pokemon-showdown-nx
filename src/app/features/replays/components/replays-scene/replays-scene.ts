@@ -6,7 +6,7 @@ import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-co
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
 import { ReplayGame } from '@features/replays/data/replay-game';
-import { PickerOption } from '@shared/components/option-picker';
+import { PickerOption } from '@core/gl/ui/option-picker';
 import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
 import { RowLookup, RowLookups } from '@shared/utils/row-lookups';
 

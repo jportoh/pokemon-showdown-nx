@@ -15,7 +15,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
 import { LoginView, RegisterView } from '@features/home/gl/login-view';
-import { TrainerCardView } from '@features/home/gl/trainer-card-view';
+import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';

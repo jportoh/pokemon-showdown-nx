@@ -5,7 +5,7 @@ import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { LiveBattle, LiveBattles } from '@features/live/state/live-battles';
 import { PlayerRatings } from '@features/live/state/player-ratings';
-import { PickerOption } from '@shared/components/option-picker';
+import { PickerOption } from '@core/gl/ui/option-picker';
 import { PLAYABLE_FORMATS, RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { RowLookups } from '@shared/utils/row-lookups';
 

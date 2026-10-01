@@ -245,3 +245,14 @@ export class ListView {
     if (end < count) label(ctx, '▼', x + width - 14, y + this.visible * (this.rowHeight + this.gap) + 4, { size: 14 }, p.muted, { align: 'center' });
   }
 }
+
+/**
+ * Text wrapped into lines `lineHeight` apart from `top` (the first line's top), at most `maxLines`
+ * (the last one cut with an ellipsis when there's more).
+ */
+export function paragraph(ctx: UiContext, value: string, x: number, top: number, maxWidth: number, lineHeight: number, style: TextStyle, color: Rgba, maxLines = Infinity): void {
+  const lines = ctx.text.wrap(value, style, maxWidth);
+  const shown = lines.slice(0, maxLines);
+  if (lines.length > maxLines) shown[shown.length - 1] = ctx.text.fit(`${shown[shown.length - 1]} ${lines.slice(maxLines).join(' ')}`, style, maxWidth);
+  shown.forEach((line, i) => label(ctx, line, x, top + i * lineHeight + lineHeight / 2, style, color));
+}

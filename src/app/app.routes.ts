@@ -17,6 +17,14 @@ export const routes: Routes = [
       import('@features/settings/components/settings-scene/settings-scene').then((c) => c.SettingsScene),
   },
   {
+    path: 'play',
+    loadComponent: () => import('@features/play/components/play-scene/play-scene').then((c) => c.PlayScene),
+  },
+  {
+    path: 'chats',
+    loadComponent: () => import('@features/lobby/components/chats-scene/chats-scene').then((c) => c.ChatsScene),
+  },
+  {
     // Opened from Settings, so B goes back there.
     path: 'replays',
     loadComponent: () => import('@features/replays/components/replays-scene/replays-scene').then((c) => c.ReplaysScene),
@@ -47,22 +55,12 @@ export const routes: Routes = [
     component: MainLayout,
     children: [
       {
-        path: 'play',
-        data: { page: { title: 'Battle', icon: 'battle' } satisfies PageInfo },
-        loadComponent: () => import('@features/play/components/play-page/play-page').then((c) => c.PlayPage),
-      },
-      {
         path: 'teambuilder',
         data: { page: { title: 'Teambuilder', icon: 'teambuilder' } satisfies PageInfo },
         loadComponent: () =>
           import('@features/teambuilder/components/teambuilder-page/teambuilder-page').then(
             (c) => c.TeambuilderPage,
           ),
-      },
-      {
-        path: 'chats',
-        data: { page: { title: 'Chats', icon: 'chats' } satisfies PageInfo },
-        loadComponent: () => import('@features/lobby/components/chats-page/chats-page').then((c) => c.ChatsPage),
       },
     ],
   },

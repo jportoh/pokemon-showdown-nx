@@ -1,9 +1,19 @@
 import { CanvasAction } from '@core/input/keyboard-navigation';
-import { PickerOption } from '@shared/components/option-picker';
 import { CanvasFocus } from '../canvas-ui';
 import { ImagePriority } from '../sprite-bitmaps';
 import { Box, UiContext, button, focusRing, label, modal } from './retro-kit';
 import { maskOf } from './masks';
+
+/** One choice in the picker. */
+export interface PickerOption {
+  id: string;
+  title: string;
+  detail: string;
+  /** The heading it's listed under; options of a category come together. */
+  category?: string;
+  /** Sprite file names shown on its row (a team's Pokémon). */
+  sprites?: readonly string[];
+}
 
 type PickerRow = { kind: 'heading'; text: string } | { kind: 'option'; option: PickerOption };
 
@@ -65,6 +75,13 @@ export class OptionPickerView {
     this.returnFocus = this.focus.focused;
     const first = this.rows.find((row) => row.kind === 'option');
     this.focus.focus(this.optionId(selected && this.rowIndex(selected) >= 0 ? selected : first?.kind === 'option' ? first.option.id : ''));
+  }
+
+  /** Shown again after something covered it (a challenge): the focus back on the option picked. */
+  focusSelected(): void {
+    const index = this.rowIndex(this.selected ?? '');
+    const row = this.rows[index >= 0 ? index : this.optionIndexes()[0]];
+    if (row?.kind === 'option') this.reveal(this.rows.indexOf(row));
   }
 
   close(): void {

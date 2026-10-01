@@ -1,13 +1,12 @@
 import { DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { PickerOption } from '@shared/components/option-picker';
 import { CanvasFocus, focusInput } from '../canvas-ui';
 import { withAlpha } from '../gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '../gl-stage';
 import { GlTheme } from './gl-theme';
 import { maskOf } from './masks';
-import { OptionPickerView } from './option-picker';
+import { OptionPickerView, PickerOption } from './option-picker';
 import { PageBar, PageBarInfo } from './page-bar';
 import { ListView, UiContext, button, focusRing, label, retroBox } from './retro-kit';
 
