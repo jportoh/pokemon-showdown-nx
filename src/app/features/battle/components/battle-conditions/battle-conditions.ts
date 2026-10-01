@@ -15,14 +15,14 @@ const MAX_PIP_WIDTH = 10;
 /** Longer names get their short form ("Psychic" for Psychic Terrain) to fit a chip. */
 const MAX_NAME_CHARS = 11;
 
-interface Pip {
+export interface Pip {
   left: number;
   width: number;
   /** A turn still to come (or a layer). */
   on: boolean;
 }
 
-interface Chip {
+export interface Chip {
   name: string;
   color: string;
   left: number;
@@ -102,7 +102,7 @@ export class BattleConditions {
 }
 
 /** Up to three chips; with more conditions, two and a "+N" chip for the rest. */
-function toChips(conditions: readonly FieldCondition[], turn: number): Chip[] {
+export function toChips(conditions: readonly FieldCondition[], turn: number): Chip[] {
   const fits = conditions.length <= MAX_CHIPS;
   const shown = fits ? conditions : conditions.slice(0, MAX_CHIPS - 1);
   const chips = shown.map((condition, i) => toChip(condition, turn, i));

@@ -1,8 +1,12 @@
 import { COLORS, ICONS, PixelIconName, greyed } from '@shared/components/pixel-icon';
 import { GlRenderer, Texture } from './gl-renderer';
 
-/** Texts kept at once: the menu needs a few dozen, the FPS line makes a new one every half second. */
-const MAX_TEXTS = 200;
+/** Texts kept at once: a whole battle screen shows a few hundred (names, chips, the log's lines). */
+const MAX_TEXTS = 600;
+/** Widths measured, kept for fitting and wrapping. */
+const MAX_WIDTHS = 2000;
+/** Space either side of the text inside its texture. */
+export const TEXT_PAD = 2;
 
 /** Text is drawn white and tinted when drawn, so one texture serves every colour. */
 export interface TextStyle {
@@ -17,6 +21,7 @@ export interface TextStyle {
  */
 export class TextTextures {
   private readonly cache = new Map<string, Texture>();
+  private readonly widths = new Map<string, number>();
   private readonly canvas = document.createElement('canvas');
   private readonly context: CanvasRenderingContext2D | null = this.canvas.getContext('2d');
   /** Told how long each new text took to draw and upload (diagnostics). */
@@ -51,9 +56,9 @@ export class TextTextures {
     }
 
     const started = performance.now();
-    const font = `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`;
+    const font = this.font(style);
     context.font = font;
-    const width = Math.max(1, Math.ceil(context.measureText(text).width) + 4);
+    const width = Math.max(1, Math.ceil(context.measureText(text).width) + TEXT_PAD * 2 * this.scale);
     const height = Math.ceil(style.size * 1.4 * this.scale);
     this.canvas.width = width;
     this.canvas.height = height;
@@ -62,16 +67,71 @@ export class TextTextures {
     context.textBaseline = 'middle';
     context.fillStyle = '#ffffff';
     context.clearRect(0, 0, width, height);
-    context.fillText(text, 2, height / 2);
+    context.fillText(text, TEXT_PAD * this.scale, height / 2);
     const texture = this.renderer.textureFromSource(this.canvas, width / this.scale, height / this.scale, true);
     this.cache.set(key, texture);
     this.onUpload?.(performance.now() - started);
     return texture;
   }
 
+  /** How wide `text` is, in stage pixels, without drawing it. */
+  measure(text: string, style: TextStyle): number {
+    const context = this.context;
+    if (!context || !text) return 0;
+    const key = `${style.size}|${style.bold ? 1 : 0}|${text}`;
+    const known = this.widths.get(key);
+    if (known !== undefined) return known;
+    context.font = this.font(style);
+    const width = context.measureText(text).width / this.scale;
+    if (this.widths.size >= MAX_WIDTHS) this.widths.clear();
+    this.widths.set(key, width);
+    return width;
+  }
+
+  /** `text`, cut with an ellipsis to fit `maxWidth` stage pixels. */
+  fit(text: string, style: TextStyle, maxWidth: number): string {
+    if (this.measure(text, style) <= maxWidth) return text;
+    let low = 0;
+    let high = text.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (this.measure(`${text.slice(0, mid).trimEnd()}…`, style) <= maxWidth) low = mid;
+      else high = mid - 1;
+    }
+    return `${text.slice(0, low).trimEnd()}…`;
+  }
+
+  /** `text` broken into lines that fit `maxWidth`, at spaces (and inside words too long for a line). */
+  wrap(text: string, style: TextStyle, maxWidth: number): string[] {
+    const lines: string[] = [];
+    let line = '';
+    for (const word of text.split(' ')) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (this.measure(candidate, style) <= maxWidth) {
+        line = candidate;
+        continue;
+      }
+      if (line) lines.push(line);
+      line = word;
+      // A word wider than the line: cut it where it fills one.
+      while (this.measure(line, style) > maxWidth && line.length > 1) {
+        let cut = line.length - 1;
+        while (cut > 1 && this.measure(line.slice(0, cut), style) > maxWidth) cut--;
+        lines.push(line.slice(0, cut));
+        line = line.slice(cut);
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
   dispose(): void {
     for (const texture of this.cache.values()) this.renderer.deleteTexture(texture);
     this.cache.clear();
+  }
+
+  private font(style: TextStyle): string {
+    return `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`;
   }
 }
 

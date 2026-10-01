@@ -2,15 +2,14 @@ import { GlRenderer, Texture } from '@features/gl-home/gl/gl-renderer';
 import { spriteUrl } from '@shared/components/pokemon-sprite';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 
-/** Textures made in one frame at most: a field redrawn from scratch (a new layout) spreads its uploads. */
+/** Textures made in one frame at most: a screen drawn from scratch spreads its uploads. */
 const UPLOADS_PER_FRAME = 2;
 
 /**
- * Showdown's sprites as WebGL textures, made from the images SpriteBitmaps decodes once for the whole
- * battle screen (so the DOM tiles don't decode them again). On the console any image becomes a
- * texture (probe w1: Brewser doesn't apply CORS); desktop browsers refuse them, since Showdown's
- * server sends no CORS headers. A back sprite that doesn't exist (some new Megas) falls back to the
- * front one, as PokemonSprite does.
+ * The battle screen's images (Showdown's sprites, item icons) as WebGL textures, made from the ones
+ * SpriteBitmaps decodes once. On the console any image becomes a texture (probe w1: Brewser doesn't
+ * apply CORS); desktop browsers refuse Showdown's sprites, whose server sends no CORS headers. A back
+ * sprite that doesn't exist (some new Megas) falls back to the front one, as PokemonSprite does.
  */
 export class GlSprites {
   private readonly textures = new Map<string, Texture>();
@@ -28,26 +27,25 @@ export class GlSprites {
     this.uploadsLeft = UPLOADS_PER_FRAME;
   }
 
-  /** The sprite's texture once it's there; null meanwhile (asking for it puts it first in line). */
+  /** A sprite on the field: first in line. Null until it's there. */
   get(sprite: string, back: boolean): Texture | null {
+    return this.sprite(sprite, back, ImagePriority.Field);
+  }
+
+  /** A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. */
+  sprite(sprite: string, back: boolean, priority: ImagePriority): Texture | null {
     if (!sprite) return null;
     const url = spriteUrl(sprite, back);
     const texture = this.textures.get(url);
     if (texture) return texture;
-    this.bitmaps.request(url, ImagePriority.Field);
-    if (back && this.bitmaps.failed(url)) return this.get(sprite, false);
-    const decoded = this.bitmaps.get(url);
-    if (!decoded || this.uploadsLeft <= 0) return null;
-    this.uploadsLeft--;
-    try {
-      const started = performance.now();
-      const made = this.renderer.textureFromSource(decoded.image, decoded.width, decoded.height, false);
-      this.onUpload?.(performance.now() - started);
-      this.textures.set(url, made);
-      return made;
-    } catch {
-      return null;
-    }
+    if (back && this.bitmaps.failed(url)) return this.sprite(sprite, false, priority);
+    return this.upload(url, priority, false);
+  }
+
+  /** Any other image of the screen (an item's icon), smoothed when scaled. */
+  image(url: string, priority: ImagePriority = ImagePriority.Screen): Texture | null {
+    if (!url) return null;
+    return this.textures.get(url) ?? this.upload(url, priority, true);
   }
 
   /** Still to come (a send-out waits for it, up to a point). */
@@ -59,13 +57,25 @@ export class GlSprites {
     return !this.bitmaps.failed(url);
   }
 
-  /** Asks for it ahead (team preview's Pokémon), behind what the screen shows. */
-  preload(sprite: string, back: boolean): void {
-    if (sprite) this.bitmaps.request(spriteUrl(sprite, back), ImagePriority.Ahead);
-  }
-
   dispose(): void {
     for (const texture of this.textures.values()) this.renderer.deleteTexture(texture);
     this.textures.clear();
+  }
+
+  /** The texture once the image is decoded and this frame still has room for an upload. */
+  private upload(url: string, priority: ImagePriority, smooth: boolean): Texture | null {
+    this.bitmaps.request(url, priority);
+    const decoded = this.bitmaps.get(url);
+    if (!decoded || this.uploadsLeft <= 0) return null;
+    this.uploadsLeft--;
+    try {
+      const started = performance.now();
+      const made = this.renderer.textureFromSource(decoded.image, decoded.width, decoded.height, smooth);
+      this.onUpload?.(performance.now() - started);
+      this.textures.set(url, made);
+      return made;
+    } catch {
+      return null;
+    }
   }
 }

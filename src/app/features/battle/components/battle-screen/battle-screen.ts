@@ -3,9 +3,8 @@ import { Router } from '@angular/router';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleConditions } from '@features/battle/components/battle-conditions/battle-conditions';
 import { BattleControls } from '@features/battle/components/battle-controls/battle-controls';
-import { BattleField } from '@features/battle/components/battle-field/battle-field';
 import { GlBattleField } from '@features/battle/components/gl-battle-field/gl-battle-field';
-import { GlExperiment } from '@features/battle/gl/gl-experiment';
+import { GlBattleScreen } from '@features/battle/components/gl-battle-screen/gl-battle-screen';
 import { BattleHeader, ForfeitState } from '@features/battle/components/battle-header/battle-header';
 import { BattleLog } from '@features/battle/components/battle-log/battle-log';
 import { BattleTeamPreview, SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
@@ -51,8 +50,8 @@ const FORFEIT_CONFIRM_MS = 4000;
     BackAction,
     BattleConditions,
     BattleControls,
-    BattleField,
     GlBattleField,
+    GlBattleScreen,
     BattleHeader,
     BattleLog,
     BattleTeamPreview,
@@ -64,9 +63,11 @@ const FORFEIT_CONFIRM_MS = 4000;
   ],
   host: { class: 'block h-[720px] w-[1280px] bg-header' },
   template: `
+    @if (store.watching()) {
+      <!-- Watching (replays, live battles): the whole screen is one WebGL canvas. -->
+      <app-gl-battle-screen (again)="watchAgain()" (leaveReplay)="leaveReplay()" (leaveLive)="leaveLive()" />
+    } @else {
     <div class="relative h-[720px] w-[1280px]">
-      <!-- EXPERIMENT (feat/webgl-probe): everything but the WebGL field hides in its test layouts (L). -->
-      <div class="block" [class.hidden]="chromeHidden()">
       <app-battle-header
         class="absolute top-0 left-0"
         [forfeitState]="forfeitState()"
@@ -76,26 +77,9 @@ const FORFEIT_CONFIRM_MS = 4000;
         (toggleTimer)="toggleTimer()"
       />
 
-      </div>
 
-      <!-- EXPERIMENT (feat/webgl-probe): the WebGL field (in its layout, L), or the DOM one (R switches while watching). -->
-      @if (glExperiment.glField()) {
-        @switch (glExperiment.layout()) {
-          @case ('full') {
-            <app-gl-battle-field class="absolute top-0 left-0" mode="full" />
-          }
-          @case ('canvas') {
-            <app-gl-battle-field class="absolute top-[48px] left-[12px]" mode="canvas" />
-          }
-          @default {
-            <app-gl-battle-field class="absolute top-[48px] left-[12px]" />
-          }
-        }
-      } @else {
-        <app-battle-field class="absolute top-[48px] left-[12px]" />
-      }
+      <app-gl-battle-field class="absolute top-[48px] left-[12px]" />
 
-      <div class="block" [class.hidden]="chromeHidden()">
 
       <div class="absolute top-[548px] left-[12px] h-[172px] w-[985px] bg-[#283040]">
         @if (store.replay()) {
@@ -123,7 +107,6 @@ const FORFEIT_CONFIRM_MS = 4000;
       <app-battle-conditions class="absolute top-[435px] left-[1003px]" of="p1" />
       <!-- Our tiles pick switches: B there works as in the command panel. -->
       <app-battle-team-preview #ownTeam class="absolute top-[520px] left-[1003px]" side="p1" (appBack)="back()" />
-      </div>
 
       <!-- Team preview: picking the Pokémon to bring, over everything under the header while the server asks. -->
       <app-battle-team-select
@@ -152,6 +135,7 @@ const FORFEIT_CONFIRM_MS = 4000;
         </div>
       }
     </div>
+    }
   `,
 })
 export class BattleScreen {
@@ -163,7 +147,6 @@ export class BattleScreen {
   protected readonly choices = inject(BattleChoices);
   private readonly session = inject(BattleSession);
   private readonly navigation = inject(KeyboardNavigation);
-  protected readonly glExperiment = inject(GlExperiment);
   private readonly rooms = inject(BattleRooms);
   private readonly login = inject(ShowdownLogin);
   private readonly challenges = inject(ShowdownChallenges);
@@ -259,8 +242,8 @@ export class BattleScreen {
     });
 
     const unregister = [
-      this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera() || this.nextFieldLayout()),
-      this.navigation.registerButton('buttonR', () => this.forfeit() || this.switchField()),
+      this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
+      this.navigation.registerButton('buttonR', () => this.forfeit()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
       this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
@@ -332,24 +315,6 @@ export class BattleScreen {
   }
 
   /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */
-  /** EXPERIMENT (feat/webgl-probe): the battle screen's other parts hide in the WebGL field's test layouts. */
-  protected readonly chromeHidden = computed(() => this.glExperiment.glField() && this.glExperiment.layout() !== 'normal');
-
-  /** EXPERIMENT (feat/webgl-probe): watching, L steps the WebGL field through its layouts. */
-  private nextFieldLayout(): boolean {
-    if (!this.store.watching() || !this.glExperiment.glField()) return false;
-    const order = ['normal', 'canvas', 'full'] as const;
-    this.glExperiment.layout.update((layout) => order[(order.indexOf(layout) + 1) % order.length]);
-    return true;
-  }
-
-  /** EXPERIMENT (feat/webgl-probe): watching, R switches between the WebGL field and the DOM one. */
-  private switchField(): boolean {
-    if (!this.store.watching()) return false;
-    this.glExperiment.glField.update((gl) => !gl);
-    return true;
-  }
-
   private toggleMegaOrTera(): boolean {
     const choosingMove = this.choices.slot() !== null && !this.choices.pendingMove() && !this.choices.forceSwitch();
     if (!choosingMove) return false;

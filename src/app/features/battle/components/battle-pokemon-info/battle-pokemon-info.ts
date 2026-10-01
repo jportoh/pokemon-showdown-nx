@@ -146,114 +146,118 @@ export class BattlePokemonInfo {
   readonly inspected = input<InspectedMember | null>(null);
   readonly owner = input('');
 
-  protected readonly view = computed(() => {
-    const inspected = this.inspected();
-    if (!inspected) return { ...EMPTY_VIEW, label: 'Pokémon details: point at a Pokémon on the right' };
-    const { side, member, sheet } = inspected;
-    const seen = member.seen;
-    const species = seen?.species ?? member.species;
-    const info = speciesInfo(species);
-    const name = seen?.name ?? member.species;
-    const owner = this.owner();
+  protected readonly view = computed(() => pokemonInfoView(this.inspected(), this.owner()));
+}
 
-    const gender = seen?.gender || sheet?.gender;
-    const nature = sheet?.nature ?? '';
-    const subtitle = [seen ? `Lv ${seen.level}` : '', gender === 'M' ? '♂' : gender === 'F' ? '♀' : '', name !== species ? species : '', nature]
-      .filter(Boolean)
-      .join(' · ');
+/**
+ * What the Pokémon card shows of a team member (see BattlePokemonInfo), for the DOM card and the
+ * battle screen's canvas alike.
+ */
+export function pokemonInfoView(inspected: InspectedMember | null, owner: string) {
+  if (!inspected) return { ...EMPTY_VIEW, label: 'Pokémon details: point at a Pokémon on the right' };
+  const { side, member, sheet } = inspected;
+  const seen = member.seen;
+  const species = seen?.species ?? member.species;
+  const info = speciesInfo(species);
+  const name = seen?.name ?? member.species;
 
-    // Terastallized, it's of its Tera type only.
-    const typeNames = seen?.tera ? [seen.tera] : (info?.types ?? []);
-    const types = typeNames.map((type, i) => ({
-      text: seen?.tera ? `Tera ${type}` : type,
-      tera: !!seen?.tera,
-      left: 12 + i * (TYPE_WIDTH + 6),
-      width: seen?.tera ? 96 : TYPE_WIDTH,
-      color: typeColor(type) || '#374151',
-    }));
+  const gender = seen?.gender || sheet?.gender;
+  const nature = sheet?.nature ?? '';
+  const subtitle = [seen ? `Lv ${seen.level}` : '', gender === 'M' ? '♂' : gender === 'F' ? '♀' : '', name !== species ? species : '', nature]
+    .filter(Boolean)
+    .join(' · ');
 
-    const fraction = seen && !seen.fainted && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
-    const percent = seen?.fainted ? 0 : Math.max(1, Math.round(fraction * 100));
-    const hp = seen ? { width: Math.round(fraction * HP_BAR), color: barColor(fraction), text: `${percent}%` } : null;
-    const status = seen?.status && STATUS[seen.status] ? STATUS[seen.status] : null;
+  // Terastallized, it's of its Tera type only.
+  const typeNames = seen?.tera ? [seen.tera] : (info?.types ?? []);
+  const types = typeNames.map((type, i) => ({
+    text: seen?.tera ? `Tera ${type}` : type,
+    tera: !!seen?.tera,
+    left: 12 + i * (TYPE_WIDTH + 6),
+    width: seen?.tera ? 96 : TYPE_WIDTH,
+    color: typeColor(type) || '#374151',
+  }));
 
-    const boosts = member.active ? (seen?.boosts ?? {}) : {};
-    const otherBoosts = OTHER_BOOSTS.filter((b) => boosts[b.id]).map((b) => `${b.label} ${stageText(boosts[b.id])}`);
-    const where = seen?.fainted ? 'Fainted' : member.active ? 'On the field' : seen ? 'In the back' : 'Not sent out yet';
-    const note = [where, ...otherBoosts].join(' · ');
+  const fraction = seen && !seen.fainted && seen.maxHp > 0 ? seen.hp / seen.maxHp : 0;
+  const percent = seen?.fainted ? 0 : Math.max(1, Math.round(fraction * 100));
+  const hp = seen ? { width: Math.round(fraction * HP_BAR), color: barColor(fraction), text: `${percent}%` } : null;
+  const status = seen?.status && STATUS[seen.status] ? STATUS[seen.status] : null;
 
-    const stats = info
-      ? BASE_STATS.map((stat, i) => {
-          const value = info.baseStats[stat.id];
-          const stage = stat.id === 'hp' ? 0 : (boosts[stat.id] ?? 0);
-          return {
-            label: stat.label,
-            value,
-            top: STAT_TOP + i * STAT_ROW,
-            width: Math.max(2, Math.round((Math.min(value, MAX_STAT) / MAX_STAT) * STAT_BAR)),
-            color: statColor(value),
-            stage,
-            stageText: stage ? stageText(stage) : '',
-          };
-        })
-      : [];
+  const boosts = member.active ? (seen?.boosts ?? {}) : {};
+  const otherBoosts = OTHER_BOOSTS.filter((b) => boosts[b.id]).map((b) => `${b.label} ${stageText(boosts[b.id])}`);
+  const where = seen?.fainted ? 'Fainted' : member.active ? 'On the field' : seen ? 'In the back' : 'Not sent out yet';
+  const note = [where, ...otherBoosts].join(' · ');
 
-    const lost = seen?.lostItem ?? '';
-    // The sheet's item until the battle shows it used up or knocked off.
-    const itemName = seen?.item || (lost ? '' : (sheet?.item ?? ''));
-    const item = itemName || (lost ? `No item (${lost} gone)` : sheet ? 'No item' : 'Item not revealed');
+  const stats = info
+    ? BASE_STATS.map((stat, i) => {
+        const value = info.baseStats[stat.id];
+        const stage = stat.id === 'hp' ? 0 : (boosts[stat.id] ?? 0);
+        return {
+          label: stat.label,
+          value,
+          top: STAT_TOP + i * STAT_ROW,
+          width: Math.max(2, Math.round((Math.min(value, MAX_STAT) / MAX_STAT) * STAT_BAR)),
+          color: statColor(value),
+          stage,
+          stageText: stage ? stageText(stage) : '',
+        };
+      })
+    : [];
 
-    const possible = info?.abilities ?? [];
-    const known = seen?.ability || sheet?.ability;
-    const abilityKnown = !!known || possible.length === 1;
-    const ability = known || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
+  const lost = seen?.lostItem ?? '';
+  // The sheet's item until the battle shows it used up or knocked off.
+  const itemName = seen?.item || (lost ? '' : (sheet?.item ?? ''));
+  const item = itemName || (lost ? `No item (${lost} gone)` : sheet ? 'No item' : 'Item not revealed');
 
-    const moves = Array.from({ length: MOVE_SLOTS }, (_, i) => {
-      // The sheet's moves in its order; without one, those used so far.
-      const move = sheet ? sheet.moves[i] : seen?.moves[i];
-      const top = MOVE_TOP + i * MOVE_ROW;
-      if (!move) return { name: sheet ? '—' : 'Move not revealed', known: false, top, color: '#111827' };
-      const data = moveInfo(move);
-      return { name: data?.name ?? move, known: true, top, color: typeColor(data?.type ?? '') || '#4b5563' };
-    });
+  const possible = info?.abilities ?? [];
+  const known = seen?.ability || sheet?.ability;
+  const abilityKnown = !!known || possible.length === 1;
+  const ability = known || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
 
-    const knownMoves = moves.filter((m) => m.known).map((m) => m.name);
-    const label = [
-      `${owner ? `${owner}'s ` : ''}${name}${name !== species ? ` (${species})` : ''}`,
-      seen ? `level ${seen.level}` : '',
-      nature ? `${nature} nature` : '',
-      types.map((t) => t.text).join(' and ') + (types.length ? ' type' : ''),
-      hp ? `${hp.text} HP` : '',
-      status ? status.name : '',
-      note,
-      stats.map((s) => `base ${s.label} ${s.value}${s.stage ? ` (${s.stageText})` : ''}`).join(', '),
-      item,
-      abilityKnown ? `ability ${ability}` : ability,
-      knownMoves.length ? `${sheet ? 'moves' : 'moves used'}: ${knownMoves.join(', ')}` : 'no moves used yet',
-    ]
-      .filter(Boolean)
-      .join('; ');
-
-    return {
-      shown: true,
-      label,
-      side,
-      owner,
-      name,
-      subtitle,
-      types,
-      hp,
-      status,
-      note,
-      stats,
-      itemId: itemName ? toId(itemName) : '',
-      itemKnown: !!itemName,
-      item,
-      abilityKnown,
-      ability,
-      moves,
-    };
+  const moves = Array.from({ length: MOVE_SLOTS }, (_, i) => {
+    // The sheet's moves in its order; without one, those used so far.
+    const move = sheet ? sheet.moves[i] : seen?.moves[i];
+    const top = MOVE_TOP + i * MOVE_ROW;
+    if (!move) return { name: sheet ? '—' : 'Move not revealed', known: false, top, color: '#111827' };
+    const data = moveInfo(move);
+    return { name: data?.name ?? move, known: true, top, color: typeColor(data?.type ?? '') || '#4b5563' };
   });
+
+  const knownMoves = moves.filter((m) => m.known).map((m) => m.name);
+  const label = [
+    `${owner ? `${owner}'s ` : ''}${name}${name !== species ? ` (${species})` : ''}`,
+    seen ? `level ${seen.level}` : '',
+    nature ? `${nature} nature` : '',
+    types.map((t) => t.text).join(' and ') + (types.length ? ' type' : ''),
+    hp ? `${hp.text} HP` : '',
+    status ? status.name : '',
+    note,
+    stats.map((s) => `base ${s.label} ${s.value}${s.stage ? ` (${s.stageText})` : ''}`).join(', '),
+    item,
+    abilityKnown ? `ability ${ability}` : ability,
+    knownMoves.length ? `${sheet ? 'moves' : 'moves used'}: ${knownMoves.join(', ')}` : 'no moves used yet',
+  ]
+    .filter(Boolean)
+    .join('; ');
+
+  return {
+    shown: true,
+    label,
+    side,
+    owner,
+    name,
+    subtitle,
+    types,
+    hp,
+    status,
+    note,
+    stats,
+    itemId: itemName ? toId(itemName) : '',
+    itemKnown: !!itemName,
+    item,
+    abilityKnown,
+    ability,
+    moves,
+  };
 }
 
 const EMPTY_VIEW = {

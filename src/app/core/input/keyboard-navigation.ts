@@ -56,6 +56,14 @@ export type Adjuster = (step: 1 | -1) => boolean;
 /** Takes a computer keyboard's key while a text entry is open (see registerTextInput); false leaves it to navigation. */
 export type TextInput = (event: KeyboardEvent) => boolean;
 
+/** What a canvas screen is given (see KeyboardNavigation.captureInput). */
+export type CanvasAction = 'up' | 'down' | 'left' | 'right' | 'accept' | 'back' | 'first' | 'last';
+export type CanvasInput = (action: CanvasAction) => boolean;
+
+function isCanvasAction(action: InputAction): action is CanvasAction {
+  return action === 'up' || action === 'down' || action === 'left' || action === 'right' || action === 'accept' || action === 'back' || action === 'first' || action === 'last';
+}
+
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
  * console-keys): the d-pad moves focus to the nearest control in that direction, A presses it, B goes
@@ -92,6 +100,8 @@ export class KeyboardNavigation {
   /** Where the d-pad stays while a view covers the page (the on-screen keyboard), or null for the whole page. */
   private trapRoot: HTMLElement | null = null;
   private textInput: TextInput | null = null;
+  /** Screens drawn on a canvas, newest last: the newest takes the d-pad, A and B (see captureInput). */
+  private readonly canvasInputs: CanvasInput[] = [];
 
   /** The focused control (virtual focus: see the class comment). */
   private current: HTMLElement | null = null;
@@ -213,6 +223,19 @@ export class KeyboardNavigation {
     this.textInput = handler;
     return () => {
       if (this.textInput === handler) this.textInput = null;
+    };
+  }
+
+  /**
+   * A screen drawn on a canvas, with controls of its own (no DOM to focus): while registered, the
+   * d-pad, A, B and the jumps go to `handler` (its focus moves inside the canvas); the page buttons
+   * (L, R, ZL, ZR, R3) still go to the handlers registered for them. Returns the unregister function.
+   */
+  captureInput(handler: CanvasInput): () => void {
+    this.canvasInputs.push(handler);
+    return () => {
+      const index = this.canvasInputs.indexOf(handler);
+      if (index >= 0) this.canvasInputs.splice(index, 1);
     };
   }
 
@@ -353,6 +376,8 @@ export class KeyboardNavigation {
   }
 
   private handle(action: InputAction, active: HTMLElement | null, typing: boolean): boolean {
+    const canvas = this.canvasInputs[this.canvasInputs.length - 1];
+    if (canvas && isCanvasAction(action)) return canvas(action);
     if (active) this.remember(active);
     switch (action) {
       case 'up':

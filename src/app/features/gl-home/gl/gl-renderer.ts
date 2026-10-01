@@ -241,6 +241,21 @@ export class GlRenderer {
     this.gl.deleteTexture(texture.handle);
   }
 
+  /** Draws only inside this box (stage pixels) until clip(null): effects can't spill out of the field. */
+  clip(box: { x: number; y: number; w: number; h: number } | null): void {
+    const gl = this.gl;
+    this.flush();
+    if (!box) {
+      gl.disable(gl.SCISSOR_TEST);
+      return;
+    }
+    const sx = this.canvas.width / this.width;
+    const sy = this.canvas.height / this.height;
+    gl.enable(gl.SCISSOR_TEST);
+    // WebGL counts y from the bottom.
+    gl.scissor(Math.round(box.x * sx), Math.round(this.canvas.height - (box.y + box.h) * sy), Math.round(box.w * sx), Math.round(box.h * sy));
+  }
+
   /** Draws everything after this `scale` times bigger, moved by (x, y) canvas pixels (stage units). */
   setView(scale: number, x: number, y: number): void {
     this.flush();
@@ -250,6 +265,7 @@ export class GlRenderer {
   /** Starts a frame on a plain colour, no backdrop. */
   beginPlain(color: Rgba): void {
     const gl = this.gl;
+    gl.disable(gl.SCISSOR_TEST);
     this.drawCalls = 0;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(color[0], color[1], color[2], 1);
@@ -261,6 +277,7 @@ export class GlRenderer {
   /** Starts a frame: the backdrop over the whole canvas. */
   begin(time: number, base: Rgba, band: Rgba): void {
     const gl = this.gl;
+    gl.disable(gl.SCISSOR_TEST);
     this.drawCalls = 0;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.backdropProgram);

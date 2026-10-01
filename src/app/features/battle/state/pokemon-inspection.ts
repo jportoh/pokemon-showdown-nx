@@ -32,10 +32,14 @@ export class PokemonInspection {
 
   /** The tile under the mouse, as its INSPECT_ATTRIBUTE value; null for none. */
   readonly hovered = signal<string | null>(null);
+  /** The tile a canvas screen's focus is on (it has no DOM to focus), as a keyOf value; null for none. */
+  readonly canvasPointed = signal<string | null>(null);
 
   private readonly pointed = computed(() => {
     const hovered = this.hovered();
     if (hovered) return hovered;
+    const canvas = this.canvasPointed();
+    if (canvas) return canvas;
     const focused = this.navigation.lastFocusedControl();
     return (focused?.isConnected && focused.getAttribute(INSPECT_ATTRIBUTE)) || null;
   });
