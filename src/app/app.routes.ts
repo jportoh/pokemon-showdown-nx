@@ -11,10 +11,19 @@ export const routes: Routes = [
     loadComponent: () => import('@features/home/components/home-scene/home-scene').then((c) => c.HomeScene),
   },
   {
-    // Settings, drawn on the stage with its own bar.
+    // The pages drawn on the stage, each with its own bar (PageBar).
     path: 'settings',
     loadComponent: () =>
       import('@features/settings/components/settings-scene/settings-scene').then((c) => c.SettingsScene),
+  },
+  {
+    // Opened from Settings, so B goes back there.
+    path: 'replays',
+    loadComponent: () => import('@features/replays/components/replays-scene/replays-scene').then((c) => c.ReplaysScene),
+  },
+  {
+    path: 'live',
+    loadComponent: () => import('@features/live/components/live-scene/live-scene').then((c) => c.LiveScene),
   },
   {
     // A developer's test page: the canvas UI kit on show, opened with R3 from the menu.
@@ -49,18 +58,6 @@ export const routes: Routes = [
           import('@features/teambuilder/components/teambuilder-page/teambuilder-page').then(
             (c) => c.TeambuilderPage,
           ),
-      },
-      {
-        // Opened from Settings, so B goes back there.
-        path: 'replays',
-        data: { page: { title: 'Replays', icon: 'replays', back: '/settings' } satisfies PageInfo },
-        loadComponent: () =>
-          import('@features/replays/components/replay-list/replay-list').then((c) => c.ReplayList),
-      },
-      {
-        path: 'live',
-        data: { page: { title: 'Watch Live', icon: 'live' } satisfies PageInfo },
-        loadComponent: () => import('@features/live/components/live-page/live-page').then((c) => c.LivePage),
       },
       {
         path: 'chats',

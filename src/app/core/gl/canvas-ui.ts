@@ -98,9 +98,11 @@ export class CanvasFocus {
       this.lastBox = current;
       return;
     }
-    if (this.focused !== null && this.lastBox && this.controls.length > 0) {
-      const from = this.lastBox;
-      this.focused = nearest(this.controls, centre(from)).id;
+    // The nearest the d-pad can reach (a click-only control, as the bar's Back, only when there's no other).
+    const reachable = this.controls.filter((c) => !c.skip);
+    const candidates = reachable.length > 0 ? reachable : this.controls;
+    if (this.focused !== null && this.lastBox && candidates.length > 0) {
+      this.focused = nearest(candidates, centre(this.lastBox)).id;
     }
   }
 

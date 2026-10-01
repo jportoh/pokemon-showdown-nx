@@ -178,6 +178,8 @@ export class ListView {
     private readonly rowHeight: number,
     private readonly visible: number,
     private readonly gap = 8,
+    /** ▲ ▼ over and under the rows when there's more (off when the page says where it is otherwise). */
+    private readonly arrows = true,
   ) {}
 
   /** The row `index` focuses (and the window moves so it shows). */
@@ -194,6 +196,14 @@ export class ListView {
     if (this.start === before) return false;
     focus.focus(`${this.id}-${this.start}`);
     return true;
+  }
+
+  /** Home/End: the first or last row, focused. */
+  jump(to: 'first' | 'last', count: number, focus: CanvasFocus): void {
+    if (count === 0) return;
+    const index = to === 'first' ? 0 : count - 1;
+    this.reveal(index, count);
+    focus.focus(`${this.id}-${index}`);
   }
 
   /** "11–18 of 120", for over the list. */
@@ -229,6 +239,7 @@ export class ListView {
       drawRow({ box, index, focused });
     }
     // Arrows when there's more above or below.
+    if (!this.arrows) return;
     const p = ctx.palette;
     if (this.start > 0) label(ctx, '▲', x + width - 14, y - 12, { size: 14 }, p.muted, { align: 'center' });
     if (end < count) label(ctx, '▼', x + width - 14, y + this.visible * (this.rowHeight + this.gap) + 4, { size: 14 }, p.muted, { align: 'center' });
