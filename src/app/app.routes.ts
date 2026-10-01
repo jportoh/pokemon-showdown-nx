@@ -11,6 +11,12 @@ export const routes: Routes = [
     loadComponent: () => import('@features/home/components/home-scene/home-scene').then((c) => c.HomeScene),
   },
   {
+    // Settings, drawn on the stage with its own bar.
+    path: 'settings',
+    loadComponent: () =>
+      import('@features/settings/components/settings-scene/settings-scene').then((c) => c.SettingsScene),
+  },
+  {
     // A developer's test page: the canvas UI kit on show, opened with R3 from the menu.
     path: 'gl-kit',
     loadComponent: () => import('@features/gl-home/components/gl-kit-screen/gl-kit-screen').then((c) => c.GlKitScreen),
@@ -43,12 +49,6 @@ export const routes: Routes = [
           import('@features/teambuilder/components/teambuilder-page/teambuilder-page').then(
             (c) => c.TeambuilderPage,
           ),
-      },
-      {
-        path: 'settings',
-        data: { page: { title: 'Settings', icon: 'settings' } satisfies PageInfo },
-        loadComponent: () =>
-          import('@features/settings/components/settings-page/settings-page').then((c) => c.SettingsPage),
       },
       {
         // Opened from Settings, so B goes back there.

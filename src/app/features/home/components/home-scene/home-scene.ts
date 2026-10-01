@@ -3,14 +3,14 @@ import { Router } from '@angular/router';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
 import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { TextStyle, iconTexture, pixelTexture } from '@core/gl/gl-textures';
+import { TextStyle, iconTexture, maskTexture, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
+import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ServerStats } from '@features/connection/server-stats';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
-import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
@@ -55,16 +55,6 @@ interface MenuLine {
   tone: LineTone;
 }
 
-/** The connection as the header says it: its words and dot (TrainerStatus). */
-const STATUS: Record<'offline' | 'connecting' | 'reconnecting' | 'loggingIn' | 'online' | 'noName', { text: string; dot: string }> = {
-  offline: { text: 'Offline', dot: '#9ca3af' },
-  connecting: { text: 'Connecting…', dot: '#fcd34d' },
-  reconnecting: { text: 'Reconnecting…', dot: '#fcd34d' },
-  loggingIn: { text: 'Logging in…', dot: '#fcd34d' },
-  online: { text: 'Online', dot: '#34d399' },
-  noName: { text: 'Online', dot: '#f87171' },
-};
-
 /**
  * The home screen, drawn on the stage: a bar with Showdown's logo and who we are (the connection, and
  * once named our name and avatar), the menu (Battle and Random Battle as two big tiles, the other
@@ -88,11 +78,11 @@ export class HomeScene {
   private readonly navigation = inject(KeyboardNavigation);
   private readonly menu = inject(HomeMenu);
   private readonly login = inject(ShowdownLogin);
-  private readonly connection = inject(ShowdownConnection);
   private readonly search = inject(ShowdownSearch);
   private readonly summary = inject(HomeSummary);
   private readonly stats = inject(ServerStats);
   private readonly challenges = inject(ShowdownChallenges);
+  private readonly bar = inject(PageBar);
 
   private readonly focus = new CanvasFocus();
   private readonly loginView = new LoginView(this.focus);
@@ -160,17 +150,6 @@ export class HomeScene {
     return { text: 'Find an opponent now', tone: 'muted' };
   });
 
-  private readonly statusKey = computed(() => {
-    const login = this.login.state();
-    const status = this.connection.state().status;
-    if (!login.mode || status === 'offline' || (login.status === 'ready' && !login.loggingIn)) return 'offline' as const;
-    if (status !== 'connected') return status === 'connecting' ? ('connecting' as const) : ('reconnecting' as const);
-    if (login.status === 'named') return 'online' as const;
-    if (login.status === 'unavailable') return 'noName' as const;
-    if (login.loggingIn) return 'loggingIn' as const;
-    return 'connecting' as const;
-  });
-
   private readonly footerRight = computed((): { text: string; notice: boolean } | null => {
     const incoming = this.challenges.incoming();
     if (incoming.length > 0) {
@@ -204,9 +183,7 @@ export class HomeScene {
         this.icons.set(`${tile.item.id}-muted`, iconTexture(renderer, tile.item.id, true));
       }
       this.ball = pixelTexture(renderer, BALL);
-      const cursor = new Uint8Array(4 * 7 * 4);
-      CURSOR_ROWS.forEach((row, y) => [...row].forEach((c, x) => c === 'x' && cursor.set([255, 255, 255, 255], (y * 4 + x) * 4)));
-      this.cursorTexture = renderer.textureFromPixels(cursor, 4, 7, false);
+      this.cursorTexture = maskTexture(renderer, CURSOR_ROWS);
     });
     // Back from a page: the focus on the tile that opened it.
     this.focus.focus(`tile-${this.menu.lastItem()}`);
@@ -398,15 +375,7 @@ export class HomeScene {
     label(ctx, 'SHOWDOWN!', 84 + width + 10, 38, { size: 32, bold: true }, LOGO_YELLOW);
 
     const named = this.named();
-    const right = named ? 1176 : 1256;
-    const key = this.statusKey();
-    const state = STATUS[key];
-    const textWidth = label(ctx, state.text, right, 38, { size: 20 }, p.ink, { align: 'right' });
-    const dotX = right - textWidth - 18;
-    renderer.rect(dotX, 32, 12, 12, { fill: rgba(state.dot), radius: 6 });
-    if (key === 'online' || key === 'noName') {
-      label(ctx, key === 'online' ? this.login.state().name : 'No name', dotX - 8, 38, { size: 20, bold: true }, p.ink, { align: 'right', maxWidth: 360 });
-    }
+    this.bar.drawStatus(ctx, named ? 1176 : 1256, 38);
     if (named) {
       renderer.rect(1192, 6, 64, 64, { fill: p.select, radius: 8 });
       const avatar = ctx.images.pixelArt(avatarUrl(this.login.state().avatar));

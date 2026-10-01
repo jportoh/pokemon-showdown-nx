@@ -183,3 +183,11 @@ export function pixelTexture(renderer: GlRenderer, rows: readonly string[], mute
   });
   return renderer.textureFromPixels(pixels, width, height, false);
 }
+
+/** A white shape ("x" set, anything else clear) as a texture, for drawing tinted (cursors, arrows). */
+export function maskTexture(renderer: GlRenderer, rows: readonly string[]): Texture {
+  const width = rows[0]?.length ?? 0;
+  const pixels = new Uint8Array(width * rows.length * 4);
+  rows.forEach((row, y) => [...row].forEach((c, x) => c === 'x' && pixels.set([255, 255, 255, 255], (y * width + x) * 4)));
+  return renderer.textureFromPixels(pixels, width, rows.length, false);
+}
