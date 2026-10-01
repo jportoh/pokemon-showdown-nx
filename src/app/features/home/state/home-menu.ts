@@ -32,9 +32,4 @@ export const HOME_MENU_ITEMS: readonly HomeMenuItem[] = [
 @Service()
 export class HomeMenu {
   readonly lastItem = signal<PixelIconName>('battle');
-  /**
-   * EXPERIMENT (feat/webgl-probe): the menu is the WebGL one (/gl) until R switches to the DOM one,
-   * and back from a page lands on whichever was last shown.
-   */
-  readonly glHome = signal(true);
 }

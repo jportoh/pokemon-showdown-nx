@@ -160,20 +160,26 @@ export function discTexture(renderer: GlRenderer): Texture {
 
 /** The home menu's 24x24 pixel-art icons as textures (nearest sampling keeps the pixels square). */
 export function iconTexture(renderer: GlRenderer, name: PixelIconName, muted: boolean): Texture {
-  const rows = ICONS[name];
-  const pixels = new Uint8Array(24 * 24 * 4);
+  return pixelTexture(renderer, ICONS[name], muted);
+}
+
+/** Pixel art (rows of PixelIcon's colour letters, "." transparent) as a texture; in greys when muted. */
+export function pixelTexture(renderer: GlRenderer, rows: readonly string[], muted = false): Texture {
+  const width = rows[0]?.length ?? 0;
+  const height = rows.length;
+  const pixels = new Uint8Array(width * height * 4);
   rows.forEach((row, y) => {
-    for (let x = 0; x < 24; x++) {
+    for (let x = 0; x < width; x++) {
       const letter = row[x];
       if (!letter || letter === '.') continue;
       const hex = muted ? greyed(COLORS[letter]) : COLORS[letter];
       const value = parseInt(hex.slice(1), 16);
-      const i = (y * 24 + x) * 4;
+      const i = (y * width + x) * 4;
       pixels[i] = (value >> 16) & 255;
       pixels[i + 1] = (value >> 8) & 255;
       pixels[i + 2] = value & 255;
       pixels[i + 3] = 255;
     }
   });
-  return renderer.textureFromPixels(pixels, 24, 24, false);
+  return renderer.textureFromPixels(pixels, width, height, false);
 }

@@ -49,6 +49,17 @@ export class GlSprites {
     return this.textures.get(url) ?? this.upload(url, priority, true);
   }
 
+  /** Pixel art from a URL (a trainer avatar), sampled without smoothing so its pixels stay square. */
+  pixelArt(url: string, priority: ImagePriority = ImagePriority.Screen): Texture | null {
+    if (!url) return null;
+    return this.textures.get(url) ?? this.upload(url, priority, false);
+  }
+
+  /** Asks for an image ahead (the next page of avatars), behind what the screen shows. */
+  prefetch(url: string): void {
+    if (url && !this.textures.has(url)) this.bitmaps.request(url, ImagePriority.Ahead);
+  }
+
   /**
    * An item's icon, `size` px square: a cell of Showdown's icon sheet (one texture for every item,
    * sampled by coordinates, so no icon files are bundled). Nothing until the sheet has loaded.

@@ -1,28 +1,19 @@
 import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { BattleSession } from '@features/battle/state/battle-session';
-import { HomeMenu } from '@features/home/state/home-menu';
 import { MainLayout, PageInfo } from '@core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
   {
-    // The home menu takes the whole stage: its own trainer bar, no page frame.
+    // The home menu, drawn on the stage (its own bar, no page frame).
     path: '',
     pathMatch: 'full',
-    // EXPERIMENT (feat/webgl-probe): the WebGL menu while it's the one chosen (R switches).
-    canActivate: [() => !inject(HomeMenu).glHome() || inject(Router).parseUrl('/gl')],
-    loadComponent: () => import('@features/home/components/home-screen/home-screen').then((c) => c.HomeScreen),
+    loadComponent: () => import('@features/home/components/home-scene/home-scene').then((c) => c.HomeScene),
   },
   {
-    // EXPERIMENT (migration phase 1): the canvas UI kit on show, opened with L from the WebGL menu.
+    // A developer's test page: the canvas UI kit on show, opened with R3 from the menu.
     path: 'gl-kit',
     loadComponent: () => import('@features/gl-home/components/gl-kit-screen/gl-kit-screen').then((c) => c.GlKitScreen),
-  },
-  {
-    // EXPERIMENT (feat/webgl-probe): the home menu drawn with WebGL.
-    path: 'gl',
-    loadComponent: () =>
-      import('@features/gl-home/components/gl-home-screen/gl-home-screen').then((c) => c.GlHomeScreen),
   },
   {
     // A battle takes the whole stage, without the frame: once it starts there's no leaving it until
