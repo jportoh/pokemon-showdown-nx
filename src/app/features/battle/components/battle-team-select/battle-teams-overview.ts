@@ -1,8 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
+import { SharedItemIcon, SharedSprite } from '@features/battle/components/shared-image/shared-image';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { ItemIcon } from '@shared/components/item-icon';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { SheetRow, sheetRows } from './sheet-rows';
 
 const SLOTS = 6;
@@ -25,7 +24,7 @@ interface Row extends SheetRow {
  */
 @Component({
   selector: 'app-battle-teams-overview',
-  imports: [ItemIcon, PokemonSprite],
+  imports: [SharedItemIcon, SharedSprite],
   host: {
     class: 'h-[500px] w-[1280px] bg-retro-bg text-retro-ink',
     '[style.display]': "shown() ? 'block' : 'none'",
@@ -44,10 +43,10 @@ interface Row extends SheetRow {
                 [style.top.px]="row.top"
                 [style.left.px]="side.left"
               >
-                <app-pokemon-sprite class="absolute top-[1px] left-[6px]" [sprite]="row.sprite" [size]="72" />
+                <app-shared-sprite class="absolute top-[1px] left-[6px]" [sprite]="row.sprite" [size]="72" />
                 <span aria-hidden="true" class="absolute top-[2px] left-[84px] block h-7 w-[320px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap">{{ row.name }}</span>
                 @if (row.sheet; as sheet) {
-                  <app-item-icon class="absolute top-[30px] left-[82px]" [item]="sheet.itemId" [size]="24" />
+                  <app-shared-item-icon class="absolute top-[30px] left-[82px]" [item]="sheet.itemId" [size]="24" />
                   <span aria-hidden="true" class="absolute top-[30px] left-[110px] block h-6 w-[296px] overflow-hidden text-base leading-6 whitespace-nowrap text-retro-muted">{{ sheet.item }}</span>
                   <span aria-hidden="true" class="absolute top-[54px] left-[84px] block h-5 w-[320px] overflow-hidden text-sm leading-5 whitespace-nowrap text-retro-muted">{{ sheet.ability }}</span>
                   @for (move of sheet.moves; track $index) {

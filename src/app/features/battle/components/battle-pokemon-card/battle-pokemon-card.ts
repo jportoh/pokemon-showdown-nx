@@ -1,9 +1,9 @@
 import { Component, computed, input } from '@angular/core';
+import { SharedItemIcon } from '@features/battle/components/shared-image/shared-image';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
 import { RequestPokemon } from '@features/battle/models/battle';
 import { parseCondition } from '@features/battle/state/battle-store';
-import { ItemIcon } from '@shared/components/item-icon';
 import { typeColor } from '@shared/data/type-colors';
 
 const STATS = [
@@ -35,7 +35,7 @@ export type PokemonCardMode = 'stats' | 'moves';
  */
 @Component({
   selector: 'app-battle-pokemon-card',
-  imports: [ItemIcon],
+  imports: [SharedItemIcon],
   host: { class: 'block h-[112px] w-[340px] text-white' },
   template: `
     <section
@@ -44,7 +44,7 @@ export type PokemonCardMode = 'stats' | 'moves';
       [style.background-color]="mode() === 'moves' ? '#1b3354' : '#1f2937'"
       [attr.aria-label]="view().label"
     >
-      <app-item-icon class="absolute top-[8px] left-[9px]" [item]="view().itemId" [size]="32" />
+      <app-shared-item-icon class="absolute top-[8px] left-[9px]" [item]="view().itemId" [size]="32" />
       <span class="absolute top-[5px] left-[50px] block h-6 w-[184px] overflow-hidden text-base leading-6 font-bold whitespace-nowrap">{{ view().name }}</span>
       @if (view().tera; as tera) {
         <span

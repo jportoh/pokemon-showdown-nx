@@ -1,11 +1,10 @@
 import { Component, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, inject, input, linkedSignal, output, viewChild, viewChildren } from '@angular/core';
+import { SharedItemIcon, SharedSprite } from '@features/battle/components/shared-image/shared-image';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
 import { SheetButton } from '@features/battle/components/battle-team-preview/battle-team-preview';
 import { BattleRequest } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { ItemIcon } from '@shared/components/item-icon';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { spriteId } from '@shared/utils/sprite-id';
 import { MovePill, SheetRow, movePills, sheetRows } from './sheet-rows';
 
@@ -50,7 +49,7 @@ interface TheirRow extends SheetRow {
  */
 @Component({
   selector: 'app-battle-team-select',
-  imports: [ItemIcon, PokemonSprite],
+  imports: [SharedItemIcon, SharedSprite],
   host: {
     class: 'h-[672px] w-[1280px] bg-retro-bg text-retro-ink',
     '[style.display]': "shown() ? 'block' : 'none'",
@@ -96,9 +95,9 @@ interface TheirRow extends SheetRow {
                 [class]="row.order === null ? 'border-2 border-retro-outline text-retro-muted' : row.lead ? 'bg-retro-accent text-white' : 'bg-retro-teal text-retro-bg'"
                 >{{ row.order ?? '' }}</span
               >
-              <app-pokemon-sprite class="absolute top-[2px] left-[58px]" [sprite]="row.sprite" [size]="80" />
+              <app-shared-sprite class="absolute top-[2px] left-[58px]" [sprite]="row.sprite" [size]="80" />
               <span aria-hidden="true" class="absolute top-[4px] left-[146px] block h-7 w-[232px] overflow-hidden text-left text-xl leading-7 font-bold whitespace-nowrap">{{ row.name }}</span>
-              <app-item-icon class="absolute top-[34px] left-[144px]" [item]="row.itemId" [size]="24" />
+              <app-shared-item-icon class="absolute top-[34px] left-[144px]" [item]="row.itemId" [size]="24" />
               <span aria-hidden="true" class="absolute top-[34px] left-[172px] block h-6 w-[206px] overflow-hidden text-left text-base leading-6 whitespace-nowrap text-retro-muted">{{ row.item }}</span>
               <span aria-hidden="true" class="absolute top-[60px] left-[146px] block h-5 w-[176px] overflow-hidden text-left text-sm leading-5 whitespace-nowrap text-retro-muted">{{ row.ability }}</span>
               <span aria-hidden="true" class="absolute top-[62px] left-[326px] block h-4 w-[52px] text-right text-xs leading-4 font-bold text-retro-accent-text uppercase" [class.hidden]="!row.lead">Lead</span>
@@ -128,10 +127,10 @@ interface TheirRow extends SheetRow {
               [attr.aria-label]="row.label"
               [style.top.px]="row.top"
             >
-              <app-pokemon-sprite class="absolute top-[2px] left-[10px]" [sprite]="row.sprite" [size]="80" />
+              <app-shared-sprite class="absolute top-[2px] left-[10px]" [sprite]="row.sprite" [size]="80" />
               <span aria-hidden="true" class="absolute top-[4px] left-[98px] block h-7 w-[280px] overflow-hidden text-xl leading-7 font-bold whitespace-nowrap">{{ row.name }}</span>
               @if (row.sheet; as sheet) {
-                <app-item-icon class="absolute top-[34px] left-[96px]" [item]="sheet.itemId" [size]="24" />
+                <app-shared-item-icon class="absolute top-[34px] left-[96px]" [item]="sheet.itemId" [size]="24" />
                 <span aria-hidden="true" class="absolute top-[34px] left-[124px] block h-6 w-[254px] overflow-hidden text-base leading-6 whitespace-nowrap text-retro-muted">{{ sheet.item }}</span>
                 <span aria-hidden="true" class="absolute top-[60px] left-[98px] block h-5 w-[280px] overflow-hidden text-sm leading-5 whitespace-nowrap text-retro-muted">{{ sheet.ability }}</span>
                 @for (move of sheet.moves; track $index) {

@@ -85,7 +85,7 @@ const STAT_DOWN_COLOR = [240, 70, 60] as const;
  * Bright type colours for the effects (the rows' colours in type-colors are darkened for white text).
  * RGB triplets, since the gradients need them with an alpha (Brewser's support for #rrggbbaa is unknown).
  */
-const EFFECT_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
+export const EFFECT_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
   normal: [200, 200, 170],
   fire: [240, 128, 48],
   water: [104, 144, 240],
@@ -105,7 +105,7 @@ const EFFECT_COLORS: Readonly<Record<string, readonly [number, number, number]>>
   steel: [184, 184, 208],
   fairy: [238, 153, 172],
 };
-const DEFAULT_COLOR = [230, 230, 230] as const;
+export const DEFAULT_COLOR = [230, 230, 230] as const;
 /** The field's size, which the host covers. */
 const FIELD_WIDTH = 985;
 const FIELD_HEIGHT = 500;

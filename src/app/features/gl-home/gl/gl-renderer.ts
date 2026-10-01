@@ -21,6 +21,8 @@ attribute vec4 a_fill;
 attribute vec4 a_stroke;
 attribute vec3 a_uv;
 uniform vec2 u_res;
+// Scale and offset of the scene on the canvas (a smaller scene drawn bigger).
+uniform vec3 u_view;
 varying vec2 v_local;
 varying vec2 v_half;
 varying vec3 v_shape;
@@ -28,7 +30,7 @@ varying vec4 v_fill;
 varying vec4 v_stroke;
 varying vec3 v_uv;
 void main() {
-  vec2 clip = a_pos / u_res * 2.0 - 1.0;
+  vec2 clip = (a_pos * u_view.x + u_view.yz) / u_res * 2.0 - 1.0;
   gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
   v_local = a_local;
   v_half = a_half;
@@ -57,13 +59,15 @@ void main() {
   float coverage = clamp((0.5 - dist) / v_shape.z, 0.0, 1.0);
   // Everything in premultiplied alpha (textures are uploaded premultiplied).
   vec4 fill = vec4(v_fill.rgb * v_fill.a, v_fill.a);
-  if (v_uv.z > 0.5) fill *= texture2D(u_tex, v_uv.xy);
+  // uv.z: 1 textured, +2 additive (light adds up instead of covering).
+  bool additive = v_uv.z > 1.5;
+  if (v_uv.z - (additive ? 2.0 : 0.0) > 0.5) fill *= texture2D(u_tex, v_uv.xy);
   vec4 color = fill;
   if (border > 0.0) {
     float edge = clamp(dist + border + 0.5, 0.0, 1.0);
     color = mix(fill, vec4(v_stroke.rgb * v_stroke.a, v_stroke.a), edge);
   }
-  gl_FragColor = color * coverage;
+  gl_FragColor = additive ? vec4(color.rgb * coverage, 0.0) : color * coverage;
 }`;
 
 const BACKDROP_VERTEX = `
@@ -106,6 +110,10 @@ export interface QuadStyle {
   /** How many pixels the edge fades over: 1 is crisp, more makes a glow or a shadow. */
   softness?: number;
   texture?: Texture | null;
+  /** Turned this many radians about its centre (streaks of rain, gusts). */
+  angle?: number;
+  /** Adds its light to what's under it (glows, sparks) instead of covering it. */
+  additive?: boolean;
 }
 
 /** '#rrggbb' to [r, g, b, a] in 0..1. */
@@ -131,6 +139,9 @@ export class GlRenderer {
   readonly height: number;
   /** Draw calls in the last frame, for the HUD. */
   drawCalls = 0;
+  /** Added to every position drawn: shakes the whole scene. */
+  originX = 0;
+  originY = 0;
 
   private readonly shapeProgram: WebGLProgram;
   private readonly backdropProgram: WebGLProgram;
@@ -143,6 +154,8 @@ export class GlRenderer {
   private texture: Texture;
   private readonly attributes: { location: number; size: number; offset: number }[] = [];
   private readonly shapeResolution: WebGLUniformLocation | null;
+  private readonly shapeView: WebGLUniformLocation | null;
+  private view: [number, number, number] = [1, 0, 0];
   private readonly backdropUniforms: Record<'time' | 'base' | 'band' | 'res', WebGLUniformLocation | null>;
   private readonly backdropPosition: number;
 
@@ -163,6 +176,7 @@ export class GlRenderer {
     this.shapeProgram = program(gl, SHAPE_VERTEX, SHAPE_FRAGMENT);
     this.backdropProgram = program(gl, BACKDROP_VERTEX, BACKDROP_FRAGMENT);
     this.shapeResolution = gl.getUniformLocation(this.shapeProgram, 'u_res');
+    this.shapeView = gl.getUniformLocation(this.shapeProgram, 'u_view');
     this.backdropUniforms = {
       time: gl.getUniformLocation(this.backdropProgram, 'u_time'),
       base: gl.getUniformLocation(this.backdropProgram, 'u_base'),
@@ -227,6 +241,23 @@ export class GlRenderer {
     this.gl.deleteTexture(texture.handle);
   }
 
+  /** Draws everything after this `scale` times bigger, moved by (x, y) canvas pixels (stage units). */
+  setView(scale: number, x: number, y: number): void {
+    this.flush();
+    this.view = [scale, x, y];
+  }
+
+  /** Starts a frame on a plain colour, no backdrop. */
+  beginPlain(color: Rgba): void {
+    const gl = this.gl;
+    this.drawCalls = 0;
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clearColor(color[0], color[1], color[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    this.quads = 0;
+    this.texture = this.whiteTexture;
+  }
+
   /** Starts a frame: the backdrop over the whole canvas. */
   begin(time: number, base: Rgba, band: Rgba): void {
     const gl = this.gl;
@@ -263,16 +294,23 @@ export class GlRenderer {
     const softness = Math.max(1, style.softness ?? 1);
     const fill = style.fill;
     const stroke = style.stroke ?? NO_STROKE;
-    const textured = style.texture ? 1 : 0;
+    const textured = (style.texture ? 1 : 0) + (style.additive ? 2 : 0);
+    const angle = style.angle ?? 0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const cx = x + halfW + this.originX;
+    const cy = y + halfH + this.originY;
     const data = this.data;
     let i = this.quads * 4 * FLOATS_PER_VERTEX;
     for (let corner = 0; corner < 4; corner++) {
       const right = corner === 1 || corner === 2 ? 1 : 0;
       const bottom = corner >= 2 ? 1 : 0;
-      data[i++] = x + right * width;
-      data[i++] = y + bottom * height;
-      data[i++] = (right * 2 - 1) * halfW;
-      data[i++] = (bottom * 2 - 1) * halfH;
+      const lx = (right * 2 - 1) * halfW;
+      const ly = (bottom * 2 - 1) * halfH;
+      data[i++] = cx + lx * cos - ly * sin;
+      data[i++] = cy + lx * sin + ly * cos;
+      data[i++] = lx;
+      data[i++] = ly;
       data[i++] = halfW;
       data[i++] = halfH;
       data[i++] = radius;
@@ -309,6 +347,7 @@ export class GlRenderer {
     const gl = this.gl;
     gl.useProgram(this.shapeProgram);
     gl.uniform2f(this.shapeResolution, this.width, this.height);
+    gl.uniform3f(this.shapeView, this.view[0], this.view[1], this.view[2]);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data.subarray(0, this.quads * 4 * FLOATS_PER_VERTEX));
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);

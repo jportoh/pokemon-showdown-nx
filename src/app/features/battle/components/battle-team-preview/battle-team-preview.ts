@@ -1,4 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
+import { SharedItemIcon, SharedSprite } from '@features/battle/components/shared-image/shared-image';
 import { Component, ElementRef, afterRenderEffect, computed, inject, input, output } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { itemName } from '@core/dex/names';
@@ -8,8 +9,6 @@ import { BattleChoices, SWITCH_ATTRIBUTE } from '@features/battle/state/battle-c
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { previewTeam } from '@features/battle/state/team-preview';
-import { ItemIcon } from '@shared/components/item-icon';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { spriteId } from '@shared/utils/sprite-id';
 
 /** Two rows of three tiles, centred in the card under the owner's name. */
@@ -68,7 +67,7 @@ interface Tile {
  */
 @Component({
   selector: 'app-battle-team-preview',
-  imports: [ItemIcon, NgTemplateOutlet, PokemonSprite],
+  imports: [SharedItemIcon, SharedSprite, NgTemplateOutlet],
   host: { class: 'block h-[188px] w-[271px]' },
   template: `
     <div class="relative block h-[188px] w-[271px] rounded-md bg-card" role="group" [attr.aria-label]="ariaLabel()">
@@ -128,8 +127,8 @@ interface Tile {
     </div>
 
     <ng-template #face let-tile>
-      <app-pokemon-sprite class="absolute top-0 left-[3px]" [sprite]="tile.sprite" [size]="64" [style.opacity]="tile.fainted ? 0.3 : 1" />
-      <app-item-icon class="absolute top-[34px] left-[44px]" [item]="tile.item" [size]="24" />
+      <app-shared-sprite class="absolute top-0 left-[3px]" [sprite]="tile.sprite" [size]="64" [style.opacity]="tile.fainted ? 0.3 : 1" />
+      <app-shared-item-icon class="absolute top-[34px] left-[44px]" [item]="tile.item" [size]="24" />
       @if (tile.bar; as bar) {
         <span class="absolute top-[62px] left-[7px] block h-[4px] w-[56px] rounded-[1px] bg-gray-700">
           <span class="block h-[4px] rounded-[1px]" [style.width.px]="bar.width" [style.background-color]="bar.color"></span>

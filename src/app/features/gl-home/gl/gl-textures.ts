@@ -19,6 +19,8 @@ export class TextTextures {
   private readonly cache = new Map<string, Texture>();
   private readonly canvas = document.createElement('canvas');
   private readonly context: CanvasRenderingContext2D | null = this.canvas.getContext('2d');
+  /** Told how long each new text took to draw and upload (diagnostics). */
+  onUpload: ((ms: number) => void) | null = null;
 
   constructor(
     private readonly renderer: GlRenderer,
@@ -48,6 +50,7 @@ export class TextTextures {
       this.cache.delete(oldestKey);
     }
 
+    const started = performance.now();
     const font = `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`;
     context.font = font;
     const width = Math.max(1, Math.ceil(context.measureText(text).width) + 4);
@@ -62,6 +65,7 @@ export class TextTextures {
     context.fillText(text, 2, height / 2);
     const texture = this.renderer.textureFromSource(this.canvas, width / this.scale, height / this.scale, true);
     this.cache.set(key, texture);
+    this.onUpload?.(performance.now() - started);
     return texture;
   }
 
@@ -69,6 +73,26 @@ export class TextTextures {
     for (const texture of this.cache.values()) this.renderer.deleteTexture(texture);
     this.cache.clear();
   }
+}
+
+/**
+ * A white disc with a smooth edge, 128px: stretched, it draws ellipses (platforms, shadows); the
+ * SDF boxes only round their corners.
+ */
+export function discTexture(renderer: GlRenderer): Texture {
+  const size = 128;
+  const pixels = new Uint8Array(size * size * 4);
+  const r = size / 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - r, y + 0.5 - r);
+      const a = Math.round(Math.max(0, Math.min(1, r - d)) * 255);
+      const i = (y * size + x) * 4;
+      // Premultiplied white.
+      pixels[i] = pixels[i + 1] = pixels[i + 2] = pixels[i + 3] = a;
+    }
+  }
+  return renderer.textureFromPixels(pixels, size, size, true);
 }
 
 /** The home menu's 24x24 pixel-art icons as textures (nearest sampling keeps the pixels square). */

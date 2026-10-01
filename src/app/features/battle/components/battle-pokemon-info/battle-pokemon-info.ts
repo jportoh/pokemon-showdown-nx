@@ -1,10 +1,10 @@
 import { Component, computed, input } from '@angular/core';
+import { SharedItemIcon } from '@features/battle/components/shared-image/shared-image';
 import { moveInfo } from '@core/dex/moves';
 import { speciesInfo } from '@core/dex/species';
 import { barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
 import { STATUS } from '@features/battle/state/status-conditions';
 import { InspectedMember } from '@features/battle/state/pokemon-inspection';
-import { ItemIcon } from '@shared/components/item-icon';
 import { typeColor } from '@shared/data/type-colors';
 import { toId } from '@shared/utils/to-id';
 
@@ -58,7 +58,7 @@ function stageText(stage: number): string {
  */
 @Component({
   selector: 'app-battle-pokemon-info',
-  imports: [ItemIcon],
+  imports: [SharedItemIcon],
   host: { class: 'block h-[148px] w-[645px] text-white' },
   template: `
     <section class="relative block h-[148px] w-[645px] rounded-md border border-gray-500 bg-[#1f2937]" aria-live="polite" [attr.aria-label]="view().label">
@@ -111,7 +111,7 @@ function stageText(stage: number): string {
         }
         <span aria-hidden="true" class="absolute top-[8px] left-[438px] block h-[130px] w-px bg-gray-600"></span>
 
-        <app-item-icon class="absolute top-[6px] left-[446px]" [item]="view().itemId" [size]="24" />
+        <app-shared-item-icon class="absolute top-[6px] left-[446px]" [item]="view().itemId" [size]="24" />
         <!-- Beside its icon once known; unknown or gone, where the icon would be. -->
         <span
           class="absolute top-[8px] block h-5 overflow-hidden text-sm leading-5 whitespace-nowrap"

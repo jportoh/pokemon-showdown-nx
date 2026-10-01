@@ -1,9 +1,9 @@
 import { Component, ElementRef, afterRenderEffect, computed, inject, input, viewChild } from '@angular/core';
+import { SharedSprite } from '@features/battle/components/shared-image/shared-image';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveType } from '@core/dex/moves';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { unpackTeamSheet } from '@features/battle/state/team-sheet';
-import { PokemonSprite } from '@shared/components/pokemon-sprite';
 import { typeColor } from '@shared/data/type-colors';
 import { spriteId } from '@shared/utils/sprite-id';
 
@@ -41,7 +41,7 @@ interface SheetCard {
  */
 @Component({
   selector: 'app-battle-team-sheet',
-  imports: [PokemonSprite],
+  imports: [SharedSprite],
   host: {
     class: 'h-[500px] w-[985px] bg-card',
     '[style.display]': "open() ? 'block' : 'none'",
@@ -54,7 +54,7 @@ interface SheetCard {
         <div class="block" [class.hidden]="!card">
           @if (card) {
             <div class="absolute block rounded-md bg-stage" role="group" [attr.aria-label]="card.label" [style.left.px]="card.left" [style.top.px]="card.top" [style.width.px]="cardWidth" [style.height.px]="cardHeight">
-              <app-pokemon-sprite class="absolute top-[25px] left-[6px]" [sprite]="card.sprite" [size]="96" />
+              <app-shared-sprite class="absolute top-[25px] left-[6px]" [sprite]="card.sprite" [size]="96" />
               <span aria-hidden="true" class="absolute top-[6px] left-[112px] block h-7 w-[350px] overflow-hidden text-lg leading-7 font-bold whitespace-nowrap">{{ card.species }}</span>
               <span aria-hidden="true" class="absolute top-[34px] left-[112px] block h-6 w-[350px] overflow-hidden text-base leading-6 whitespace-nowrap text-yellow-100">{{ card.item }}</span>
               <span aria-hidden="true" class="absolute top-[58px] left-[112px] block h-6 w-[350px] overflow-hidden text-base leading-6 whitespace-nowrap text-gray-300">{{ card.details }}</span>
