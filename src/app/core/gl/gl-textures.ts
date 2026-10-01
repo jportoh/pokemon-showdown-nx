@@ -1,4 +1,4 @@
-import { COLORS, ICONS, PixelIconName, greyed } from '@shared/components/pixel-icon';
+import { COLORS, ICONS, PixelIconName, greyed } from '@core/gl/ui/pixel-icons';
 import { GlRenderer, Texture } from './gl-renderer';
 import type { GlyphAtlas } from './glyph-atlas';
 
@@ -163,7 +163,7 @@ export function iconTexture(renderer: GlRenderer, name: PixelIconName, muted: bo
   return pixelTexture(renderer, ICONS[name], muted);
 }
 
-/** Pixel art (rows of PixelIcon's colour letters, "." transparent) as a texture; in greys when muted. */
+/** Pixel art (rows of pixel-icons' colour letters, "." transparent) as a texture; in greys when muted. */
 export function pixelTexture(renderer: GlRenderer, rows: readonly string[], muted = false): Texture {
   const width = rows[0]?.length ?? 0;
   const height = rows.length;

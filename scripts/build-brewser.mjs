@@ -1,12 +1,9 @@
 // Turns the Angular production build into a bundle the Brewser console can run.
 //
-// Brewser's console runtime is a custom engine, not Chrome (verified on device):
-// - Every <script> runs as a classic script, so Angular's ES module output (imports between
-//   main and its chunks) can't start. We re-bundle it into a single classic IIFE `app.js`.
-// - Its CSS engine drops `@layer` and `@supports` blocks, never matches escaped class selectors
-//   (`.hover\:x`, `.bg-\[\#fff\]`), doesn't support `:is()`/`:where()`/nesting, and renders
-//   `oklch()`/`color-mix()` with wrong colors. Tailwind v4 relies on all of these, so we lower
-//   the stylesheet and rename escaped classes to safe names in both styles.css and app.js.
+// Brewser's console runtime is a custom engine, not Chrome (verified on device): every <script>
+// runs as a classic script, so Angular's ES module output (imports between main and its chunks) can't
+// start. We re-bundle it into a single classic IIFE `app.js`. The stylesheet is plain CSS (the app is
+// one WebGL canvas) and is copied as Angular wrote it.
 //
 // Usage: `npm run build:brewser` (or `npm run build:brewser:diag` to show an on-screen boot report).
 // Output: dist/pokemon-showdown-brewser/brewser/ and dist/pokemon-showdown-brewser/brewser.zip
@@ -16,8 +13,6 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
-import { transform as lightningTransform } from 'lightningcss';
-import postcss from 'postcss';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const distDir = path.join(root, 'dist/pokemon-showdown-brewser');
@@ -26,14 +21,6 @@ const outDir = path.join(distDir, 'brewser');
 const zipPath = path.join(distDir, 'brewser.zip');
 const withDiagnostics = process.argv.includes('--diag');
 
-// Selectors Brewser can't match. They're dropped so they can't invalidate anything else.
-const UNSUPPORTED_SELECTOR = /:is\(|:where\(|:-webkit-any\(|:-moz-|::-moz-|::-webkit-|:host|::backdrop|::file-selector-button/;
-// Color functions and gradient color-space interpolation (`to bottom in oklab`) that Brewser
-// renders wrong. lightningcss emits hex fallbacks for the functions; interpolation is simply dropped.
-const MODERN_COLOR = /\b(?:ok)?(?:lab|lch)\(|color-mix\(|\bcolor\(|\bin\s+(?:ok)?(?:lab|lch)\b|\bin\s+(?:srgb|hsl|hwb|display-p3|xyz)/;
-const QUOTED = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
-const CLASS_TOKEN = /\.((?:[\w-]|\\[0-9a-fA-F]{1,6}\s?|\\[^\n0-9a-fA-F])+)/g;
-
 async function main() {
   if (!fs.existsSync(browserDir)) {
     throw new Error(`${path.relative(root, browserDir)} not found. Run "ng build" first.`);
@@ -41,25 +28,14 @@ async function main() {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  const classMap = new Map();
-  const css = buildCss(fs.readFileSync(findOne(browserDir, /^styles-.*\.css$/), 'utf8'), classMap);
-  fs.writeFileSync(path.join(outDir, 'styles.css'), css);
-
-  const { renamed, missing } = await buildJs(findOne(browserDir, /^main-.*\.js$/), classMap);
+  fs.copyFileSync(findOne(browserDir, /^styles-.*\.css$/), path.join(outDir, 'styles.css'));
+  await buildJs(findOne(browserDir, /^main-.*\.js$/));
   fs.writeFileSync(path.join(outDir, 'index.html'), buildHtml(fs.readFileSync(path.join(browserDir, 'index.html'), 'utf8')));
   copyStaticFiles();
   writeZip(outDir, zipPath);
-  // Debugging aid (not shipped): which Brewser-safe name each escaped Tailwind class got.
-  fs.writeFileSync(path.join(distDir, 'brewser-class-map.json'), JSON.stringify(Object.fromEntries(classMap), null, 2));
 
   console.log(`Brewser bundle written to ${path.relative(root, outDir)}`);
   console.log(`Zip ready to upload: ${path.relative(root, zipPath)}`);
-  console.log(`Renamed ${renamed} escaped Tailwind classes to Brewser-safe names.`);
-  if (missing.length > 0) {
-    // Usually classes Tailwind found in a source file but that no template uses. A class built by
-    // string concatenation at runtime would also land here and stay unstyled on Brewser.
-    console.warn(`Not found in app.js (left unstyled on Brewser if used): ${missing.join(', ')}`);
-  }
   if (withDiagnostics) console.log('On-screen boot diagnostics are included in this build.');
 }
 
@@ -71,320 +47,9 @@ function findOne(dir, pattern) {
   return path.join(dir, matches[0]);
 }
 
-// ---------------------------------------------------------------- CSS
-
-function buildCss(source, classMap) {
-  // Old targets make lightningcss flatten nesting and convert oklch() to hex.
-  const lowered = lightningTransform({
-    filename: 'styles.css',
-    code: Buffer.from(source),
-    minify: false,
-    targets: { chrome: 60 << 16 },
-  }).code.toString();
-
-  const ast = postcss.parse(lowered);
-  unwrapAtRules(ast);
-
-  ast.walkRules((rule) => {
-    if (rule.parent?.type === 'atrule' && rule.parent.name.endsWith('keyframes')) return;
-    const selectors = rule.selectors
-      .filter((selector) => !UNSUPPORTED_SELECTOR.test(selector))
-      .map((selector) => renameEscapedClasses(selector, classMap));
-    // One rule per selector: in CSS a single unsupported selector drops the whole list.
-    for (const selector of selectors) rule.cloneBefore({ selector });
-    rule.remove();
-  });
-
-  // Safety net for modern colors outside `@supports`: drop them where an earlier declaration of
-  // the same property in the rule is the fallback, and report any without one.
-  const unconverted = new Set();
-  ast.walkDecls((decl) => {
-    if (!MODERN_COLOR.test(decl.value)) return;
-    const hasFallback = decl.parent.some((node) => node !== decl && node.type === 'decl' && node.prop === decl.prop && !MODERN_COLOR.test(node.value));
-    if (hasFallback) decl.remove();
-    else unconverted.add(`${decl.parent.selector ?? decl.parent.name} { ${decl.prop} }`);
-  });
-  if (unconverted.size > 0) {
-    console.warn(`Modern color functions without a fallback (may render wrong on Brewser): ${[...unconverted].join('; ')}`);
-  }
-
-  // Brewser support for the individual `translate` property is unverified; `transform` is the
-  // long-standing equivalent. (Would conflict if an element also used transform utilities.)
-  ast.walkDecls('translate', (decl) => {
-    const parts = splitTopLevel(decl.value);
-    if (parts.length <= 2) decl.replaceWith(decl.clone({ prop: 'transform', value: `translate(${parts.join(', ')})` }));
-  });
-
-  inlineThemeVariables(ast);
-  addLiteralGradients(ast);
-
-  // Dynamic viewport units are recent; a plain vh/vw declaration first acts as the fallback.
-  ast.walkDecls((decl) => {
-    if (/\d(?:d|s|l)v[hw]\b/.test(decl.value)) {
-      decl.cloneBefore({ value: decl.value.replace(/(\d)(?:d|s|l)(v[hw])\b/g, '$1$2') });
-    }
-  });
-
-  ast.walkAtRules((atRule) => {
-    if (atRule.nodes && atRule.nodes.length === 0) atRule.remove();
-  });
-
-  // Second lightningcss pass folds the calc() expressions left by inlining, e.g.
-  // `calc(.25rem * 3)` -> `.75rem`. It also merges rules with identical declarations back into
-  // selector lists, so the lists are split again afterwards.
-  const folded = lightningTransform({
-    filename: 'styles.css',
-    code: Buffer.from(ast.toString()),
-    minify: false,
-    targets: { chrome: 60 << 16 },
-  }).code.toString();
-  const finalAst = splitSelectorLists(postcss.parse(folded));
-  convertRemToPx(finalAst);
-  warnAboutPaddingLonghands(finalAst);
-  return finalAst.toString();
-}
-
-// Brewser ignored rem offsets on absolutely positioned elements (`top: .75rem`, `left: .5rem`) while
-// px offsets on the same element worked (seen on device). The app is a fixed 1280x720 stage with the
-// default 16px root font size, so every rem is converted to px: same layout, one less unit to support.
-const ROOT_FONT_SIZE_PX = 16;
-
-function convertRemToPx(ast) {
-  const toPx = (text) =>
-    text.replace(/(-?\d*\.?\d+)rem\b/g, (_, number) => `${Math.round(parseFloat(number) * ROOT_FONT_SIZE_PX * 1000) / 1000}px`);
-  ast.walkDecls((decl) => {
-    if (decl.value.includes('rem')) decl.value = toPx(decl.value);
-  });
-  ast.walkAtRules('media', (atRule) => {
-    if (atRule.params.includes('rem')) atRule.params = toPx(atRule.params);
-  });
-}
-
-// On Brewser a `padding` shorthand beats padding longhands whatever their specificity, so Tailwind's
-// px-*/py-*/pl-*… (longhands) lose to the preflight's `padding: 0` on every element (seen on device;
-// longhands alone work, test-d13). The p-* utilities, including arbitrary values, are shorthands and
-// work. Longhands can't be rewritten here without knowing the other sides an element gets from other
-// classes, so they're reported instead.
-function warnAboutPaddingLonghands(ast) {
-  const selectors = new Set();
-  ast.walkDecls(/^padding-/, (decl) => {
-    if (decl.parent.type === 'rule') selectors.add(decl.parent.selector);
-  });
-  if (selectors.size > 0) {
-    console.warn(
-      `Padding longhands lose to the preflight shorthand on Brewser; use the p-* shorthand utilities instead. Found in: ${[...selectors].join(', ')}`,
-    );
-  }
-}
-
-// One rule per selector: in CSS a single unsupported selector drops the whole list.
-function splitSelectorLists(ast) {
-  ast.walkRules((rule) => {
-    if (rule.parent?.type === 'atrule' && rule.parent.name.endsWith('keyframes')) return;
-    if (rule.selectors.length < 2) return;
-    for (const selector of rule.selectors) rule.cloneBefore({ selector });
-    rule.remove();
-  });
-  return ast;
-}
-
-// Brewser supports `var()` and literal `calc()`, but not `calc()` over a variable, which is how
-// Tailwind v4 writes all spacing (`calc(var(--spacing) * 3)`). Theme variables defined once on
-// `:root` are constants, so they're substituted into every declaration that uses them.
-function inlineThemeVariables(ast) {
-  const definitions = new Map();
-  const counts = new Map();
-  ast.walkDecls(/^--/, (decl) => {
-    counts.set(decl.prop, (counts.get(decl.prop) ?? 0) + 1);
-    if (decl.parent.type === 'rule' && decl.parent.selector === ':root') definitions.set(decl.prop, decl.value);
-  });
-  const constants = new Map([...definitions].filter(([prop]) => counts.get(prop) === 1));
-
-  const resolve = (value, depth = 0) =>
-    depth > 10 ? value : replaceVars(value, (name, fallback) => {
-      if (constants.has(name)) return resolve(constants.get(name), depth + 1);
-      return fallback === undefined ? null : `var(${name}, ${resolve(fallback, depth + 1)})`;
-    });
-
-  ast.walkDecls((decl) => {
-    if (decl.value.includes('var(')) decl.value = resolve(decl.value);
-  });
-}
-
-// Brewser can't read colors from var() inside a gradient (verified: `linear-gradient(var(--a),
-// var(--b))` fails, a var() direction works). Tailwind's `bg-linear-to-* from-* to-*` is built
-// exactly that way, so for every direction/from/to combination (and each state variant such as
-// `hover:` or `disabled:`) this adds a compound rule with the colors written out, e.g.
-// `.bg-linear-to-b.from-gray-500.to-gray-700 { background-image: linear-gradient(to bottom, #6a7282, #364153) }`.
-// Custom stop positions and `via-*` are not supported.
-function addLiteralGradients(ast) {
-  const STOP_SELECTOR = /^\.([\w-]+)((?::[\w-]+(?:\([^)]*\))?)*)$/;
-  const directions = [];
-  const groups = new Map(); // `${media}|${state}` -> { media, state, from: Map, to: Map }
-  let usesVia = false;
-
-  ast.walkRules((rule) => {
-    const media = rule.parent.type === 'atrule' && rule.parent.name === 'media' ? rule.parent.params : '';
-    const match = STOP_SELECTOR.exec(rule.selector);
-    if (!match) return;
-    const [, className, state] = match;
-    rule.walkDecls((decl) => {
-      if (decl.prop === '--tw-gradient-position' && !state && !media) {
-        directions.push({ className, position: decl.value });
-      } else if (decl.prop === '--tw-gradient-from' || decl.prop === '--tw-gradient-to') {
-        if (decl.value.includes('var(')) return;
-        const key = `${media}|${state}`;
-        if (!groups.has(key)) groups.set(key, { media, state, from: new Map(), to: new Map() });
-        groups.get(key)[decl.prop === '--tw-gradient-from' ? 'from' : 'to'].set(className, decl.value);
-      } else if (decl.prop === '--tw-gradient-via') {
-        usesVia = true;
-      }
-    });
-  });
-  if (usesVia) console.warn('Gradient via-* utilities are not converted for Brewser and will render wrong there.');
-  if (directions.length === 0) return;
-
-  const base = groups.get('|') ?? { from: new Map(), to: new Map() };
-  const transparent = 'rgba(0, 0, 0, 0)';
-  const rules = [];
-  const add = (media, selector, position, from, to) =>
-    rules.push({ media, css: `${selector} { background-image: linear-gradient(${position}, ${from}, ${to}); }` });
-
-  for (const { className: dir, position } of directions) {
-    // Only one side set: Tailwind fades the other side to transparent.
-    for (const [f, fc] of base.from) add('', `.${dir}.${f}`, position, fc, transparent);
-    for (const [t, tc] of base.to) add('', `.${dir}.${t}`, position, transparent, tc);
-    for (const [f, fc] of base.from) for (const [t, tc] of base.to) add('', `.${dir}.${f}.${t}`, position, fc, tc);
-
-    // Variants keep the CSS order of their group so the cascade matches Tailwind's.
-    for (const [key, group] of groups) {
-      if (key === '|') continue;
-      const { media, state } = group;
-      for (const [vf, vfc] of group.from) for (const [t, tc] of base.to) add(media, `.${dir}.${t}.${vf}${state}`, position, vfc, tc);
-      for (const [f, fc] of base.from) for (const [vt, vtc] of group.to) add(media, `.${dir}.${f}.${vt}${state}`, position, fc, vtc);
-      for (const [vf, vfc] of group.from) for (const [vt, vtc] of group.to) add(media, `.${dir}.${vf}.${vt}${state}`, position, vfc, vtc);
-    }
-  }
-
-  let css = '';
-  let openMedia = null;
-  for (const { media, css: ruleCss } of rules) {
-    if (media !== openMedia) {
-      if (openMedia) css += '}\n';
-      if (media) css += `@media ${media} {\n`;
-      openMedia = media || null;
-    }
-    css += `${ruleCss}\n`;
-  }
-  if (openMedia) css += '}\n';
-  ast.append(postcss.parse(`/* Brewser: gradients with literal colors */\n${css}`));
-}
-
-// Calls `replacer(name, fallback)` for each top-level var() in `value`. Returning null keeps
-// the original text.
-function replaceVars(value, replacer) {
-  let result = '';
-  let index = 0;
-  while (index < value.length) {
-    const start = value.indexOf('var(', index);
-    if (start === -1) break;
-    let depth = 0;
-    let end = start + 3;
-    let comma = -1;
-    for (; end < value.length; end++) {
-      const char = value[end];
-      if (char === '(') depth++;
-      else if (char === ')' && --depth === 0) break;
-      else if (char === ',' && depth === 1 && comma === -1) comma = end;
-    }
-    const inner = value.slice(start + 4, end);
-    const name = (comma === -1 ? inner : value.slice(start + 4, comma)).trim();
-    const fallback = comma === -1 ? undefined : value.slice(comma + 1, end).trim();
-    const replacement = replacer(name, fallback);
-    result += value.slice(index, start) + (replacement ?? value.slice(start, end + 1));
-    index = end + 1;
-  }
-  return result + value.slice(index);
-}
-
-function unwrapAtRules(ast) {
-  // Repeat until stable: unwrapping a block can expose nested at-rules the walker already passed.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    ast.walkAtRules((atRule) => {
-      if (atRule.name === 'layer') {
-        if (atRule.nodes) atRule.replaceWith(atRule.nodes);
-        else atRule.remove();
-        changed = true;
-      } else if (atRule.name === 'property') {
-        atRule.remove();
-        changed = true;
-      } else if (atRule.name === 'supports') {
-        // Blocks that only set custom properties without testing a color feature are Tailwind's
-        // fallback defaults for `@property` (unsupported on Brewser), so they're kept. Everything
-        // else is a progressive enhancement (lab colors, color-mix) and is dropped.
-        if (onlyCustomProperties(atRule) && !MODERN_COLOR.test(atRule.params)) atRule.replaceWith(atRule.nodes);
-        else atRule.remove();
-        changed = true;
-      }
-    });
-  }
-}
-
-function onlyCustomProperties(node) {
-  let declarations = 0;
-  let custom = 0;
-  node.walkDecls((decl) => {
-    declarations++;
-    if (decl.prop.startsWith('--')) custom++;
-  });
-  return declarations > 0 && declarations === custom;
-}
-
-function renameEscapedClasses(selector, classMap) {
-  const strings = [];
-  const masked = selector.replace(QUOTED, (quoted) => `\u0000${strings.push(quoted) - 1}\u0000`);
-  const renamed = masked.replace(CLASS_TOKEN, (match, raw) => {
-    if (!raw.includes('\\')) return match;
-    const name = unescapeCss(raw);
-    let safe = classMap.get(name);
-    if (!safe) {
-      safe = `bw-c${classMap.size.toString(36)}`;
-      classMap.set(name, safe);
-    }
-    return `.${safe}`;
-  });
-  return renamed.replace(/\u0000(\d+)\u0000/g, (_, index) => strings[Number(index)]);
-}
-
-function unescapeCss(value) {
-  return value.replace(/\\([0-9a-fA-F]{1,6})\s?|\\(.)/g, (_, hex, char) =>
-    hex ? String.fromCodePoint(parseInt(hex, 16)) : char,
-  );
-}
-
-function splitTopLevel(value) {
-  const parts = [];
-  let depth = 0;
-  let current = '';
-  for (const char of value.trim()) {
-    if (char === '(') depth++;
-    if (char === ')') depth--;
-    if (/\s/.test(char) && depth === 0) {
-      if (current) parts.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  if (current) parts.push(current);
-  return parts;
-}
-
 // ---------------------------------------------------------------- JS
 
-async function buildJs(mainJs, classMap) {
+async function buildJs(mainJs) {
   const markers = withDiagnostics ? diagnosticMarkers() : { banner: '', footer: '' };
   const result = await esbuild.build({
     entryPoints: [mainJs],
@@ -397,21 +62,7 @@ async function buildJs(mainJs, classMap) {
     banner: { js: STYLE_POLYFILL + TIMER_POLYFILL + markers.banner },
     footer: { js: markers.footer },
   });
-  let js = patchTextUpdates(result.outputFiles[0].text);
-
-  // Angular compiles static template classes into one string literal per class, so a class is
-  // replaced only where it is a whole token inside a string.
-  let renamed = 0;
-  const missing = [];
-  for (const [name, safe] of classMap) {
-    const token = new RegExp(`(?<=["'\`\\s])${escapeRegExp(name)}(?=["'\`\\s])`, 'g');
-    const next = js.replace(token, safe);
-    if (next === js) missing.push(name);
-    else renamed++;
-    js = next;
-  }
-  fs.writeFileSync(path.join(outDir, 'app.js'), js);
-  return { renamed, missing };
+  fs.writeFileSync(path.join(outDir, 'app.js'), patchTextUpdates(result.outputFiles[0].text));
 }
 
 // Brewser's element.style lacks removeProperty(), which Angular calls whenever a [style.x] binding
@@ -483,10 +134,6 @@ function patchTextUpdates(js) {
     (_, node, value) =>
       `setValue(${node},${value}){${node}.nodeValue=${value};var p=${node}.parentNode;if(p){var s=${node}.nextSibling;p.removeChild(${node});p.insertBefore(${node},s)}}`,
   );
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }
 
 // ---------------------------------------------------------------- HTML and static files

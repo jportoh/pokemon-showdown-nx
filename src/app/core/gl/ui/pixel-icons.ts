@@ -1,4 +1,3 @@
-import { Component, computed, input } from '@angular/core';
 
 export type PixelIconName = 'battle' | 'random' | 'teambuilder' | 'replays' | 'chats' | 'live' | 'settings';
 
@@ -219,59 +218,10 @@ export const ICONS: Record<PixelIconName, readonly string[]> = {
   ],
 };
 
-/** One path per colour, each run of same-coloured pixels in a row as a rectangle: few DOM nodes. */
-export function pixelArtPaths(rows: readonly string[]): { color: string; d: string }[] {
-  const byColor = new Map<string, string>();
-  rows.forEach((row, y) => {
-    let x = 0;
-    while (x < row.length) {
-      const letter = row[x];
-      let end = x + 1;
-      while (end < row.length && row[end] === letter) end++;
-      if (letter !== '.') byColor.set(letter, `${byColor.get(letter) ?? ''}M${x} ${y}h${end - x}v1h${x - end}z`);
-      x = end;
-    }
-  });
-  return [...byColor].map(([letter, d]) => ({ color: COLORS[letter], d }));
-}
-
-/**
- * A colour as a dark grey of the same lightness, for an icon that's switched off. Greys rather than
- * opacity, which Brewser doesn't apply here (device, 2026-09-30).
- */
+/** A colour as a dark grey of the same lightness, for an icon that's switched off. */
 export function greyed(hex: string): string {
   const value = parseInt(hex.slice(1), 16);
   const light = 0.3 * (value >> 16) + 0.59 * ((value >> 8) & 255) + 0.11 * (value & 255);
   const grey = Math.round(40 + light * 0.4).toString(16).padStart(2, '0');
   return `#${grey}${grey}${grey}`;
-}
-
-/** A 24x24 pixel-art icon, scaled up without smoothing. Decorative: its label goes next to it. */
-@Component({
-  selector: 'app-pixel-icon',
-  host: { class: 'block' },
-  template: `
-    <svg aria-hidden="true" viewBox="0 0 24 24" shape-rendering="crispEdges" class="block" [attr.width]="size()" [attr.height]="size()">
-      <!-- Tracked by colour: switching to grey makes new paths rather than recolouring these. -->
-      @for (path of paths(); track path.color) {
-        <path [attr.d]="path.d" [attr.fill]="path.color" />
-      }
-    </svg>
-  `,
-})
-export class PixelIcon {
-  readonly name = input.required<PixelIconName>();
-  /** Shown size in px; multiples of 24 keep the pixels even. */
-  readonly size = input(48);
-  /** Drawn in greys: what it stands for can't be used now. */
-  readonly muted = input(false);
-
-  protected readonly paths = computed(() => {
-    const paths = pixelArtPaths(ICONS[this.name()]);
-    if (!this.muted()) return paths;
-    // Colours that turn into the same grey share one path.
-    const byGrey = new Map<string, string>();
-    for (const { color, d } of paths) byGrey.set(greyed(color), (byGrey.get(greyed(color)) ?? '') + d);
-    return [...byGrey].map(([color, d]) => ({ color, d }));
-  });
 }

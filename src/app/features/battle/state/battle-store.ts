@@ -68,7 +68,7 @@ const WITHDRAW_MS = 600;
  * download (they're fetched from team preview on), as they came out late on the console.
  */
 const INTRO_MS = 3000;
-/** Log entries kept (a whole battle, usually), to keep the DOM small on the console. */
+/** Log entries kept (a whole battle, usually), to keep memory small on the console. */
 const MAX_LOG_ENTRIES = 250;
 /** How long a request waits for its log before it's shown anyway (a request may come alone). */
 const LOG_WAIT_MS = 1000;

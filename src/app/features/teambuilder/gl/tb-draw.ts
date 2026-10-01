@@ -10,9 +10,9 @@ export const TOP = PAGE_BAR_H;
 export const PANEL_X = 360;
 
 export const WHITE: Rgba = [1, 1, 1, 1];
-/** A move card's detail on its type's colour (Tailwind's gray-300, as the DOM cards). */
+/** A move card's detail on its type's colour (a light grey). */
 export const ON_TYPE: Rgba = rgba('#d1d5db');
-/** The nature's lowered stat (the DOM's #2f5f9e badge and #8fb8ee text). */
+/** The nature's lowered stat (a #2f5f9e badge and #8fb8ee text). */
 export const LOWERED_FILL: Rgba = rgba('#2f5f9e');
 export const LOWERED_INK: Rgba = rgba('#8fb8ee');
 /** The stat bars' fill: yellow, orange once all the points are placed; a segment still free to spend. */
@@ -45,7 +45,7 @@ export function typeRgba(type: string): Rgba | null {
   return color;
 }
 
-/** Type pills in a row from `x` (72x20 and 80 apart, as the DOM cards'). */
+/** Type pills in a row from `x` (72x20 and 80 apart). */
 export function typePills(ctx: UiContext, types: readonly string[], x: number, y: number, width = 72, step = 80, height = 20): void {
   types.forEach((type, i) => {
     const px = x + i * step;
@@ -92,7 +92,7 @@ export class WrapCache {
   }
 }
 
-/** A click-only button with a controller button's pill and a label (the DOM's data-kb-skip shortcuts). */
+/** A click-only button with a controller button's pill and a label. */
 export function shortcutButton(
   ctx: UiContext,
   id: string,

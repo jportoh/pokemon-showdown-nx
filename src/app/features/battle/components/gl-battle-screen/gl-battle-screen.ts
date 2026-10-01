@@ -25,14 +25,13 @@ const FIELD = { x: 12, y: 48, w: 985, h: 500 };
  * (BattleFieldScene), the right column (teams and conditions), the command panel (our moves, targets
  * and switches; a replay's controls; a spectator's), and over them the battle log (ZR), the
  * opponent's open team sheet (ZL), team preview (picking ours, or a spectator's view of both) and
- * "Joining battle…". Nothing of it is in the DOM: the focus lives in the canvas (CanvasFocus), the
+ * "Joining battle…". The focus lives in the canvas (CanvasFocus), the
  * controller's d-pad, A and B come straight here (through the stage), the page buttons
  * (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's under it. R3
  * shows the frame-time diagnostics while it has no timer to toggle.
  */
 @Component({
   selector: 'app-gl-battle-screen',
-  host: { class: 'block' },
   template: '',
 })
 export class GlBattleScreen {
@@ -122,7 +121,7 @@ export class GlBattleScreen {
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
       hide();
-      this.inspection.canvasPointed.set(null);
+      this.inspection.pointed.set(null);
       this.choices.hoveredSwitch.set(null);
     });
   }
@@ -195,7 +194,7 @@ export class GlBattleScreen {
     renderer.end();
   }
 
-  /** Where the focus goes as views change: a new set of buttons focuses its first, as the DOM panel did. */
+  /** Where the focus goes as views change: a new set of buttons focuses its first. */
   private settleFocus(picking: boolean): void {
     if (picking) {
       if (!this.teamSelectWasShown) this.focus.focus(this.teamSelect.firstId);
@@ -220,7 +219,7 @@ export class GlBattleScreen {
     // What the focus points at: a team member to inspect, or a switch for the Pokémon card.
     const tile = this.side.tile(this.focus.focused);
     const pointed = tile?.inspect ?? null;
-    if (this.inspection.canvasPointed() !== pointed) this.inspection.canvasPointed.set(pointed);
+    if (this.inspection.pointed() !== pointed) this.inspection.pointed.set(pointed);
     const switchIndex = tile?.switchIndex ?? null;
     if (!this.store.watching() && this.choices.hoveredSwitch() !== switchIndex) this.choices.hoveredSwitch.set(switchIndex);
   }

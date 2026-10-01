@@ -48,7 +48,7 @@ export interface GlScene {
  * renderer, one text cache, one image cache, one frame loop for every screen. A screen shows itself
  * as a scene (`show`); its resources (`whenReady`) outlive it, so the next screen finds the
  * textures already made (a battle's sprites in the next one, the menu's text when coming back).
- * While no scene is shown (a page still in the DOM), the canvas hides and the loop stops.
+ * While no scene is shown (between routes), the canvas hides and the loop stops.
  */
 @Service()
 export class GlStage {
@@ -104,10 +104,9 @@ export class GlStage {
   show(scene: GlScene): () => void {
     this.scenes.push(scene);
     this.active.set(true);
-    // A scene without input of its own (the menu, still on DOM buttons) leaves the d-pad to the DOM.
     this.releaseInput ??= this.navigation.captureInput((action) => {
       const scene = this.overlay ?? this.top();
-      return scene?.input ? scene.input(action) : null;
+      return scene?.input?.(action) ?? false;
     });
     this.start();
     return () => {

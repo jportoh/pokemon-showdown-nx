@@ -36,7 +36,6 @@ interface ReplayRow extends ReplaySummary {
  */
 @Component({
   selector: 'app-replays-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class ReplaysScene {

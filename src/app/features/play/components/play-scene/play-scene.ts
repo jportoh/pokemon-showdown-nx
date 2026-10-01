@@ -43,7 +43,7 @@ const FORMAT_OPTIONS: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) =>
   category: format.category,
 }));
 
-/** The page's three boxes (the DOM page's, 76px lower: under the bar). */
+/** The page's three boxes, under the bar. */
 const SELECT_BOX: Box = { x: 32, y: 100, w: 440, h: 296 };
 const ACTION_BOX: Box = { x: 32, y: 412, w: 440, h: 284 };
 const PREVIEW_BOX: Box = { x: 496, y: 100, w: 752, h: 596 };
@@ -63,7 +63,6 @@ const RIGHT = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
  */
 @Component({
   selector: 'app-play-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class PlayScene {
@@ -421,7 +420,6 @@ export class PlayScene {
       this.selector(ctx, 'team', y + 180, team.name, this.teamPosition(), searching, () => this.openPicker('team'));
     } else {
       this.selector(ctx, 'team', y + 180, 'No teams yet', 'Build one in the Teambuilder', false, () => {
-        this.navigation.focusPageAfterNavigation();
         this.leave('/teambuilder');
       }, false);
     }

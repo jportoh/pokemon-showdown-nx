@@ -26,7 +26,6 @@ const STRESS_LINES = 28;
  */
 @Component({
   selector: 'app-gl-kit-screen',
-  host: { class: 'block' },
   template: '',
 })
 export class GlKitScreen {

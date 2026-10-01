@@ -37,7 +37,7 @@ export interface DexAbility {
 export interface DexSpecies {
   id: string;
   name: string;
-  /** Showdown sprite file name ("arcanine-hisui"), for PokemonSprite. */
+  /** Showdown sprite file name ("arcanine-hisui"). */
   sprite: string;
   types: readonly string[];
   /** In slot order: first, second, hidden, special. */

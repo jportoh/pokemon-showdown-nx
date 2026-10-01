@@ -47,7 +47,7 @@ export interface UiControl {
   w: number;
   h: number;
   accept?: () => void;
-  /** Pressed with a click only: the d-pad never lands on it (as data-kb-skip). */
+  /** Pressed with a click only: the d-pad never lands on it. */
   skip?: boolean;
   /**
    * The d-pad while it has the focus, before moving away: true when it used it (an option picker's
@@ -56,13 +56,13 @@ export interface UiControl {
   move?: (direction: 'up' | 'down' | 'left' | 'right') => boolean;
 }
 
-/** The yellow focus ring of the whole app (styles.css: 3px #facc15 inside the control). */
+/** The yellow focus ring of the whole app (3px #facc15 inside the control). */
 export const FOCUS_RING: Rgba = rgba('#facc15');
 
 /**
  * Focus for a screen drawn on a canvas, which has no DOM to focus: every frame, the screen declares
  * its controls as it draws them (`control`), and the controller moves between the last frame's ones
- * by where they are, as the DOM's spatial navigation does (`move`). A presses the focused one. A
+ * by where they are (`move`). A presses the focused one. A
  * control that goes away hands focus to the nearest one left, where it was.
  */
 export class CanvasFocus {

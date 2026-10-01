@@ -26,7 +26,6 @@ const FORMAT_OPTIONS: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) =>
  */
 @Component({
   selector: 'app-live-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class LiveScene {

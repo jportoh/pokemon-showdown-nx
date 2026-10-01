@@ -17,7 +17,7 @@ export interface PickerOption {
 
 type PickerRow = { kind: 'heading'; text: string } | { kind: 'option'; option: PickerOption };
 
-/** Short rows with text only, or tall ones with 96px sprites (teams), as the DOM picker. */
+/** Short rows with text only, or tall ones with 96px sprites (teams). */
 interface RowLayout {
   visible: number;
   height: number;

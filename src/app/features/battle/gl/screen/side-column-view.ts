@@ -1,7 +1,7 @@
 import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { toChips } from '@features/battle/components/battle-conditions/battle-conditions';
-import { barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
+import { toChips } from '@features/battle/gl/screen/condition-chips';
+import { barColor } from '@features/battle/gl/hp-bar';
 import { BattlePokemon, FieldCondition, RequestPokemon, SideId } from '@features/battle/models/battle';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
@@ -55,10 +55,10 @@ export interface Tile {
 export type SheetButton = 'sheet' | 'accept' | 'waiting';
 
 /**
- * The battle's right column, as the DOM's: the opponent's team on top and ours at the bottom
- * (BattleTeamPreview: tiles framed while on the field, HP bars once sent out, faded once fainted,
+ * The battle's right column: the opponent's team on top and ours at the bottom
+ * (tiles framed while on the field, HP bars once sent out, faded once fainted,
  * blanks for the ones not seen yet, our items in the corner), and the conditions in between
- * (BattleConditions: the opponent's side, the field, ours). Our own tiles are how we switch: while
+ * (the opponent's side, the field, ours). Our own tiles are how we switch: while
  * choosing, the ones that can come in light up and A picks them (one that can't says why). The
  * tiles that can be pointed at show everything known of that Pokémon in the panel below: both
  * sides' watching live; in our own battles, the opponent's (their card over the panel) and ours

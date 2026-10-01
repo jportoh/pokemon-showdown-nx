@@ -1,7 +1,7 @@
 import { computed, inject, linkedSignal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
-import { movePills, sheetRows } from '@features/battle/components/battle-team-select/sheet-rows';
+import { movePills, sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleRequest } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { Rgba, rgba } from '@core/gl/gl-renderer';

@@ -19,7 +19,7 @@ import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
-import { PixelIconName } from '@shared/components/pixel-icon';
+import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { groupDigits } from '@shared/utils/group-digits';
 
@@ -68,7 +68,6 @@ interface MenuLine {
  */
 @Component({
   selector: 'app-home-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class HomeScene {
@@ -231,7 +230,6 @@ export class HomeScene {
       index,
       at: performance.now(),
       then: () => {
-        this.navigation.focusPageAfterNavigation();
         void this.router.navigateByUrl(path);
       },
     };

@@ -2,7 +2,7 @@ import { computed, inject } from '@angular/core';
 import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveType } from '@core/dex/moves';
-import { sheetRows } from '@features/battle/components/battle-team-select/sheet-rows';
+import { sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { unpackTeamSheet } from '@features/battle/state/team-sheet';
@@ -40,10 +40,10 @@ const LOG_STYLES: Record<BattleLogEntry['kind'], LogStyle> = {
 };
 
 /**
- * The battle log over the field's right part (415x500), as BattleLog: a turn header per turn, each
+ * The battle log over the field's right part (415x500): a turn header per turn, each
  * message, minor details in smaller grey text, the result in yellow; the newest entries that fit,
  * unless the reader has paged back with the d-pad. On the canvas each entry's lines are measured
- * exactly (the DOM log had to estimate them from the text's length).
+ * exactly.
  */
 export class LogView {
   private readonly store = inject(BattleStore);

@@ -33,7 +33,6 @@ const CURSOR = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
  */
 @Component({
   selector: 'app-chats-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class ChatsScene {

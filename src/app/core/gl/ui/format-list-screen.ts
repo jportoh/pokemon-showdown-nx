@@ -40,7 +40,7 @@ export interface FormatListModel {
 const ROWS = 8;
 const ROW_H = 56;
 const ROW_GAP = 6;
-/** The page's controls along the top, and the box of rows under them (Watch Live's DOM layout). */
+/** The page's controls along the top, and the box of rows under them. */
 const TOP = 100;
 const BOX = { x: 32, y: 168, w: 1220, h: 528 };
 const ROW_X = BOX.x + 12;

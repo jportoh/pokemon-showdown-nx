@@ -32,7 +32,6 @@ const FORFEIT_CONFIRM_MS = 4000;
 @Component({
   selector: 'app-battle-screen',
   imports: [GlBattleScreen],
-  host: { class: 'block' },
   template: `
     <app-gl-battle-screen
       [forfeitState]="forfeitState()"

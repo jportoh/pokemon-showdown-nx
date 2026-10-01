@@ -1,4 +1,4 @@
-// Tailwind's 400 shades: all pass AA contrast on the dark chat background.
+// Bright 400 shades: all pass AA contrast on the dark chat background.
 const USERNAME_COLORS = [
   '#f472b6', // pink
   '#fb7185', // rose

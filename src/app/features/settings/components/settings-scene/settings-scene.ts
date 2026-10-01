@@ -30,7 +30,7 @@ interface SettingRow {
   disabled?: boolean;
 }
 
-/** The rows' box and each row in it, as the DOM page had them. */
+/** The rows' box and each row in it. */
 const BOX = { x: 32, y: 100, w: 1216, h: 596 };
 const ROW_X = BOX.x + 24;
 const ROW_W = 1162;
@@ -41,7 +41,7 @@ const INTRO_MS = 320;
 const LEAVE_MS = 180;
 /** A changed value flashes this long. */
 const FLASH_MS = 400;
-/** The value's ◀ ▶: 4x7 pixels each, drawn 4 times bigger (the DOM's 16x28). */
+/** The value's ◀ ▶: 4x7 pixels each, drawn 4 times bigger (16x28). */
 const LEFT_ROWS = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];
 const RIGHT_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 
@@ -51,11 +51,10 @@ let returnRow: SettingId = 'theme';
 /**
  * Settings, drawn on the stage: a list of rows, each with its value on the right. A changes it (the
  * next value, or on/off), and so do left/right (back for left); the theme applies at once. The last
- * row opens the replays (still a DOM page), whose B comes back here. B goes back to the menu.
+ * row opens the replays, whose B comes back here. B goes back to the menu.
  */
 @Component({
   selector: 'app-settings-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class SettingsScene {
@@ -196,13 +195,12 @@ export class SettingsScene {
     this.change(row, 1);
   }
 
-  /** Fades out, then opens `path` (the menu focuses the Settings tile; a DOM page its start). */
+  /** Fades out, then opens `path` (the menu focuses the Settings tile). */
   private leave(path: string): void {
     if (this.leaving) return;
     this.leaving = {
       at: performance.now(),
       then: () => {
-        if (path !== '/') this.navigation.focusPageAfterNavigation();
         void this.router.navigateByUrl(path);
       },
     };

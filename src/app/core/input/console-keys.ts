@@ -3,10 +3,9 @@
  *
  * On the console (test K1, 2026-09-25) the buttons reach the page through the Gamepad API: A, B,
  * ZL and ZR only there; the d-pad there and also as key events (both its arrow key and the letter the
- * build maps to it). X and Y belong to Brewser (restart, exit), and so did L and R in test K1, which is
- * why ZL/ZR switch tabs; later the user found L and R free, and pages use them for their own actions
- * (in battle: L Mega Evolves, R forfeits). The build's
- * "button mappings" go the other way: they let a computer keyboard drive the Switch controls in the web
+ * build maps to it). X and Y belong to Brewser (restart, exit), and so did L and R in test K1; later
+ * the user found L and R free, and screens use them for their own actions (in battle: L Mega Evolves,
+ * R forfeits). The build's "button mappings" go the other way: they let a computer keyboard drive the Switch controls in the web
  * version, with these letters. Arrows, Enter and Escape also work, for computer keyboards.
  */
 export type InputAction =
@@ -25,24 +24,10 @@ export type InputAction =
   | 'last';
 
 /**
- * The shoulder buttons and R3 (the right stick pressed), whose meaning depends on the page (see
- * KeyboardNavigation.registerButton). ZL and ZR switch the header's tabs unless the page uses them (the
- * battle, which has no header).
+ * The shoulder buttons and R3 (the right stick pressed), whose meaning depends on the screen (see
+ * KeyboardNavigation.registerButton).
  */
 export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3';
-
-/**
- * Each button and the key that stands for it on a computer keyboard (the build's button mappings, for
- * the web version). The header's legend shows the ones with a `legend`.
- */
-export const CONSOLE_BUTTONS: readonly { button: string; key: string; action: string; legend?: string }[] = [
-  { button: 'D-pad', key: 'W / A / S / D', action: 'Move focus; left/right change a list box option' },
-  { button: 'A', key: 'J', action: 'Press the focused control; start typing in a text field', legend: 'Select' },
-  { button: 'B', key: 'K', action: 'Back', legend: 'Back' },
-  { button: 'ZL/ZR', key: 'Z / C', action: "The page's own actions (battle: open team sheet / battle log; teambuilder: Validate / Delete or Remove; Watch Live and Replays: ZR refreshes; Chats: users / write a message)" },
-  { button: 'L / R', key: 'Q / E', action: "The page's own actions, shown next to them (battle: Mega Evolve / Forfeit; teambuilder: Details / Stats; Watch Live and Replays: previous / next page; Chats: L leaves the room)" },
-  { button: 'R3', key: 'R', action: "The right stick pressed: the page's own action (battle: battle timer)" },
-];
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
@@ -133,14 +118,3 @@ export function inputAction(event: KeyboardEvent): InputAction | null {
   return (key && BY_KEY[key]) || BY_CODE[event.code] || BY_KEY_CODE[event.keyCode] || null;
 }
 
-/** A key that types a character (a letter button does too, while a text field is being edited). */
-export function isTypingKey(event: KeyboardEvent): boolean {
-  if (event.altKey || event.ctrlKey || event.metaKey) return false;
-  if (event.key) return event.key.length === 1;
-  return (event.keyCode >= 48 && event.keyCode <= 90) || event.keyCode === 32;
-}
-
-/** The Enter key itself (not the A button's letter), for text fields that act on Enter. */
-export function isEnterKey(event: KeyboardEvent): boolean {
-  return event.key === 'Enter' || event.key === 'NumpadEnter' || event.keyCode === 13;
-}

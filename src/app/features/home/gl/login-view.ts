@@ -6,14 +6,14 @@ import { Box, UiContext, button, label, retroBox, textField } from '@core/gl/ui/
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
-/** The boxes over the menu: most of the stage under the bar (RetroBox 1088x568 at 96,116). */
+/** The boxes over the menu: most of the stage under the bar (a retro box, 1088x568 at 96,116). */
 export const BOX: Box = { x: 96, y: 116, w: 1088, h: 568 };
 /** Where a box's content starts: inside its outline and rim (3px each). */
 export const INNER_X = BOX.x + 6;
 export const INNER_Y = BOX.y + 6;
 
 /**
- * Connecting to Showdown, as the DOM's login box (LoginForm): first as a guest (a random name), or
+ * Connecting to Showdown: first as a guest (a random name), or
  * below it with the player's own name once the connection is ready (a registered name with its
  * password, a free one with the password left empty). The fields type with the canvas keyboard, whose
  * OK moves on: from the name to the password, from the password to Log in. B closes it; it closes
@@ -147,7 +147,7 @@ export class LoginView {
 const ANSWERS = ['Eevee', 'Pikachu', 'Jigglypuff', 'Meowth'] as const;
 
 /**
- * Registering the player's unregistered name, as the DOM's RegisterForm: a password twice (the
+ * Registering the player's unregistered name: a password twice (the
  * canvas keyboard's OK moves on to the next, then to the answers), Showdown's "What is this
  * Pokémon?" question, and Register. Once registered, the menu shows the Trainer Card in its place; B
  * cancels.

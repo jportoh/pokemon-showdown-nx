@@ -2,14 +2,13 @@ import { Service, computed, inject } from '@angular/core';
 import { AppSettings, ThemeId } from '@core/settings/app-settings';
 import { Rgba, rgba } from '../gl-renderer';
 
-/** The retro palette's roles (styles.css's --retro-* variables, which the DOM pages still use). */
+/** The retro palette's roles. */
 export type PaletteRole = 'bg' | 'bar' | 'panel' | 'outline' | 'rim' | 'select' | 'button' | 'input' | 'ink' | 'muted' | 'accent' | 'accentHover' | 'accentText' | 'danger' | 'teal';
 
 export type Palette = Readonly<Record<PaletteRole, Rgba>>;
 
 /**
- * Each theme's palette, as styles.css defines it for the DOM (keep both in step until the DOM pages
- * are gone). Each was checked for WCAG AA there: ink and muted on panel/select, white on accent,
+ * Each theme's palette. Each was checked for WCAG AA: ink and muted on panel/select, white on accent,
  * accentText/danger/teal on panel and bar.
  */
 const THEME_HEX: Record<ThemeId, Record<PaletteRole, string>> = {

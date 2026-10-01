@@ -28,7 +28,6 @@ const LEAVE_MS = 180;
  */
 @Component({
   selector: 'app-teambuilder-scene',
-  host: { class: 'block' },
   template: '',
 })
 export class TeambuilderScene {

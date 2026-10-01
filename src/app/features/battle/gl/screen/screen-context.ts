@@ -13,7 +13,7 @@ export interface ScreenContext {
   now: number;
 }
 
-/** The battle screen's colours (styles.css's --color-* and the Tailwind ones its DOM used). */
+/** The battle screen's colours. */
 export const INK = {
   white: rgba('#ffffff'),
   header: rgba('#1f2d45'),
@@ -65,8 +65,8 @@ const BUTTON_LOOK: Record<ButtonLook, { fill: Rgba; border: Rgba; ink: Rgba }> =
 };
 
 /**
- * A button: declared to the focus (A presses it; a disabled one can't be focused) and drawn as the
- * DOM's, with the yellow ring while focused. Returns whether it has the focus.
+ * A button: declared to the focus (A presses it; a disabled one can't be focused) and drawn with
+ * the yellow ring while focused. Returns whether it has the focus.
  */
 export function button(
   ctx: ScreenContext,

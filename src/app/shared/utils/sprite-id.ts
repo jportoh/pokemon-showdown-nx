@@ -14,3 +14,14 @@ export function spriteId(species: string): string {
   if (cut <= 0 || cut >= species.length) return toId(species);
   return `${toId(species.slice(0, cut))}-${toId(species.slice(cut + 1))}`;
 }
+
+const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
+
+/**
+ * A sprite's URL, from its file name (96x96 PNGs; play.pokemonshowdown.com is allow-listed in the
+ * Brewser submission). Some sprites have no back view (the Megas new in Champions): those fall back to
+ * the front one where they're drawn.
+ */
+export function spriteUrl(sprite: string, back = false): string {
+  return `${SPRITES_URL}/${back ? 'gen5-back' : 'gen5'}/${sprite}.png`;
+}

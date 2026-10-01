@@ -1,6 +1,6 @@
 import { ITEM_ICON_SIZE, ITEM_SHEET_URL, itemIconCell } from '@core/dex/names';
 import { GlRenderer, Rgba, Texture } from '@core/gl/gl-renderer';
-import { spriteUrl } from '@shared/components/pokemon-sprite';
+import { spriteUrl } from '@shared/utils/sprite-id';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 
 /** Textures made in one frame at most: a screen drawn from scratch spreads its uploads. */
@@ -10,7 +10,7 @@ const UPLOADS_PER_FRAME = 2;
  * The battle screen's images (Showdown's sprites, item icons) as WebGL textures, made from the ones
  * SpriteBitmaps decodes once. On the console any image becomes a texture (probe w1: Brewser doesn't
  * apply CORS); desktop browsers refuse Showdown's sprites, whose server sends no CORS headers. A back
- * sprite that doesn't exist (some new Megas) falls back to the front one, as PokemonSprite does.
+ * sprite that doesn't exist (some new Megas) falls back to the front one.
  */
 export class GlSprites {
   private readonly textures = new Map<string, Texture>();

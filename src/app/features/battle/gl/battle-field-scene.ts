@@ -1,7 +1,6 @@
 import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { movePattern } from '@features/battle/animation/move-patterns';
-import { outAndBack } from '@features/battle/animation/step-animation';
+import { movePattern } from '@features/battle/gl/move-patterns';
 import {
   DEFAULT_GROUND,
   DEFAULT_SKY,
@@ -15,13 +14,11 @@ import {
   TERRAIN_SKY,
   WEATHER_SKY,
   spriteBox,
-} from '@features/battle/components/battle-field/battle-field';
-import { HpBoxEmphasis, barColor } from '@features/battle/components/battle-hp-box/battle-hp-box';
-import { EffectPoint, EffectTarget } from '@features/battle/components/move-effects/move-effects';
-import { GlEffects, easeOut, glowDot } from '@features/battle/gl/gl-effects';
+} from '@features/battle/gl/field-layout';
+import { HpBoxEmphasis, barColor } from '@features/battle/gl/hp-bar';
+import { EffectPoint, EffectTarget, GlEffects, easeOut, glowDot, outAndBack } from '@features/battle/gl/gl-effects';
 import { GlSprites } from '@core/gl/gl-sprites';
 import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
-import { spriteUrl } from '@shared/components/pokemon-sprite';
 import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SideId, SlotKey, StatChange, StatusChange } from '@features/battle/models/battle';
 import { BattleStore, signed } from '@features/battle/state/battle-store';
 import { STATUS } from '@features/battle/state/status-conditions';
@@ -29,7 +26,7 @@ import { Align, drawText } from '@core/gl/canvas-ui';
 import { GlRenderer, Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { TextStyle, TextTextures } from '@core/gl/gl-textures';
 import { typeColor } from '@shared/data/type-colors';
-import { spriteId } from '@shared/utils/sprite-id';
+import { spriteId, spriteUrl } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
 const FIELD_W = 985;
@@ -56,7 +53,7 @@ const BOX_STATS: [string, string][] = [
 const RESULT_W = 560;
 const SIDE_INK: Record<SideId, Rgba> = { p1: rgba('#7dd3fc'), p2: rgba('#fca5a5') };
 
-// The same lengths as the DOM field's, at normal speed (the replay speed divides them).
+// Lengths at normal speed (the replay speed divides them).
 const LUNGE_MS = 600;
 const RUSH_MS = 400;
 const LUNGE_SHARE = 0.25;
@@ -169,9 +166,8 @@ interface Mote {
 }
 
 /**
- * The battle field drawn with WebGL, for any canvas that shows it (the battle screen's, or the field's
- * own while the rest of the screen is still DOM): the same layout, store events and animations as the
- * DOM field (BattleField), but every sprite, platform, effect, status box and label drawn: moves get
+ * The battle field drawn with WebGL, for the battle screen: every sprite, platform, effect, status box
+ * and label, following the store's events: moves get
  * real light (additive glows, many more sparks), the weather falls across the field (rain, snow, sand,
  * sun rays, wind), terrains send motes up, clouds drift, labels and banners pop in, send-outs and Mega
  * Evolutions burst with light, HP bars slide. Made in an injection context (a component's field); the
@@ -271,7 +267,7 @@ export class BattleFieldScene {
     effect(() => {
       if (this.store.intro()) this.introBorn = performance.now();
     });
-    // Team preview's Pokémon (and their Megas) are fetched ahead, as the DOM field does.
+    // Team preview's Pokémon (and their Megas) are fetched ahead.
     effect(() => {
       const { p1, p2 } = this.store.sides();
       untracked(() => {
@@ -453,7 +449,7 @@ export class BattleFieldScene {
     }
   }
 
-  /** The same choreography as the DOM field's playMove, drawn with the WebGL effects. */
+  /** A move's choreography: the user's lunge or rush, its effect, the targets' reactions. */
   private playMove(action: MoveAction): void {
     const effects = this.effects;
     effects.speed = this.store.speed();
@@ -555,7 +551,7 @@ export class BattleFieldScene {
     }
     let struck = false;
     this.animate(action.attacker, ms, (v, p) => {
-      // Eased out and back: a quicker strike than the DOM's linear one.
+      // Eased out and back: a quick strike.
       const amount = easeOut(outAndBack(p));
       v.dx = dx * amount;
       v.dy = dy * amount;
@@ -1013,7 +1009,7 @@ export class BattleFieldScene {
     if (p2) renderer.image(p2, cx - p2.width / 2 + 200 * (1 - e), cy + 34 - p2.height / 2, 1, withAlpha(WHITE, e));
   }
 
-  // ---------------------------------------------------------------- positions (as the DOM field's)
+  // ---------------------------------------------------------------- positions
 
   private slotData(slot: SlotKey): Slot | undefined {
     return this.slots().find((s) => s.key === slot);

@@ -22,7 +22,7 @@ export interface Box {
   h: number;
 }
 
-/** Disabled controls, the same in every theme (Tailwind's grey-700/600/400 in the DOM). */
+/** Disabled controls, the same in every theme (greys 700/600/400). */
 const DISABLED = { fill: [55 / 255, 65 / 255, 81 / 255, 1] as Rgba, border: [75 / 255, 85 / 255, 99 / 255, 1] as Rgba, ink: [156 / 255, 163 / 255, 175 / 255, 1] as Rgba };
 const WHITE: Rgba = [1, 1, 1, 1];
 
@@ -44,14 +44,14 @@ export function focusRing(ctx: UiContext, box: Box, radius = 6): void {
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: FOCUS_RING, radius, border: 3 });
 }
 
-/** The retro box (RetroBox): the outline colour around a rim, the panel inside. */
+/** The retro box: the outline colour around a rim, the panel inside. */
 export function retroBox(ctx: UiContext, box: Box): void {
   const p = ctx.palette;
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.outline, radius: 14 });
   ctx.renderer.rect(box.x + 3, box.y + 3, box.w - 6, box.h - 6, { fill: p.panel, stroke: p.rim, radius: 11, border: 3 });
 }
 
-/** A controller button's name in a pill (ZR, L…), as the DOM's shortcut pills. */
+/** A controller button's name in a pill (ZR, L…). */
 export function pill(ctx: UiContext, key: string, x: number, cy: number, height = 24): number {
   const width = Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
   ctx.renderer.rect(x, cy - height / 2, width, height, { fill: ctx.palette.select, radius: 3 });
@@ -165,7 +165,7 @@ export interface ListRow {
 }
 
 /**
- * A long list shown a page of rows at a time, as the DOM's lists are (no scroll boxes on Brewser):
+ * A long list shown a page of rows at a time:
  * the d-pad walks the rows, and going past the first or last one shown moves the window a row (L/R,
  * the page's, move it a page). Its rows are controls `${id}-${index}`; the caller draws each one.
  */

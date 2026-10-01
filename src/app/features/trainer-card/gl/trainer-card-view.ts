@@ -25,7 +25,7 @@ export const CARD_CLOSE_ID = 'card-close';
 export const CARD_AVATAR_ID = 'card-avatar';
 
 /**
- * A Trainer Card, Gen 3 style, as the DOM's TrainerCard: the player's own, or someone else's (a
+ * A Trainer Card, Gen 3 style: the player's own, or someone else's (a
  * challenger's, by name: their avatar from the server, and no picker). The avatar in a frame (our own:
  * A opens the avatar picker over the card), the name and totals across every ladder (battles, wins and
  * losses, win rate), and the best ladder ratings, loaded each time it's shown. B or Close closes it

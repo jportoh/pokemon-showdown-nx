@@ -2,18 +2,18 @@ import { Service, computed, inject } from '@angular/core';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { PixelIconName } from '@shared/components/pixel-icon';
+import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { Texture, rgba } from '../gl-renderer';
 import { STAGE_W } from '../gl-stage';
 import { iconTexture } from '../gl-textures';
 import { UiContext, focusRing, label, pill } from './retro-kit';
 
-/** The bar over every page (MainLayout's on the DOM pages), 76px high. */
+/** The bar over every page, 76px high. */
 export const PAGE_BAR_H = 76;
 
 type StatusKey = 'offline' | 'connecting' | 'reconnecting' | 'loggingIn' | 'online' | 'noName';
 
-/** The connection as the bars say it: its words and dot (TrainerStatus). */
+/** The connection as the bars say it: its words and dot. */
 const STATUS: Record<StatusKey, { text: string; dot: string }> = {
   offline: { text: 'Offline', dot: '#9ca3af' },
   connecting: { text: 'Connecting…', dot: '#fcd34d' },
@@ -32,7 +32,7 @@ export interface PageBarInfo {
 }
 
 /**
- * The bar of the pages drawn on the stage, as MainLayout's on the DOM ones: the page's icon and title,
+ * The bar of the pages drawn on the stage: the page's icon and title,
  * a Back button (for clicks: B is the controller's), a challenge's notice (but on the Battle page,
  * which shows the challenge itself) and the trainer's status. The home menu's bar draws the status too.
  */
@@ -74,7 +74,7 @@ export class PageBar {
       icon = iconTexture(renderer, page.icon, false);
       this.icons.set(page.icon, icon);
     }
-    // The icons are 24x24 pixel art: 2x makes the DOM's 48px.
+    // The icons are 24x24 pixel art, drawn at 2x (48px).
     renderer.image(icon, 24, 14, 2);
     label(ctx, page.title, 88, 38, { size: 36, bold: true }, p.ink, { maxWidth: 260 });
 

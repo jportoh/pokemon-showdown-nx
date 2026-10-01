@@ -19,7 +19,7 @@ export interface KeyboardEntry {
   done: (value: string | null) => void;
 }
 
-/** The character keys, row by row: each one's character and its character with Shift (as the DOM keyboard). */
+/** The character keys, row by row: each one's character and its character with Shift. */
 const ROWS: readonly (readonly (readonly [string, string])[])[] = [
   [['1', '!'], ['2', '@'], ['3', '#'], ['4', '$'], ['5', '%'], ['6', '&'], ['7', '*'], ['8', '('], ['9', ')'], ['0', '=']],
   [['q', 'Q'], ['w', 'W'], ['e', 'E'], ['r', 'R'], ['t', 'T'], ['y', 'Y'], ['u', 'U'], ['i', 'I'], ['o', 'O'], ['p', 'P']],
@@ -42,8 +42,8 @@ const BOTTOM: readonly { id: BottomKey; text: string; button: string }[] = [
 ];
 
 /**
- * The app's on-screen keyboard, drawn on the canvas over the whole stage (as the DOM's
- * OnScreenKeyboardPanel, for the canvas pages' text fields): the field's name, the text, and the
+ * The app's on-screen keyboard, drawn on the canvas over the whole stage (for the screens' text
+ * fields): the field's name, the text, and the
  * keys, which the d-pad walks and A types. B deletes (and cancels once the text is empty), L is
  * Shift, R a space, ZR OK and ZL Cancel; the mouse clicks keys, and a computer's keyboard types.
  * It never opens on its own (the console's own keyboard must not open either): a field opens it on A.

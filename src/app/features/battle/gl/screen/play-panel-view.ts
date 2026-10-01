@@ -1,8 +1,8 @@
 import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
-import { PokemonCardMode, pokemonCardView } from '@features/battle/components/battle-pokemon-card/battle-pokemon-card';
-import { pokemonInfoView } from '@features/battle/components/battle-pokemon-info/battle-pokemon-info';
+import { PokemonCardMode, pokemonCardView } from '@features/battle/gl/screen/pokemon-card-view';
+import { pokemonInfoView } from '@features/battle/gl/screen/pokemon-info-view';
 import { RequestPokemon } from '@features/battle/models/battle';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
@@ -38,7 +38,7 @@ export interface PlayActions {
 }
 
 /**
- * The command panel in our own battles (985x172 under the field), as BattleControls: the four moves
+ * The command panel in our own battles (985x172 under the field): the four moves
  * two by two on their types' colours (category icon, power, accuracy, PP) beside the card of the
  * Pokémon choosing (switching is done on the team tiles on the right, the card following the one
  * pointed at); the target picker when a move needs one; a forced switch's prompt; what each Pokémon

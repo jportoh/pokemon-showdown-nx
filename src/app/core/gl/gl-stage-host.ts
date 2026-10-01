@@ -2,24 +2,21 @@ import { Component, ElementRef, afterNextRender, inject, viewChild } from '@angu
 import { GlStage, STAGE_H, STAGE_W } from './gl-stage';
 
 /**
- * The app's one canvas, at the root under everything (GlStage draws on it). Shown while a screen
- * drawn on it is open; pages still in the DOM paint over the stage meanwhile, and the canvas hides
- * (a wrapper toggled by display, which Brewser toggles reliably).
+ * The app's one canvas, at the root (GlStage draws every screen on it). It hides while no screen is
+ * open, between routes (styles.css lays it out).
  */
 @Component({
   selector: 'app-gl-stage',
-  host: { class: 'absolute top-0 left-0 block' },
   template: `
-    <div class="block" [class.hidden]="!stage.active()">
+    <div class="gl-stage" [class.off]="!stage.active()">
       <canvas
         #canvas
         aria-hidden="true"
-        class="block h-[720px] w-[1280px]"
         [attr.width]="width"
         [attr.height]="height"
       ></canvas>
       @if (stage.failure(); as message) {
-        <p role="alert" class="absolute top-[320px] left-[240px] block h-[60px] w-[800px] rounded-md border-2 border-white bg-[#1f2937] text-center text-lg leading-[56px] text-white">
+        <p role="alert" class="gl-failure">
           WebGL failed: {{ message }}
         </p>
       }

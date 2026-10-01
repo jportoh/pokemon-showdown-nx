@@ -78,7 +78,7 @@ export class TeamView {
     label(ctx, team.name, x + 24, TOP + 22, { size: 20, bold: true }, p.ink, { maxWidth: 490 });
     label(ctx, 'Format', x + 24, TOP + 62, { size: 14 }, p.muted);
 
-    // A button that moves to the next format, as the DOM's (a list of two isn't worth a picker).
+    // A button that moves to the next format (a list of two isn't worth a picker).
     const formatBox = { x: x + 84, y: TOP + 44, w: 340, h: 36 };
     const next = () => {
       const current = TEAM_FORMATS.findIndex((format) => format.id === team.format);

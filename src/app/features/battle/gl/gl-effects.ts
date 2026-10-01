@@ -1,7 +1,45 @@
-import { DEFAULT_COLOR, EFFECT_COLORS, EffectPoint, EffectTarget } from '@features/battle/components/move-effects/move-effects';
 import { GlRenderer, Rgba } from '@core/gl/gl-renderer';
+import { SlotKey } from '@features/battle/models/battle';
 
-// Lengths at normal speed, as the DOM effects' (a move's log step lasts 1100 ms); the speed divides them.
+/**
+ * Bright type colours for the effects, as RGB triplets (the renderer takes an alpha with each).
+ */
+export const EFFECT_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
+  normal: [200, 200, 170],
+  fire: [240, 128, 48],
+  water: [104, 144, 240],
+  electric: [248, 208, 48],
+  grass: [120, 200, 80],
+  ice: [152, 216, 216],
+  fighting: [224, 64, 48],
+  poison: [180, 80, 180],
+  ground: [224, 192, 104],
+  flying: [168, 144, 240],
+  psychic: [248, 88, 136],
+  bug: [168, 184, 32],
+  rock: [184, 160, 56],
+  ghost: [128, 96, 168],
+  dragon: [112, 56, 248],
+  dark: [112, 88, 72],
+  steel: [184, 184, 208],
+  fairy: [238, 153, 172],
+};
+export const DEFAULT_COLOR = [230, 230, 230] as const;
+
+/** A point on the field (px from its top left corner). */
+export interface EffectPoint {
+  x: number;
+  y: number;
+}
+
+/** Where a special move flies to, and whether it lands there (a miss just fades on arrival). */
+export interface EffectTarget {
+  slot: SlotKey;
+  at: EffectPoint;
+  hit: boolean;
+}
+
+// Lengths at normal speed (a move's log step lasts 1100 ms); the speed divides them.
 const CHARGE_MS = 240;
 const LAUNCH_AT = 0.7;
 const FLIGHT_MS = 340;
@@ -606,6 +644,11 @@ function mix(a: Rgba, b: Rgba, t: number): Rgba {
 
 export function easeOut(t: number): number {
   return 1 - Math.pow(1 - t, 3);
+}
+
+/** Out and back: 0 → 1 at the middle → 0. */
+export function outAndBack(progress: number): number {
+  return progress < 0.5 ? progress * 2 : (1 - progress) * 2;
 }
 
 function easeIn(t: number): number {

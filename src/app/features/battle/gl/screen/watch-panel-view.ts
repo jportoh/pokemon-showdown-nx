@@ -1,5 +1,5 @@
 import { computed, inject } from '@angular/core';
-import { pokemonInfoView } from '@features/battle/components/battle-pokemon-info/battle-pokemon-info';
+import { pokemonInfoView } from '@features/battle/gl/screen/pokemon-info-view';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { rgba } from '@core/gl/gl-renderer';
@@ -23,9 +23,9 @@ export const PANEL_IDS = {
 
 /**
  * The command panel while watching, under the field (985x172 from 12,548): a replay's controls
- * (ReplayControls: play/pause or watch again, next turn, speed, back to the list), or a live battle's
- * (SpectatorControls: who's playing over the way back to the list, and the card of the team member
- * pointed at in the right column, BattlePokemonInfo).
+ * (play/pause or watch again, next turn, speed, back to the list), or a live battle's
+ * (who's playing over the way back to the list, and the card of the team member
+ * pointed at in the right column).
  */
 export class WatchPanelView {
   private readonly store = inject(BattleStore);
