@@ -32,11 +32,22 @@ const RECOVER_FOCUS_MS = 500;
 /** Brewser lays out late: a focused row is scrolled into view again after this long. */
 const REVEAL_AGAIN_MS = 100;
 
-/** How often the controller is read. */
+/**
+ * How often the controller is read where there's no requestAnimationFrame. Elsewhere it's read every
+ * frame: on the console timers fire only 20–25 times a second (probe N1), frames 60.
+ */
 const GAMEPAD_POLL_MS = 50;
-/** A held direction repeats after this long, then every GAMEPAD_REPEAT_MS. */
-const GAMEPAD_REPEAT_DELAY_MS = 400;
-const GAMEPAD_REPEAT_MS = 130;
+/**
+ * A held direction repeats after GAMEPAD_REPEAT_DELAY_MS, then faster and faster: each repeat comes
+ * GAMEPAD_REPEAT_SPEEDUP times sooner than the last, from GAMEPAD_REPEAT_START_MS down to the floor
+ * (a canvas screen can take a step a frame or two; a DOM page renders on every step, so it stops at a
+ * gentler pace).
+ */
+const GAMEPAD_REPEAT_DELAY_MS = 350;
+const GAMEPAD_REPEAT_START_MS = 120;
+const GAMEPAD_REPEAT_SPEEDUP = 0.85;
+const CANVAS_REPEAT_MIN_MS = 35;
+const DOM_REPEAT_MIN_MS = 80;
 /** How far the left stick must be pushed to count as a d-pad direction. */
 const STICK_THRESHOLD = 0.5;
 /** The same action from the keyboard and the controller this close together is one press. */
@@ -131,7 +142,7 @@ export class KeyboardNavigation {
 
   private gamepadConnected = false;
   /** Actions held on the controller: when they started and when they last fired (for repeats). */
-  private held = new Map<InputAction, { since: number; fired: number }>();
+  private held = new Map<InputAction, { since: number; fired: number; repeats: number }>();
   private lastAction: { action: InputAction; source: Source; at: number } | null = null;
 
   constructor() {
@@ -147,7 +158,17 @@ export class KeyboardNavigation {
     document.addEventListener('change', (event) => {
       if (event.target === this.current && isTextField(this.current)) this.setEditing(null);
     }, true);
-    if (typeof navigator.getGamepads === 'function') setInterval(() => this.pollGamepads(), GAMEPAD_POLL_MS);
+    if (typeof navigator.getGamepads === 'function') {
+      if (typeof requestAnimationFrame === 'function') {
+        const poll = () => {
+          this.pollGamepads();
+          requestAnimationFrame(poll);
+        };
+        requestAnimationFrame(poll);
+      } else {
+        setInterval(() => this.pollGamepads(), GAMEPAD_POLL_MS);
+      }
+    }
 
     inject(Router).events.subscribe((event) => {
       if (!(event instanceof NavigationEnd) || !this.focusPageOnNavigation) return;
@@ -345,19 +366,22 @@ export class KeyboardNavigation {
     }
     this.gamepadConnected = connected;
 
-    const held = new Map<InputAction, { since: number; fired: number }>();
+    const held = new Map<InputAction, { since: number; fired: number; repeats: number }>();
+    const floor = this.canvasInputs.length > 0 ? CANVAS_REPEAT_MIN_MS : DOM_REPEAT_MIN_MS;
     for (const action of pressed) {
       const previous = this.held.get(action);
       if (!previous) {
-        held.set(action, { since: now, fired: now });
+        held.set(action, { since: now, fired: now, repeats: 0 });
         this.dispatch(action, 'gamepad', this.activeControl(), false);
         continue;
       }
       held.set(action, previous);
       // Only directions repeat while held: a held A shouldn't press over and over.
       const isDirection = action === 'up' || action === 'down' || action === 'left' || action === 'right';
-      if (isDirection && now - previous.since >= GAMEPAD_REPEAT_DELAY_MS && now - previous.fired >= GAMEPAD_REPEAT_MS) {
+      const interval = Math.max(floor, GAMEPAD_REPEAT_START_MS * Math.pow(GAMEPAD_REPEAT_SPEEDUP, previous.repeats));
+      if (isDirection && now - previous.since >= GAMEPAD_REPEAT_DELAY_MS && now - previous.fired >= interval) {
         previous.fired = now;
+        previous.repeats++;
         this.dispatch(action, 'gamepad', this.activeControl(), false);
       }
     }
