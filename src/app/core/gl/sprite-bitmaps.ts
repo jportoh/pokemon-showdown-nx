@@ -8,8 +8,11 @@ export type ImagePriority = (typeof ImagePriority)[keyof typeof ImagePriority];
 /** A decoded image, ready to upload (WebGL): the browser's, or our own pixels (decodePng). */
 export type DecodedImage = ImageBitmap | HTMLImageElement | RawImage;
 
-/** Downloads at once: waiting on the network costs the main thread nothing. */
-export const MAX_DOWNLOADS = 6;
+/**
+ * Downloads at once: waiting on the network costs the main thread nothing. More doesn't help on the
+ * console, which takes ~100 ms per request however many run at once (test p3).
+ */
+const MAX_DOWNLOADS = 6;
 /** Time spent decoding in JavaScript per frame: on the menus, and on the loading screen (rush). */
 const FRAME_DECODE_MS = 6;
 const RUSH_DECODE_MS = 40;
@@ -20,7 +23,9 @@ type Entry =
   | { state: 'downloaded'; priority: number; bytes: Uint8Array }
   | { state: 'decoding' }
   | { state: 'ready'; image: DecodedImage; width: number; height: number }
-  | { state: 'failed' };
+  | { state: 'failed' }
+  /** Made into a texture: the decoded image is gone (GlSprites keeps the texture). */
+  | { state: 'released' };
 
 type Listener = (image: DecodedImage | null) => void;
 
@@ -52,13 +57,11 @@ export class SpriteBitmaps {
   rush = false;
   /** Bytes downloaded and time spent decoding so far (the loading screen's figures). */
   readonly totals = { bytes: 0, decodeMs: 0, browserDecodes: 0, downloads: 0, downloadMs: 0 };
-  /** Downloads at once (the loading screen raises it: test p2 spent 70 s waiting on 6 at a time). */
-  maxDownloads = MAX_DOWNLOADS;
 
   /** Not ready yet (waiting, downloading or decoding), for the diagnostics. */
   get queued(): number {
     let count = 0;
-    for (const entry of this.entries.values()) if (entry.state !== 'ready' && entry.state !== 'failed') count++;
+    for (const entry of this.entries.values()) if (entry.state !== 'ready' && entry.state !== 'failed' && entry.state !== 'released') count++;
     return count;
   }
 
@@ -86,7 +89,18 @@ export class SpriteBitmaps {
   /** Still to come. */
   pending(url: string): boolean {
     const state = this.entries.get(url)?.state;
-    return state !== undefined && state !== 'ready' && state !== 'failed';
+    return state !== undefined && state !== 'ready' && state !== 'failed' && state !== 'released';
+  }
+
+  /**
+   * Lets a decoded image go once its texture is made (25 MB of sprites, test p1): the GPU has the
+   * copy that's drawn. It isn't decoded again.
+   */
+  release(url: string): void {
+    const entry = this.entries.get(url);
+    if (entry?.state !== 'ready') return;
+    if ('close' in entry.image) entry.image.close();
+    this.entries.set(url, { state: 'released' });
   }
 
   /**
@@ -134,7 +148,7 @@ export class SpriteBitmaps {
       }
       return;
     }
-    while (this.downloads < this.maxDownloads) {
+    while (this.downloads < MAX_DOWNLOADS) {
       const next = this.mostWanted('queued');
       if (!next) break;
       this.download(next);

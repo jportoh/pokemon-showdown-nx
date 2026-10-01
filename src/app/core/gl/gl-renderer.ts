@@ -100,6 +100,8 @@ export interface Texture {
   readonly handle: WebGLTexture;
   readonly width: number;
   readonly height: number;
+  /** Only this part of the texture (left, top, right, bottom, 0-1): a sprite in a sheet. */
+  readonly uv?: readonly [number, number, number, number];
 }
 
 export interface QuadStyle {
@@ -301,7 +303,8 @@ export class GlRenderer {
   /** A rectangle from its top-left corner, rounded and bordered as the style says. */
   rect(x: number, y: number, width: number, height: number, style: QuadStyle): void {
     const texture = style.texture ?? this.whiteTexture;
-    if (texture !== this.texture) {
+    // Sprites of one sheet share its handle: drawn one after another, they stay in one batch.
+    if (texture.handle !== this.texture.handle) {
       this.flush();
       this.texture = texture;
     }
@@ -314,7 +317,7 @@ export class GlRenderer {
     const fill = style.fill;
     const stroke = style.stroke ?? NO_STROKE;
     const textured = (style.texture ? 1 : 0) + (style.additive ? 2 : 0);
-    const uv = style.uv;
+    const uv = style.uv ?? texture.uv;
     const angle = style.angle ?? 0;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);

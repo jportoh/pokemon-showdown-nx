@@ -26,7 +26,8 @@ import { Align, drawText } from '@core/gl/canvas-ui';
 import { GlRenderer, Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { TextStyle, TextTextures } from '@core/gl/gl-textures';
 import { typeColor } from '@shared/data/type-colors';
-import { spriteId, spriteUrl } from '@shared/utils/sprite-id';
+import { spriteSource } from '@core/gl/sprite-sheets';
+import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
 const FIELD_W = 985;
@@ -295,7 +296,7 @@ export class BattleFieldScene {
     const sprites = [sprite, ...this.dex.allMegas.filter((m) => m.base === toId(species)).map((m) => m.sprite)];
     for (const s of sprites) {
       for (const b of back ? [false, true] : [false]) {
-        const url = spriteUrl(s, b);
+        const url = spriteSource(s, b);
         if (this.preloaded.has(url)) continue;
         this.preloaded.add(url);
         // The team tiles show each species' front sprite straight away; backs and Megas may come later.
