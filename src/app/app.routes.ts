@@ -1,7 +1,6 @@
 import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { BattleSession } from '@features/battle/state/battle-session';
-import { MainLayout, PageInfo } from '@core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
   {
@@ -19,6 +18,11 @@ export const routes: Routes = [
   {
     path: 'play',
     loadComponent: () => import('@features/play/components/play-scene/play-scene').then((c) => c.PlayScene),
+  },
+  {
+    path: 'teambuilder',
+    loadComponent: () =>
+      import('@features/teambuilder/components/teambuilder-scene/teambuilder-scene').then((c) => c.TeambuilderScene),
   },
   {
     path: 'chats',
@@ -47,22 +51,6 @@ export const routes: Routes = [
     canDeactivate: [() => !inject(BattleSession).active()],
     loadComponent: () =>
       import('@features/battle/components/battle-screen/battle-screen').then((c) => c.BattleScreen),
-  },
-  {
-    // The pages the home menu opens, in the frame (title bar, B back to the menu), which stays mounted
-    // while they swap.
-    path: '',
-    component: MainLayout,
-    children: [
-      {
-        path: 'teambuilder',
-        data: { page: { title: 'Teambuilder', icon: 'teambuilder' } satisfies PageInfo },
-        loadComponent: () =>
-          import('@features/teambuilder/components/teambuilder-page/teambuilder-page').then(
-            (c) => c.TeambuilderPage,
-          ),
-      },
-    ],
   },
   { path: '**', redirectTo: '' },
 ];
