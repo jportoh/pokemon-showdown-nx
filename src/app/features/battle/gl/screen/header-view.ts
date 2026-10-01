@@ -1,6 +1,6 @@
 import { computed, inject } from '@angular/core';
 import { BattleStore, timerSecondsLeft } from '@features/battle/state/battle-store';
-import { rgba } from '@features/gl-home/gl/gl-renderer';
+import { rgba } from '@core/gl/gl-renderer';
 import { INK, ScreenContext, hint, write } from './screen-context';
 
 /** The timer turns red with this little left of the turn (the last minute). */

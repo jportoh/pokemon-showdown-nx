@@ -1,7 +1,9 @@
-import { Component, DestroyRef, ElementRef, afterNextRender, computed, inject, signal, viewChild, viewChildren } from '@angular/core';
+import { Component, DestroyRef, ElementRef, afterNextRender, computed, inject, viewChild, viewChildren } from '@angular/core';
 import { Router } from '@angular/router';
+import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { GlStage, STAGE_H, STAGE_W, StageResources } from '@core/gl/gl-stage';
+import { TextStyle, TextTextures, iconTexture } from '@core/gl/gl-textures';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
@@ -9,11 +11,6 @@ import { HomeSummary } from '@features/home/state/home-summary';
 import { PixelIconName } from '@shared/components/pixel-icon';
 import { RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { probeCanvasText, probeContext, probeRemoteSprite } from '../../gl/gl-probe';
-import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '../../gl/gl-renderer';
-import { TextStyle, TextTextures, iconTexture } from '../../gl/gl-textures';
-
-const STAGE_W = 1280;
-const STAGE_H = 720;
 /** Particle counts L steps through. The DOM draws at most DOM_PARTICLE_CAP (more would freeze it). */
 const PARTICLE_LEVELS = [0, 100, 1000, 5000, 15000] as const;
 const DOM_PARTICLE_CAP = 1000;
@@ -100,9 +97,8 @@ interface TileAnim {
  */
 @Component({
   selector: 'app-gl-home-screen',
-  host: { class: 'relative block h-[720px] w-[1280px] bg-retro-bg' },
+  host: { class: 'relative block h-[720px] w-[1280px]' },
   template: `
-    <canvas #canvas aria-hidden="true" class="absolute top-0 left-0 block h-[720px] w-[1280px]" [attr.width]="canvasWidth" [attr.height]="canvasHeight"></canvas>
     <div #domLayer aria-hidden="true" class="absolute top-0 left-0 block"></div>
     <nav aria-label="Main menu" class="block">
       @for (tile of tiles; track tile.item.id) {
@@ -120,32 +116,20 @@ interface TileAnim {
         ></button>
       }
     </nav>
-    @if (failure(); as message) {
-      <div role="alert" class="absolute top-[260px] left-[240px] block h-[200px] w-[800px] rounded-2xl border-4 border-retro-danger bg-retro-panel p-6 text-xl leading-8 text-retro-ink">
-        <p class="block font-bold">WebGL failed</p>
-        <p class="block">{{ message }}</p>
-        <p class="block text-retro-muted">R goes back to the normal menu.</p>
-      </div>
-    }
   `,
 })
 export class GlHomeScreen {
   private readonly router = inject(Router);
   private readonly navigation = inject(KeyboardNavigation);
   private readonly menu = inject(HomeMenu);
-  private readonly render = inject(RenderScheduler);
   private readonly login = inject(ShowdownLogin);
   private readonly search = inject(ShowdownSearch);
   private readonly summary = inject(HomeSummary);
-  private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
+  private readonly stage = inject(GlStage);
   private readonly domLayer = viewChild.required<ElementRef<HTMLDivElement>>('domLayer');
   private readonly buttons = viewChildren<ElementRef<HTMLButtonElement>>('tile');
 
   protected readonly tiles = TILES;
-  private readonly scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-  protected readonly canvasWidth = Math.round(STAGE_W * this.scale);
-  protected readonly canvasHeight = Math.round(STAGE_H * this.scale);
-  protected readonly failure = signal<string | null>(null);
 
   private readonly offline = computed(() => {
     const status = this.login.state().status;
@@ -189,7 +173,6 @@ export class GlHomeScreen {
   private palette: Palette = paletteFrom(DEFAULT_PALETTE);
   private icons = new Map<string, Texture>();
   private cursorTexture: Texture | null = null;
-  private frame = 0;
   private start = 0;
   private last = 0;
   private readonly anims: TileAnim[] = TILES.map(() => ({ focus: 0, shake: 0 }));
@@ -209,9 +192,11 @@ export class GlHomeScreen {
 
   constructor() {
     this.menu.glHome.set(true);
+    const hide = this.stage.show({ draw: ({ now }) => this.tick(now) });
+    // After the first render: starting uses the template's layer (the probe's image, the DOM particles).
     afterNextRender(() => {
       this.focusItem(this.menu.lastItem());
-      this.startGl();
+      this.stage.whenReady((resources) => this.startGl(resources));
     });
     const unregister = [
       this.navigation.registerButton('buttonR', () => this.toDomMenu()),
@@ -221,10 +206,10 @@ export class GlHomeScreen {
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
-      cancelAnimationFrame(this.frame);
+      hide();
       this.clearDomParticles();
-      this.text?.dispose();
-      this.renderer?.dispose();
+      // The stage outlives the menu: its own textures go with it (the text cache is the stage's).
+      for (const texture of [...this.icons.values(), ...this.spriteTextures, ...(this.cursorTexture ? [this.cursorTexture] : [])]) this.renderer?.deleteTexture(texture);
     });
   }
 
@@ -277,18 +262,10 @@ export class GlHomeScreen {
       ?.nativeElement.focus();
   }
 
-  private startGl(): void {
-    const canvas = this.canvasRef().nativeElement;
-    try {
-      this.renderer = new GlRenderer(canvas, STAGE_W, STAGE_H);
-    } catch (error) {
-      this.failure.set(String(error));
-      this.render.request();
-      return;
-    }
-    const renderer = this.renderer;
+  private startGl({ renderer, text }: StageResources): void {
+    this.renderer = renderer;
     this.palette = readPalette();
-    this.text = new TextTextures(renderer, this.scale, getComputedStyle(document.body).fontFamily || 'Roboto, sans-serif');
+    this.text = text;
     for (const tile of TILES) {
       this.icons.set(`${tile.item.id}`, iconTexture(renderer, tile.item.id, false));
       this.icons.set(`${tile.item.id}-muted`, iconTexture(renderer, tile.item.id, true));
@@ -303,11 +280,6 @@ export class GlHomeScreen {
     this.start = performance.now();
     this.last = this.start;
     this.fps.since = this.start;
-    const loop = (now: number) => {
-      this.frame = requestAnimationFrame(loop);
-      this.tick(now);
-    };
-    this.frame = requestAnimationFrame(loop);
   }
 
   private resetParticles(): void {
@@ -349,7 +321,8 @@ export class GlHomeScreen {
 
   /** One frame: ease the animated values, move the particles, draw everything. */
   private tick(now: number): void {
-    const renderer = this.renderer!;
+    const renderer = this.renderer;
+    if (!renderer) return;
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.measure(now, now - this.last);
     this.last = now;

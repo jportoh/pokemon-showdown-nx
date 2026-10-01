@@ -5,11 +5,11 @@ import { sheetRows } from '@features/battle/components/battle-team-select/sheet-
 import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { unpackTeamSheet } from '@features/battle/state/team-sheet';
-import { Rgba, rgba } from '@features/gl-home/gl/gl-renderer';
-import { TextStyle } from '@features/gl-home/gl/gl-textures';
+import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { TextStyle } from '@core/gl/gl-textures';
 import { typeColor } from '@shared/data/type-colors';
 import { spriteId } from '@shared/utils/sprite-id';
-import { ImagePriority } from '../sprite-bitmaps';
+import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { INK, ScreenContext, write } from './screen-context';
 
 const LOG_X = 582;

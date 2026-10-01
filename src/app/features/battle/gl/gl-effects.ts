@@ -1,5 +1,5 @@
 import { DEFAULT_COLOR, EFFECT_COLORS, EffectPoint, EffectTarget } from '@features/battle/components/move-effects/move-effects';
-import { GlRenderer, Rgba } from '@features/gl-home/gl/gl-renderer';
+import { GlRenderer, Rgba } from '@core/gl/gl-renderer';
 
 // Lengths at normal speed, as the DOM effects' (a move's log step lasts 1100 ms); the speed divides them.
 const CHARGE_MS = 240;

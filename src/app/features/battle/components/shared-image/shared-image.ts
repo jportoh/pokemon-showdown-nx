@@ -1,6 +1,6 @@
 import { Component, DestroyRef, ElementRef, afterRenderEffect, computed, inject, input, linkedSignal, untracked, viewChildren } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
-import { DecodedImage, ImagePriority, SpriteBitmaps } from '@features/battle/gl/sprite-bitmaps';
+import { DecodedImage, ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { spriteUrl } from '@shared/components/pokemon-sprite';
 
 /**

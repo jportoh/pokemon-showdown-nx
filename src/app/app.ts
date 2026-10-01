@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
+import { GlStageHost } from '@core/gl/gl-stage-host';
 import { AppSettings } from '@core/settings/app-settings';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
@@ -9,7 +10,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { OnScreenKeyboardPanel } from '@shared/components/on-screen-keyboard/on-screen-keyboard-panel';
 
 @Component({
-  imports: [OnScreenKeyboardPanel, RouterOutlet],
+  imports: [GlStageHost, OnScreenKeyboardPanel, RouterOutlet],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

@@ -1,4 +1,4 @@
-import { GlRenderer, Texture } from './gl-renderer';
+import { GlRenderer, Texture } from '@core/gl/gl-renderer';
 
 /** A sprite from Showdown's server (allow-listed on Brewser, but sent without CORS headers). */
 const REMOTE_SPRITE = 'https://play.pokemonshowdown.com/sprites/gen5/pikachu.png';

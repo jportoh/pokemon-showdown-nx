@@ -58,7 +58,8 @@ export type TextInput = (event: KeyboardEvent) => boolean;
 
 /** What a canvas screen is given (see KeyboardNavigation.captureInput). */
 export type CanvasAction = 'up' | 'down' | 'left' | 'right' | 'accept' | 'back' | 'first' | 'last';
-export type CanvasInput = (action: CanvasAction) => boolean;
+/** Whether the action was used; null hands it on to the DOM's navigation (a canvas screen with DOM controls still). */
+export type CanvasInput = (action: CanvasAction) => boolean | null;
 
 function isCanvasAction(action: InputAction): action is CanvasAction {
   return action === 'up' || action === 'down' || action === 'left' || action === 'right' || action === 'accept' || action === 'back' || action === 'first' || action === 'last';
@@ -377,7 +378,10 @@ export class KeyboardNavigation {
 
   private handle(action: InputAction, active: HTMLElement | null, typing: boolean): boolean {
     const canvas = this.canvasInputs[this.canvasInputs.length - 1];
-    if (canvas && isCanvasAction(action)) return canvas(action);
+    if (canvas && isCanvasAction(action)) {
+      const used = canvas(action);
+      if (used !== null) return used;
+    }
     if (active) this.remember(active);
     switch (action) {
       case 'up':

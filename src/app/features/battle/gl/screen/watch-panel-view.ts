@@ -2,7 +2,7 @@ import { computed, inject } from '@angular/core';
 import { pokemonInfoView } from '@features/battle/components/battle-pokemon-info/battle-pokemon-info';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
-import { rgba } from '@features/gl-home/gl/gl-renderer';
+import { rgba } from '@core/gl/gl-renderer';
 import { toId } from '@shared/utils/to-id';
 import { INK, ScreenContext, button, write, writeLines } from './screen-context';
 

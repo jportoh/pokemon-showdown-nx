@@ -7,7 +7,7 @@ import { RequestPokemon } from '@features/battle/models/battle';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
-import { Rgba, rgba } from '@features/gl-home/gl/gl-renderer';
+import { Rgba, rgba } from '@core/gl/gl-renderer';
 import { typeColor } from '@shared/data/type-colors';
 import { INK, ScreenContext, button, hint, ring, write, writeLines } from './screen-context';
 import { drawPokemonInfo } from './watch-panel-view';

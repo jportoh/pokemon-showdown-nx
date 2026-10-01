@@ -7,9 +7,9 @@ import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { previewTeam } from '@features/battle/state/team-preview';
-import { Rgba, rgba } from '@features/gl-home/gl/gl-renderer';
+import { Rgba, rgba } from '@core/gl/gl-renderer';
 import { spriteId } from '@shared/utils/sprite-id';
-import { ImagePriority } from '../sprite-bitmaps';
+import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { INK, ScreenContext, hint, ring, write } from './screen-context';
 
 const COLUMN_X = 1003;

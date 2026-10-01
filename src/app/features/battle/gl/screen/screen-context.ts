@@ -1,7 +1,7 @@
-import { Align, CanvasFocus, FOCUS_RING, drawText } from '@features/gl-home/gl/canvas-ui';
-import { GlRenderer, Rgba, Texture, rgba } from '@features/gl-home/gl/gl-renderer';
-import { TextStyle, TextTextures } from '@features/gl-home/gl/gl-textures';
-import { GlSprites } from '../gl-sprites';
+import { Align, CanvasFocus, FOCUS_RING, drawText } from '@core/gl/canvas-ui';
+import { GlRenderer, Rgba, Texture, rgba } from '@core/gl/gl-renderer';
+import { TextStyle, TextTextures } from '@core/gl/gl-textures';
+import { GlSprites } from '@core/gl/gl-sprites';
 
 /** What every part of a canvas screen draws with, for one frame. */
 export interface ScreenContext {

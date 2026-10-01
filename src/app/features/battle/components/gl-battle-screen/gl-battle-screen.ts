@@ -1,8 +1,12 @@
-import { Component, DestroyRef, ElementRef, afterNextRender, computed, inject, input, output, signal, viewChild } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
+import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
+import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from '@core/gl/gl-diagnostics';
+import { GlRenderer, rgba } from '@core/gl/gl-renderer';
+import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
+import { TextTextures } from '@core/gl/gl-textures';
+import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleFieldScene } from '@features/battle/gl/battle-field-scene';
-import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from '@features/battle/gl/gl-diagnostics';
-import { GlSprites } from '@features/battle/gl/gl-sprites';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
 import { LogView, TeamSheetView, TeamsOverviewView } from '@features/battle/gl/screen/overlay-views';
 import { PlayPanelView } from '@features/battle/gl/screen/play-panel-view';
@@ -10,37 +14,26 @@ import { INK, ScreenContext, write } from '@features/battle/gl/screen/screen-con
 import { SheetButton, SideColumnView } from '@features/battle/gl/screen/side-column-view';
 import { DONE_ID, TeamSelectView } from '@features/battle/gl/screen/team-select-view';
 import { PANEL_IDS, WatchPanelView } from '@features/battle/gl/screen/watch-panel-view';
-import { SpriteBitmaps } from '@features/battle/gl/sprite-bitmaps';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
-import { CanvasFocus, isDirection } from '@features/gl-home/gl/canvas-ui';
-import { GlRenderer, rgba } from '@features/gl-home/gl/gl-renderer';
-import { TextTextures, discTexture } from '@features/gl-home/gl/gl-textures';
 
-const STAGE_W = 1280;
-const STAGE_H = 720;
 const FIELD = { x: 12, y: 48, w: 985, h: 500 };
 
 /**
- * The battle screen, all of it on one 1280x720 canvas: the match header, the field
+ * The battle screen, drawn as a scene on the app's one canvas (GlStage), all 1280x720 of it: the match header, the field
  * (BattleFieldScene), the right column (teams and conditions), the command panel (our moves, targets
  * and switches; a replay's controls; a spectator's), and over them the battle log (ZR), the
  * opponent's open team sheet (ZL), team preview (picking ours, or a spectator's view of both) and
- * "Joining battle…". Nothing else is in the DOM: the focus lives in the canvas (CanvasFocus), the
- * controller's d-pad, A and B come straight here (KeyboardNavigation.captureInput), the page buttons
+ * "Joining battle…". Nothing of it is in the DOM: the focus lives in the canvas (CanvasFocus), the
+ * controller's d-pad, A and B come straight here (through the stage), the page buttons
  * (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's under it. R3
  * shows the frame-time diagnostics while it has no timer to toggle.
  */
 @Component({
   selector: 'app-gl-battle-screen',
-  host: { class: 'block h-[720px] w-[1280px]' },
-  template: `
-    <canvas #canvas aria-hidden="true" class="block h-[720px] w-[1280px]" [attr.width]="width" [attr.height]="height"></canvas>
-    @if (failure(); as message) {
-      <p role="alert" class="absolute top-[320px] left-[240px] block h-[60px] w-[800px] rounded-md border-2 border-white bg-[#1f2937] text-center text-lg leading-[56px] text-white">WebGL failed: {{ message }}</p>
-    }
-  `,
+  host: { class: 'block' },
+  template: '',
 })
 export class GlBattleScreen {
   /** Forfeit's state (R): BattleScreen asks for confirmation. */
@@ -67,12 +60,7 @@ export class GlBattleScreen {
   private readonly navigation = inject(KeyboardNavigation);
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly diagnostics = inject(GlDiagnostics);
-  private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
-
-  private readonly scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-  protected readonly width = Math.round(STAGE_W * this.scale);
-  protected readonly height = Math.round(STAGE_H * this.scale);
-  protected readonly failure = signal<string | null>(null);
+  private readonly stage = inject(GlStage);
 
   private readonly field = new BattleFieldScene();
   private readonly header = new HeaderView();
@@ -109,7 +97,6 @@ export class GlBattleScreen {
 
   constructor() {
     const unregister = [
-      this.navigation.captureInput((action) => this.onAction(action)),
       this.navigation.registerButton('buttonZR', () => this.toggleLog()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
@@ -120,62 +107,29 @@ export class GlBattleScreen {
       }),
     ];
 
-    let renderer: GlRenderer | null = null;
-    let text: TextTextures | null = null;
-    let hudText: TextTextures | null = null;
-    let sprites: GlSprites | null = null;
-    let frame = 0;
-    afterNextRender(() => {
-      const canvas = this.canvasRef().nativeElement;
-      try {
-        renderer = new GlRenderer(canvas, STAGE_W, STAGE_H);
-      } catch (error) {
-        this.failure.set(String(error));
-        return;
-      }
-      const ready = renderer;
-      const family = getComputedStyle(document.body).fontFamily || 'Roboto, sans-serif';
-      text = new TextTextures(ready, this.scale, family);
-      hudText = new TextTextures(ready, this.scale, family);
-      sprites = new GlSprites(ready, this.bitmaps);
-      text.onUpload = (ms) => this.diagnostics.record('text', ms);
-      sprites.onUpload = (ms) => this.diagnostics.record('sprite', ms);
-      this.bitmaps.onArrival = () => this.diagnostics.record('arrival', 0);
-      this.diagnostics.clearFrames();
-      const disc = discTexture(ready);
-      this.field.attach(ready, text, sprites, disc);
-      this.ctx = { renderer: ready, text, images: sprites, focus: this.focus, disc, now: 0 };
-
+    this.stage.whenReady((resources) => {
+      this.field.attach(resources.renderer, resources.text, resources.images, resources.disc);
+      this.ctx = { renderer: resources.renderer, text: resources.text, images: resources.images, focus: this.focus, disc: resources.disc, now: 0 };
+    });
+    const hide = this.stage.show({
+      draw: (frame) => this.draw(frame),
+      input: (action) => this.onAction(action),
       // Browsers: the mouse points and clicks (the console has only the controller).
-      canvas.addEventListener('click', (event) => this.focus.click(event.offsetX, event.offsetY));
-      canvas.addEventListener('mousemove', (event) => this.focus.hover(event.offsetX, event.offsetY));
-
-      let last = performance.now();
-      const loop = (now: number) => {
-        frame = requestAnimationFrame(loop);
-        const started = performance.now();
-        const interval = now - last;
-        last = now;
-        this.draw(ready, sprites!, hudText!, now, Math.min(0.1, interval / 1000));
-        this.diagnostics.frame(interval, performance.now() - started);
-      };
-      frame = requestAnimationFrame(loop);
+      click: (x, y) => this.focus.click(x, y),
+      hover: (x, y) => this.focus.hover(x, y),
     });
 
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
-      cancelAnimationFrame(frame);
+      hide();
       this.inspection.canvasPointed.set(null);
       this.choices.hoveredSwitch.set(null);
-      sprites?.dispose();
-      text?.dispose();
-      hudText?.dispose();
-      renderer?.dispose();
     });
   }
 
-  private draw(renderer: GlRenderer, sprites: GlSprites, hudText: TextTextures, now: number, dt: number): void {
-    const ctx = this.ctx!;
+  private draw({ renderer, overlayText: hudText, now, dt }: StageFrame): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
     ctx.now = now;
     const battle = this.store.battleId();
     if (battle !== this.shownBattle) {
@@ -183,7 +137,6 @@ export class GlBattleScreen {
       this.sheetOpen = false;
       this.logOpen = false;
     }
-    sprites.startFrame();
     renderer.beginPlain(INK.header);
     this.focus.begin();
 

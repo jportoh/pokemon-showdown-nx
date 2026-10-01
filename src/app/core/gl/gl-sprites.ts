@@ -1,4 +1,4 @@
-import { GlRenderer, Texture } from '@features/gl-home/gl/gl-renderer';
+import { GlRenderer, Texture } from '@core/gl/gl-renderer';
 import { spriteUrl } from '@shared/components/pokemon-sprite';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 
