@@ -161,6 +161,8 @@ export class HomeScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressZR()),
       this.navigation.registerButton('buttonL', () => this.toggleLBox()),
+      // EXPERIMENT (feat/webgl-probe): R switches to the WebGL menu.
+      this.navigation.registerButton('buttonR', () => this.toGlMenu()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
@@ -186,6 +188,13 @@ export class HomeScreen {
     if (this.search.searching()) this.search.cancel();
     else if (this.offline()) this.openLogin();
     else if (this.login.state().status === 'named') this.search.search(RANDOM_BATTLE_FORMAT);
+  }
+
+  private toGlMenu(): boolean {
+    if (this.loginOpen() || this.lBoxOpen()) return false;
+    this.menu.glHome.set(true);
+    void this.router.navigateByUrl('/gl');
+    return true;
   }
 
   /** ZR or its button: logs in while offline, disconnects (in two presses) while connected. */

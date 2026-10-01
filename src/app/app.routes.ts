@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { BattleSession } from '@features/battle/state/battle-session';
+import { HomeMenu } from '@features/home/state/home-menu';
 import { MainLayout, PageInfo } from '@core/layout/main-layout/main-layout';
 
 export const routes: Routes = [
@@ -8,7 +9,15 @@ export const routes: Routes = [
     // The home menu takes the whole stage: its own trainer bar, no page frame.
     path: '',
     pathMatch: 'full',
+    // EXPERIMENT (feat/webgl-probe): the WebGL menu while it's the one chosen (R switches).
+    canActivate: [() => !inject(HomeMenu).glHome() || inject(Router).parseUrl('/gl')],
     loadComponent: () => import('@features/home/components/home-screen/home-screen').then((c) => c.HomeScreen),
+  },
+  {
+    // EXPERIMENT (feat/webgl-probe): the home menu drawn with WebGL.
+    path: 'gl',
+    loadComponent: () =>
+      import('@features/gl-home/components/gl-home-screen/gl-home-screen').then((c) => c.GlHomeScreen),
   },
   {
     // A battle takes the whole stage, without the frame: once it starts there's no leaving it until

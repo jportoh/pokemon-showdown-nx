@@ -211,6 +211,11 @@ body {
   background-color: var(--retro-select) !important;
 }
 
+/* EXPERIMENT (feat/webgl-probe): the WebGL menu draws its own focus; its buttons stay invisible. */
+[data-kb-focus][data-gl-item] {
+  outline: none !important;
+}
+
 /* A text field being typed in (A pressed on it): the buttons type instead of navigating. */
 [data-kb-editing][data-kb-focus] {
   outline-color: #4ade80 !important;

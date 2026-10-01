@@ -3,7 +3,7 @@ import { Component, computed, input } from '@angular/core';
 export type PixelIconName = 'battle' | 'random' | 'teambuilder' | 'replays' | 'chats' | 'live' | 'settings';
 
 /** Each pixel's colour by letter; "." is transparent. Upper case is a shade darker, P and l a shade lighter. */
-const COLORS: Record<string, string> = {
+export const COLORS: Record<string, string> = {
   k: '#22333b',
   r: '#c2452f',
   R: '#8e2a1c',
@@ -27,7 +27,7 @@ const COLORS: Record<string, string> = {
  * 24x24 pixel art, a row per string. Lit from the top left, each shape outlined in k (dark enough to
  * part overlapping shapes, while the panels behind stay as dark).
  */
-const ICONS: Record<PixelIconName, readonly string[]> = {
+export const ICONS: Record<PixelIconName, readonly string[]> = {
   // Two Poké Balls, a red one and a blue one, clashing under a spark.
   battle: [
     '........................',
@@ -239,7 +239,7 @@ export function pixelArtPaths(rows: readonly string[]): { color: string; d: stri
  * A colour as a dark grey of the same lightness, for an icon that's switched off. Greys rather than
  * opacity, which Brewser doesn't apply here (device, 2026-09-30).
  */
-function greyed(hex: string): string {
+export function greyed(hex: string): string {
   const value = parseInt(hex.slice(1), 16);
   const light = 0.3 * (value >> 16) + 0.59 * ((value >> 8) & 255) + 0.11 * (value & 255);
   const grey = Math.round(40 + light * 0.4).toString(16).padStart(2, '0');
