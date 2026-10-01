@@ -77,55 +77,54 @@ export class WatchPanelView {
   private drawLive(ctx: ScreenContext, leave: () => void): void {
     writeLines(ctx, this.liveStatus(), X, Y, 300, 24, { size: 16 }, INK.gray200, 3);
     button(ctx, PANEL_IDS.leaveLive, { x: X, y: Y + 104, w: 300, h: 44 }, 'Other live battles', 'plain', leave);
-    this.drawInfo(ctx, X + 316, Y);
+    drawPokemonInfo(ctx, X + 316, Y, this.info());
   }
+}
 
-  /** The team member pointed at, as BattlePokemonInfo's card (645x148). */
-  private drawInfo(ctx: ScreenContext, x: number, y: number): void {
-    const { renderer } = ctx;
-    const v = this.info();
-    renderer.rect(x, y, 645, 148, { fill: INK.dark, stroke: INK.gray500, radius: 6, border: 1 });
-    if (!v.shown) {
-      write(ctx, 'Point at a Pokémon on the right to see everything known about it here.', x + 322, y + 74, { size: 16 }, INK.gray300, 'center', 600);
-      return;
-    }
-    write(ctx, v.owner.toUpperCase(), x + 12, y + 14, { size: 12, bold: true }, v.side === 'p1' ? INK.sky300 : INK.red300, 'left', 206);
-    write(ctx, v.name, x + 12, y + 36, { size: 18, bold: true }, INK.white, 'left', 206);
-    write(ctx, v.subtitle, x + 12, y + 60, { size: 14 }, INK.gray300, 'left', 206);
-    for (const chip of v.types) {
-      renderer.rect(x + chip.left, y + 74, chip.width, 20, { fill: rgba(chip.color), stroke: chip.tera ? INK.white : [0, 0, 0, 0], radius: 2, border: chip.tera ? 1 : 0 });
-      write(ctx, chip.text, x + chip.left + chip.width / 2, y + 84, { size: 12, bold: true }, INK.white, 'center', chip.width - 4);
-    }
-    if (v.hp) {
-      renderer.rect(x + 12, y + 104, 120, 8, { fill: INK.gray700, radius: 2 });
-      if (v.hp.width > 0) renderer.rect(x + 12, y + 104, v.hp.width, 8, { fill: rgba(v.hp.color), radius: 2 });
-      write(ctx, v.hp.text, x + 140, y + 108, { size: 14, bold: true }, INK.white);
-    }
-    if (v.status) {
-      renderer.rect(x + 182, y + 98, 36, 20, { fill: rgba(v.status.color), radius: 2 });
-      write(ctx, v.status.text, x + 200, y + 108, { size: 12, bold: true }, INK.white, 'center');
-    }
-    write(ctx, v.note, x + 12, y + 132, { size: 12 }, INK.gray300, 'left', 206);
+/** A team member's card, as BattlePokemonInfo (645x148): everything known of it. */
+export function drawPokemonInfo(ctx: ScreenContext, x: number, y: number, v: ReturnType<typeof pokemonInfoView>): void {
+  const { renderer } = ctx;
+  renderer.rect(x, y, 645, 148, { fill: INK.dark, stroke: INK.gray500, radius: 6, border: 1 });
+  if (!v.shown) {
+    write(ctx, 'Point at a Pokémon on the right to see everything known about it here.', x + 322, y + 74, { size: 16 }, INK.gray300, 'center', 600);
+    return;
+  }
+  write(ctx, v.owner.toUpperCase(), x + 12, y + 14, { size: 12, bold: true }, v.side === 'p1' ? INK.sky300 : INK.red300, 'left', 206);
+  write(ctx, v.name, x + 12, y + 36, { size: 18, bold: true }, INK.white, 'left', 206);
+  write(ctx, v.subtitle, x + 12, y + 60, { size: 14 }, INK.gray300, 'left', 206);
+  for (const chip of v.types) {
+    renderer.rect(x + chip.left, y + 74, chip.width, 20, { fill: rgba(chip.color), stroke: chip.tera ? INK.white : [0, 0, 0, 0], radius: 2, border: chip.tera ? 1 : 0 });
+    write(ctx, chip.text, x + chip.left + chip.width / 2, y + 84, { size: 12, bold: true }, INK.white, 'center', chip.width - 4);
+  }
+  if (v.hp) {
+    renderer.rect(x + 12, y + 104, 120, 8, { fill: INK.gray700, radius: 2 });
+    if (v.hp.width > 0) renderer.rect(x + 12, y + 104, v.hp.width, 8, { fill: rgba(v.hp.color), radius: 2 });
+    write(ctx, v.hp.text, x + 140, y + 108, { size: 14, bold: true }, INK.white);
+  }
+  if (v.status) {
+    renderer.rect(x + 182, y + 98, 36, 20, { fill: rgba(v.status.color), radius: 2 });
+    write(ctx, v.status.text, x + 200, y + 108, { size: 12, bold: true }, INK.white, 'center');
+  }
+  write(ctx, v.note, x + 12, y + 132, { size: 12 }, INK.gray300, 'left', 206);
 
-    renderer.rect(x + 228, y + 8, 1, 130, { fill: INK.gray600 });
-    for (const stat of v.stats) {
-      const cy = y + stat.top + 8;
-      write(ctx, stat.label.toUpperCase(), x + 238, cy, { size: 11, bold: true }, INK.gray400);
-      write(ctx, String(stat.value), x + 298, cy, { size: 14, bold: true }, INK.white, 'right');
-      renderer.rect(x + 304, y + stat.top + 4, 96, 8, { fill: INK.gray700, radius: 2 });
-      renderer.rect(x + 304, y + stat.top + 4, stat.width, 8, { fill: rgba(stat.color), radius: 2 });
-      if (stat.stageText) write(ctx, stat.stageText, x + 430, cy, { size: 12, bold: true }, stat.stage > 0 ? INK.green400 : INK.red300, 'right');
-    }
-    renderer.rect(x + 438, y + 8, 1, 130, { fill: INK.gray600 });
+  renderer.rect(x + 228, y + 8, 1, 130, { fill: INK.gray600 });
+  for (const stat of v.stats) {
+    const cy = y + stat.top + 8;
+    write(ctx, stat.label.toUpperCase(), x + 238, cy, { size: 11, bold: true }, INK.gray400);
+    write(ctx, String(stat.value), x + 298, cy, { size: 14, bold: true }, INK.white, 'right');
+    renderer.rect(x + 304, y + stat.top + 4, 96, 8, { fill: INK.gray700, radius: 2 });
+    renderer.rect(x + 304, y + stat.top + 4, stat.width, 8, { fill: rgba(stat.color), radius: 2 });
+    if (stat.stageText) write(ctx, stat.stageText, x + 430, cy, { size: 12, bold: true }, stat.stage > 0 ? INK.green400 : INK.red300, 'right');
+  }
+  renderer.rect(x + 438, y + 8, 1, 130, { fill: INK.gray600 });
 
-    const icon = v.itemId ? ctx.images.image(`items/${toId(v.itemId)}.png`) : null;
-    if (icon) renderer.rect(x + 446, y + 6, 24, 24, { fill: INK.white, texture: icon });
-    write(ctx, v.item, x + (v.itemKnown ? 474 : 448), y + 18, { size: 14, bold: v.itemKnown }, v.itemKnown ? INK.white : INK.gray400, 'left', v.itemKnown ? 160 : 186);
-    if (v.abilityKnown) write(ctx, v.ability, x + 448, y + 44, { size: 14, bold: true }, INK.white, 'left', 186);
-    else writeLines(ctx, v.ability, x + 448, y + 32, 186, 13, { size: 12 }, INK.gray400, 2);
-    for (const move of v.moves) {
-      renderer.rect(x + 448, y + move.top, 186, 19, { fill: rgba(move.color), radius: 2 });
-      write(ctx, move.name, x + 456, y + move.top + 9.5, { size: 14, bold: move.known }, move.known ? INK.white : INK.gray400, 'left', 170);
-    }
+  const icon = v.itemId ? ctx.images.image(`items/${toId(v.itemId)}.png`) : null;
+  if (icon) renderer.rect(x + 446, y + 6, 24, 24, { fill: INK.white, texture: icon });
+  write(ctx, v.item, x + (v.itemKnown ? 474 : 448), y + 18, { size: 14, bold: v.itemKnown }, v.itemKnown ? INK.white : INK.gray400, 'left', v.itemKnown ? 160 : 186);
+  if (v.abilityKnown) write(ctx, v.ability, x + 448, y + 44, { size: 14, bold: true }, INK.white, 'left', 186);
+  else writeLines(ctx, v.ability, x + 448, y + 32, 186, 13, { size: 12 }, INK.gray400, 2);
+  for (const move of v.moves) {
+    renderer.rect(x + 448, y + move.top, 186, 19, { fill: rgba(move.color), radius: 2 });
+    write(ctx, move.name, x + 456, y + move.top + 9.5, { size: 14, bold: move.known }, move.known ? INK.white : INK.gray400, 'left', 170);
   }
 }

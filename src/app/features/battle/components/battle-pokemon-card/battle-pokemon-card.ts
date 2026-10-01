@@ -84,40 +84,42 @@ export class BattlePokemonCard {
   readonly pokemon = input<RequestPokemon | null>(null);
   readonly mode = input<PokemonCardMode>('stats');
 
-  protected readonly view = computed(() => {
-    const pokemon = this.pokemon();
-    if (!pokemon) return { label: 'Pokémon details', itemId: '', name: '', tera: null, item: '', ability: '', stats: [], moves: [] };
-    const name = pokemon.ident.slice(pokemon.ident.indexOf(': ') + 2);
-    const { hp, maxHp, fainted } = parseCondition(pokemon.condition, 100);
-    const item = itemName(pokemon.item) || 'No item';
-    const ability = abilityName(pokemon.ability ?? '');
-    const teraType = pokemon.terastallized || pokemon.teraType || '';
-    const tera = teraType
-      ? { text: `Tera ${teraType}`, color: typeColor(teraType) || '#374151', done: !!pokemon.terastallized }
-      : null;
-    const stats = pokemon.stats
-      ? STATS.map((stat, i) => ({ label: stat.label, value: pokemon.stats?.[stat.id] ?? 0, left: 9 + i * STAT_WIDTH }))
-      : [];
-    const moves = pokemon.moves.slice(0, 4).map((id, i) => {
-      const info = moveInfo(id);
-      return {
-        name: info?.name ?? id,
-        color: typeColor(info?.type ?? '') || '#4b5563',
-        left: MOVE_LEFTS[i % 2],
-        top: MOVE_TOPS[Math.floor(i / 2)],
-      };
-    });
-    const details = this.mode() === 'moves' ? moves.map((move) => move.name).join(', ') : stats.map((stat) => `${stat.label} ${stat.value}`).join(', ');
-    const teraText = tera ? (tera.done ? `Terastallized into ${teraType}` : `Tera ${teraType}`) : '';
+  protected readonly view = computed(() => pokemonCardView(this.pokemon(), this.mode()));
+}
+
+/** What the card shows of one of our Pokémon (see BattlePokemonCard), for the DOM card and the battle screen's canvas alike. */
+export function pokemonCardView(pokemon: RequestPokemon | null, mode: PokemonCardMode) {
+  if (!pokemon) return { label: 'Pokémon details', itemId: '', name: '', tera: null, item: '', ability: '', stats: [], moves: [] };
+  const name = pokemon.ident.slice(pokemon.ident.indexOf(': ') + 2);
+  const { hp, maxHp, fainted } = parseCondition(pokemon.condition, 100);
+  const item = itemName(pokemon.item) || 'No item';
+  const ability = abilityName(pokemon.ability ?? '');
+  const teraType = pokemon.terastallized || pokemon.teraType || '';
+  const tera = teraType
+    ? { text: `Tera ${teraType}`, color: typeColor(teraType) || '#374151', done: !!pokemon.terastallized }
+    : null;
+  const stats = pokemon.stats
+    ? STATS.map((stat, i) => ({ label: stat.label, value: pokemon.stats?.[stat.id] ?? 0, left: 9 + i * STAT_WIDTH }))
+    : [];
+  const moves = pokemon.moves.slice(0, 4).map((id, i) => {
+    const info = moveInfo(id);
     return {
-      label: [`${name}, ${fainted ? 'fainted' : `${hp}/${maxHp} HP`}`, item, ability, teraText, details].filter(Boolean).join('; '),
-      itemId: fainted ? '' : pokemon.item,
-      name,
-      tera,
-      item,
-      ability,
-      stats,
-      moves,
+      name: info?.name ?? id,
+      color: typeColor(info?.type ?? '') || '#4b5563',
+      left: MOVE_LEFTS[i % 2],
+      top: MOVE_TOPS[Math.floor(i / 2)],
     };
   });
+  const details = mode === 'moves' ? moves.map((move) => move.name).join(', ') : stats.map((stat) => `${stat.label} ${stat.value}`).join(', ');
+  const teraText = tera ? (tera.done ? `Terastallized into ${teraType}` : `Tera ${teraType}`) : '';
+  return {
+    label: [`${name}, ${fainted ? 'fainted' : `${hp}/${maxHp} HP`}`, item, ability, teraText, details].filter(Boolean).join('; '),
+    itemId: fainted ? '' : pokemon.item,
+    name,
+    tera,
+    item,
+    ability,
+    stats,
+    moves,
+  };
 }

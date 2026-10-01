@@ -143,7 +143,7 @@ export class LogView {
 }
 
 /** The retro palette of the current theme, from <body>'s variables (see styles.css). */
-function retroPalette(): { bg: Rgba; panel: Rgba; ink: Rgba; muted: Rgba; accentText: Rgba } {
+export function retroPalette(): Record<'bg' | 'bar' | 'panel' | 'outline' | 'select' | 'ink' | 'muted' | 'accent' | 'accentText' | 'teal', Rgba> {
   const style = getComputedStyle(document.body);
   const read = (name: string, fallback: string) => {
     const value = style.getPropertyValue(name).trim();
@@ -151,10 +151,15 @@ function retroPalette(): { bg: Rgba; panel: Rgba; ink: Rgba; muted: Rgba; accent
   };
   return {
     bg: read('--retro-bg', '#0a1620'),
+    bar: read('--retro-bar', '#050e16'),
     panel: read('--retro-panel', '#102332'),
+    outline: read('--retro-outline', '#3f88ad'),
+    select: read('--retro-select', '#1a4562'),
     ink: read('--retro-ink', '#e3f2fa'),
     muted: read('--retro-muted', '#9ec3d5'),
+    accent: read('--retro-accent', '#0b76a0'),
     accentText: read('--retro-accent-text', '#6fd3ff'),
+    teal: read('--retro-teal', '#ffc46b'),
   };
 }
 

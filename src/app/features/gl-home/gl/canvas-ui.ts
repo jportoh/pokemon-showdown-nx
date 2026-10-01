@@ -163,7 +163,8 @@ function nearest(controls: readonly UiControl[], point: { x: number; y: number }
 /**
  * How good a move from `from` to `to` is that way (lower is better; Infinity when it isn't that way):
  * the gap along the direction, plus three times the distance across it (none while they overlap), so
- * a control in line wins over a nearer one off to the side.
+ * a control in line wins over a nearer one off to the side; one that isn't in line and lies more
+ * than about 70° off the direction doesn't count.
  */
 function directionalScore(from: UiControl, to: UiControl, direction: 'up' | 'down' | 'left' | 'right'): number {
   const a = centre(from);
@@ -178,5 +179,8 @@ function directionalScore(from: UiControl, to: UiControl, direction: 'up' | 'dow
     ? Math.max(0, Math.max(from.y, to.y) - Math.min(from.y + from.h, to.y + to.h))
     : Math.max(0, Math.max(from.x, to.x) - Math.min(from.x + from.w, to.x + to.w));
   const offCentre = horizontal ? Math.abs(b.y - a.y) : Math.abs(b.x - a.x);
+  // Far off to the side and not in line: not that way (down from the bottom row of the team tiles
+  // shouldn't land on the command panel across the screen).
+  if (across > 0 && offCentre > ahead * 3) return Infinity;
   return gap + across * 3 + offCentre * 0.1;
 }

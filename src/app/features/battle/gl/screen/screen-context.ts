@@ -91,9 +91,20 @@ export function ring(ctx: ScreenContext, box: { x: number; y: number; w: number;
 }
 
 /** A button hint as the header's: "ZR" on a dark chip, then its action. Clickable, never focused by the d-pad. */
-export function hint(ctx: ScreenContext, id: string, box: { x: number; y: number; w: number; h: number }, key: string, label: string, active: boolean, accept: () => void): void {
+export function hint(
+  ctx: ScreenContext,
+  id: string,
+  box: { x: number; y: number; w: number; h: number },
+  key: string,
+  label: string,
+  active: boolean,
+  accept: () => void,
+  look?: { fill: Rgba; border: Rgba },
+): void {
   ctx.focus.control({ id, ...box, accept, skip: true });
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: active ? INK.selected : INK.tab, stroke: active ? INK.sky300 : INK.gray500, radius: 6, border: 1 });
+  const fill = look?.fill ?? (active ? INK.selected : INK.tab);
+  const border = look?.border ?? (active ? INK.sky300 : INK.gray500);
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 6, border: 1 });
   const keyWidth = ctx.text.measure(key, { size: 14, bold: true }) + 12;
   const labelWidth = ctx.text.measure(label, { size: 14, bold: true });
   const start = box.x + (box.w - keyWidth - 6 - labelWidth) / 2;
