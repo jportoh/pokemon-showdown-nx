@@ -9,7 +9,7 @@ export type ImagePriority = (typeof ImagePriority)[keyof typeof ImagePriority];
 export type DecodedImage = ImageBitmap | HTMLImageElement | RawImage;
 
 /** Downloads at once: waiting on the network costs the main thread nothing. */
-const MAX_DOWNLOADS = 6;
+export const MAX_DOWNLOADS = 6;
 /** Time spent decoding in JavaScript per frame: on the menus, and on the loading screen (rush). */
 const FRAME_DECODE_MS = 6;
 const RUSH_DECODE_MS = 40;
@@ -51,7 +51,9 @@ export class SpriteBitmaps {
    */
   rush = false;
   /** Bytes downloaded and time spent decoding so far (the loading screen's figures). */
-  readonly totals = { bytes: 0, decodeMs: 0, browserDecodes: 0 };
+  readonly totals = { bytes: 0, decodeMs: 0, browserDecodes: 0, downloads: 0, downloadMs: 0 };
+  /** Downloads at once (the loading screen raises it: test p2 spent 70 s waiting on 6 at a time). */
+  maxDownloads = MAX_DOWNLOADS;
 
   /** Not ready yet (waiting, downloading or decoding), for the diagnostics. */
   get queued(): number {
@@ -132,7 +134,7 @@ export class SpriteBitmaps {
       }
       return;
     }
-    while (this.downloads < MAX_DOWNLOADS) {
+    while (this.downloads < this.maxDownloads) {
       const next = this.mostWanted('queued');
       if (!next) break;
       this.download(next);
@@ -166,10 +168,13 @@ export class SpriteBitmaps {
     const entry = this.entries.get(url) as { priority: number };
     this.entries.set(url, { state: 'downloading', priority: entry.priority });
     this.downloads++;
+    const started = performance.now();
     fetch(url)
       .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(String(response.status)))))
       .then((buffer) => {
         this.totals.bytes += buffer.byteLength;
+        this.totals.downloads++;
+        this.totals.downloadMs += performance.now() - started;
         const current = this.entries.get(url) as { priority: number };
         this.entries.set(url, { state: 'downloaded', priority: current.priority, bytes: new Uint8Array(buffer) });
       })
