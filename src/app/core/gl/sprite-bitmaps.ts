@@ -1,19 +1,23 @@
 import { Service } from '@angular/core';
+import { RawImage, decodePng } from './png-decode';
 
 /** How soon an image is wanted: what the field shows now, what the screen shows, what may come later. */
 export const ImagePriority = { Field: 0, Screen: 1, Ahead: 2 } as const;
 export type ImagePriority = (typeof ImagePriority)[keyof typeof ImagePriority];
 
-/** A decoded image, ready to draw (a 2D canvas) or to upload (WebGL). */
-export type DecodedImage = ImageBitmap | HTMLImageElement;
+/** A decoded image, ready to upload (WebGL): the browser's, or our own pixels (decodePng). */
+export type DecodedImage = ImageBitmap | HTMLImageElement | RawImage;
 
 /** Downloads at once: waiting on the network costs the main thread nothing. */
 const MAX_DOWNLOADS = 6;
+/** Time spent decoding in JavaScript per frame: on the menus, and on the loading screen (rush). */
+const FRAME_DECODE_MS = 6;
+const RUSH_DECODE_MS = 40;
 
 type Entry =
   | { state: 'queued'; priority: number }
   | { state: 'downloading'; priority: number }
-  | { state: 'downloaded'; priority: number; blob: Blob }
+  | { state: 'downloaded'; priority: number; bytes: Uint8Array }
   | { state: 'decoding' }
   | { state: 'ready'; image: DecodedImage; width: number; height: number }
   | { state: 'failed' };
@@ -23,11 +27,11 @@ type Listener = (image: DecodedImage | null) => void;
 /**
  * Every image the battle screen shows (Pokémon sprites, item icons), decoded once and shared by
  * everything that draws it, for as long as the app runs (the next battle's Pokémon may already be
- * there). Decoding a PNG blocks the console's main thread (tests w3/w4), so images decode one at a
- * time, at most one starting per frame, the most wanted first. Downloading them doesn't block it, so
- * several download at once (test w6: one image at a time from end to end, the team tiles waited for
- * each other's network round trips). fetch + createImageBitmap was the smoothest way on the console
- * (w4); where createImageBitmap is missing, an Image does both steps, one at a time.
+ * there). Several download at once (test w6: one image at a time from end to end, the team tiles
+ * waited for each other's network round trips), and they decode the most wanted first. The console's
+ * createImageBitmap takes about 100 ms per sprite (test p1), so PNGs decode in JavaScript (decodePng),
+ * a few milliseconds' worth per frame; the browser decodes what decodePng can't, one at a time
+ * (createImageBitmap, or an Image where it's missing).
  */
 @Service()
 export class SpriteBitmaps {
@@ -37,15 +41,17 @@ export class SpriteBitmaps {
   private decoding = false;
   private pumpHandle = 0;
   private readonly bitmaps = typeof createImageBitmap === 'function';
+  /** Decodes in JavaScript first (decodePng); 'browser' leaves it all to createImageBitmap. */
+  decoder: 'js' | 'browser' = 'js';
   /** Told when an image arrives, decoded (diagnostics). */
   onArrival: (() => void) | null = null;
   /**
-   * Decodes back to back, without waiting for the next frame (the loading screen, where a stutter
-   * costs nothing); otherwise one decode starts per frame at most.
+   * Decodes back to back (the loading screen, where a stutter costs nothing): more JavaScript decoding
+   * per frame, and the browser's next decode without waiting for the next frame.
    */
   rush = false;
   /** Bytes downloaded and time spent decoding so far (the loading screen's figures). */
-  readonly totals = { bytes: 0, decodeMs: 0 };
+  readonly totals = { bytes: 0, decodeMs: 0, browserDecodes: 0 };
 
   /** Not ready yet (waiting, downloading or decoding), for the diagnostics. */
   get queued(): number {
@@ -118,7 +124,7 @@ export class SpriteBitmaps {
   }
 
   private pump(): void {
-    if (!this.bitmaps) {
+    if (!this.bitmaps && this.decoder === 'browser') {
       // An Image downloads and decodes in one go: one at a time, as before.
       if (!this.decoding) {
         const next = this.mostWanted('queued');
@@ -131,9 +137,15 @@ export class SpriteBitmaps {
       if (!next) break;
       this.download(next);
     }
-    if (!this.decoding) {
-      const next = this.mostWanted('downloaded');
-      if (next) this.decode(next);
+    if (this.decoding) return;
+    const deadline = performance.now() + (this.rush ? RUSH_DECODE_MS : FRAME_DECODE_MS);
+    for (let next = this.mostWanted('downloaded'); next; next = this.mostWanted('downloaded')) {
+      // The browser's decode calls next() when it's done.
+      if (!this.decode(next)) return;
+      if (performance.now() >= deadline) {
+        if (this.mostWanted('downloaded')) this.schedule();
+        return;
+      }
     }
   }
 
@@ -155,11 +167,11 @@ export class SpriteBitmaps {
     this.entries.set(url, { state: 'downloading', priority: entry.priority });
     this.downloads++;
     fetch(url)
-      .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(String(response.status)))))
-      .then((blob) => {
-        this.totals.bytes += blob.size;
+      .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(String(response.status)))))
+      .then((buffer) => {
+        this.totals.bytes += buffer.byteLength;
         const current = this.entries.get(url) as { priority: number };
-        this.entries.set(url, { state: 'downloaded', priority: current.priority, blob });
+        this.entries.set(url, { state: 'downloaded', priority: current.priority, bytes: new Uint8Array(buffer) });
       })
       .catch(() => this.finish(url, null))
       .finally(() => {
@@ -168,13 +180,33 @@ export class SpriteBitmaps {
       });
   }
 
-  private decode(url: string): void {
+  /** Decodes a downloaded image: true if it's done (in JavaScript), false while the browser decodes it. */
+  private decode(url: string): boolean {
     const entry = this.entries.get(url);
-    if (entry?.state !== 'downloaded') return;
+    if (entry?.state !== 'downloaded') return true;
+    if (this.decoder === 'js') {
+      const started = performance.now();
+      let image: RawImage | null = null;
+      try {
+        image = decodePng(entry.bytes);
+      } catch {
+        image = null;
+      }
+      this.totals.decodeMs += performance.now() - started;
+      if (image) {
+        this.finish(url, image, image.width, image.height);
+        return true;
+      }
+    }
+    this.totals.browserDecodes++;
+    if (!this.bitmaps) {
+      this.loadImage(url);
+      return false;
+    }
     this.entries.set(url, { state: 'decoding' });
     this.decoding = true;
     const started = performance.now();
-    createImageBitmap(entry.blob, { premultiplyAlpha: 'premultiply' })
+    createImageBitmap(new Blob([entry.bytes as BlobPart]), { premultiplyAlpha: 'premultiply' })
       .then((bitmap) => this.finish(url, bitmap, bitmap.width || 96, bitmap.height || 96))
       .catch(() => this.finish(url, null))
       .finally(() => {
@@ -182,6 +214,7 @@ export class SpriteBitmaps {
         this.decoding = false;
         this.next();
       });
+    return false;
   }
 
   private loadImage(url: string): void {

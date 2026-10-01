@@ -217,7 +217,7 @@ export class GlRenderer {
     gl.disable(gl.DEPTH_TEST);
   }
 
-  /** RGBA pixels, straight alpha (only 0 or 255 here, so already premultiplied). */
+  /** RGBA pixels, premultiplied (the icons' alpha is only 0 or 255; decodePng premultiplies). */
   textureFromPixels(pixels: Uint8Array, width: number, height: number, smooth: boolean): Texture {
     const gl = this.gl;
     const handle = gl.createTexture()!;

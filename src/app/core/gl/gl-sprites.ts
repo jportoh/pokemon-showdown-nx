@@ -119,7 +119,9 @@ export class GlSprites {
     this.uploadsLeft--;
     try {
       const started = performance.now();
-      const made = this.renderer.textureFromSource(decoded.image, decoded.width, decoded.height, smooth);
+      const { image, width, height } = decoded;
+      // Our own decoder's pixels come premultiplied already.
+      const made = 'pixels' in image ? this.renderer.textureFromPixels(image.pixels, width, height, smooth) : this.renderer.textureFromSource(image, width, height, smooth);
       this.onUpload?.(performance.now() - started);
       this.textures.set(url, made);
       return made;
