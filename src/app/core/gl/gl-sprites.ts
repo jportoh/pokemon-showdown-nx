@@ -4,7 +4,7 @@ import { spriteUrl } from '@shared/utils/sprite-id';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 
 /** Textures made in one frame at most: a screen drawn from scratch spreads its uploads. */
-const UPLOADS_PER_FRAME = 2;
+export const UPLOADS_PER_FRAME = 2;
 
 /**
  * The battle screen's images (Showdown's sprites, item icons) as WebGL textures, made from the ones
@@ -15,6 +15,8 @@ const UPLOADS_PER_FRAME = 2;
 export class GlSprites {
   private readonly textures = new Map<string, Texture>();
   private uploadsLeft = UPLOADS_PER_FRAME;
+  /** Textures made per frame at most (the loading screen raises it while nothing else draws). */
+  uploadsPerFrame = UPLOADS_PER_FRAME;
   /** Told how long each texture took to upload (diagnostics). */
   onUpload: ((ms: number) => void) | null = null;
 
@@ -25,7 +27,28 @@ export class GlSprites {
 
   /** Each frame, before drawing: the frame's upload budget. */
   startFrame(): void {
-    this.uploadsLeft = UPLOADS_PER_FRAME;
+    this.uploadsLeft = this.uploadsPerFrame;
+  }
+
+  /** This frame still has room for an upload. */
+  get canUpload(): boolean {
+    return this.uploadsLeft > 0;
+  }
+
+  /**
+   * Makes `url`'s texture ahead of its screen (the loading screen), as sprite(), image() or
+   * pixelArt() would (`smooth` as image()). True once it's there, or can't be.
+   */
+  warm(url: string, smooth: boolean): boolean {
+    if (this.textures.has(url) || this.bitmaps.failed(url)) return true;
+    return this.upload(url, ImagePriority.Screen, smooth) !== null;
+  }
+
+  /** How many textures there are, and their pixels (the loading screen's figures). */
+  get totals(): { count: number; pixels: number } {
+    let pixels = 0;
+    for (const texture of this.textures.values()) pixels += texture.width * texture.height;
+    return { count: this.textures.size, pixels };
   }
 
   /** A sprite on the field: first in line. Null until it's there. */

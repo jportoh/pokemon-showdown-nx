@@ -39,6 +39,13 @@ export class SpriteBitmaps {
   private readonly bitmaps = typeof createImageBitmap === 'function';
   /** Told when an image arrives, decoded (diagnostics). */
   onArrival: (() => void) | null = null;
+  /**
+   * Decodes back to back, without waiting for the next frame (the loading screen, where a stutter
+   * costs nothing); otherwise one decode starts per frame at most.
+   */
+  rush = false;
+  /** Bytes downloaded and time spent decoding so far (the loading screen's figures). */
+  readonly totals = { bytes: 0, decodeMs: 0 };
 
   /** Not ready yet (waiting, downloading or decoding), for the diagnostics. */
   get queued(): number {
@@ -100,24 +107,34 @@ export class SpriteBitmaps {
     if (this.pumpHandle) return;
     this.pumpHandle = requestAnimationFrame(() => {
       this.pumpHandle = 0;
-      if (!this.bitmaps) {
-        // An Image downloads and decodes in one go: one at a time, as before.
-        if (!this.decoding) {
-          const next = this.mostWanted('queued');
-          if (next) this.loadImage(next);
-        }
-        return;
-      }
-      while (this.downloads < MAX_DOWNLOADS) {
-        const next = this.mostWanted('queued');
-        if (!next) break;
-        this.download(next);
-      }
-      if (!this.decoding) {
-        const next = this.mostWanted('downloaded');
-        if (next) this.decode(next);
-      }
+      this.pump();
     });
+  }
+
+  /** After a decode: the next one straight away when rushing, else on the next frame. */
+  private next(): void {
+    if (this.rush) this.pump();
+    else this.schedule();
+  }
+
+  private pump(): void {
+    if (!this.bitmaps) {
+      // An Image downloads and decodes in one go: one at a time, as before.
+      if (!this.decoding) {
+        const next = this.mostWanted('queued');
+        if (next) this.loadImage(next);
+      }
+      return;
+    }
+    while (this.downloads < MAX_DOWNLOADS) {
+      const next = this.mostWanted('queued');
+      if (!next) break;
+      this.download(next);
+    }
+    if (!this.decoding) {
+      const next = this.mostWanted('downloaded');
+      if (next) this.decode(next);
+    }
   }
 
   /** The queued (or downloaded) image wanted the soonest, the first asked for among equals. */
@@ -140,6 +157,7 @@ export class SpriteBitmaps {
     fetch(url)
       .then((response) => (response.ok ? response.blob() : Promise.reject(new Error(String(response.status)))))
       .then((blob) => {
+        this.totals.bytes += blob.size;
         const current = this.entries.get(url) as { priority: number };
         this.entries.set(url, { state: 'downloaded', priority: current.priority, blob });
       })
@@ -155,12 +173,14 @@ export class SpriteBitmaps {
     if (entry?.state !== 'downloaded') return;
     this.entries.set(url, { state: 'decoding' });
     this.decoding = true;
+    const started = performance.now();
     createImageBitmap(entry.blob, { premultiplyAlpha: 'premultiply' })
       .then((bitmap) => this.finish(url, bitmap, bitmap.width || 96, bitmap.height || 96))
       .catch(() => this.finish(url, null))
       .finally(() => {
+        this.totals.decodeMs += performance.now() - started;
         this.decoding = false;
-        this.schedule();
+        this.next();
       });
   }
 
@@ -169,10 +189,12 @@ export class SpriteBitmaps {
     this.decoding = true;
     const image = new Image();
     image.crossOrigin = 'anonymous';
+    const started = performance.now();
     const done = (ok: boolean) => {
+      this.totals.decodeMs += performance.now() - started;
       this.decoding = false;
       this.finish(url, ok ? image : null, image.naturalWidth || image.width || 96, image.naturalHeight || image.height || 96);
-      this.schedule();
+      this.next();
     };
     image.addEventListener('load', () => done(true));
     image.addEventListener('error', () => done(false));
