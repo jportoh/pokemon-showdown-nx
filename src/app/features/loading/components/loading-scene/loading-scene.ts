@@ -1,33 +1,33 @@
 import { Component, DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { CanvasFocus } from '@core/gl/canvas-ui';
 import { AssetPreload } from '@core/gl/asset-preload';
-import { Texture, rgba } from '@core/gl/gl-renderer';
+import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { pixelTexture } from '@core/gl/gl-textures';
+import { TEXT_PAD, TextStyle, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { GlTheme } from '@core/gl/ui/gl-theme';
-import { UiContext, label, pill, retroBox } from '@core/gl/ui/retro-kit';
-import { CanvasAction } from '@core/input/keyboard-navigation';
 import { BALL } from '@features/home/gl/logo-ball';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
 const LOADING_UPLOADS = 8;
 const LOGO_YELLOW = rgba('#f2c14e');
+const WHITE: Rgba = [1, 1, 1, 1];
 const BAR = { x: 320, y: 392, w: 640, h: 28 };
-/** A frame longer than this is a visible stutter (two refreshes or more at 60 Hz). */
-const LONG_FRAME_MS = 25;
-const MB = 1024 * 1024;
+/** The logo here, big, and where the home screen's header draws it (HomeScene.drawHeader). */
+const BIG = { ballX: (STAGE_W - 120) / 2, ballY: 116, ballScale: 5, textCy: 310, gap: 16, style: { size: 64, bold: true } };
+const HEADER = { ballX: 24, ballY: 14, ballScale: 2, textX: 84, textCy: 38, gap: 10, style: { size: 32, bold: true }, height: 76 };
+/** The logo's flight into the header, once everything is loaded. */
+const OUTRO_MS = 700;
 
 /**
  * The first screen of a launch: the logo, a bar and "Loading assets…" while every image the app
  * shows (preloadList: the item sheet, the move categories and the bundled sheets of Champions sprites)
- * downloads, decodes and becomes a texture, so no screen waits for one later. A stutter costs nothing
- * here, so decoding runs back to back (SpriteBitmaps.rush) and more textures are made per frame.
- *
- * TEST BUILD: once done, it shows the times and sizes and waits for A before the menu.
+ * downloads, decodes and becomes a texture, so no screen waits for one later (3.7 s on the console,
+ * test p4). A stutter costs nothing here, so decoding runs back to back (SpriteBitmaps.rush) and more
+ * textures are made per frame. Once done, the logo shrinks and flies to its place in the home
+ * screen's header, the header's bar fading in behind it, and the menu takes over from there.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -40,19 +40,14 @@ export class LoadingScene {
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly preload = inject(AssetPreload);
 
-  private readonly focus = new CanvasFocus();
   private readonly assets: readonly PreloadAsset[] = preloadList();
   /** Not a texture yet (nor failed). */
   private waiting: PreloadAsset[] = [...this.assets];
-  private readonly started = performance.now();
-  /** Every image downloaded and decoded (or failed). */
-  private decodedAt = 0;
-  private finishedAt = 0;
-  private uploadMs = 0;
-  private lastFrame = 0;
-  private worstFrame = 0;
-  private longFrames = 0;
-  private report: string[] | null = null;
+  /** The bar's fill, easing towards the share loaded (it moves in a few big steps). */
+  private shown = 0;
+  /** When the logo began its flight to the header. */
+  private outroAt = 0;
+  private leaving = false;
   private ball: Texture | null = null;
 
   constructor() {
@@ -62,10 +57,8 @@ export class LoadingScene {
     }
     this.bitmaps.rush = true;
     for (const asset of this.assets) this.bitmaps.request(asset.url, ImagePriority.Screen);
-    const hide = this.stage.show({
-      draw: (frame) => this.draw(frame),
-      input: (action) => this.onAction(action),
-    });
+    // The controller does nothing here: the menu comes by itself.
+    const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: () => true });
     this.stage.whenReady(({ renderer, images }) => {
       this.ball = pixelTexture(renderer, BALL);
       images.uploadsPerFrame = LOADING_UPLOADS;
@@ -77,11 +70,6 @@ export class LoadingScene {
     });
   }
 
-  private onAction(action: CanvasAction): boolean {
-    if (action === 'accept' && this.report) void this.router.navigateByUrl('/', { replaceUrl: true });
-    return true;
-  }
-
   /** Back to the menu's pace. */
   private restore(): void {
     this.bitmaps.rush = false;
@@ -90,91 +78,84 @@ export class LoadingScene {
 
   private draw(frame: StageFrame): void {
     const p = this.theme.palette();
-    const ctx: UiContext = { ...frame, focus: this.focus, palette: p };
-    const { renderer, now } = frame;
-    if (!this.finishedAt) {
-      this.load(frame);
-      this.measureFrame(now);
+    const { renderer, now, dt } = frame;
+    if (this.waiting.length > 0) this.load(frame);
+    const loaded = (this.assets.length - this.waiting.length) / Math.max(1, this.assets.length);
+    this.shown += (loaded - this.shown) * (1 - Math.exp(-dt * 10));
+    if (!this.outroAt && this.waiting.length === 0 && this.shown > 0.98) {
+      this.outroAt = now;
+      this.restore();
+      this.preload.finished.set(true);
     }
+    const t = this.outroAt ? Math.min(1, (now - this.outroAt) / OUTRO_MS) : 0;
+    const fly = easeInOut(t);
+    const fade = 1 - Math.min(1, t / 0.4);
+
     renderer.begin(now / 1000, p.bg, p.rim);
-    this.focus.begin();
+    if (fly > 0) renderer.rect(0, 0, STAGE_W, HEADER.height, { fill: withAlpha(p.bar, fly) });
 
-    if (this.ball) renderer.image(this.ball, (STAGE_W - 120) / 2, 116, 5);
-    const style = { size: 64, bold: true };
-    const first = ctx.text.measure('POKÉMON', style);
-    const whole = first + 16 + ctx.text.measure('SHOWDOWN!', style);
-    const left = (STAGE_W - whole) / 2;
-    label(ctx, 'POKÉMON', left, 310, style, [1, 1, 1, 1]);
-    label(ctx, 'SHOWDOWN!', left + first + 16, 310, style, LOGO_YELLOW);
-
-    const total = this.assets.length;
-    const done = total - this.waiting.length;
-    renderer.rect(BAR.x, BAR.y, BAR.w, BAR.h, { fill: p.input, stroke: p.outline, radius: 8, border: 3 });
-    const filled = Math.round((BAR.w - 12) * (done / Math.max(1, total)));
-    if (filled > 0) renderer.rect(BAR.x + 6, BAR.y + 6, filled, BAR.h - 12, { fill: p.accentText, radius: 4 });
-
-    if (this.report) this.drawReport(ctx, this.report);
-    else {
-      label(ctx, 'Loading assets…', BAR.x, BAR.y + 60, { size: 24 }, p.ink);
-      label(ctx, `${done} / ${total}`, BAR.x + BAR.w, BAR.y + 60, { size: 24 }, p.muted, { align: 'right', fast: true });
+    // The ball bobs and rocks while loading, and settles as it flies.
+    const time = now / 1000;
+    const settle = 1 - fly;
+    if (this.ball) {
+      const scale = lerp(BIG.ballScale, HEADER.ballScale, fly);
+      const size = this.ball.width * scale;
+      const x = lerp(BIG.ballX, HEADER.ballX, fly);
+      const y = lerp(BIG.ballY, HEADER.ballY, fly) + Math.sin(time * 3) * 6 * settle;
+      renderer.rect(x, y, size, size, { fill: WHITE, texture: this.ball, angle: Math.sin(time * 2.4) * 0.12 * settle });
     }
-    this.focus.end();
+    this.drawWordmark(frame, fly);
+
+    if (fade > 0) {
+      renderer.rect(BAR.x, BAR.y, BAR.w, BAR.h, { fill: withAlpha(p.input, fade), stroke: withAlpha(p.outline, fade), radius: 8, border: 3 });
+      const filled = Math.round((BAR.w - 12) * Math.min(1, this.shown));
+      if (filled > 0) renderer.rect(BAR.x + 6, BAR.y + 6, filled, BAR.h - 12, { fill: withAlpha(p.accentText, fade), radius: 4 });
+      const label = frame.text.get('Loading assets…', { size: 24 });
+      if (label) renderer.image(label, BAR.x - TEXT_PAD, BAR.y + 60 - label.height / 2, 1, withAlpha(p.ink, fade));
+    }
     renderer.end();
-  }
 
-  /** Makes the textures this frame has room for, and notes when each step is over. */
-  private load(frame: StageFrame): void {
-    const { images } = frame;
-    const still: PreloadAsset[] = [];
-    for (const asset of this.waiting) {
-      if (images.canUpload) {
-        const started = performance.now();
-        if (images.warm(asset.url, asset.smooth)) {
-          this.uploadMs += performance.now() - started;
-          continue;
-        }
-      }
-      still.push(asset);
+    if (t >= 1 && !this.leaving) {
+      this.leaving = true;
+      void this.router.navigateByUrl('/', { replaceUrl: true });
     }
-    this.waiting = still;
-    if (!this.decodedAt && this.waiting.every((asset) => !this.bitmaps.pending(asset.url))) this.decodedAt = performance.now();
-    if (this.waiting.length === 0) this.finish(frame);
   }
 
-  private measureFrame(now: number): void {
-    if (this.lastFrame) {
-      const interval = now - this.lastFrame;
-      this.worstFrame = Math.max(this.worstFrame, interval);
-      if (interval > LONG_FRAME_MS) this.longFrames++;
-    }
-    this.lastFrame = now;
+  /**
+   * POKÉMON SHOWDOWN!, each word gliding from its place here to its place in the header. In flight
+   * the big text is drawn smaller; landed, it's the header's own size, as the home screen draws it.
+   */
+  private drawWordmark({ renderer, text }: StageFrame, fly: number): void {
+    const landed = fly >= 1;
+    const style: TextStyle = landed ? HEADER.style : BIG.style;
+    const first = text.get('POKÉMON', style);
+    const second = text.get('SHOWDOWN!', style);
+    const bigFirst = text.get('POKÉMON', BIG.style);
+    const smallFirst = text.get('POKÉMON', HEADER.style);
+    if (!first || !second || !bigFirst || !smallFirst) return;
+    const width = (texture: Texture) => texture.width - TEXT_PAD * 2;
+    const bigSecond = text.measure('SHOWDOWN!', BIG.style);
+    const bigLeft = (STAGE_W - (width(bigFirst) + BIG.gap + bigSecond)) / 2;
+    const from = [bigLeft, bigLeft + width(bigFirst) + BIG.gap];
+    const to = [HEADER.textX, HEADER.textX + width(smallFirst) + HEADER.gap];
+    const scale = landed ? 1 : lerp(1, HEADER.style.size / BIG.style.size, fly);
+    const cy = lerp(BIG.textCy, HEADER.textCy, fly);
+    [first, second].forEach((texture, i) => {
+      const x = lerp(from[i], to[i], fly);
+      renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, i === 0 ? WHITE : LOGO_YELLOW);
+    });
   }
 
-  private finish({ images, renderer }: StageFrame): void {
-    this.finishedAt = performance.now();
-    this.restore();
-    this.preload.finished.set(true);
-    const failed = this.assets.filter((asset) => this.bitmaps.failed(asset.url)).map((asset) => asset.url.split('/').pop());
-    const textures = images.totals;
-    const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
-    const { bytes, decodeMs, browserDecodes, downloads, downloadMs } = this.bitmaps.totals;
-    this.report = [
-      `Images: ${this.assets.length - failed.length} ready of ${this.assets.length} · failed: ${failed.join(', ') || 'none'}`,
-      `Time: ${seconds(this.finishedAt - this.started)} in all · downloaded + decoded in ${seconds(this.decodedAt - this.started)}`,
-      `Downloaded: ${(bytes / MB).toFixed(1)} MB, ${(downloadMs / Math.max(1, downloads)).toFixed(0)} ms each · decoding: ${seconds(decodeMs)} (${browserDecodes} by the browser)`,
-      `Textures: ${textures.count} made, ${seconds(this.uploadMs)} · ${((textures.pixels * 4) / MB).toFixed(1)} MB on the GPU · largest allowed ${renderer.gl.getParameter(renderer.gl.MAX_TEXTURE_SIZE)} px`,
-      `Frames: worst ${this.worstFrame.toFixed(0)} ms · ${this.longFrames} over ${LONG_FRAME_MS} ms`,
-    ];
-    console.info(`[preload] ${this.report.join(' | ')}`);
+  /** Makes the textures this frame has room for. */
+  private load({ images }: StageFrame): void {
+    this.waiting = this.waiting.filter((asset) => !images.canUpload || !images.warm(asset.url, asset.smooth));
   }
+}
 
-  private drawReport(ctx: UiContext, lines: string[]): void {
-    const p = ctx.palette;
-    const box = { x: 120, y: 448, w: 1040, h: 200 };
-    retroBox(ctx, box);
-    label(ctx, 'Assets loaded', box.x + 24, box.y + 28, { size: 22, bold: true }, p.accentText);
-    lines.forEach((line, i) => label(ctx, line, box.x + 24, box.y + 60 + i * 26, { size: 18 }, p.ink, { maxWidth: box.w - 48 }));
-    const width = pill(ctx, 'A', box.x + box.w - 220, box.y + 28, 28);
-    label(ctx, 'Continue', box.x + box.w - 208 + width, box.y + 28, { size: 20 }, p.ink);
-  }
+function lerp(from: number, to: number, t: number): number {
+  return from + (to - from) * t;
+}
+
+function easeInOut(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }

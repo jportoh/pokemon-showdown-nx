@@ -49,13 +49,6 @@ export class GlSprites {
     return this.upload(url, ImagePriority.Screen, smooth) !== null;
   }
 
-  /** How many textures there are, and their pixels (the loading screen's figures). */
-  get totals(): { count: number; pixels: number } {
-    let pixels = 0;
-    for (const texture of this.textures.values()) pixels += texture.width * texture.height;
-    return { count: this.textures.size, pixels };
-  }
-
   /** A sprite on the field: first in line. Null until it's there. */
   get(sprite: string, back: boolean): Texture | null {
     return this.sprite(sprite, back, ImagePriority.Field);

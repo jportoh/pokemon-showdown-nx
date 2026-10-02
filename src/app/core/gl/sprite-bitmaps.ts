@@ -55,8 +55,6 @@ export class SpriteBitmaps {
    * per frame, and the browser's next decode without waiting for the next frame.
    */
   rush = false;
-  /** Bytes downloaded and time spent decoding so far (the loading screen's figures). */
-  readonly totals = { bytes: 0, decodeMs: 0, browserDecodes: 0, downloads: 0, downloadMs: 0 };
 
   /** Not ready yet (waiting, downloading or decoding), for the diagnostics. */
   get queued(): number {
@@ -182,13 +180,9 @@ export class SpriteBitmaps {
     const entry = this.entries.get(url) as { priority: number };
     this.entries.set(url, { state: 'downloading', priority: entry.priority });
     this.downloads++;
-    const started = performance.now();
     fetch(url)
       .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(String(response.status)))))
       .then((buffer) => {
-        this.totals.bytes += buffer.byteLength;
-        this.totals.downloads++;
-        this.totals.downloadMs += performance.now() - started;
         const current = this.entries.get(url) as { priority: number };
         this.entries.set(url, { state: 'downloaded', priority: current.priority, bytes: new Uint8Array(buffer) });
       })
@@ -204,32 +198,27 @@ export class SpriteBitmaps {
     const entry = this.entries.get(url);
     if (entry?.state !== 'downloaded') return true;
     if (this.decoder === 'js') {
-      const started = performance.now();
       let image: RawImage | null = null;
       try {
         image = decodePng(entry.bytes);
       } catch {
         image = null;
       }
-      this.totals.decodeMs += performance.now() - started;
       if (image) {
         this.finish(url, image, image.width, image.height);
         return true;
       }
     }
-    this.totals.browserDecodes++;
     if (!this.bitmaps) {
       this.loadImage(url);
       return false;
     }
     this.entries.set(url, { state: 'decoding' });
     this.decoding = true;
-    const started = performance.now();
     createImageBitmap(new Blob([entry.bytes as BlobPart]), { premultiplyAlpha: 'premultiply' })
       .then((bitmap) => this.finish(url, bitmap, bitmap.width || 96, bitmap.height || 96))
       .catch(() => this.finish(url, null))
       .finally(() => {
-        this.totals.decodeMs += performance.now() - started;
         this.decoding = false;
         this.next();
       });
@@ -241,9 +230,7 @@ export class SpriteBitmaps {
     this.decoding = true;
     const image = new Image();
     image.crossOrigin = 'anonymous';
-    const started = performance.now();
     const done = (ok: boolean) => {
-      this.totals.decodeMs += performance.now() - started;
       this.decoding = false;
       this.finish(url, ok ? image : null, image.naturalWidth || image.width || 96, image.naturalHeight || image.height || 96);
       this.next();
