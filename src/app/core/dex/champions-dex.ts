@@ -19,6 +19,8 @@ export interface DexMove {
   priority: number;
   /** Showdown's target type: 'normal', 'allAdjacentFoes', 'self'… */
   target: string;
+  /** Showdown's short description. */
+  desc: string;
 }
 
 export interface DexItem {

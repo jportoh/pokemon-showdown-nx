@@ -1,4 +1,5 @@
 import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { TextStyle } from '@core/gl/gl-textures';
@@ -8,6 +9,23 @@ import { typeColor } from '@shared/data/type-colors';
 /** The page under the bar: the team list's column on the left, the panel (920 wide) beside it. */
 export const TOP = PAGE_BAR_H;
 export const PANEL_X = 360;
+
+/** The controls' legend at the bottom of the set editor. */
+export const LEGEND_H = 52;
+
+/**
+ * The set editor, which has the whole width: its header under the bar, the body (the Pokémon's card
+ * on the left, 500 wide, or 260 while a list or the Stats need the room), and the controls' legend.
+ */
+export const EDIT_X = 24;
+export const EDIT_RIGHT = STAGE_W - 24;
+export const EDIT_BODY_Y = TOP + 60;
+export const EDIT_BODY_BOTTOM = STAGE_H - LEGEND_H - 12;
+export const HERO_W = 500;
+export const HERO_COMPACT_W = 260;
+/** Where what's beside the card starts, beside the full card or the compact one. */
+export const BESIDE_HERO_X = EDIT_X + HERO_W + 24;
+export const BESIDE_COMPACT_X = EDIT_X + HERO_COMPACT_W + 20;
 
 export const WHITE: Rgba = [1, 1, 1, 1];
 /** A move card's detail on its type's colour (a light grey). */
@@ -46,12 +64,55 @@ export function typeRgba(type: string): Rgba | null {
 }
 
 /** Type pills in a row from `x` (72x20 and 80 apart). */
-export function typePills(ctx: UiContext, types: readonly string[], x: number, y: number, width = 72, step = 80, height = 20): void {
+export function typePills(ctx: UiContext, types: readonly string[], x: number, y: number, width = 72, step = 80, height = 20, size = 12): void {
   types.forEach((type, i) => {
     const px = x + i * step;
     ctx.renderer.rect(px, y, width, height, { fill: typeRgba(type) ?? ctx.palette.rim, radius: 3 });
-    label(ctx, type, px + width / 2, y + height / 2, { size: 12, bold: true }, WHITE, { align: 'center', maxWidth: width - 6 });
+    label(ctx, type, px + width / 2, y + height / 2, { size, bold: true }, WHITE, { align: 'center', maxWidth: width - 6 });
   });
+}
+
+/** A coloured pill with white text (a type, a move's category), `height` high; returns its width. */
+export function tag(ctx: UiContext, text: string, x: number, y: number, fill: Rgba, height = 30, size = 18): number {
+  const width = ctx.text.measure(text, { size, bold: true }) + 28;
+  ctx.renderer.rect(x, y, width, height, { fill, radius: 4 });
+  label(ctx, text, x + width / 2, y + height / 2, { size, bold: true }, WHITE, { align: 'center' });
+  return width;
+}
+
+/** The moves' categories, in the type colours' style: Physical red, Special blue, Status grey. */
+export const CATEGORY_FILL: Readonly<Record<string, Rgba>> = {
+  Physical: rgba('#9a2e12'),
+  Special: rgba('#1f4e99'),
+  Status: rgba('#5b5b58'),
+};
+
+export interface LegendEntry {
+  keys: readonly string[];
+  text: string;
+}
+
+/** The legend at the bottom of the set editor: each control's buttons, and what it does. */
+export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]): void {
+  const p = ctx.palette;
+  const top = STAGE_H - LEGEND_H;
+  ctx.renderer.rect(0, top, STAGE_W, LEGEND_H, { fill: p.bar });
+  ctx.renderer.rect(0, top, STAGE_W, 2, { fill: p.rim });
+  const cy = top + LEGEND_H / 2 + 1;
+  let x = EDIT_X;
+  for (const entry of entries) {
+    for (const key of entry.keys) x += keyPill(ctx, key, x, cy) + 6;
+    x += label(ctx, entry.text, x + 2, cy, { size: 18 }, p.muted) + 32;
+  }
+}
+
+/** A controller button's name in a box (A, ZL…), 28 high and centred on `cy`; returns its width. */
+export function keyPill(ctx: UiContext, key: string, x: number, cy: number): number {
+  const p = ctx.palette;
+  const width = Math.max(34, ctx.text.measure(key, { size: 16, bold: true }) + 14);
+  ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.button, stroke: p.outline, radius: 6, border: 2 });
+  label(ctx, key, x + width / 2, cy, { size: 16, bold: true }, p.ink, { align: 'center' });
+  return width;
 }
 
 /** How a card looks: the field whose list is open, or a plain one (lit while focused), or disabled. */

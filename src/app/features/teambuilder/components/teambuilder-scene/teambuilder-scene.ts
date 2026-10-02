@@ -22,8 +22,9 @@ const LEAVE_MS = 180;
 /**
  * The Teambuilder, drawn on the stage: the teams on the left (New builds an empty one), and the panel
  * beside them showing the team picked (its six slots, its format, Rename, Validate on ZL, Delete on
- * ZR), one of its Pokémon being edited (the Details cards with their lists, or the Stats; L/R switch
- * them, ZL picks No item/No move, ZR removes it), or what the server said of it. B goes back a step:
+ * ZR) or what the server said of it. One of its Pokémon being edited takes the whole page (its card,
+ * with its Details or its Stats beside it; L/R switch them, or the filters of a list, ZL picks No
+ * item/No move, ZR removes it). B goes back a step:
  * from the editor or the validation to the team, from the team to the list, from the list to the menu.
  */
 @Component({
@@ -63,8 +64,8 @@ export class TeambuilderScene {
       hover: (x, y) => this.focus.hover(x, y),
     });
     this.focus.focus(this.view === 'team' ? slotId(0) : NEW_TEAM_ID);
-    // On a team ZL validates and ZR deletes it; in the editor L/R switch Details/Stats (or set a stat's
-    // points while its panel is open), ZL picks No item/No move and ZR removes the Pokémon.
+    // On a team ZL validates and ZR deletes it; in the editor L/R switch Details/Stats (or a list's
+    // filters), ZL picks No item/No move (on Stats it undoes the points) and ZR removes the Pokémon.
     const release = [
       this.navigation.registerButton('buttonZL', () => {
         if (this.leaving) return true;
@@ -181,17 +182,20 @@ export class TeambuilderScene {
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
     this.bar.draw(ctx, { title: 'Teambuilder', icon: 'teambuilder', back: () => this.onAction('back') });
-    renderer.rect(PANEL_X, TOP, STAGE_W - PANEL_X, STAGE_H - TOP, { fill: p.bg });
-    this.list.draw(ctx, {
-      teams: this.store.teams(),
-      selectedId: this.selectedId(),
-      dataSummary: this.dataSummary,
-      interactive: this.view === 'empty' || this.view === 'team',
-      create: () => this.createTeam(),
-      select: (id) => this.selectTeam(id),
-    });
-
     const team = this.team();
+    // The editor has the whole page; the rest keep the teams on the left.
+    if (this.view !== 'edit' || !team) {
+      renderer.rect(PANEL_X, TOP, STAGE_W - PANEL_X, STAGE_H - TOP, { fill: p.bg });
+      this.list.draw(ctx, {
+        teams: this.store.teams(),
+        selectedId: this.selectedId(),
+        dataSummary: this.dataSummary,
+        interactive: this.view === 'empty' || this.view === 'team',
+        create: () => this.createTeam(),
+        select: (id) => this.selectTeam(id),
+      });
+    }
+
     if (this.view === 'team' && team) {
       this.teamView.draw(ctx, team, {
         rename: () => this.teamView.rename(team, (name) => this.store.rename(team.id, name)),

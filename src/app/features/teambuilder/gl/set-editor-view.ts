@@ -1,44 +1,47 @@
 import { Signal, computed, inject, signal } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { UiContext, button, label } from '@core/gl/ui/retro-kit';
-import { STAT_IDS } from '@features/teambuilder/data/game-rules';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
 import { MAX_MOVES, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { typeRank } from '@shared/data/type-order';
 import { toId } from '@shared/utils/to-id';
-import { CHOOSER_H, CHOOSER_W, ChooserOption, ChooserSpec, ChooserView } from './chooser-view';
-import { DetailsField, DetailsView, cardId } from './details-view';
+import { ChooserFilter, ChooserOption, ChooserSpec, ChooserView } from './chooser-view';
+import { Gender, HeroView, SPECIES_ID } from './hero-view';
+import { InfoPanel } from './info-panel';
+import { DetailsField, SetRowsView, cardId } from './set-rows-view';
 import { StatsView } from './stats-view';
-import { LEFT, PANEL_X, TOP, arrow, shortcutButton } from './tb-draw';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, EDIT_X, LegendEntry, TOP, controlsLegend, shortcutButton, tag, typeRgba } from './tb-draw';
 
 type Tab = 'details' | 'stats';
 /** Fields picked from a list, in the order the chooser walks through them. */
 const CHOOSER_ORDER: readonly DetailsField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
 const MOVE_FIELDS: readonly DetailsField[] = ['move0', 'move1', 'move2', 'move3'];
-/** The cards' and the chooser's top, under the header. */
-const BODY_Y = TOP + 72;
-const CARDS_X = PANEL_X + 24;
-const CHOOSER_X = PANEL_X + 476;
-export const EDITOR_TEAM_ID = 'editor-team';
+/** The header's middle, under the bar. */
+const HEADER_CY = TOP + 30;
+const FIELD_NAMES: Record<DetailsField, string> = { species: 'Species', item: 'Item', ability: 'Ability', move0: 'Move 1', move1: 'Move 2', move2: 'Move 3', move3: 'Move 4' };
 
 /**
- * One Pokémon of a team, in the panel (SetEditor on the canvas): a header (back to the team, the
- * slot, the tabs on L/R, Remove on ZR pressed twice) over the Details tab (the set's cards, with the
- * list of the card pressed beside them) or the Stats tab. Picking from a list walks on to the next
- * one, as Showdown's teambuilder does, until the last move; a new slot opens on the species.
+ * One Pokémon of a team, across the whole page (SetEditor on the canvas): a header (where it is in
+ * the team, the tabs on L/R, Remove on ZR pressed twice) over the Pokémon's card and, beside it, the
+ * Details (its item, ability and moves, a row each, and the info box) or the Stats; the controls'
+ * legend under it all. A list opened from a row (or the card, for the species) takes the rows' place
+ * with its detail panel, the card stepping aside to make room. Picking from a list walks on to the
+ * next one, as Showdown's teambuilder does, until the last move; a new slot opens on the species.
  */
 export class SetEditorView {
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser: ChooserView;
-  private readonly details = new DetailsView();
+  private readonly hero = new HeroView();
+  private readonly rows = new SetRowsView();
+  private readonly info = new InfoPanel();
   private readonly stats: StatsView;
 
   /** The slot being edited; the team's length for a new Pokémon. */
   readonly index = signal(0);
   private readonly tab = signal<Tab>('details');
-  /** The card whose list is open, or null. */
+  /** The field whose list is open, or null. */
   private readonly field = signal<DetailsField | null>(null);
   private confirmingRemove = false;
 
@@ -52,8 +55,9 @@ export class SetEditorView {
     const pokemon = this.pokemon();
     return pokemon ? this.dex.mega(pokemon.species, pokemon.item) : undefined;
   });
+  /** The types it battles with, for the moves' same-type bonus. */
+  private readonly formTypes = computed(() => (this.mega() ?? this.species())?.types ?? []);
 
-  private readonly title = computed(() => `Slot ${this.index() + 1} · ${this.mega()?.name ?? this.species()?.name ?? (this.pokemon()?.species || 'New Pokémon')}`);
   /** "Mega Evolves into Garchomp-Mega · Dragon / Ground · Sand Force" */
   private readonly megaSummary = computed(() => {
     const mega = this.mega();
@@ -69,22 +73,52 @@ export class SetEditorView {
   // The species and item lists, built once: the data only has what the format allows. Megas are
   // listed as species too: picking one picks its base species holding the Mega Stone.
   private readonly speciesOptions: readonly ChooserOption[] = [
-    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, detail: speciesDetail(species) })),
-    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, detail: `${speciesDetail(mega)} · ${this.dex.item(mega.item)?.name ?? mega.item}` })),
+    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, types: species.types })),
+    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, types: mega.types })),
   ].sort((a, b) => a.name.localeCompare(b.name));
-  private readonly itemOptions: readonly ChooserOption[] = this.dex.allItems.map((item) => ({ id: item.id, name: item.name, detail: item.desc, icon: item.id }));
+  private readonly megaStoneIds = new Set(this.dex.allMegas.map((mega) => mega.item));
+  private readonly itemOptions: readonly ChooserOption[] = this.dex.allItems.map((item) => ({
+    id: item.id,
+    name: item.name,
+    icon: item.id,
+    value: this.megaStoneIds.has(item.id) ? 'Mega Stone' : item.id.endsWith('berry') ? 'Berry' : '',
+  }));
   private readonly popularItemIds = new Set(this.dex.popularItems.map((item) => item.id));
 
+  /** The species by type, in the games' order. */
+  private readonly speciesFilters: readonly ChooserFilter[] = [
+    { name: 'All', test: () => true },
+    ...[...new Set(this.dex.allSpecies.flatMap((species) => species.types))]
+      .sort((a, b) => typeRank(a) - typeRank(b))
+      .map((type) => ({ name: type, test: (option: ChooserOption) => !!option.types?.includes(type) })),
+  ];
+
   /** Until something is typed, the item list shows Showdown's popular items (and the one it holds). */
-  private readonly suggestedItems = computed(() => {
+  private readonly itemFilters = computed((): readonly ChooserFilter[] => {
     const held = toId(this.pokemon()?.item ?? '');
-    return this.itemOptions.filter((option) => option.id === held || this.popularItemIds.has(option.id));
+    return [
+      { name: 'Popular', test: (option) => option.id === held || this.popularItemIds.has(option.id), searchesAll: true },
+      { name: 'All', test: () => true },
+      { name: 'Berries', test: (option) => option.value === 'Berry' },
+      { name: 'Mega Stones', test: (option) => option.value === 'Mega Stone' },
+    ];
+  });
+
+  private readonly moveFilters = computed((): readonly ChooserFilter[] => {
+    const types = this.formTypes();
+    return [
+      { name: 'All', test: () => true },
+      { name: 'Physical', test: (option) => option.category === 'Physical' },
+      { name: 'Special', test: (option) => option.category === 'Special' },
+      { name: 'Status', test: (option) => option.category === 'Status' },
+      { name: 'Same type', test: (option) => !!option.type && types.includes(option.type) },
+    ];
   });
 
   /** The species' moves by type, in the games' order, then by name. */
   private readonly sortedMoves = computed(() => [...(this.species()?.moves ?? [])].sort((a, b) => typeRank(a.type) - typeRank(b.type) || a.name.localeCompare(b.name)));
 
-  private readonly abilityList = computed(() => this.abilityOptions().map((name) => ({ id: toId(name), name, detail: this.dex.ability(name)?.desc ?? '' })));
+  private readonly abilityList = computed(() => this.abilityOptions().map((name) => ({ id: toId(name), name })));
 
   /** A move's list: the learnset, without the moves already in another slot. */
   private readonly moveList = computed((): readonly ChooserOption[] => {
@@ -94,45 +128,77 @@ export class SetEditorView {
     const taken = new Set((this.pokemon()?.moves ?? []).filter((_, i) => i !== slot).map(toId));
     return this.sortedMoves()
       .filter((move) => !taken.has(move.id))
-      .map((move) => ({ id: move.id, name: move.name, detail: [move.type, move.basePower ? `${move.basePower} BP` : ''].filter(Boolean).join(' · '), type: move.type, category: move.category }));
+      .map((move) => ({ id: move.id, name: move.name, type: move.type, category: move.category, value: move.basePower ? String(move.basePower) : '—' }));
   });
 
-  /** What the chooser shows for the card pressed. */
+  /** What the chooser shows for the field pressed. */
   private readonly spec = computed((): ChooserSpec | null => {
     const field = this.field();
     if (!field) return null;
     const pokemon = this.pokemon();
-    const base = { suggested: null, suggestedLabel: '', unavailable: '', clearLabel: '' };
     if (field === 'species') {
-      return { ...base, title: 'Choose a species', options: this.speciesOptions, selectedId: this.mega()?.id ?? this.species()?.id ?? '', rows: 'text', searchable: true };
+      return {
+        noun: 'Pokémon',
+        title: 'Species',
+        options: this.speciesOptions,
+        selectedId: this.mega()?.id ?? this.species()?.id ?? '',
+        rows: 'species',
+        searchable: true,
+        filters: this.speciesFilters,
+        unavailable: '',
+        describe: (ctx, box, id) => {
+          const form = this.dex.megaById(id) ?? this.dex.species(id);
+          if (form) this.info.species(ctx, box, form, true);
+        },
+      };
     }
     if (field === 'item') {
       return {
-        ...base,
-        title: 'Choose an item',
+        noun: 'items',
+        title: 'Item',
         options: this.itemOptions,
         selectedId: toId(pokemon?.item ?? ''),
         rows: 'item',
         searchable: true,
-        suggested: this.suggestedItems(),
-        suggestedLabel: 'Popular items',
-        clearLabel: pokemon?.item ? 'No item' : '',
+        filters: this.itemFilters(),
+        unavailable: '',
+        describe: (ctx, box, id) => {
+          const item = this.dex.item(id);
+          if (item) this.info.item(ctx, box, item, true);
+        },
       };
     }
     if (field === 'ability') {
-      return { ...base, title: 'Choose an ability', options: this.abilityList(), selectedId: toId(pokemon?.ability ?? ''), rows: 'long', searchable: false };
+      return {
+        noun: 'abilities',
+        title: 'Ability',
+        options: this.abilityList(),
+        selectedId: toId(pokemon?.ability ?? ''),
+        rows: 'ability',
+        searchable: false,
+        filters: [],
+        unavailable: '',
+        describe: (ctx, box, id) => {
+          const name = this.abilityOptions().find((ability) => toId(ability) === id) ?? id;
+          this.info.text(ctx, box, name, this.dex.ability(name)?.desc ?? '', true);
+        },
+      };
     }
     const slot = MOVE_FIELDS.indexOf(field);
     return {
-      ...base,
-      title: `Choose move ${slot + 1}`,
+      noun: 'moves',
+      title: `Move ${slot + 1}`,
       options: this.moveList(),
       selectedId: toId(pokemon?.moves[slot] ?? ''),
       rows: 'move',
       searchable: true,
+      filters: this.moveFilters(),
       // Moves come from the species' learnset, so a species the format doesn't allow has none.
       unavailable: this.species() ? '' : `${pokemon?.species} isn't allowed in ${this.dex.format.name}: choose another species.`,
-      clearLabel: pokemon?.moves[slot] ? 'No move' : '',
+      describe: (ctx, box, id) => {
+        const move = this.dex.move(id);
+        if (move) this.info.move(ctx, box, move, this.formTypes().includes(move.type), true);
+      },
     };
   });
 
@@ -145,7 +211,7 @@ export class SetEditorView {
     this.stats = new StatsView(focus);
   }
 
-  /** Opens a slot: a new Pokémon starts on the species list, one already there on its Species card. */
+  /** Opens a slot: a new Pokémon starts on the species list, one already there on its card. */
   open(index: number): void {
     this.index.set(index);
     this.tab.set('details');
@@ -153,7 +219,8 @@ export class SetEditorView {
     this.stats.reset();
     this.field.set(null);
     if (!this.pokemon()) this.openChooser('species');
-    else this.focus.focus(cardId('species'));
+    else this.focus.focus(SPECIES_ID);
+    this.hero.restart(this.field() !== null);
   }
 
   /** B: closes the list, the stat panel or the natures, else goes back to the team. */
@@ -164,6 +231,8 @@ export class SetEditorView {
     }
     const field = this.field();
     if (field) {
+      // A new slot has nothing to go back to but the team.
+      if (!this.pokemon()) return this.closed();
       this.field.set(null);
       this.focus.focus(cardId(field));
       return;
@@ -171,15 +240,20 @@ export class SetEditorView {
     this.closed();
   }
 
-  /** L/R: the stat panel's min/max while it's open, else the tabs. */
+  /** L/R: the open list's filters, else the tabs. */
   pressLR(by: 1 | -1): boolean {
-    if (this.tab() === 'stats' && this.stats.adjusting) return this.stats.pressLR(by);
+    const spec = this.spec();
+    if (spec) {
+      this.chooser.stepFilter(spec, by);
+      return true;
+    }
     return this.switchTab(by < 0 ? 'details' : 'stats');
   }
 
-  /** ZL: the open list's "none" choice (No item, No move), when it has one. */
+  /** ZL: the open list's "none" choice (No item, No move), when it has one; on Stats, undoes the points. */
   pressClear(): boolean {
-    if (this.tab() !== 'details' || !this.spec()?.clearLabel) return false;
+    if (this.tab() === 'stats' && this.pokemon() && !this.stats.isOpen) return this.stats.undo();
+    if (!this.clearLabel()) return false;
     this.pick('');
     return true;
   }
@@ -187,7 +261,7 @@ export class SetEditorView {
   /** ZR: asks first, then removes the Pokémon and goes back to the team (nothing in a new slot). */
   pressRemove(): boolean {
     const team = this.team();
-    if (!team || !this.pokemon() || this.stats.adjusting) return false;
+    if (!team || !this.pokemon() || this.stats.isOpen) return false;
     if (!this.confirmingRemove) {
       this.confirmingRemove = true;
       return true;
@@ -197,7 +271,7 @@ export class SetEditorView {
     return true;
   }
 
-  /** Home/End: the open list's ends, or the stat panel's min/max. */
+  /** Home/End: the open list's ends, or the focused stat's none/max. */
   jump(to: 'first' | 'last'): boolean {
     if (this.tab() === 'stats') return this.stats.jump(to);
     const spec = this.spec();
@@ -207,61 +281,137 @@ export class SetEditorView {
   }
 
   draw(ctx: UiContext): void {
-    const p = ctx.palette;
-    const x = PANEL_X;
     const pokemon = this.pokemon();
-    // The header: back to the team, the slot, the tabs (L/R), Remove (ZR).
-    const back = { x: x + 24, y: TOP + 10, w: 132, h: 36 };
-    button(ctx, EDITOR_TEAM_ID, back, '', { size: 16, accept: () => this.closed() });
-    arrow(ctx, LEFT, back.x + 36, back.y + 11, 2, p.ink);
-    label(ctx, 'Team', back.x + 52, back.y + 18, { size: 16 }, p.ink);
-    label(ctx, this.title(), x + 168, TOP + 28, { size: 20, bold: true }, p.ink, { maxWidth: 340 });
     const tab = this.tab();
-    this.tabButton(ctx, 'editor-details', { x: x + 520, y: TOP + 10, w: 112, h: 36 }, 'L', 'Details', tab === 'details', false, () => this.switchTab('details'));
-    this.tabButton(ctx, 'editor-stats', { x: x + 640, y: TOP + 10, w: 112, h: 36 }, 'R', 'Stats', tab === 'stats', !pokemon, () => this.switchTab('stats'));
-    if (pokemon) {
-      shortcutButton(ctx, 'editor-remove', { x: x + 764, y: TOP + 10, w: 132, h: 36 }, 'ZR', this.confirmingRemove ? 'Confirm' : 'Remove', {
-        primary: this.confirmingRemove,
-        accept: () => this.pressRemove(),
-      });
-    }
-
-    if (tab === 'stats' && pokemon) {
-      label(ctx, this.megaSummary(), CHOOSER_X, BODY_Y + 14, { size: 14 }, p.muted, { maxWidth: 420 });
-      this.stats.draw(ctx, CARDS_X, BODY_Y, {
-        set: pokemon,
-        baseStats: (this.mega() ?? this.species())?.baseStats,
-        points: (evs) => this.update({ evs }),
-        nature: (nature) => this.update({ nature }),
-      });
-      return;
-    }
-
-    this.details.draw(ctx, CARDS_X, BODY_Y, {
+    const spec = this.spec();
+    const field = this.field();
+    const stats = tab === 'stats' && !!pokemon;
+    this.drawHeader(ctx, spec);
+    this.hero.draw(ctx, {
       set: pokemon,
       species: this.species(),
       mega: this.mega(),
-      activeField: this.field(),
-      open: (field) => this.openChooser(field),
-      gender: (gender) => this.update({ gender }),
+      compact: !!spec || stats,
+      choosingSpecies: field === 'species',
+      replacingMove: field ? MOVE_FIELDS.indexOf(field) : -1,
+      openSpecies: () => this.openChooser('species'),
+      gender: (gender: Gender) => this.update({ gender }),
+      nickname: (name) => this.update({ name }),
     });
-    const box = { x: CHOOSER_X, y: BODY_Y, w: CHOOSER_W, h: CHOOSER_H };
-    const spec = this.spec();
+
+    if (stats) {
+      this.stats.draw(ctx, { x: BESIDE_COMPACT_X, y: EDIT_BODY_Y, w: EDIT_RIGHT - BESIDE_COMPACT_X, h: EDIT_BODY_BOTTOM - EDIT_BODY_Y }, {
+        set: pokemon,
+        baseStats: (this.mega() ?? this.species())?.baseStats,
+        note: this.megaSummary(),
+        points: (evs) => this.update({ evs }),
+        nature: (nature) => this.update({ nature }),
+      });
+    } else if (spec) {
+      this.chooser.draw(ctx, spec, (id) => this.pick(id));
+    } else {
+      this.rows.draw(ctx, { set: pokemon, species: this.species(), mega: this.mega(), open: (f) => this.openChooser(f) });
+    }
+    controlsLegend(ctx, this.legend(spec, stats));
+  }
+
+  /**
+   * The header: where it is (the team, the Pokémon, the list open), and on the right the tabs (L/R)
+   * and Remove (ZR), or, while a list is open, what picking from it replaces.
+   */
+  private drawHeader(ctx: UiContext, spec: ChooserSpec | null): void {
+    const p = ctx.palette;
+    const pokemon = this.pokemon();
+    const form = this.mega() ?? this.species();
+    const crumbs = [this.team()?.name ?? '', pokemon?.name || form?.name || pokemon?.species || 'New Pokémon'];
+    if (spec) crumbs.push(spec.title);
+    let x = EDIT_X;
+    crumbs.forEach((crumb, i) => {
+      const last = i === crumbs.length - 1;
+      if (i > 0) x += label(ctx, '▸', x + 10, HEADER_CY, { size: 20 }, p.outline) + 20;
+      x += label(ctx, crumb, x, HEADER_CY, { size: last ? 24 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: last ? 320 : 240 });
+    });
+
     if (spec) {
-      this.chooser.draw(ctx, box, spec, (id) => this.pick(id), () => this.pressClear());
+      const current = this.currentValue();
+      if (!current) return;
+      const fill = this.field()?.startsWith('move') ? this.dex.move(current) : undefined;
+      const style = { size: 18, bold: true };
+      const width = ctx.text.measure(current, style) + 28;
+      const right = EDIT_RIGHT - width;
+      if (fill) tag(ctx, current, right, HEADER_CY - 15, typeRgba(fill.type) ?? p.rim);
+      else label(ctx, current, EDIT_RIGHT, HEADER_CY, { size: 20, bold: true }, p.ink, { align: 'right' });
+      label(ctx, 'Replacing', right - 10, HEADER_CY, { size: 18 }, p.muted, { align: 'right' });
       return;
     }
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 8, border: 2 });
-    const cx = box.x + box.w / 2;
-    label(ctx, 'Press A on a card to pick from a list.', cx, box.y + 212, { size: 18 }, p.muted, { align: 'center' });
-    label(ctx, 'For species and items, a few letters', cx, box.y + 252, { size: 16 }, p.muted, { align: 'center' });
-    label(ctx, 'in the search box narrow it down.', cx, box.y + 280, { size: 16 }, p.muted, { align: 'center' });
-    label(ctx, 'Left/right on the species change its gender.', cx, box.y + 320, { size: 16 }, p.muted, { align: 'center' });
+    const tab = this.tab();
+    const removeW = 150;
+    const tabW = 136;
+    const removeX = EDIT_RIGHT - removeW;
+    this.tabButton(ctx, 'editor-details', { x: removeX - 24 - 2 * tabW - 8, y: TOP + 10, w: tabW, h: 40 }, 'L', 'Details', tab === 'details', false, () => this.switchTab('details'));
+    this.tabButton(ctx, 'editor-stats', { x: removeX - 24 - tabW, y: TOP + 10, w: tabW, h: 40 }, 'R', 'Stats', tab === 'stats', !pokemon, () => this.switchTab('stats'));
+    if (pokemon) {
+      shortcutButton(ctx, 'editor-remove', { x: removeX, y: TOP + 10, w: removeW, h: 40 }, 'ZR', this.confirmingRemove ? 'Confirm' : 'Remove', {
+        primary: this.confirmingRemove,
+        size: 18,
+        accept: () => this.pressRemove(),
+      });
+    }
+  }
+
+  /** What the buttons do now, for the legend. */
+  private legend(spec: ChooserSpec | null, stats: boolean): LegendEntry[] {
+    const remove = { keys: ['ZR'], text: this.confirmingRemove ? 'Confirm removing it' : 'Remove' };
+    if (spec) {
+      const current = this.currentValue();
+      const entries: LegendEntry[] = [
+        { keys: ['A'], text: 'Pick' },
+        { keys: ['B'], text: !this.pokemon() ? 'Back to team' : current ? `Keep ${current}` : 'Close' },
+      ];
+      if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
+      const clear = this.clearLabel();
+      if (clear) entries.push({ keys: ['ZL'], text: clear });
+      return entries;
+    }
+    if (stats) {
+      if (this.stats.isOpen) {
+        const focused = this.stats.focusedNature;
+        return [{ keys: ['A'], text: focused ? `Pick ${focused}` : 'Pick' }, { keys: ['B'], text: `Keep ${this.stats.currentNature}` }];
+      }
+      const action = this.stats.rowAction;
+      const entries: LegendEntry[] = action ? [{ keys: ['◀▶'], text: 'Points' }, { keys: ['A'], text: action }] : [{ keys: ['A'], text: 'Choose' }];
+      if (this.stats.canUndo) entries.push({ keys: ['ZL'], text: 'Undo' });
+      entries.push({ keys: ['L', 'R'], text: 'Details / Stats' }, { keys: ['B'], text: 'Back to team' }, remove);
+      return entries;
+    }
+    const focused = this.focus.focused;
+    const action = focused === 'hero-gender' ? { keys: ['◀▶'], text: 'Change' } : { keys: ['A'], text: focused === 'hero-nickname' ? 'Type' : 'Change' };
+    const entries: LegendEntry[] = [action, { keys: ['B'], text: 'Back to team' }];
+    if (this.pokemon()) entries.push({ keys: ['L', 'R'], text: 'Details / Stats' }, remove);
+    return entries;
+  }
+
+  /** The open list's field as it is now ("Earthquake", "Choice Scarf"); '' when empty. */
+  private currentValue(): string {
+    const field = this.field();
+    const pokemon = this.pokemon();
+    if (!field || !pokemon) return '';
+    if (field === 'species') return (this.mega() ?? this.species())?.name ?? pokemon.species;
+    if (field === 'item') return pokemon.item;
+    if (field === 'ability') return pokemon.ability;
+    return pokemon.moves[MOVE_FIELDS.indexOf(field)] ?? '';
+  }
+
+  /** "No item", "No move": what ZL picks in the open list, '' when there's nothing to take away. */
+  private clearLabel(): string {
+    const field = this.field();
+    if (this.tab() !== 'details' || !field || !this.currentValue()) return '';
+    return field === 'item' ? 'No item' : field.startsWith('move') ? 'No move' : '';
   }
 
   /** A tab of the header: the controller's button in a pill (clicks only; L/R are the controller's). */
-  private tabButton(ctx: UiContext, id: string, box: { x: number; y: number; w: number; h: number }, key: string, text: string, on: boolean, disabled: boolean, accept: () => void): void {
-    shortcutButton(ctx, id, box, key, text, { disabled, accept });
+  private tabButton(ctx: UiContext, id: string, box: Box, key: string, text: string, on: boolean, disabled: boolean, accept: () => void): void {
+    shortcutButton(ctx, id, box, key, text, { disabled, size: 18, accept });
     if (on) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, radius: 6, border: 2 });
   }
 
@@ -278,7 +428,7 @@ export class SetEditorView {
     this.field.set(null);
     this.tab.set(tab);
     if (tab === 'stats') this.stats.focusFirst();
-    else this.focus.focus(cardId('species'));
+    else this.focus.focus(SPECIES_ID);
     return true;
   }
 
@@ -338,10 +488,4 @@ export class SetEditorView {
 
 function newPokemon(): PokemonSet {
   return { name: '', species: '', item: '', ability: '', gender: '', shiny: false, evs: {}, nature: 'Serious', moves: [] };
-}
-
-/** "Dragon / Ground · BST 600" */
-function speciesDetail(species: DexSpecies | DexMega): string {
-  const total = STAT_IDS.reduce((sum, stat) => sum + species.baseStats[stat], 0);
-  return `${species.types.join(' / ')} · BST ${total}`;
 }
