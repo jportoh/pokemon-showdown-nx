@@ -4,7 +4,7 @@ import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { GENDER_ID, NICKNAME_ID, SPECIES_ID } from './hero-view';
 import { InfoPanel } from './info-panel';
-import { CATEGORY_ICON_W } from './category-icons';
+import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
 import { BESIDE_HERO_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, categoryBadge, typeRgba } from './tb-draw';
 
 /** The fields a list is opened for. */

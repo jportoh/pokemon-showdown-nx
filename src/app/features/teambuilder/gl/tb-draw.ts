@@ -5,7 +5,7 @@ import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { TextStyle } from '@core/gl/gl-textures';
 import { maskOf } from '@core/gl/ui/masks';
 import { typeColor } from '@shared/data/type-colors';
-import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from './category-icons';
+import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
 
 /** The page under the bar. */
 export const TOP = PAGE_BAR_H;

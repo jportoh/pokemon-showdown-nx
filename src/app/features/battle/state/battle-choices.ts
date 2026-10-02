@@ -1,4 +1,4 @@
-import { Service, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Service, computed, inject, linkedSignal } from '@angular/core';
 import { BattlePokemon, RequestMove, RequestPokemon, SlotChoice } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveType } from '@core/dex/moves';
@@ -77,9 +77,7 @@ export class BattleChoices {
   readonly mega = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
   /** Whether the slot being chosen for will Terastallize. */
   readonly tera = linkedSignal<unknown, boolean>({ source: this.choices, computation: () => false });
-  /** The switch (its number) under the mouse on the team tiles, for the Pokémon card; null for none. */
-  readonly hoveredSwitch = signal<number | null>(null);
-  /** Why the team tile just pressed can't come in, for the command panel; cleared by each new step. */
+  /** Why the Pokémon just picked on the party screen can't come in; cleared by each new step. */
   readonly notice = linkedSignal<unknown, string>({ source: () => [this.choices(), this.pendingMove()], computation: () => '' });
 
   private readonly request = this.store.request;
@@ -89,6 +87,9 @@ export class BattleChoices {
     source: this.store.battleId,
     computation: () => [],
   });
+
+  /** This turn's orders so far, described (the second slot shows the first one's). */
+  readonly planned = computed(() => this.choices().flatMap((choice, slot) => this.describe(choice, slot) ?? []));
 
   /** How many active slots this request covers. */
   private readonly slotCount = computed(() => {

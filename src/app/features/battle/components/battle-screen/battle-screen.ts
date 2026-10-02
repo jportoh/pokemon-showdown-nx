@@ -20,13 +20,13 @@ import { toId } from '@shared/utils/to-id';
  * A battle (doubles, or singles with one Pokémon a side) against a real player on Showdown (a ladder
  * match, a challenge we accepted), a live battle watched as a spectator, or a replay from Showdown's
  * replay server. It takes the whole 1280x720 stage (no app header: a battle can't be left until it's
- * over), drawn on one WebGL canvas (GlBattleScreen: header, field, the right column with both teams
- * and the conditions, the command panel, and the log, team sheet and team preview over them). This
- * component starts the battle and owns what lies beyond the screen: forfeiting (R held down), the
- * rematch or the next game of a set, leaving. The battle itself lives in root services.
+ * over), drawn on one WebGL canvas (GlBattleScreen: top bar, the field over the whole stage, the
+ * command panel rising while we choose, and the party screen, Battle info and team preview over
+ * them). This component starts the battle and owns what lies beyond the screen: forfeiting (R held
+ * down), the rematch or the next game of a set, leaving. The battle itself lives in root services.
  * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (held
- * down), R3 turns the battle timer on or off (real battles); ZL (the opponent's open team sheet) and
- * ZR (the battle log) are the canvas screen's.
+ * down), R3 turns the battle timer on or off (real battles); ZL and ZR (Battle info and its tabs) are
+ * the canvas screen's.
  */
 @Component({
   selector: 'app-battle-screen',

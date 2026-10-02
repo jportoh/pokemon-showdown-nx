@@ -1,5 +1,6 @@
 import { GlRenderer, Rgba } from '@core/gl/gl-renderer';
 import { SlotKey } from '@features/battle/models/battle';
+import { FIELD_H, FIELD_W } from '@features/battle/gl/field-layout';
 
 /**
  * Bright type colours for the effects, as RGB triplets (the renderer takes an alpha with each).
@@ -87,8 +88,8 @@ const STAT_WAVE_GAP_MS = 200;
 const STAT_UP_COLOR: Rgba = [70 / 255, 210 / 255, 100 / 255, 1];
 const STAT_DOWN_COLOR: Rgba = [240 / 255, 70 / 255, 60 / 255, 1];
 const WHITE: Rgba = [1, 1, 1, 1];
-const FIELD_WIDTH = 985;
-const FIELD_HEIGHT = 500;
+const FIELD_WIDTH = FIELD_W;
+const FIELD_HEIGHT = FIELD_H;
 
 /** A move's type as a colour for light (bright, unlike the type rows' colours). */
 export function effectColor(type: string): Rgba {

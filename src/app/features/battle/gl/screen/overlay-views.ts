@@ -1,25 +1,22 @@
 import { computed, inject } from '@angular/core';
 import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { moveType } from '@core/dex/moves';
 import { sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { unpackTeamSheet } from '@features/battle/state/team-sheet';
 import { Rgba, rgba } from '@core/gl/gl-renderer';
 import { TextStyle } from '@core/gl/gl-textures';
-import { typeColor } from '@shared/data/type-colors';
-import { spriteId } from '@shared/utils/sprite-id';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { INK, ScreenContext, write } from './screen-context';
 
-const LOG_X = 582;
-const LOG_Y = 48;
-const LOG_W = 415;
-const LOG_H = 500;
-const LOG_TEXT_W = LOG_W - 24;
-/** The rows' block inside its padding (8px over, 12px under). */
-const LOG_ROOM = LOG_H - 20;
+/** Battle info's Log tab, under its tabs. */
+const LOG_X = 16;
+const LOG_Y = 104;
+const LOG_W = 1248;
+const LOG_H = 604;
+const LOG_TEXT_W = LOG_W - 40;
+/** The rows' block inside its padding (12px over, 12px under). */
+const LOG_ROOM = LOG_H - 24;
 const PAGE_STEP_ENTRIES = 3;
 
 interface LogStyle {
@@ -33,14 +30,14 @@ interface LogStyle {
 }
 
 const LOG_STYLES: Record<BattleLogEntry['kind'], LogStyle> = {
-  turn: { style: { size: 18, bold: true }, color: INK.white, lineHeight: 28, before: 14, after: 6, width: LOG_TEXT_W - 16 },
-  minor: { style: { size: 14 }, color: INK.gray300, lineHeight: 20, before: 0, after: 0, width: LOG_TEXT_W },
-  result: { style: { size: 18, bold: true }, color: INK.yellow200, lineHeight: 28, before: 8, after: 0, width: LOG_TEXT_W },
-  message: { style: { size: 16 }, color: INK.gray100, lineHeight: 24, before: 0, after: 0, width: LOG_TEXT_W },
+  turn: { style: { size: 22, bold: true }, color: INK.white, lineHeight: 34, before: 16, after: 8, width: LOG_TEXT_W - 16 },
+  minor: { style: { size: 18 }, color: INK.gray300, lineHeight: 26, before: 0, after: 0, width: LOG_TEXT_W },
+  result: { style: { size: 22, bold: true }, color: INK.yellow200, lineHeight: 34, before: 10, after: 0, width: LOG_TEXT_W },
+  message: { style: { size: 20 }, color: INK.gray100, lineHeight: 30, before: 0, after: 0, width: LOG_TEXT_W },
 };
 
 /**
- * The battle log over the field's right part (415x500): a turn header per turn, each
+ * The battle log, Battle info's Log tab (1248x604): a turn header per turn, each
  * message, minor details in smaller grey text, the result in yellow; the newest entries that fit,
  * unless the reader has paged back with the d-pad. On the canvas each entry's lines are measured
  * exactly.
@@ -84,22 +81,22 @@ export class LogView {
 
   draw(ctx: ScreenContext): void {
     const { renderer } = ctx;
-    renderer.rect(LOG_X, LOG_Y, LOG_W, LOG_H, { fill: INK.card });
+    renderer.rect(LOG_X, LOG_Y, LOG_W, LOG_H, { fill: INK.card, radius: 10 });
     const log = this.store.log();
     const { start, end } = this.window(ctx);
-    let y = LOG_Y + 8;
+    let y = LOG_Y + 12;
     for (let i = start; i < end; i++) {
       const entry = log[i];
       const look = LOG_STYLES[entry.kind];
       const lines = this.lines(ctx, entry);
       y += look.before;
-      if (entry.kind === 'turn') renderer.rect(LOG_X + 12, y - 2, LOG_TEXT_W, lines.length * look.lineHeight + 4, { fill: INK.stage, radius: 2 });
-      const x = LOG_X + 12 + (entry.kind === 'turn' ? 8 : 0);
+      if (entry.kind === 'turn') renderer.rect(LOG_X + 20, y - 2, LOG_TEXT_W, lines.length * look.lineHeight + 4, { fill: INK.stage, radius: 4 });
+      const x = LOG_X + 20 + (entry.kind === 'turn' ? 10 : 0);
       lines.forEach((line, n) => write(ctx, line, x, y + look.lineHeight * n + look.lineHeight / 2, look.style, look.color));
       y += lines.length * look.lineHeight + look.after;
     }
-    if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 14, LOG_Y + 10, { size: 12 }, INK.gray400, 'center');
-    if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 14, LOG_Y + LOG_H - 10, { size: 12 }, INK.gray400, 'center');
+    if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 14, { size: 16 }, INK.gray400, 'center');
+    if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 14, { size: 16 }, INK.gray400, 'center');
   }
 
   private lines(ctx: ScreenContext, entry: BattleLogEntry): string[] {
@@ -150,7 +147,7 @@ export function retroPalette(): Palette {
 
 /**
  * A spectator's team preview, as BattleTeamsOverview: while the players pick theirs, both teams side
- * by side over the field and the column (1280x500), each Pokémon with its item, ability and moves
+ * by side over the field (1280x676), each Pokémon with its item, ability and moves
  * from an open team sheet, else its types.
  */
 export class TeamsOverviewView {
@@ -172,11 +169,11 @@ export class TeamsOverviewView {
   draw(ctx: ScreenContext): void {
     const { renderer } = ctx;
     const p = this.palette;
-    renderer.rect(0, 48, 1280, 500, { fill: p.bg });
+    renderer.rect(0, 44, 1280, 676, { fill: p.bg });
     for (const side of this.sides()) {
       side.rows.slice(0, 6).forEach((row, i) => {
         const x = side.left;
-        const y = 48 + 8 + i * 82;
+        const y = 44 + 16 + i * 108;
         renderer.rect(x, y, 584, 78, { fill: p.panel, stroke: side.border, radius: 12, border: 2 });
         const sprite = ctx.images.sprite(row.sprite, false, ImagePriority.Screen);
         if (sprite) renderer.rect(x + 6, y + 1, 72, 72, { fill: INK.white, texture: sprite });
@@ -194,52 +191,6 @@ export class TeamsOverviewView {
         }
       });
     }
-    write(ctx, 'VS', 640, 48 + 250, { size: 48, bold: true }, p.accentText, 'center');
-  }
-}
-
-/**
- * The opponent's open team sheet over the field, as BattleTeamSheet: their six Pokémon, each with its
- * item, ability, nature and moves. Shown with ZL; B or ZL closes it.
- */
-export class TeamSheetView {
-  private readonly store = inject(BattleStore);
-  private readonly dex = inject(ChampionsDex);
-
-  private readonly sheet = computed(() => {
-    const packed = this.store.teamSheets().p2;
-    return packed ? unpackTeamSheet(packed, this.dex) : [];
-  });
-
-  draw(ctx: ScreenContext): void {
-    const { renderer } = ctx;
-    const x0 = 12;
-    const y0 = 48;
-    renderer.rect(x0, y0, 985, 500, { fill: INK.card });
-    const name = this.store.sides().p2.name;
-    write(ctx, name ? `${name}'s team` : "Your opponent's team", x0 + 16, y0 + 24, { size: 20, bold: true }, INK.red300, 'left', 700);
-    write(ctx, 'Open team sheet · ZL or B to close', x0 + 970, y0 + 24, { size: 14 }, INK.gray300, 'right');
-    const sheet = this.sheet();
-    if (sheet.length === 0) {
-      write(ctx, 'No team sheet for this battle.', x0 + 492, y0 + 254, { size: 18 }, INK.gray300, 'center');
-      return;
-    }
-    sheet.slice(0, 6).forEach((pokemon, index) => {
-      const x = x0 + 12 + (index % 2) * (472 + 17);
-      const y = y0 + 48 + Math.floor(index / 2) * (146 + 6);
-      renderer.rect(x, y, 472, 146, { fill: INK.stage, radius: 6 });
-      const sprite = ctx.images.sprite(spriteId(pokemon.species), false, ImagePriority.Screen);
-      if (sprite) renderer.rect(x + 6, y + 25, 96, 96, { fill: INK.white, texture: sprite });
-      write(ctx, pokemon.species, x + 112, y + 20, { size: 18, bold: true }, INK.white, 'left', 350);
-      write(ctx, pokemon.item ? `@ ${pokemon.item}` : 'No item', x + 112, y + 46, { size: 16 }, INK.yellow100, 'left', 350);
-      const details = [pokemon.ability, pokemon.nature && `${pokemon.nature} Nature`].filter(Boolean).join(' · ');
-      write(ctx, details, x + 112, y + 70, { size: 16 }, INK.gray300, 'left', 350);
-      pokemon.moves.slice(0, 4).forEach((move, i) => {
-        const mx = x + 112 + (i % 2) * 178;
-        const my = y + 88 + Math.floor(i / 2) * 28;
-        renderer.rect(mx, my, 170, 22, { fill: rgba(typeColor(moveType(move)) || '#4b5563'), radius: 2 });
-        write(ctx, move, mx + 85, my + 11, { size: 14, bold: true }, INK.white, 'center', 164);
-      });
-    });
+    write(ctx, 'VS', 640, 44 + 338, { size: 48, bold: true }, p.accentText, 'center');
   }
 }
