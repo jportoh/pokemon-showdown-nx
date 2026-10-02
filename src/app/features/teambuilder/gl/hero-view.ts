@@ -1,11 +1,10 @@
 import { inject } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
-import { Rgba, withAlpha } from '@core/gl/gl-renderer';
-import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet } from '@features/teambuilder/models/team';
+import { SpriteStage } from './sprite-stage';
 import { EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, typePills } from './tb-draw';
 
 export type Gender = '' | 'M' | 'F';
@@ -16,12 +15,7 @@ export const GENDER_ID = 'hero-gender';
 /** Showdown's limit for a nickname. */
 const MAX_NICKNAME_LENGTH = 18;
 
-/** How the sprite comes in: a drop, then a squash as it lands; and how long the card takes to resize. */
-const DROP_MS = 260;
-const LAND_MS = 200;
-const DROP_HEIGHT = 48;
-/** The breathing afterwards: a slow stretch, 1.5% at most. */
-const BREATH_MS = 2400;
+/** How long the card takes to resize. */
 const RESIZE_MS = 220;
 
 /** What the card shows and changes. */
@@ -42,27 +36,25 @@ export interface HeroModel {
 }
 
 /**
- * The Pokémon's card, the editor's protagonist: its name, its sprite on a little stage (it drops in
- * and lands when the slot opens or the species changes, then breathes), its types, a place for its
- * Tera Type (once the format has them), its nickname (the canvas keyboard) and gender (left/right).
- * Compact, it steps aside for a list or the Stats: a smaller sprite, its types and its moves. The
- * card resizes between the two, with the sprite moving and scaling across.
+ * The Pokémon's card, the editor's protagonist: its name, its sprite on a little stage (shared with
+ * the team, where it dropped in when the slot was focused; another species drops in again), its
+ * types, a place for its Tera Type (once the format has them), its nickname (the canvas keyboard)
+ * and gender (left/right). Compact, it steps aside for a list or the Stats: a smaller sprite, its
+ * types and its moves. The card resizes between the two, with the sprite moving and scaling across.
  */
 export class HeroView {
   private readonly dex = inject(ChampionsDex);
   private readonly keyboard = inject(CanvasKeyboard);
 
-  /** The sprite drawn, and when it appeared (it drops in again for another one). */
-  private sprite = '';
-  private appearedAt = 0;
   /** The card's width as it was when it started resizing, and when. */
   private resizeFrom = HERO_W;
   private resizedAt = -Infinity;
   private compact = false;
 
-  /** A slot opened: its sprite drops in again, and the card starts at its size. */
+  constructor(private readonly stage: SpriteStage) {}
+
+  /** A slot opened: the card starts at its size. */
   restart(compact: boolean): void {
-    this.sprite = '';
     this.compact = compact;
     this.resizedAt = -Infinity;
   }
@@ -82,8 +74,8 @@ export class HeroView {
 
     // Resizing: only the card and its sprite, moving between where each layout has it.
     const k = (HERO_W - width) / (HERO_W - HERO_COMPACT_W);
-    const full = this.stage(box, false);
-    const small = this.stage({ ...box, w: HERO_COMPACT_W }, true);
+    const full = heroStage(box, false);
+    const small = heroStage({ ...box, w: HERO_COMPACT_W }, true);
     const stage = {
       x: lerp(full.x, small.x, k),
       y: lerp(full.y, small.y, k),
@@ -91,7 +83,7 @@ export class HeroView {
       h: lerp(full.h, small.h, k),
       size: lerp(full.size, small.size, k),
     };
-    this.drawStage(ctx, stage, model);
+    this.stage.draw(ctx, stage, model.mega ?? model.species, model.set ? `${model.set.species}?` : 'Choose a species');
     if (Math.abs(width - target) > 0.5) return;
     if (this.compact) this.drawCompact(ctx, box, model);
     else this.drawFull(ctx, box, model);
@@ -104,29 +96,16 @@ export class HeroView {
     return lerp(this.resizeFrom, target, 1 - (1 - t) * (1 - t));
   }
 
-  /** Where the sprite's stage goes in either layout, and the sprite's size on it. */
-  private stage(box: Box, compact: boolean): Box & { size: number } {
-    return compact ? { x: box.x + 16, y: box.y + 16, w: box.w - 32, h: 200, size: 160 } : { x: box.x + 20, y: box.y + 60, w: box.w - 40, h: 300, size: 240 };
-  }
-
   private drawFull(ctx: UiContext, box: Box, model: HeroModel): void {
-    const p = ctx.palette;
     const form = model.mega ?? model.species;
     const set = model.set;
 
     // The name and the stage are the species' control: A opens the list.
     const speciesBox = { x: box.x + 8, y: box.y + 8, w: box.w - 16, h: 368 };
     const focused = ctx.focus.control({ id: SPECIES_ID, ...speciesBox, accept: model.openSpecies });
-    label(ctx, form?.name ?? (set?.species || 'New Pokémon'), box.x + 24, box.y + 34, { size: 32, bold: true }, p.ink, { maxWidth: 290 });
-    if (form) label(ctx, `Lv. 50 · BST ${baseStatTotal(form)}`, box.x + box.w - 24, box.y + 36, { size: 18 }, p.muted, { align: 'right' });
+    drawHeroName(ctx, box, form, set?.species || 'New Pokémon');
     if (focused) focusRing(ctx, speciesBox, 10);
-
-    const pillsY = box.y + 390;
-    typePills(ctx, form?.types ?? [], box.x + 24, pillsY, 112, 120, 32, 18);
-    // Tera Types aren't in the format yet: their place, greyed out.
-    const tera = { x: box.x + box.w - 24 - 156, y: pillsY, w: 156, h: 32 };
-    ctx.renderer.rect(tera.x, tera.y, tera.w, tera.h, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 4, border: 2 });
-    label(ctx, 'Tera: soon', tera.x + tera.w / 2, tera.y + tera.h / 2, { size: 18 }, p.muted, { align: 'center' });
+    drawHeroTypes(ctx, box, form);
 
     const fieldW = (box.w - 48 - 12) / 2;
     const fieldY = box.y + box.h - 16 - 64;
@@ -195,54 +174,29 @@ export class HeroView {
     if (item) ctx.images.drawItem(item.id, box.x + 64, box.y + 470, 24);
     label(ctx, set.item || 'None', box.x + (item ? 94 : 64), box.y + 482, { size: 18 }, set.item ? p.ink : p.muted, { maxWidth: box.w - 114 });
   }
-
-  /** The stage: its ground, the shadow, and the sprite dropping in, landing and breathing. */
-  private drawStage(ctx: UiContext, stage: Box & { size: number }, model: HeroModel): void {
-    const p = ctx.palette;
-    const { renderer, now } = ctx;
-    renderer.rect(stage.x, stage.y, stage.w, stage.h, { fill: p.bg, radius: 10 });
-    const form = model.mega ?? model.species;
-    const cx = stage.x + stage.w / 2;
-    const ground = stage.y + stage.h - stage.size * 0.17;
-    if (!form) {
-      label(ctx, model.set ? `${model.set.species}?` : 'Choose a species', cx, stage.y + stage.h / 2, { size: 20 }, p.muted, { align: 'center', maxWidth: stage.w - 24 });
-      return;
-    }
-    const texture = ctx.images.sprite(form.sprite, false, ImagePriority.Screen);
-    // It appears once it's there: until then (and for another species) the drop starts over.
-    if (form.sprite !== this.sprite || !texture) {
-      this.sprite = form.sprite;
-      this.appearedAt = now;
-    }
-    const motion = spriteMotion(now - this.appearedAt);
-    const shadowW = stage.size * 0.8 * motion.shadow;
-    const shadowH = stage.size * 0.11;
-    renderer.rect(cx - shadowW / 2, ground - shadowH / 2, shadowW, shadowH, { fill: shadowColor(p.input, motion.alpha), radius: shadowH / 2, softness: 6 });
-    if (!texture) return;
-    const w = stage.size * motion.sx;
-    const h = stage.size * motion.sy;
-    // Standing on the ground: the sprites have some room under their feet.
-    const feet = ground + stage.size * 0.12;
-    renderer.rect(cx - w / 2, feet - h + motion.dy, w, h, { fill: [1, 1, 1, motion.alpha], texture });
-  }
 }
 
-/** The sprite `ms` after it appeared: its offset, stretch, opacity and how wide its shadow is. */
-function spriteMotion(ms: number): { dy: number; sx: number; sy: number; alpha: number; shadow: number } {
-  if (ms < DROP_MS) {
-    const t = ms / DROP_MS;
-    return { dy: -DROP_HEIGHT * (1 - t * t), sx: 0.95, sy: 1.05, alpha: Math.min(1, t * 2), shadow: 0.6 + 0.4 * t };
-  }
-  if (ms < DROP_MS + LAND_MS) {
-    const s = Math.sin((Math.PI * (ms - DROP_MS)) / LAND_MS);
-    return { dy: 0, sx: 1 + 0.08 * s, sy: 1 - 0.1 * s, alpha: 1, shadow: 1 + 0.05 * s };
-  }
-  const breath = Math.sin((2 * Math.PI * (ms - DROP_MS - LAND_MS)) / BREATH_MS);
-  return { dy: 0, sx: 1 - 0.008 * breath, sy: 1 + 0.015 * breath, alpha: 1, shadow: 1 };
+/** Where the sprite's stage goes in the full card or the compact one, and the sprite's size on it. */
+export function heroStage(box: Box, compact: boolean): Box & { size: number } {
+  return compact ? { x: box.x + 16, y: box.y + 16, w: box.w - 32, h: 200, size: 160 } : { x: box.x + 20, y: box.y + 60, w: box.w - 40, h: 300, size: 240 };
 }
 
-function shadowColor(color: Rgba, alpha: number): Rgba {
-  return withAlpha(color, 0.9 * alpha);
+/** The full card's name over the stage, and its level and base stat total. */
+export function drawHeroName(ctx: UiContext, box: Box, form: DexSpecies | DexMega | undefined, fallback: string): void {
+  const p = ctx.palette;
+  label(ctx, form?.name ?? fallback, box.x + 24, box.y + 34, { size: 32, bold: true }, p.ink, { maxWidth: 290 });
+  if (form) label(ctx, `Lv. 50 · BST ${baseStatTotal(form)}`, box.x + box.w - 24, box.y + 36, { size: 18 }, p.muted, { align: 'right' });
+}
+
+/** The full card's types under the stage, and the place of its Tera Type. */
+export function drawHeroTypes(ctx: UiContext, box: Box, form: DexSpecies | DexMega | undefined): void {
+  const p = ctx.palette;
+  const pillsY = box.y + 390;
+  typePills(ctx, form?.types ?? [], box.x + 24, pillsY, 112, 120, 32, 18);
+  // Tera Types aren't in the format yet: their place, greyed out.
+  const tera = { x: box.x + box.w - 24 - 156, y: pillsY, w: 156, h: 32 };
+  ctx.renderer.rect(tera.x, tera.y, tera.w, tera.h, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 4, border: 2 });
+  label(ctx, 'Tera: soon', tera.x + tera.w / 2, tera.y + tera.h / 2, { size: 18 }, p.muted, { align: 'center' });
 }
 
 /** A field of the card (nickname, gender): lit while focused, dimmed when it can't change. */
@@ -272,4 +226,3 @@ function genderName(model: HeroModel): string {
   const gender = species.gender || model.set.gender;
   return gender === 'M' ? 'Male' : gender === 'F' ? 'Female' : 'Either';
 }
-

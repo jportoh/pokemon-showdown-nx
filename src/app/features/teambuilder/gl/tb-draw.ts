@@ -1,4 +1,4 @@
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
@@ -7,11 +7,10 @@ import { maskOf } from '@core/gl/ui/masks';
 import { typeColor } from '@shared/data/type-colors';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from './category-icons';
 
-/** The page under the bar: the team list's column on the left, the panel (920 wide) beside it. */
+/** The page under the bar. */
 export const TOP = PAGE_BAR_H;
-export const PANEL_X = 360;
 
-/** The controls' legend at the bottom of the set editor. */
+/** The controls' legend at the bottom of every view of the teambuilder. */
 export const LEGEND_H = 52;
 
 /**
@@ -101,7 +100,7 @@ export interface LegendEntry {
   text: string;
 }
 
-/** The legend at the bottom of the set editor: each control's buttons, and what it does. */
+/** The legend at the bottom of the page: each control's buttons, and what it does. */
 export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]): void {
   const p = ctx.palette;
   const top = STAGE_H - LEGEND_H;
@@ -193,4 +192,15 @@ export function shortcutButton(
     maxWidth: box.x + box.w - 6 - textLeft,
   });
   if (focused) focusRing(ctx, box);
+}
+
+/** How far an entrance has come, 0 to 1 (easing out): `delay` ms after `since`, over `ms`. */
+export function entrance(now: number, since: number, delay: number, ms = 340): number {
+  const t = Math.max(0, Math.min(1, (now - since - delay) / ms));
+  return 1 - (1 - t) * (1 - t);
+}
+
+/** Something coming in: the page's background over it, fading out as `shown` reaches 1. */
+export function fadeIn(ctx: UiContext, box: Box, shown: number): void {
+  if (shown < 1) ctx.renderer.rect(box.x - 4, box.y - 4, box.w + 8, box.h + 8, { fill: withAlpha(ctx.palette.bg, 1 - shown) });
 }

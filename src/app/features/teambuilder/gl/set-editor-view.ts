@@ -12,6 +12,7 @@ import { ChooserFilter, ChooserOption, ChooserSpec, ChooserView } from './choose
 import { Gender, HeroView, SPECIES_ID } from './hero-view';
 import { InfoPanel } from './info-panel';
 import { DetailsField, SetRowsView, cardId } from './set-rows-view';
+import { SpriteStage } from './sprite-stage';
 import { StatsView } from './stats-view';
 import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, EDIT_X, LegendEntry, TOP, controlsLegend, shortcutButton, tag, typeRgba } from './tb-draw';
 
@@ -35,7 +36,7 @@ export class SetEditorView {
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser: ChooserView;
-  private readonly hero = new HeroView();
+  private readonly hero: HeroView;
   private readonly rows = new SetRowsView();
   private readonly info = new InfoPanel();
   private readonly stats: StatsView;
@@ -209,7 +210,9 @@ export class SetEditorView {
     private readonly focus: CanvasFocus,
     private readonly team: Signal<Team | undefined>,
     private readonly closed: () => void,
+    stage: SpriteStage,
   ) {
+    this.hero = new HeroView(stage);
     this.chooser = new ChooserView(focus);
     this.stats = new StatsView(focus);
   }

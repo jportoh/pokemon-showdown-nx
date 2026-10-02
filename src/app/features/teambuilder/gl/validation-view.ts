@@ -1,24 +1,29 @@
 import { computed, inject } from '@angular/core';
-import { ListView, UiContext, button, focusRing, label } from '@core/gl/ui/retro-kit';
+import { withAlpha } from '@core/gl/gl-renderer';
+import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
+import { ListView, UiContext, button, focusRing, label, retroBox } from '@core/gl/ui/retro-kit';
 import { Team } from '@features/teambuilder/models/team';
 import { TeamValidation } from '@features/teambuilder/state/team-validation';
-import { formatName } from '@shared/data/formats';
-import { PANEL_X, TOP, WrapCache } from './tb-draw';
+import { WrapCache, entrance } from './tb-draw';
+import { shortFormat } from './team-grid-view';
 
-const BOX = { x: PANEL_X + 24, y: TOP + 140, w: 872, h: 428 };
+const BOX = { x: 200, y: 110, w: 880, h: 500 };
+const LIST = { x: BOX.x + 28, y: BOX.y + 172, w: BOX.w - 56, h: 256 };
 const ROW_H = 58;
-const ROWS = 7;
+const ROWS = 4;
 export const VALIDATION_BACK_ID = 'validation-back';
 
 /**
- * What the Showdown server said of a team (TeamValidationPanel on the canvas): checking, valid, or
- * rejected with its reasons, a page of them at a time (the d-pad walks them and moves the list past
- * the first or last one shown). Back, focused on opening, returns to the team.
+ * What the Showdown server said of a team (TeamValidationPanel on the canvas), as a modal over the
+ * team: checking, valid, or rejected with its reasons, a page of them at a time (the d-pad walks them
+ * and moves the list past the first or last one shown). It fades and rises in; Close (or B) returns.
  */
 export class ValidationView {
   private readonly validation = inject(TeamValidation);
-  private readonly list = new ListView('problem', ROW_H, ROWS, 0, true);
+  private readonly list = new ListView('problem', ROW_H, ROWS, 8, true);
   private readonly wraps = new WrapCache();
+  /** When it opened (on the next frame drawn after validate()). */
+  private openedAt: number | null = null;
 
   private readonly status = computed(() => this.validation.result()?.status ?? 'checking');
   private readonly message = computed(() => {
@@ -30,36 +35,47 @@ export class ValidationView {
   /** Starts checking a team; the list starts at its top. */
   validate(team: Team): void {
     this.list.start = 0;
+    this.openedAt = null;
     this.validation.validate(team);
   }
 
-  draw(ctx: UiContext, team: Team, back: () => void): void {
+  draw(ctx: UiContext, team: Team, close: () => void): void {
     const p = ctx.palette;
-    const x = PANEL_X + 24;
-    label(ctx, `Validate: ${team.name}`, x, TOP + 44, { size: 20, bold: true }, p.ink, { maxWidth: 872 });
-    label(ctx, formatName(team.format), x, TOP + 80, { size: 16 }, p.muted, { maxWidth: 872 });
+    this.openedAt ??= ctx.now;
+    const shown = entrance(ctx.now, this.openedAt, 0, 220);
+    ctx.renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: withAlpha(p.bg, 0.72 * shown) });
+    ctx.focus.trap();
+    const box = { ...BOX, y: BOX.y + (1 - shown) * 16 };
+    const dy = box.y - BOX.y;
+    retroBox(ctx, box);
+
+    const x = box.x + 28;
+    label(ctx, 'Validate', x, box.y + 40, { size: 28, bold: true }, p.ink);
+    label(ctx, `${team.name} · ${shortFormat(team.format)}`, x + 140, box.y + 42, { size: 20 }, p.muted, { maxWidth: box.w - 196 });
     const status = this.status();
     const color = status === 'checking' ? p.muted : status === 'valid' ? p.teal : p.danger;
-    label(ctx, this.message(), x, TOP + 116, { size: 18, bold: true }, color, { maxWidth: 872 });
+    ctx.renderer.rect(x, box.y + 76, box.w - 56, 64, { fill: p.bg, radius: 10 });
+    label(ctx, this.message(), x + 18, box.y + 108, { size: 22, bold: true }, color, { maxWidth: box.w - 92 });
 
     const problems = this.problems();
     if (problems.length > 0) {
-      ctx.renderer.rect(BOX.x, BOX.y, BOX.w, BOX.h, { fill: p.panel, stroke: p.rim, radius: 6, border: 2 });
       this.list.draw(
         ctx,
-        BOX.x + 2,
-        BOX.y + 8,
-        BOX.w - 4,
+        LIST.x,
+        LIST.y + dy,
+        LIST.w,
         problems.length,
         (row) => {
-          const { box } = row;
-          if (row.index < problems.length - 1) ctx.renderer.rect(box.x, box.y + box.h - 1, box.w, 1, { fill: p.rim });
-          this.wraps.draw(ctx, problems[row.index], box.x + 12, box.y + 6, box.w - 24, 22, { size: 16 }, p.ink, 2);
-          if (row.focused) focusRing(ctx, box, 4);
+          const { box: rowBox } = row;
+          ctx.renderer.rect(rowBox.x, rowBox.y, rowBox.w, rowBox.h, { fill: row.focused ? p.select : [0, 0, 0, 0], stroke: p.rim, radius: 8, border: 2 });
+          // One line or two, in the middle of the row.
+          const lines = this.wraps.get(ctx, problems[row.index], { size: 18 }, rowBox.w - 32, 2).length;
+          this.wraps.draw(ctx, problems[row.index], rowBox.x + 16, rowBox.y + (rowBox.h - lines * 24) / 2, rowBox.w - 32, 24, { size: 18 }, p.ink, 2);
+          if (row.focused) focusRing(ctx, rowBox, 8);
         },
         () => undefined,
       );
     }
-    button(ctx, VALIDATION_BACK_ID, { x, y: TOP + 584, w: 120, h: 40 }, 'Back', { size: 16, accept: back });
+    button(ctx, VALIDATION_BACK_ID, { x, y: box.y + box.h - 64, w: 140, h: 44 }, 'Close', { size: 18, accept: close });
   }
 }
