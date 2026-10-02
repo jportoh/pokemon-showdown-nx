@@ -2,19 +2,26 @@ import { ITEM_ICON_SIZE, ITEM_SHEET_URL, itemIconCell } from '@core/dex/names';
 import { GlRenderer, Rgba, Texture } from '@core/gl/gl-renderer';
 import { spriteUrl } from '@shared/utils/sprite-id';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
+import { SheetSprite, sheetSprite } from './sprite-sheets';
 
 /** Textures made in one frame at most: a screen drawn from scratch spreads its uploads. */
-const UPLOADS_PER_FRAME = 2;
+export const UPLOADS_PER_FRAME = 2;
 
 /**
  * The battle screen's images (Showdown's sprites, item icons) as WebGL textures, made from the ones
  * SpriteBitmaps decodes once. On the console any image becomes a texture (probe w1: Brewser doesn't
  * apply CORS); desktop browsers refuse Showdown's sprites, whose server sends no CORS headers. A back
- * sprite that doesn't exist (some new Megas) falls back to the front one.
+ * sprite that doesn't exist (some new Megas) falls back to the front one. Champions sprites come from
+ * the sheets bundled with the app (sprite-sheets.ts): one texture per sheet, each sprite a part of it.
+ * Once a texture is made, its decoded image is let go (the GPU keeps the copy that's drawn).
  */
 export class GlSprites {
   private readonly textures = new Map<string, Texture>();
+  /** Sprites in a sheet: its texture, with their part of it. */
+  private readonly views = new Map<string, Texture>();
   private uploadsLeft = UPLOADS_PER_FRAME;
+  /** Textures made per frame at most (the loading screen raises it while nothing else draws). */
+  uploadsPerFrame = UPLOADS_PER_FRAME;
   /** Told how long each texture took to upload (diagnostics). */
   onUpload: ((ms: number) => void) | null = null;
 
@@ -25,7 +32,21 @@ export class GlSprites {
 
   /** Each frame, before drawing: the frame's upload budget. */
   startFrame(): void {
-    this.uploadsLeft = UPLOADS_PER_FRAME;
+    this.uploadsLeft = this.uploadsPerFrame;
+  }
+
+  /** This frame still has room for an upload. */
+  get canUpload(): boolean {
+    return this.uploadsLeft > 0;
+  }
+
+  /**
+   * Makes `url`'s texture ahead of its screen (the loading screen), as sprite(), image() or
+   * pixelArt() would (`smooth` as image()). True once it's there, or can't be.
+   */
+  warm(url: string, smooth: boolean): boolean {
+    if (this.textures.has(url) || this.bitmaps.failed(url)) return true;
+    return this.upload(url, ImagePriority.Screen, smooth) !== null;
   }
 
   /** A sprite on the field: first in line. Null until it's there. */
@@ -36,6 +57,9 @@ export class GlSprites {
   /** A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. */
   sprite(sprite: string, back: boolean, priority: ImagePriority): Texture | null {
     if (!sprite) return null;
+    const sheet = sheetSprite(sprite, back);
+    // A sheet that can't be loaded leaves its sprites to Showdown.
+    if (sheet && !this.bitmaps.failed(sheet.url)) return this.inSheet(`${back ? 'back' : 'front'}:${sprite}`, sheet, priority);
     const url = spriteUrl(sprite, back);
     const texture = this.textures.get(url);
     if (texture) return texture;
@@ -77,6 +101,8 @@ export class GlSprites {
   /** Still to come (a send-out waits for it, up to a point). */
   pending(sprite: string, back: boolean): boolean {
     if (!sprite) return false;
+    const sheet = sheetSprite(sprite, back);
+    if (sheet && !this.bitmaps.failed(sheet.url)) return !this.textures.has(sheet.url);
     const url = spriteUrl(sprite, back);
     if (this.textures.has(url)) return false;
     if (back && this.bitmaps.failed(url)) return this.pending(sprite, false);
@@ -86,6 +112,18 @@ export class GlSprites {
   dispose(): void {
     for (const texture of this.textures.values()) this.renderer.deleteTexture(texture);
     this.textures.clear();
+    this.views.clear();
+  }
+
+  /** A sprite's part of its sheet, once the sheet's texture is made. */
+  private inSheet(key: string, sheet: SheetSprite, priority: ImagePriority): Texture | null {
+    const view = this.views.get(key);
+    if (view) return view;
+    const texture = this.textures.get(sheet.url) ?? this.upload(sheet.url, priority, false);
+    if (!texture) return null;
+    const made = { handle: texture.handle, width: sheet.width, height: sheet.height, uv: sheet.uv };
+    this.views.set(key, made);
+    return made;
   }
 
   /** The texture once the image is decoded and this frame still has room for an upload. */
@@ -96,9 +134,12 @@ export class GlSprites {
     this.uploadsLeft--;
     try {
       const started = performance.now();
-      const made = this.renderer.textureFromSource(decoded.image, decoded.width, decoded.height, smooth);
+      const { image, width, height } = decoded;
+      // Our own decoder's pixels come premultiplied already.
+      const made = 'pixels' in image ? this.renderer.textureFromPixels(image.pixels, width, height, smooth) : this.renderer.textureFromSource(image, width, height, smooth);
       this.onUpload?.(performance.now() - started);
       this.textures.set(url, made);
+      this.bitmaps.release(url);
       return made;
     } catch {
       return null;

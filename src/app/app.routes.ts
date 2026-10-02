@@ -1,5 +1,6 @@
 import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
+import { AssetPreload } from '@core/gl/asset-preload';
 import { BattleSession } from '@features/battle/state/battle-session';
 
 export const routes: Routes = [
@@ -7,7 +8,13 @@ export const routes: Routes = [
     // The home menu, drawn on the stage (its own bar, no page frame).
     path: '',
     pathMatch: 'full',
+    // A launch shows the loading screen first, which makes every image ahead.
+    canActivate: [() => inject(AssetPreload).finished() || inject(Router).parseUrl('/loading')],
     loadComponent: () => import('@features/home/components/home-scene/home-scene').then((c) => c.HomeScene),
+  },
+  {
+    path: 'loading',
+    loadComponent: () => import('@features/loading/components/loading-scene/loading-scene').then((c) => c.LoadingScene),
   },
   {
     // The pages drawn on the stage, each with its own bar (PageBar).
