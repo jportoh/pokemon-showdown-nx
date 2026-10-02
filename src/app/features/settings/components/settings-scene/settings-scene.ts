@@ -8,12 +8,12 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, focusRing, label, retroBox } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { AppSettings, THEMES } from '@core/settings/app-settings';
+import { AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 
-type SettingId = 'theme' | 'battleFormat' | 'teamFormat' | 'allowSpectators' | 'rememberName' | 'autoLogin' | 'replays';
+type SettingId = 'theme' | 'musicVolume' | 'soundVolume' | 'battleFormat' | 'teamFormat' | 'allowSpectators' | 'rememberName' | 'autoLogin' | 'replays';
 
 interface SettingRow {
   id: SettingId;
@@ -34,8 +34,8 @@ interface SettingRow {
 const BOX = { x: 32, y: 100, w: 1216, h: 596 };
 const ROW_X = BOX.x + 24;
 const ROW_W = 1162;
-const ROW_H = 68;
-const rowY = (index: number): number => BOX.y + 20 + index * 78;
+const ROW_H = 56;
+const rowY = (index: number): number => BOX.y + 20 + index * 62;
 /** Rows slide in one after another on arrival; the page fades out on leaving. */
 const INTRO_MS = 320;
 const LEAVE_MS = 180;
@@ -80,6 +80,22 @@ export class SettingsScene {
         label: 'Theme',
         detail: `The app's colours, ${THEMES.indexOf(theme) + 1} of ${THEMES.length}. They change as you pick them.`,
         value: theme.name,
+        kind: 'cycle',
+        steppable: true,
+      },
+      {
+        id: 'musicVolume',
+        label: 'Music',
+        detail: settings.musicVolume ? 'The menus\' theme and the battle music.' : 'No music.',
+        value: volumeLabel(settings.musicVolume),
+        kind: 'cycle',
+        steppable: true,
+      },
+      {
+        id: 'soundVolume',
+        label: 'Sound effects',
+        detail: settings.soundVolume ? 'The buttons\' sounds and the Pokémon\'s cries in battle.' : 'No sounds or cries.',
+        value: volumeLabel(settings.soundVolume),
         kind: 'cycle',
         steppable: true,
       },
@@ -214,6 +230,10 @@ export class SettingsScene {
       case 'theme':
         this.appSettings.set('theme', cycle(THEMES.map((t) => t.id), settings.theme, step));
         break;
+      case 'musicVolume':
+      case 'soundVolume':
+        this.appSettings.set(row.id, cycle(VOLUMES, settings[row.id], step));
+        break;
       case 'battleFormat':
         this.appSettings.set('battleFormat', cycle(PLAYABLE_FORMATS.map((f) => f.id), settings.battleFormat, step));
         break;
@@ -284,8 +304,8 @@ export class SettingsScene {
     const a = (color: Rgba): Rgba => withAlpha(color, alpha);
     renderer.rect(x, y, ROW_W, ROW_H, { fill: a(mixRgba(p.button, p.select, f)), stroke: a(p.rim), radius: 8, border: 2 });
 
-    label(ctx, row.label, x + 22, y + 22, { size: 24, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
-    label(ctx, row.detail, x + 22, y + 50, { size: 16 }, a(p.muted), { maxWidth: 720 });
+    label(ctx, row.label, x + 22, y + 18, { size: 22, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
+    label(ctx, row.detail, x + 22, y + 41, { size: 16 }, a(p.muted), { maxWidth: 720 });
 
     // The value, flashing white for a moment when it changes, its ◀ ▶ nudging the way it went.
     const valueColor = row.disabled ? p.muted : row.kind === 'toggle' ? (row.on ? p.teal : p.muted) : p.accentText;
@@ -296,15 +316,22 @@ export class SettingsScene {
     const texture = ctx.text.get(shown, valueStyle);
     if (texture) {
       const cx = x + 954;
-      const cy = y + 32;
+      const cy = y + ROW_H / 2;
       renderer.image(texture, cx - (texture.width * pop) / 2, cy - (texture.height * pop) / 2, pop, a(mixRgba(valueColor, [1, 1, 1, 1], flash * 0.6)));
     }
     const arrowColor = a(mixRgba(p.muted, p.accentText, f));
     const nudge = Math.max(0, Math.sin((now / 1000) * 6)) * 3 * f;
-    if (row.steppable && this.leftArrow) renderer.image(this.leftArrow, x + 762 - nudge, y + 18, 4, arrowColor);
-    if ((row.steppable || row.kind === 'link') && this.rightArrow) renderer.image(this.rightArrow, x + 1126 + nudge, y + 18, 4, arrowColor);
+    if (row.steppable && this.leftArrow) renderer.image(this.leftArrow, x + 762 - nudge, y + 14, 4, arrowColor);
+    if ((row.steppable || row.kind === 'link') && this.rightArrow) renderer.image(this.rightArrow, x + 1126 + nudge, y + 14, 4, arrowColor);
     if (focused) focusRing(ctx, { ...box, x }, 8);
   }
+}
+
+/** The volumes to step through: 0 (Off) to 100. */
+const VOLUMES = Array.from({ length: 100 / VOLUME_STEP + 1 }, (_, i) => i * VOLUME_STEP);
+
+function volumeLabel(volume: number): string {
+  return volume ? `${volume}%` : 'Off';
 }
 
 /** The value `step` places after `current` in `values`, wrapping around. */
