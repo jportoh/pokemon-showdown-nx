@@ -1,6 +1,8 @@
 import { Signal, computed, inject, signal } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
+import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
 import { MAX_MOVES, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
@@ -23,7 +25,7 @@ const FIELD_NAMES: Record<DetailsField, string> = { species: 'Species', item: 'I
 
 /**
  * One Pokémon of a team, across the whole page (SetEditor on the canvas): a header (where it is in
- * the team, the tabs on L/R, Remove on ZR pressed twice) over the Pokémon's card and, beside it, the
+ * the team, the tabs on L/R, Remove on ZR held down) over the Pokémon's card and, beside it, the
  * Details (its item, ability and moves, a row each, and the info box) or the Stats; the controls'
  * legend under it all. A list opened from a row (or the card, for the species) takes the rows' place
  * with its detail panel, the card stepping aside to make room. Picking from a list walks on to the
@@ -43,7 +45,8 @@ export class SetEditorView {
   private readonly tab = signal<Tab>('details');
   /** The field whose list is open, or null. */
   private readonly field = signal<DetailsField | null>(null);
-  private confirmingRemove = false;
+  /** Remove, filling while ZR is held. */
+  private readonly remove = new HoldAction(inject(KeyboardNavigation), 'buttonZR');
 
   private readonly pokemon = computed(() => this.team()?.sets[this.index()]);
   private readonly species = computed((): DexSpecies | undefined => {
@@ -215,7 +218,7 @@ export class SetEditorView {
   open(index: number): void {
     this.index.set(index);
     this.tab.set('details');
-    this.confirmingRemove = false;
+    this.remove.reset();
     this.stats.reset();
     this.field.set(null);
     if (!this.pokemon()) this.openChooser('species');
@@ -258,15 +261,25 @@ export class SetEditorView {
     return true;
   }
 
-  /** ZR: asks first, then removes the Pokémon and goes back to the team (nothing in a new slot). */
+  /**
+   * ZR: starts filling Remove in red; held to the end, it removes the Pokémon and goes back to the
+   * team (nothing in a new slot). Holding it is the confirmation, so nothing asks again.
+   */
   pressRemove(): boolean {
+    if (!this.canRemove()) return false;
+    this.remove.press();
+    return true;
+  }
+
+  private canRemove(): boolean {
+    return !!this.team() && !!this.pokemon() && !this.stats.isOpen && !this.field();
+  }
+
+  /** Steps Remove's hold; true once it filled up and the Pokémon is removed. */
+  private stepRemove(now: number): boolean {
+    if (!this.remove.step(now, this.canRemove())) return false;
     const team = this.team();
-    if (!team || !this.pokemon() || this.stats.isOpen) return false;
-    if (!this.confirmingRemove) {
-      this.confirmingRemove = true;
-      return true;
-    }
-    this.store.removePokemon(team.id, this.index());
+    if (team) this.store.removePokemon(team.id, this.index());
     this.closed();
     return true;
   }
@@ -281,6 +294,7 @@ export class SetEditorView {
   }
 
   draw(ctx: UiContext): void {
+    if (this.stepRemove(ctx.now)) return;
     const pokemon = this.pokemon();
     const tab = this.tab();
     const spec = this.spec();
@@ -328,7 +342,7 @@ export class SetEditorView {
     let x = EDIT_X;
     crumbs.forEach((crumb, i) => {
       const last = i === crumbs.length - 1;
-      if (i > 0) x += label(ctx, '▸', x + 10, HEADER_CY, { size: 20 }, p.outline) + 20;
+      if (i > 0) x += label(ctx, '▶', x + 10, HEADER_CY, { size: 14 }, p.outline) + 20;
       x += label(ctx, crumb, x, HEADER_CY, { size: last ? 24 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: last ? 320 : 240 });
     });
 
@@ -351,17 +365,17 @@ export class SetEditorView {
     this.tabButton(ctx, 'editor-details', { x: removeX - 24 - 2 * tabW - 8, y: TOP + 10, w: tabW, h: 40 }, 'L', 'Details', tab === 'details', false, () => this.switchTab('details'));
     this.tabButton(ctx, 'editor-stats', { x: removeX - 24 - tabW, y: TOP + 10, w: tabW, h: 40 }, 'R', 'Stats', tab === 'stats', !pokemon, () => this.switchTab('stats'));
     if (pokemon) {
-      shortcutButton(ctx, 'editor-remove', { x: removeX, y: TOP + 10, w: removeW, h: 40 }, 'ZR', this.confirmingRemove ? 'Confirm' : 'Remove', {
-        primary: this.confirmingRemove,
+      shortcutButton(ctx, 'editor-remove', { x: removeX, y: TOP + 10, w: removeW, h: 40 }, 'ZR', 'Remove', {
         size: 18,
         accept: () => this.pressRemove(),
+        held: { progress: this.remove.progress, color: HOLD_FILL },
       });
     }
   }
 
   /** What the buttons do now, for the legend. */
   private legend(spec: ChooserSpec | null, stats: boolean): LegendEntry[] {
-    const remove = { keys: ['ZR'], text: this.confirmingRemove ? 'Confirm removing it' : 'Remove' };
+    const remove = { keys: ['ZR'], text: 'Hold to remove' };
     if (spec) {
       const current = this.currentValue();
       const entries: LegendEntry[] = [
@@ -385,7 +399,7 @@ export class SetEditorView {
       return entries;
     }
     const focused = this.focus.focused;
-    const action = focused === 'hero-gender' ? { keys: ['◀▶'], text: 'Change' } : { keys: ['A'], text: focused === 'hero-nickname' ? 'Type' : 'Change' };
+    const action = { keys: ['A'], text: focused === 'hero-nickname' ? 'Type' : 'Change' };
     const entries: LegendEntry[] = [action, { keys: ['B'], text: 'Back to team' }];
     if (this.pokemon()) entries.push({ keys: ['L', 'R'], text: 'Details / Stats' }, remove);
     return entries;

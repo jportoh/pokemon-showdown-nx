@@ -3,6 +3,8 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
+import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { Box, UiContext, button, focusRing, label } from '@core/gl/ui/retro-kit';
 import { MAX_MOVES, MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS, formatLabel } from '@shared/data/formats';
@@ -24,7 +26,7 @@ export function slotId(index: number): string {
 
 /**
  * A team in the panel (TeamDetail on the canvas): its name, its format (A moves to the next one),
- * Rename (the canvas keyboard), Validate (ZL) and Delete (ZR, pressed twice), over its six slots as
+ * Rename (the canvas keyboard), Validate (ZL) and Delete (ZR, held down), over its six slots as
  * cards: each Pokémon's sprite in the form it battles in, with its item's icon, its name, types, item
  * and ability, and its moves in their types' colours. An empty slot adds a Pokémon at the end.
  */
@@ -32,28 +34,28 @@ export class TeamView {
   private readonly dex = inject(ChampionsDex);
   private readonly keyboard = inject(CanvasKeyboard);
 
-  /** The team whose Delete waits for its confirmation. */
-  private confirmingDelete: string | null = null;
+  /** Delete, filling while ZR is held. */
+  private readonly deleteHold = new HoldAction(inject(KeyboardNavigation), 'buttonZR');
 
   constructor(private readonly focus: CanvasFocus) {}
 
   /** Another team, or the same one shown again: nothing pending. */
   reset(): void {
-    this.confirmingDelete = null;
+    this.deleteHold.reset();
   }
 
-  /** ZR: asks first, then deletes (true once deleted). */
-  pressDelete(team: Team): 'asked' | 'deleted' {
-    if (this.confirmingDelete === team.id) {
-      this.confirmingDelete = null;
-      return 'deleted';
-    }
-    this.confirmingDelete = team.id;
-    return 'asked';
+  /** ZR: starts filling Delete; held to the end, the team is deleted (see stepDelete). */
+  pressDelete(): void {
+    this.deleteHold.press();
+  }
+
+  /** Every frame: Delete's hold, while the team is shown; true on the frame it fills up. */
+  stepDelete(now: number, shown: boolean): boolean {
+    return this.deleteHold.step(now, shown);
   }
 
   rename(team: Team, renamed: (name: string) => void): void {
-    this.confirmingDelete = null;
+    this.deleteHold.reset();
     this.keyboard.open({
       label: 'Team name',
       value: team.name,
@@ -98,8 +100,10 @@ export class TeamView {
 
     button(ctx, 'team-rename', { x: x + 528, y: TOP + 14, w: 100, h: 36 }, 'Rename', { size: 16, accept: actions.rename });
     shortcutButton(ctx, 'team-validate', { x: x + 640, y: TOP + 14, w: 124, h: 36 }, 'ZL', 'Validate', { accept: actions.validate });
-    const confirming = this.confirmingDelete === team.id;
-    shortcutButton(ctx, 'team-delete', { x: x + 776, y: TOP + 14, w: 120, h: 36 }, 'ZR', confirming ? 'Confirm' : 'Delete', { primary: confirming, accept: actions.delete });
+    shortcutButton(ctx, 'team-delete', { x: x + 776, y: TOP + 14, w: 120, h: 36 }, 'ZR', 'Delete', {
+      accept: actions.delete,
+      held: { progress: this.deleteHold.progress, color: HOLD_FILL },
+    });
 
     SLOTS.forEach((slot, i) => {
       const box = { x: slot.x, y: slot.y, w: SLOT_W, h: SLOT_H };

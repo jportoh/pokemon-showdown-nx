@@ -3,7 +3,8 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, ListView, UiContext, focusRing, label, textField } from '@core/gl/ui/retro-kit';
 import { toId } from '@shared/utils/to-id';
-import { BESIDE_COMPACT_X, CATEGORY_FILL, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, keyPill, typeRgba } from './tb-draw';
+import { CATEGORY_ICON_W } from './category-icons';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, typeRgba } from './tb-draw';
 
 export interface ChooserOption {
   id: string;
@@ -57,7 +58,6 @@ const LIST_W = 540;
 const HINT_NAMES = 4;
 const MAX_QUERY_LENGTH = 24;
 const SEARCH_ID = 'chooser-search';
-const CATEGORY_SHORT: Readonly<Record<string, string>> = { Physical: 'Phys', Special: 'Spec', Status: 'Status' };
 
 /**
  * A list to pick a species, an item, an ability or a move from, beside the Pokémon's compact card: a
@@ -197,9 +197,8 @@ export class ChooserView {
         left = box.x + 24;
         label(ctx, option.value ?? '', right, cy, { size: 22, bold: true }, p.ink, { align: 'right', fast: true });
         const category = option.category ?? '';
-        end = right - 50 - 70;
-        renderer.rect(end, cy - 13, 70, 26, { fill: CATEGORY_FILL[category] ?? p.rim, radius: 4 });
-        label(ctx, CATEGORY_SHORT[category] ?? category, end + 35, cy, { size: 16, bold: true }, WHITE, { align: 'center' });
+        end = right - 50 - CATEGORY_ICON_W;
+        categoryBadge(ctx, category, end, cy);
         if (option.type) {
           end -= 8 + 90;
           renderer.rect(end, cy - 13, 90, 26, { fill: typeRgba(option.type) ?? p.rim, radius: 4 });

@@ -4,7 +4,8 @@ import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { GENDER_ID, NICKNAME_ID, SPECIES_ID } from './hero-view';
 import { InfoPanel } from './info-panel';
-import { BESIDE_HERO_X, CATEGORY_FILL, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, typeRgba } from './tb-draw';
+import { CATEGORY_ICON_W } from './category-icons';
+import { BESIDE_HERO_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, categoryBadge, typeRgba } from './tb-draw';
 
 /** The fields a list is opened for. */
 export type DetailsField = 'species' | 'item' | 'ability' | 'move0' | 'move1' | 'move2' | 'move3';
@@ -16,8 +17,6 @@ export function cardId(field: DetailsField): string {
 const ROW_H = 56;
 const ROW_STEP = 64;
 const ROWS: readonly DetailsField[] = ['item', 'ability', 'move0', 'move1', 'move2', 'move3'];
-/** The short names of the categories, in the rows. */
-const CATEGORY_SHORT: Readonly<Record<string, string>> = { Physical: 'Phys', Special: 'Spec', Status: 'Status' };
 
 /** What the rows show and do. */
 export interface RowsModel {
@@ -73,10 +72,9 @@ export class SetRowsView {
       if (move) {
         const right = box.x + box.w - 16;
         label(ctx, move.basePower ? String(move.basePower) : '—', right, cy, { size: 24, bold: true }, p.ink, { align: 'right', fast: true });
-        const category = { x: right - 52 - 70, y: cy - 13, w: 70, h: 26 };
-        renderer.rect(category.x, category.y, category.w, category.h, { fill: CATEGORY_FILL[move.category] ?? p.rim, radius: 4 });
-        label(ctx, CATEGORY_SHORT[move.category] ?? move.category, category.x + category.w / 2, cy, { size: 16, bold: true }, WHITE, { align: 'center' });
-        const type = { x: category.x - 8 - 96, y: cy - 13, w: 96, h: 26 };
+        const categoryX = right - 52 - CATEGORY_ICON_W;
+        categoryBadge(ctx, move.category, categoryX, cy);
+        const type = { x: categoryX - 8 - 96, y: cy - 13, w: 96, h: 26 };
         renderer.rect(type.x, type.y, type.w, type.h, { fill: typeRgba(move.type) ?? p.rim, radius: 4 });
         label(ctx, move.type, type.x + type.w / 2, cy, { size: 16, bold: true }, WHITE, { align: 'center' });
       }
@@ -94,7 +92,7 @@ export class SetRowsView {
       return;
     }
     if (focused === GENDER_ID) {
-      this.info.text(ctx, box, 'Gender', 'Left/right change it. With Either, the game picks one when the battle starts.', false);
+      this.info.text(ctx, box, 'Gender', 'A changes it. With Either, the game picks one when the battle starts.', false);
       return;
     }
     const field = ROWS.find((f) => cardId(f) === focused);

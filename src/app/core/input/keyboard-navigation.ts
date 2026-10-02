@@ -34,6 +34,11 @@ export type CanvasAction = 'up' | 'down' | 'left' | 'right' | 'accept' | 'back' 
 /** Whether the action was used. */
 export type CanvasInput = (action: CanvasAction) => boolean;
 
+/** The action a page button sends (ZL and ZR are the tab keys'). */
+function buttonAction(button: PageButton): InputAction {
+  return button === 'buttonZL' ? 'prevTab' : button === 'buttonZR' ? 'nextTab' : button;
+}
+
 function isCanvasAction(action: InputAction): action is CanvasAction {
   return action === 'up' || action === 'down' || action === 'left' || action === 'right' || action === 'accept' || action === 'back' || action === 'first' || action === 'last';
 }
@@ -62,9 +67,27 @@ export class KeyboardNavigation {
   /** Actions held on the controller: when they started and when they last fired (for repeats). */
   private held = new Map<InputAction, { since: number; fired: number; repeats: number }>();
   private lastAction: { action: InputAction; source: Source; at: number } | null = null;
+  /** Actions whose key is down on the computer keyboard (see isHeld). */
+  private readonly keysDown = new Set<InputAction>();
+  /** Buttons whose hold already did its job (see consume): ignored until they're let go. */
+  private readonly consumed = new Set<InputAction>();
 
   constructor() {
     window.addEventListener('keydown', (event) => this.onKeyDown(event), true);
+    window.addEventListener(
+      'keyup',
+      (event) => {
+        const action = inputAction(event);
+        if (!action) return;
+        this.keysDown.delete(action);
+        this.releaseConsumed();
+      },
+      true,
+    );
+    window.addEventListener('blur', () => {
+      this.keysDown.clear();
+      this.releaseConsumed();
+    });
     if (typeof navigator.getGamepads === 'function') {
       if (typeof requestAnimationFrame === 'function') {
         const poll = () => {
@@ -89,6 +112,25 @@ export class KeyboardNavigation {
       const index = this.pageButtons.indexOf(entry);
       if (index !== -1) this.pageButtons.splice(index, 1);
     };
+  }
+
+  /** Whether a page button is held down right now, on the controller or the keyboard (hold-to-confirm). */
+  isHeld(button: PageButton): boolean {
+    const action = buttonAction(button);
+    return !this.consumed.has(action) && (this.held.has(action) || this.keysDown.has(action));
+  }
+
+  /**
+   * The button's hold did its job (it deleted something): until it's let go it isn't held, and its
+   * presses (a keyboard's auto-repeat) do nothing, so it can't go on to the next screen's action.
+   */
+  consume(button: PageButton): void {
+    this.consumed.add(buttonAction(button));
+  }
+
+  /** Forgets the consumed buttons that are up again. */
+  private releaseConsumed(): void {
+    for (const action of this.consumed) if (!this.held.has(action) && !this.keysDown.has(action)) this.consumed.delete(action);
   }
 
   /**
@@ -122,6 +164,7 @@ export class KeyboardNavigation {
     }
     const action = inputAction(event);
     if (!action) return;
+    this.keysDown.add(action);
     // On the console the controller is read directly; its d-pad's key events would move twice more.
     if (ON_BREWSER && this.gamepadConnected) {
       event.preventDefault();
@@ -174,10 +217,12 @@ export class KeyboardNavigation {
       }
     }
     this.held = held;
+    this.releaseConsumed();
   }
 
   /** Runs an action; returns whether it was used (and the key's default must be prevented). */
   private dispatch(action: InputAction, source: Source): boolean {
+    if (this.consumed.has(action)) return true;
     const now = Date.now();
     const last = this.lastAction;
     if (last && last.action === action && last.source !== source && now - last.at < DUPLICATE_MS) return true;

@@ -5,6 +5,7 @@ import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { TextStyle } from '@core/gl/gl-textures';
 import { maskOf } from '@core/gl/ui/masks';
 import { typeColor } from '@shared/data/type-colors';
+import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from './category-icons';
 
 /** The page under the bar: the team list's column on the left, the panel (920 wide) beside it. */
 export const TOP = PAGE_BAR_H;
@@ -87,6 +88,14 @@ export const CATEGORY_FILL: Readonly<Record<string, Rgba>> = {
   Status: rgba('#5b5b58'),
 };
 
+/** A move's category as its icon (60x26, as tall as the type pills) centred on `cy`; a plain pill if unknown. */
+export function categoryBadge(ctx: UiContext, category: string, x: number, cy: number): void {
+  const icon = categoryIcon(ctx.renderer, category);
+  const y = cy - CATEGORY_ICON_H / 2;
+  if (icon) ctx.renderer.rect(x, y, CATEGORY_ICON_W, CATEGORY_ICON_H, { fill: WHITE, texture: icon });
+  else ctx.renderer.rect(x, y, CATEGORY_ICON_W, CATEGORY_ICON_H, { fill: ctx.palette.rim, radius: 4 });
+}
+
 export interface LegendEntry {
   keys: readonly string[];
   text: string;
@@ -160,14 +169,20 @@ export function shortcutButton(
   box: Box,
   key: string,
   text: string,
-  options: { primary?: boolean; disabled?: boolean; size?: number; accept: () => void },
+  options: { primary?: boolean; disabled?: boolean; size?: number; accept: () => void; held?: { progress: number; color: Rgba } },
 ): void {
   const p = ctx.palette;
   const focused = !options.disabled && ctx.focus.control({ id, ...box, accept: options.accept, skip: true });
   const fill = options.disabled ? p.bg : options.primary ? p.accent : focused ? p.select : p.button;
   const stroke = options.disabled ? p.rim : options.primary ? p.bar : p.outline;
-  const ink = options.disabled ? p.muted : options.primary ? WHITE : p.ink;
+  const held = options.held && options.held.progress > 0 ? options.held : null;
+  // Over halfway filled, the text sits on the fill.
+  const ink = options.disabled ? p.muted : options.primary || (held && held.progress > 0.5) ? WHITE : p.ink;
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke, radius: 6, border: 2 });
+  if (held) {
+    const width = (box.w - 4) * Math.min(1, held.progress);
+    ctx.renderer.rect(box.x + 2, box.y + 2, width, box.h - 4, { fill: held.color, radius: Math.min(4, width / 2) });
+  }
   const pillH = Math.min(24, box.h - 10);
   const pillW = Math.max(28, ctx.text.measure(key, { size: 14, bold: true }) + 12);
   ctx.renderer.rect(box.x + 7, box.y + (box.h - pillH) / 2, pillW, pillH, { fill: options.primary ? p.accentHover : p.bg, radius: 3 });

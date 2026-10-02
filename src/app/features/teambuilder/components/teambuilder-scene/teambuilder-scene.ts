@@ -154,17 +154,18 @@ export class TeambuilderScene {
     return true;
   }
 
-  /** ZR: deleting can't be undone, so the first press only asks for confirmation. */
+  /** ZR: deleting can't be undone, so it's held down until Delete fills up (see draw). */
   private pressDelete(): boolean {
-    const team = this.team();
-    if (!team) return false;
-    if (this.teamView.pressDelete(team) === 'deleted') {
-      this.store.remove(team.id);
-      this.selectedId.set(null);
-      this.view = 'empty';
-      this.focus.focus(NEW_TEAM_ID);
-    }
+    if (!this.team()) return false;
+    this.teamView.pressDelete();
     return true;
+  }
+
+  private deleteTeam(id: string): void {
+    this.store.remove(id);
+    this.selectedId.set(null);
+    this.view = 'empty';
+    this.focus.focus(NEW_TEAM_ID);
   }
 
   private leave(): void {
@@ -179,6 +180,8 @@ export class TeambuilderScene {
     const { renderer, now } = frame;
     // The team went away (deleted): nothing left to show but the list.
     if (this.view !== 'empty' && !this.team()) this.view = 'empty';
+    const shown = this.team();
+    if (this.teamView.stepDelete(now, this.view === 'team' && !!shown && !this.leaving) && shown) this.deleteTeam(shown.id);
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
     this.bar.draw(ctx, { title: 'Teambuilder', icon: 'teambuilder', back: () => this.onAction('back') });

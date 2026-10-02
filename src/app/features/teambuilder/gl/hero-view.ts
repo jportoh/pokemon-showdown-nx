@@ -6,7 +6,7 @@ import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet } from '@features/teambuilder/models/team';
-import { EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, LEFT, RIGHT, arrow, typePills } from './tb-draw';
+import { EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, typePills } from './tb-draw';
 
 export type Gender = '' | 'M' | 'F';
 
@@ -161,30 +161,15 @@ export class HeroView {
     const p = ctx.palette;
     const genders = gendersOf(model.species);
     const canChange = !!model.set && genders.length > 1;
-    const step = (by: 1 | -1) => {
+    // A steps to the next one; the d-pad only moves on, so passing through never changes it.
+    const next = () => {
       const index = Math.max(0, genders.indexOf(model.set?.gender ?? ''));
-      model.gender(genders[(index + by + genders.length) % genders.length]);
+      model.gender(genders[(index + 1) % genders.length]);
     };
-    const focused =
-      canChange &&
-      ctx.focus.control({
-        id: GENDER_ID,
-        ...box,
-        accept: () => step(1),
-        move: (direction) => {
-          if (direction !== 'left' && direction !== 'right') return false;
-          step(direction === 'right' ? 1 : -1);
-          return true;
-        },
-      });
+    const focused = canChange && ctx.focus.control({ id: GENDER_ID, ...box, accept: next });
     field(ctx, box, focused, !canChange);
     label(ctx, 'Gender', box.x + 14, box.y + 18, { size: 16 }, p.muted);
-    const cx = box.x + box.w / 2 + 10;
-    if (canChange) {
-      arrow(ctx, LEFT, box.x + 14, box.y + 37, 2, focused ? p.accentText : p.muted);
-      arrow(ctx, RIGHT, box.x + box.w - 22, box.y + 37, 2, focused ? p.accentText : p.muted);
-    }
-    label(ctx, genderName(model), canChange ? cx - 10 : box.x + 14, box.y + 44, { size: 22, bold: true }, p.ink, { align: canChange ? 'center' : 'left', maxWidth: box.w - 60 });
+    label(ctx, genderName(model), box.x + 14, box.y + 44, { size: 22, bold: true }, p.ink, { maxWidth: box.w - 28 });
     if (focused) focusRing(ctx, box, 8);
   }
 
@@ -203,7 +188,7 @@ export class HeroView {
     for (let i = 0; i < MAX_MOVES; i++) {
       const move = set.moves[i] ?? '';
       const lit = i === model.replacingMove;
-      label(ctx, `${lit ? '▸ ' : ''}${move || '—'}`, box.x + 20, box.y + 350 + i * 30, { size: 18, bold: lit }, lit ? p.accentText : move ? p.ink : p.muted, { maxWidth: box.w - 40 });
+      label(ctx, `${lit ? '▶ ' : ''}${move || '—'}`, box.x + 20, box.y + 350 + i * 30, { size: 18, bold: lit }, lit ? p.accentText : move ? p.ink : p.muted, { maxWidth: box.w - 40 });
     }
     label(ctx, 'Item', box.x + 20, box.y + 482, { size: 16 }, p.muted);
     const item = set.item ? this.dex.item(set.item) : undefined;

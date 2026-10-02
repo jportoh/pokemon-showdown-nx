@@ -5,6 +5,7 @@ import { GlRenderer, rgba } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { TextTextures } from '@core/gl/gl-textures';
 import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
+import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleFieldScene } from '@features/battle/gl/battle-field-scene';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
@@ -35,8 +36,10 @@ const FIELD = { x: 12, y: 48, w: 985, h: 500 };
   template: '',
 })
 export class GlBattleScreen {
-  /** Forfeit's state (R): BattleScreen asks for confirmation. */
+  /** Forfeit's state (R): BattleScreen forfeits once its hold fills up. */
   readonly forfeitState = input<ForfeitState>('idle');
+  /** Forfeit's hold (R held down, BattleScreen's): stepped here every frame, `forfeit` emitted when full. */
+  readonly forfeitHold = input<HoldAction | null>(null);
   readonly canRematch = input(false);
   readonly rematchLabel = input('');
   readonly rematchNote = input('');
@@ -139,11 +142,15 @@ export class GlBattleScreen {
     renderer.beginPlain(INK.header);
     this.focus.begin();
 
+    const hold = this.forfeitHold();
+    const canForfeit = !this.store.result() && !this.store.watching() && this.forfeitState() === 'idle';
+    if (hold?.step(now, canForfeit)) this.forfeit.emit();
     this.header.draw(ctx, {
       logOpen: this.logOpen,
       toggleLog: () => this.toggleLog(),
       forfeitState: this.forfeitState(),
-      forfeit: () => this.forfeit.emit(),
+      forfeitProgress: hold?.progress ?? 0,
+      forfeit: () => hold?.press(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
     renderer.setView(1, FIELD.x, FIELD.y);
