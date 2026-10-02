@@ -1,5 +1,7 @@
 import { Component, DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
+import { AudioEngine } from '@core/audio/audio-engine';
+import { BattleMusic } from '@core/audio/battle-music';
 import { AssetPreload } from '@core/gl/asset-preload';
 import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
@@ -12,6 +14,8 @@ import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
 const LOADING_UPLOADS = 8;
+/** Time per frame for synthesizing the sounds and the menu theme (AudioEngine.prepare). */
+const AUDIO_BUDGET_MS = 12;
 const LOGO_YELLOW = rgba('#f2c14e');
 const WHITE: Rgba = [1, 1, 1, 1];
 const BAR = { x: 320, y: 392, w: 640, h: 28 };
@@ -26,8 +30,10 @@ const OUTRO_MS = 700;
  * shows (preloadList: the item sheet, the move categories and the bundled sheets of Champions sprites)
  * downloads, decodes and becomes a texture, so no screen waits for one later (3.7 s on the console,
  * test p4). A stutter costs nothing here, so decoding runs back to back (SpriteBitmaps.rush) and more
- * textures are made per frame. Once done, the logo shrinks and flies to its place in the home
- * screen's header, the header's bar fading in behind it, and the menu takes over from there.
+ * textures are made per frame. Meanwhile the interface's sounds and the menu theme are synthesized,
+ * a slice each frame (AudioEngine.prepare). Once done, the menu theme fades in and the logo shrinks
+ * and flies to its place in the home screen's header, the header's bar fading in behind it, and the
+ * menu takes over from there.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -39,6 +45,8 @@ export class LoadingScene {
   private readonly theme = inject(GlTheme);
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly preload = inject(AssetPreload);
+  private readonly audio = inject(AudioEngine);
+  private readonly battleMusic = inject(BattleMusic);
 
   private readonly assets: readonly PreloadAsset[] = preloadList();
   /** Not a texture yet (nor failed). */
@@ -80,12 +88,17 @@ export class LoadingScene {
     const p = this.theme.palette();
     const { renderer, now, dt } = frame;
     if (this.waiting.length > 0) this.load(frame);
-    const loaded = (this.assets.length - this.waiting.length) / Math.max(1, this.assets.length);
+    // The sounds count as one more asset.
+    const soundsReady = this.audio.prepare(AUDIO_BUDGET_MS);
+    const loaded = (this.assets.length - this.waiting.length + (soundsReady ? 1 : 0)) / (this.assets.length + 1);
     this.shown += (loaded - this.shown) * (1 - Math.exp(-dt * 10));
-    if (!this.outroAt && this.waiting.length === 0 && this.shown > 0.98) {
+    if (!this.outroAt && this.waiting.length === 0 && soundsReady && this.shown > 0.98) {
       this.outroAt = now;
       this.restore();
       this.preload.finished.set(true);
+      this.audio.playMenuTheme();
+      // The battle music downloads in the background from now on.
+      this.battleMusic.prefetch();
     }
     const t = this.outroAt ? Math.min(1, (now - this.outroAt) / OUTRO_MS) : 0;
     const fly = easeInOut(t);

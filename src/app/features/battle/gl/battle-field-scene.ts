@@ -1,5 +1,6 @@
 import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { BattleCries } from '@features/battle/audio/battle-cries';
 import { movePattern } from '@features/battle/gl/move-patterns';
 import { BattleCamera, CameraFocus, REST_FOCUS, depthOf } from '@features/battle/gl/battle-camera';
 import { CAMERA_DEPTHS, CAMERA_TUNING } from '@features/battle/gl/camera-tuning';
@@ -197,6 +198,7 @@ export class BattleFieldScene {
   readonly store = inject(BattleStore);
   private readonly dex = inject(ChampionsDex);
   private readonly bitmaps = inject(SpriteBitmaps);
+  private readonly cries = inject(BattleCries);
 
   private readonly layout = computed<FieldLayout>(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
@@ -288,19 +290,23 @@ export class BattleFieldScene {
     effect(() => {
       if (this.store.intro()) this.introBorn = performance.now();
     });
-    // Team preview's Pokémon (and their Megas) are fetched ahead.
+    // Team preview's Pokémon (and their Megas) are fetched ahead, and their cries.
     effect(() => {
       const { p1, p2 } = this.store.sides();
       untracked(() => {
         p1.preview.forEach((species) => this.preloadWithMegas(species, true));
         p2.preview.forEach((species) => this.preloadWithMegas(species, false));
+        [...p1.preview, ...p2.preview].forEach((species) => this.cries.preload(species));
       });
     });
 
     effect(() => {
       if (this.store.result()) this.resultBorn = performance.now();
     });
-    inject(DestroyRef).onDestroy(() => this.effects.stop());
+    inject(DestroyRef).onDestroy(() => {
+      this.effects.stop();
+      this.cries.clear();
+    });
   }
 
   /** The host's renderer and textures, once its canvas is ready. */
@@ -388,6 +394,7 @@ export class BattleFieldScene {
         this.blink(event.slot);
         return;
       case 'faint':
+        this.cries.play(slot?.pokemon?.species ?? '', true);
         this.fainting.add(event.slot);
         this.animate(
           event.slot,
@@ -413,9 +420,10 @@ export class BattleFieldScene {
             const out = leaving ? p : 1 - easeOut(p);
             v.dx = away * out;
             v.alpha = 1 - out;
-            // Coming out: a flash of light where it lands, as a Poké Ball opening.
+            // Coming out: a flash of light where it lands, as a Poké Ball opening, and its cry.
             if (!leaving && !burst && p > 0.6) {
               burst = true;
+              this.cries.play(slot?.pokemon?.species ?? '');
               const at = this.effectPoint(event.slot);
               if (at) {
                 this.effects.burst(at, WHITE, 18, 260 * (size / 240), 8 * (size / 240), 500);
@@ -439,6 +447,8 @@ export class BattleFieldScene {
           (v, p) => {
             if (!started) {
               started = true;
+              // A Mega's own cry, as it appears.
+              if (event.kind === 'mega') this.cries.play(slot?.pokemon?.species ?? '');
               const at = this.effectPoint(event.slot);
               if (at) {
                 const k = size / 240;

@@ -1,4 +1,5 @@
 import { Service, computed, inject, signal } from '@angular/core';
+import { BattleMusic } from '@core/audio/battle-music';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo, moveType } from '@core/dex/moves';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
@@ -166,6 +167,7 @@ export class BattleStore {
   private readonly dex = inject(ChampionsDex);
   private readonly renderScheduler = inject(RenderScheduler);
   private readonly session = inject(BattleSession);
+  private readonly music = inject(BattleMusic);
 
   private readonly sidesSignal = signal<Record<SideId, BattleSide>>({
     p1: emptySide('p1'),
@@ -358,11 +360,13 @@ export class BattleStore {
     this.session.setActive(true);
     this.connection = connection;
     this.canToggleTimerSignal.set(!!connection.setTimer && !connection.replay);
+    void this.music.start();
     connection.start((frame) => this.receive(frame));
   }
 
   /** Leaves the battle for good: the battle page can be left again. */
   close(): void {
+    this.music.stop();
     this.reset();
     this.replaySignal.set(null);
     this.spectatingSignal.set(false);

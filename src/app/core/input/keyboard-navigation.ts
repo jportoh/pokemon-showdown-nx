@@ -1,4 +1,6 @@
 import { Service, inject } from '@angular/core';
+import { AudioEngine } from '@core/audio/audio-engine';
+import { SoundId } from '@core/audio/sfx';
 import { GAMEPAD_BUTTONS, InputAction, PageButton, inputAction } from '@core/input/console-keys';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 
@@ -39,6 +41,11 @@ function buttonAction(button: PageButton): InputAction {
   return button === 'buttonZL' ? 'prevTab' : button === 'buttonZR' ? 'nextTab' : button;
 }
 
+/** The sound of a press a screen used: the cursor moving, A, B, or a page button. */
+function actionSound(action: InputAction): SoundId {
+  return action === 'accept' ? 'accept' : action === 'back' ? 'back' : isCanvasAction(action) ? 'move' : 'page';
+}
+
 function isCanvasAction(action: InputAction): action is CanvasAction {
   return action === 'up' || action === 'down' || action === 'left' || action === 'right' || action === 'accept' || action === 'back' || action === 'first' || action === 'last';
 }
@@ -47,7 +54,7 @@ function isCanvasAction(action: InputAction): action is CanvasAction {
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
  * console-keys): the d-pad, A, B and the jumps go to the screen drawn on the stage (captureInput),
  * which moves its own focus inside the canvas; L, R, ZL, ZR and R3 go to the handlers the screen
- * registered for them.
+ * registered for them. A press a screen uses makes its sound (AudioEngine).
  *
  * Findings from the console (test K1) shape it: A, B, ZL and ZR only reach the page through the
  * Gamepad API, so the controller is polled. The d-pad also sends key events (its arrow and its mapped
@@ -56,6 +63,7 @@ function isCanvasAction(action: InputAction): action is CanvasAction {
 @Service()
 export class KeyboardNavigation {
   private readonly renderScheduler = inject(RenderScheduler);
+  private readonly audio = inject(AudioEngine);
 
   /** L/R/ZL/ZR/R3 handlers by screen, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
@@ -123,9 +131,11 @@ export class KeyboardNavigation {
   /**
    * The button's hold did its job (it deleted something): until it's let go it isn't held, and its
    * presses (a keyboard's auto-repeat) do nothing, so it can't go on to the next screen's action.
+   * It plays the hold's sound (a thud: something was done for good).
    */
   consume(button: PageButton): void {
     this.consumed.add(buttonAction(button));
+    this.audio.play('hold');
   }
 
   /** Forgets the consumed buttons that are up again. */
@@ -228,7 +238,10 @@ export class KeyboardNavigation {
     if (last && last.action === action && last.source !== source && now - last.at < DUPLICATE_MS) return true;
     this.lastAction = { action, source, at: now };
     const used = this.handle(action);
-    if (used) this.renderScheduler.request();
+    if (used) {
+      this.audio.play(actionSound(action));
+      this.renderScheduler.request();
+    }
     return used;
   }
 

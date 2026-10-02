@@ -31,7 +31,14 @@ export interface Settings {
   rememberName: boolean;
   /** The app logs in to the saved registered name when it starts (its password saved on the SD card). */
   autoLogin: boolean;
+  /** Music volume, 0 (off) to 100, in VOLUME_STEP steps. */
+  musicVolume: number;
+  /** Sound effects' and cries' volume, 0 (off) to 100, in VOLUME_STEP steps. */
+  soundVolume: number;
 }
+
+/** The volumes Settings steps through: off, 10 %, 20 % … 100 %. */
+export const VOLUME_STEP = 10;
 
 const STORAGE_KEY = 'psb.settings.v1';
 
@@ -42,6 +49,8 @@ const DEFAULTS: Settings = {
   allowSpectators: true,
   rememberName: false,
   autoLogin: false,
+  musicVolume: 60,
+  soundVolume: 80,
 };
 
 /** The player's settings, kept on the device. The screens read the theme's palette from GlTheme. */
@@ -70,5 +79,13 @@ function loadSettings(): Settings {
     allowSpectators: settings.allowSpectators !== false,
     rememberName: settings.rememberName === true,
     autoLogin: settings.autoLogin === true,
+    musicVolume: validVolume(settings.musicVolume, DEFAULTS.musicVolume),
+    soundVolume: validVolume(settings.soundVolume, DEFAULTS.soundVolume),
   };
+}
+
+/** A stored volume on the VOLUME_STEP grid, or the default when it isn't a number. */
+function validVolume(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(value / VOLUME_STEP) * VOLUME_STEP));
 }
