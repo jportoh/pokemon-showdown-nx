@@ -1,4 +1,4 @@
-import { Service, computed, inject, signal } from '@angular/core';
+import { Service, computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
@@ -6,7 +6,7 @@ import { PreviewMember, previewTeam } from '@features/battle/state/team-preview'
 import { SheetPokemon, unpackTeamSheet } from '@features/battle/state/team-sheet';
 import { toId } from '@shared/utils/to-id';
 
-/** A team member shown in the spectator's Pokémon panel, with its side. */
+/** A team member as far as the battle has shown it, with its side. */
 export interface InspectedMember {
   side: SideId;
   member: PreviewMember;
@@ -15,28 +15,24 @@ export interface InspectedMember {
 }
 
 /**
- * Which team member the spectator's Pokémon panel shows. Watching a live battle, both sides' team
- * tiles can be pointed at, with the d-pad (the canvas focus, which stays a hover: A does nothing) or
- * the mouse; the panel shows the one pointed at, and goes back to its hint once the pointer moves on to
- * another control (or before any).
+ * Both teams as far as the battle has shown them, for Battle info: each side's team preview (or the
+ * Pokémon seen so far, without one), every member with what's been seen of it and its entry on its
+ * side's open team sheet, when there's one.
  */
 @Service()
 export class PokemonInspection {
   private readonly store = inject(BattleStore);
   private readonly dex = inject(ChampionsDex);
 
-  /** The tile pointed at, as a keyOf value; null for none. */
-  readonly pointed = signal<string | null>(null);
-
-  /** The team member the panel shows, as it is now; null while no tile is pointed at. */
-  readonly shown = computed<InspectedMember | null>(() => {
-    const key = this.pointed();
-    if (!key) return null;
-    const side = key.slice(0, 2) as SideId;
-    const member = previewTeam(this.store.sides()[side]).find((m) => m.species === key.slice(2));
-    if (!member) return null;
-    const sheet = this.sheets()[side].find((s) => sameSpecies(s.species, member.species));
-    return sheet ? { side, member, sheet } : { side, member };
+  readonly teams = computed<Record<SideId, InspectedMember[]>>(() => {
+    const sides = this.store.sides();
+    const sheets = this.sheets();
+    const membersOf = (side: SideId): InspectedMember[] =>
+      previewTeam(sides[side]).map((member) => {
+        const sheet = sheets[side].find((s) => sameSpecies(s.species, member.species));
+        return sheet ? { side, member, sheet } : { side, member };
+      });
+    return { p1: membersOf('p1'), p2: membersOf('p2') };
   });
 
   /** Both sides' open team sheets, unpacked (empty without one). */
@@ -47,11 +43,6 @@ export class PokemonInspection {
       p2: packed.p2 ? unpackTeamSheet(packed.p2, this.dex) : [],
     };
   });
-
-  /** A side's team member as a key: its side and species ("p2Garchomp"; species may hold any character). */
-  keyOf(side: SideId, species: string): string {
-    return `${side}${species}`;
-  }
 }
 
 /** A sheet's species against the team preview's, which may leave out the forme ("Urshifu" for "Urshifu-Rapid-Strike"). */

@@ -6,14 +6,16 @@ import { INK, ScreenContext, hint, write } from './screen-context';
 
 /** The timer turns red with this little left of the turn (the last minute). */
 const LOW_SECONDS = 60;
+/** The bar's height: the field starts under it. */
+export const BAR_H = 44;
 
 /** Forfeit is held down until it fills up, then the server ends the battle (forfeiting). */
 export type ForfeitState = 'idle' | 'forfeiting';
 
 /** What the header's buttons do and show. */
 export interface HeaderActions {
-  logOpen: boolean;
-  toggleLog: () => void;
+  infoOpen: boolean;
+  toggleInfo: () => void;
   forfeitState: ForfeitState;
   /** How full Forfeit is while R is held, 0 to 1. */
   forfeitProgress: number;
@@ -22,11 +24,10 @@ export interface HeaderActions {
 }
 
 /**
- * The match header across the top, 1280x48, as BattleHeader: the format (with a replay's rating, or
- * a best-of set's game and score) on the left, "p1 VS p2" centred over the field in the sides'
- * colours, our battle timer (or the button that turns it on) and the turn at the field's right edge,
- * and over the right column a LIVE or REPLAY badge (or Forfeit, R, in our own battles) and the battle
- * log's ZR hint. The buttons are clickable; the controller has its own buttons for them.
+ * The top bar, 1280x44: the format (with a replay's rating, or a best-of set's game and score) on the
+ * left, "p1 VS p2" in the sides' colours, our battle timer (or the button that turns it on) and the
+ * turn, then a LIVE or REPLAY badge (or Forfeit, R held, in our own battles) and Battle info's ZR
+ * hint. The buttons are clickable; the controller has its own buttons for them.
  */
 export class HeaderView {
   private readonly store = inject(BattleStore);
@@ -42,41 +43,41 @@ export class HeaderView {
 
   draw(ctx: ScreenContext, actions: HeaderActions): void {
     const { renderer } = ctx;
-    renderer.rect(0, 0, 1280, 46, { fill: INK.headerBar });
-    renderer.rect(0, 46, 1280, 2, { fill: INK.stage });
+    renderer.rect(0, 0, 1280, BAR_H - 2, { fill: INK.headerBar });
+    renderer.rect(0, BAR_H - 2, 1280, 2, { fill: INK.stage });
 
     const format = this.formatLine();
-    write(ctx, format.top, 16, 13, { size: 11, bold: true }, INK.gray400, 'left', 250);
-    write(ctx, format.name, 16, 31, { size: 16, bold: true }, INK.white, 'left', 250);
+    write(ctx, format.top, 16, 12, { size: 11, bold: true }, INK.gray400, 'left', 300);
+    write(ctx, format.name, 16, 29, { size: 18, bold: true }, INK.white, 'left', 300);
 
     const { p1, p2 } = this.store.sides();
     if (p1.name && p2.name) {
-      write(ctx, p1.name, 476, 23, { size: 18, bold: true }, INK.sky300, 'right', 204);
-      renderer.rect(484, 11, 40, 24, { fill: INK.stage, radius: 2 });
-      write(ctx, 'VS', 504, 23, { size: 12, bold: true }, INK.yellow200, 'center');
-      write(ctx, p2.name, 532, 23, { size: 18, bold: true }, INK.red300, 'left', 204);
+      write(ctx, p1.name, 540, 21, { size: 20, bold: true }, INK.sky300, 'right', 216);
+      renderer.rect(548, 10, 40, 24, { fill: INK.stage, radius: 2 });
+      write(ctx, 'VS', 568, 22, { size: 13, bold: true }, INK.yellow200, 'center');
+      write(ctx, p2.name, 596, 21, { size: 20, bold: true }, INK.red300, 'left', 196);
     }
 
     this.drawTimer(ctx, actions.toggleTimer);
 
     const turn = this.store.turn() > 0 ? `TURN ${this.store.turn()}` : this.store.teamPreview() ? 'PREVIEW' : 'STARTING…';
-    renderer.rect(877, 9, 110, 28, { fill: INK.tab, radius: 14 });
-    write(ctx, turn, 932, 23, { size: 14, bold: true }, INK.white, 'center', 104);
+    renderer.rect(912, 7, 100, 30, { fill: INK.tab, radius: 15 });
+    write(ctx, turn, 962, 22, { size: 15, bold: true }, INK.white, 'center', 94);
 
     if (this.store.watching()) {
       const live = this.store.spectating();
-      renderer.rect(1003, 11, 130, 24, { fill: live ? INK.red800 : INK.tab, radius: 2 });
-      write(ctx, live ? 'LIVE' : 'REPLAY', 1068, 23, { size: 14, bold: true }, INK.white, 'center');
+      renderer.rect(1020, 9, 122, 26, { fill: live ? INK.red800 : INK.tab, radius: 2 });
+      write(ctx, live ? 'LIVE' : 'REPLAY', 1081, 22, { size: 15, bold: true }, INK.white, 'center');
     } else if (!this.store.result()) {
       if (actions.forfeitState === 'forfeiting') {
-        renderer.rect(1003, 7, 130, 32, { fill: rgba('#7f1d1d'), stroke: INK.red300, radius: 6, border: 1 });
-        write(ctx, 'Forfeiting…', 1068, 23, { size: 14, bold: true }, INK.white, 'center');
+        renderer.rect(1020, 6, 122, 32, { fill: rgba('#7f1d1d'), stroke: INK.red300, radius: 6, border: 1 });
+        write(ctx, 'Forfeiting…', 1081, 22, { size: 14, bold: true }, INK.white, 'center');
       } else {
-        hint(ctx, 'header-forfeit', { x: 1003, y: 7, w: 130, h: 32 }, 'R', 'Forfeit', false, actions.forfeit, undefined, { progress: actions.forfeitProgress, color: HOLD_FILL });
+        hint(ctx, 'header-forfeit', { x: 1020, y: 6, w: 122, h: 32 }, 'R', 'Forfeit', false, actions.forfeit, undefined, { progress: actions.forfeitProgress, color: HOLD_FILL });
       }
     }
 
-    hint(ctx, 'header-log', { x: 1141, y: 7, w: 133, h: 32 }, 'ZR', 'Battle log', actions.logOpen, actions.toggleLog);
+    hint(ctx, 'header-info', { x: 1150, y: 6, w: 122, h: 32 }, 'ZR', 'Info', actions.infoOpen, actions.toggleInfo);
   }
 
   /**
@@ -95,7 +96,7 @@ export class HeaderView {
       const low = seconds !== null && seconds <= LOW_SECONDS;
       const fill = running ? (low ? rgba('#991b1b') : rgba('#065f46')) : INK.gray700;
       const border = running ? (low ? INK.red300 : rgba('#6ee7b7')) : INK.gray500;
-      const box = { x: 759, y: 9, w: 110, h: 28 };
+      const box = { x: 798, y: 7, w: 106, h: 30 };
       if (canToggle) ctx.focus.control({ id: 'header-timer', ...box, accept: toggle, skip: true });
       renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 14, border: 1 });
       if (canToggle) {
@@ -121,7 +122,7 @@ export class HeaderView {
     if (canToggle && !this.store.result()) {
       const until = this.store.timerCooldownUntil();
       const cooldown = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
-      hint(ctx, 'header-timer', { x: 759, y: 7, w: 110, h: 32 }, 'R3', cooldown ? `Wait ${cooldown}s` : 'Timer', false, toggle);
+      hint(ctx, 'header-timer', { x: 798, y: 6, w: 106, h: 32 }, 'R3', cooldown ? `Wait ${cooldown}s` : 'Timer', false, toggle);
     }
   }
 }

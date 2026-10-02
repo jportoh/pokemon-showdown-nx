@@ -1,19 +1,26 @@
 import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { movePattern } from '@features/battle/gl/move-patterns';
+import { BattleCamera, CameraFocus, REST_FOCUS, depthOf } from '@features/battle/gl/battle-camera';
+import { CAMERA_DEPTHS, CAMERA_TUNING } from '@features/battle/gl/camera-tuning';
 import {
   DEFAULT_GROUND,
   DEFAULT_SKY,
+  BOX_H,
+  BOX_W,
   DOUBLES,
+  FIELD_H,
+  FIELD_W,
   FieldLayout,
-  OWN_PLATFORM_HEIGHT,
-  OWN_PLATFORM_TOP,
+  GROUND_Y,
+  OWN_BOX_LEFT,
   SINGLES,
   STAT_NAMES,
+  Stand,
   TERRAIN_COLORS,
   TERRAIN_SKY,
   WEATHER_SKY,
-  spriteBox,
+  feetGap,
 } from '@features/battle/gl/field-layout';
 import { HpBoxEmphasis, barColor } from '@features/battle/gl/hp-bar';
 import { EffectPoint, EffectTarget, GlEffects, easeOut, glowDot, outAndBack } from '@features/battle/gl/gl-effects';
@@ -30,17 +37,13 @@ import { spriteSource } from '@core/gl/sprite-sheets';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
-const FIELD_W = 985;
-const FIELD_H = 500;
-/** The status boxes, as BattleHpBox: 336x84, the bar 268px wide at most, sliding over 500 ms. */
-const BOX_W = 336;
-const BOX_H = 84;
-const BAR_WIDTH = 268;
+/** The status boxes' HP bar: 282px wide at most, sliding over 500 ms. */
+const BAR_WIDTH = 282;
 const BAR_MS = 500;
 const BOX_BORDER: Record<HpBoxEmphasis | 'none', Rgba> = { attacker: rgba('#eab308'), target: rgba('#dc2626'), none: rgba('#404040') };
 const BOX_FILL = rgba('#f8f8d8');
 const BOX_INK = rgba('#303030');
-const CHIP_W = 48;
+const CHIP_W = 60;
 const BOX_STATS: [string, string][] = [
   ['atk', 'Atk'],
   ['def', 'Def'],
@@ -51,7 +54,9 @@ const BOX_STATS: [string, string][] = [
   ['evasion', 'Eva'],
 ];
 /** The result card, as BattleResult. */
-const RESULT_W = 560;
+const RESULT_W = 640;
+/** The field, where the result card goes. */
+const RESULT_AREA_H = FIELD_H;
 const SIDE_INK: Record<SideId, Rgba> = { p1: rgba('#7dd3fc'), p2: rgba('#fca5a5') };
 
 // Lengths at normal speed (the replay speed divides them).
@@ -80,14 +85,17 @@ const HP_LABEL_MS = 1100;
 /** Labels and banners pop in over this long. */
 const POP_MS = 180;
 
-const BANNER_WIDTH = 240;
-const OWN_BANNER_MAX_LEFT = 595 - BANNER_WIDTH;
-const FOE_BANNER_MAX_LEFT = 985 - 8 - BANNER_WIDTH;
-const HP_LABEL_WIDTH = 76;
-const CRIT_LABEL_WIDTH = 128;
+const BANNER_WIDTH = 300;
+const BANNER_HEIGHT = 52;
+/** The player's banners stay clear of their status boxes; the opponent's, of the right edge. */
+const OWN_BANNER_MAX_LEFT = OWN_BOX_LEFT - 8 - BANNER_WIDTH;
+const FOE_BANNER_MAX_LEFT = FIELD_W - 8 - BANNER_WIDTH;
+const LABEL_HEIGHT = 40;
+const HP_LABEL_WIDTH = 96;
+const CRIT_LABEL_WIDTH = 160;
 const CRIT_LABEL_GAP = 6;
-const STATUS_LABEL_WIDTH = 150;
-const STATUS_LABEL_DROP = 36;
+const STATUS_LABEL_WIDTH = 190;
+const STATUS_LABEL_DROP = 46;
 
 const PANEL: Rgba = rgba('#1f2937');
 const WHITE: Rgba = [1, 1, 1, 1];
@@ -120,16 +128,26 @@ const WEATHER_KIND: Record<string, WeatherKind> = {
   DeltaStream: 'wind',
 };
 
-interface Slot {
+/** A stand with whoever is on it. */
+interface Occupant {
   key: SlotKey;
   own: boolean;
   pokemon: BattlePokemon | null;
+  stand: Stand;
+}
+
+/** An occupied stand where the camera shows it this frame: its sprite's box and its feet. */
+interface Slot extends Occupant {
   left: number;
   top: number;
   size: number;
-  boxLeft: number;
-  boxTop: number;
+  feetX: number;
+  feetY: number;
 }
+
+/** The one choosing (or the target) is lifted, with a ring on its platform; the target, a light behind it too. */
+const CHOOSER_LIFT_PX = 10;
+const CHOOSER_LIGHT: Rgba = rgba('#fde047');
 
 /** How a sprite is drawn this frame: moved, faded, brightened. */
 interface Visual {
@@ -173,7 +191,7 @@ interface Mote {
  * sun rays, wind), terrains send motes up, clouds drift, labels and banners pop in, send-outs and Mega
  * Evolutions burst with light, HP bars slide. Made in an injection context (a component's field); the
  * host gives it its renderer (`attach`), then places, clips and draws it every frame (`draw`) in
- * field coordinates, 985x500.
+ * field coordinates, 1280x676.
  */
 export class BattleFieldScene {
   readonly store = inject(BattleStore);
@@ -183,20 +201,22 @@ export class BattleFieldScene {
   private readonly layout = computed<FieldLayout>(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
   /** Every stand of the layout with whoever is on it: the opponent's first (drawn behind), then the player's. */
-  readonly slots = computed((): Slot[] => {
-    const { spriteSize, stands } = this.layout();
+  private readonly occupants = computed((): Occupant[] => {
+    const { stands } = this.layout();
     const sides = this.store.sides();
     const entries = Object.entries(stands);
     return [...entries.filter(([key]) => key.startsWith('p2')), ...entries.filter(([key]) => key.startsWith('p1'))].map(([key, stand]) => ({
       key,
       own: key.startsWith('p1'),
       pokemon: sides[key.slice(0, 2) as 'p1' | 'p2'].active[key[2] === 'b' ? 1 : 0] ?? null,
-      ...spriteBox(stand, spriteSize),
-      size: spriteSize,
-      boxLeft: stand.boxLeft,
-      boxTop: stand.boxTop,
+      stand,
     }));
   });
+
+  private readonly camera = new BattleCamera();
+  private cameraFocus: CameraFocus = REST_FOCUS;
+  /** Where the ground meets the sky this frame. */
+  private groundY = GROUND_Y;
 
   private readonly emphasis = computed(() => {
     const action = this.store.action();
@@ -263,7 +283,7 @@ export class BattleFieldScene {
     this.follow(this.store.statusChanges, (list) => (this.statusLabels = list), () => this.statusLabels, POPUP_MS);
     this.follow(this.store.statChanges, (list) => (this.statLabels = list), () => this.statLabels, POPUP_MS, (change) => {
       const at = this.effectPoint(change.slot);
-      if (at) this.effects.statChange(at, change.amount > 0, this.layout().spriteSize);
+      if (at) this.effects.statChange(at, change.amount > 0, this.sizeOf(change.slot));
     });
     effect(() => {
       if (this.store.intro()) this.introBorn = performance.now();
@@ -361,7 +381,7 @@ export class BattleFieldScene {
 
   private playEvent(event: FieldEvent): void {
     this.effects.speed = this.store.speed();
-    const size = this.layout().spriteSize;
+    const size = this.sizeOf(event.slot);
     const slot = this.slotData(event.slot);
     switch (event.kind) {
       case 'hit':
@@ -454,7 +474,9 @@ export class BattleFieldScene {
   private playMove(action: MoveAction): void {
     const effects = this.effects;
     effects.speed = this.store.speed();
-    const size = this.layout().spriteSize;
+    // Effects take the size of the Pokémon they're on: ours are drawn bigger than the opponent's.
+    const size = this.sizeOf(action.attacker);
+    const sizeAt = (slot: SlotKey) => this.sizeOf(slot);
     const pattern = movePattern(action.move);
     const aimed = pattern === 'beam' || pattern === 'wave' || pattern === 'erupt' || pattern === 'psywave' ? pattern : null;
     if (action.category === 'Special' || aimed) {
@@ -489,7 +511,7 @@ export class BattleFieldScene {
         if (action.category === 'Status' && pattern !== 'guard' && pattern !== 'room' && pattern !== 'tailwind') {
           for (const slot of action.targets.length > 0 ? action.targets : [action.attacker]) {
             const at = this.effectPoint(slot);
-            if (at) effects.aura(at, action.type, size);
+            if (at) effects.aura(at, action.type, sizeAt(slot));
           }
         }
         if (pattern === 'quake') {
@@ -499,7 +521,7 @@ export class BattleFieldScene {
           for (const slot of action.hits) {
             this.blink(slot);
             const at = this.effectPoint(slot);
-            if (at) effects.impact(at, action.type, size, true);
+            if (at) effects.impact(at, action.type, sizeAt(slot), true);
           }
           return;
         }
@@ -507,7 +529,7 @@ export class BattleFieldScene {
           for (const slot of new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits])) {
             const at = this.effectPoint(slot);
             const hit = action.hits.includes(slot);
-            if (at) effects.rocks(at, hit, size, () => this.blink(slot));
+            if (at) effects.rocks(at, hit, sizeAt(slot), () => this.blink(slot));
             else if (hit) this.blink(slot);
           }
           return;
@@ -515,11 +537,11 @@ export class BattleFieldScene {
         for (const slot of action.hits) {
           const at = this.effectPoint(slot);
           if (!at) this.blink(slot);
-          else if (pattern === 'flurry') effects.flurry(at, action.type, size, () => this.blink(slot));
-          else if (pattern === 'clap') effects.clap(at, action.type, size, () => this.blink(slot, true));
+          else if (pattern === 'flurry') effects.flurry(at, action.type, sizeAt(slot), () => this.blink(slot));
+          else if (pattern === 'clap') effects.clap(at, action.type, sizeAt(slot), () => this.blink(slot, true));
           else {
             this.blink(slot);
-            effects.impact(at, action.type, size);
+            effects.impact(at, action.type, sizeAt(slot));
           }
         }
       },
@@ -548,7 +570,7 @@ export class BattleFieldScene {
     const ms = rush ? RUSH_MS : LUNGE_MS;
     if (rush) {
       const at = this.effectPoint(action.attacker);
-      if (at) this.effects.trail((p) => ({ x: at.x + dx * outAndBack(p), y: at.y + dy * outAndBack(p) }), action.type, this.layout().spriteSize, ms);
+      if (at) this.effects.trail((p) => ({ x: at.x + dx * outAndBack(p), y: at.y + dy * outAndBack(p) }), action.type, from.size, ms);
     }
     let struck = false;
     this.animate(action.attacker, ms, (v, p) => {
@@ -578,8 +600,10 @@ export class BattleFieldScene {
 
   // ---------------------------------------------------------------- drawing
 
-  /** Draws the field in field coordinates (0..985, 0..500); the host has started the frame, placed and clipped it. */
+  /** Draws the field in field coordinates (0..1280, 0..676); the host has started the frame, placed and clipped it. */
   draw(renderer: GlRenderer, now: number, dt: number): void {
+    this.camera.aim(this.cameraFocus, this.layout().stands, now);
+    this.camera.update(now);
     this.effects.update(now, dt);
     this.syncIdents();
 
@@ -623,8 +647,8 @@ export class BattleFieldScene {
       this.bars.delete(slot.key);
       return;
     }
-    const x = slot.boxLeft;
-    const y = slot.boxTop;
+    const x = slot.stand.boxLeft;
+    const y = slot.stand.boxTop;
     const own = slot.own;
     const exact = own && !this.store.watching();
     const fraction = p.maxHp > 0 ? Math.max(0, Math.min(1, p.hp / p.maxHp)) : 0;
@@ -633,23 +657,24 @@ export class BattleFieldScene {
     const hpText = own ? (exact ? `${p.hp}/${p.maxHp}` : percent) : showLevel ? percent : null;
     const mega = /-Mega/.test(p.species);
 
-    renderer.rect(x, y, BOX_W, BOX_H, { fill: BOX_FILL, stroke: BOX_BORDER[this.emphasis()[slot.key] ?? 'none'], radius: 10, border: 3 });
-    this.write(renderer, p.name, x + 12, y + 16, { size: 18, bold: true }, BOX_INK, 'left', p.tera && !mega ? 136 : 210);
+    renderer.rect(x + 2, y + 4, BOX_W, BOX_H, { fill: [0, 0, 0, 0.22], radius: 12, softness: 3 });
+    renderer.rect(x, y, BOX_W, BOX_H, { fill: BOX_FILL, stroke: BOX_BORDER[this.emphasis()[slot.key] ?? (this.isPicked(slot.key) ? 'attacker' : 'none')], radius: 12, border: 3 });
+    this.write(renderer, p.name, x + 14, y + 19, { size: 22, bold: true }, BOX_INK, 'left', p.tera && !mega ? 146 : 220);
     if (mega) {
-      renderer.rect(x + 222, y + 7, 44, 18, { fill: rgba('#6b2a73'), radius: 2 });
-      this.write(renderer, 'MEGA', x + 244, y + 16, { size: 12, bold: true }, [1, 1, 1, 1], 'center');
+      renderer.rect(x + 240, y + 9, 50, 20, { fill: rgba('#6b2a73'), radius: 2 });
+      this.write(renderer, 'MEGA', x + 265, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center');
     } else if (p.tera) {
-      renderer.rect(x + 150, y + 7, 44, 18, { fill: rgba('#1e293b'), radius: 2 });
-      this.write(renderer, 'TERA', x + 172, y + 16, { size: 12, bold: true }, rgba('#a5f3fc'), 'center');
-      renderer.rect(x + 198, y + 7, 64, 18, { fill: rgba(typeColor(p.tera) || '#374151'), radius: 9 });
-      this.write(renderer, p.tera, x + 230, y + 16, { size: 12, bold: true }, [1, 1, 1, 1], 'center', 60);
+      renderer.rect(x + 164, y + 9, 48, 20, { fill: rgba('#1e293b'), radius: 2 });
+      this.write(renderer, 'TERA', x + 188, y + 19, { size: 13, bold: true }, rgba('#a5f3fc'), 'center');
+      renderer.rect(x + 216, y + 9, 72, 20, { fill: rgba(typeColor(p.tera) || '#374151'), radius: 10 });
+      this.write(renderer, p.tera, x + 252, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center', 68);
     }
-    this.write(renderer, showLevel ? `Lv${p.level}` : percent, x + 324, y + 16, { size: 16, bold: true }, BOX_INK, 'right');
-    renderer.rect(x + 12, y + 33, 30, 16, { fill: rgba('#e8a020'), radius: 2 });
-    this.write(renderer, 'HP', x + 27, y + 41, { size: 11, bold: true }, BOX_INK, 'center');
-    renderer.rect(x + 48, y + 35, 272, 12, { fill: rgba('#506858'), radius: 2 });
+    this.write(renderer, showLevel ? `Lv${p.level}` : percent, x + BOX_W - 14, y + 19, { size: 20, bold: true }, BOX_INK, 'right');
+    renderer.rect(x + 14, y + 38, 34, 18, { fill: rgba('#e8a020'), radius: 2 });
+    this.write(renderer, 'HP', x + 31, y + 47, { size: 13, bold: true }, BOX_INK, 'center');
+    renderer.rect(x + 54, y + 40, BAR_WIDTH + 4, 14, { fill: rgba('#506858'), radius: 2 });
     const width = this.barWidth(slot.key, p.ident, Math.round(BAR_WIDTH * fraction), now);
-    if (width > 0) renderer.rect(x + 50, y + 37, width, 8, { fill: rgba(barColor(width / BAR_WIDTH)), radius: 2 });
+    if (width > 0) renderer.rect(x + 56, y + 42, width, 10, { fill: rgba(barColor(width / BAR_WIDTH)), radius: 2 });
 
     const status = STATUS[p.status];
     const all = [
@@ -659,14 +684,14 @@ export class BattleFieldScene {
         color: p.boosts[stat] > 0 ? '#15803d' : '#b91c1c',
       })),
     ];
-    const max = hpText !== null ? 4 : 6;
+    const max = hpText !== null ? 3 : 5;
     const chips = all.length > max ? [...all.slice(0, max - 1), { text: `+${all.length - max + 1}`, color: '#4b5563' }] : all;
     chips.forEach((chip, i) => {
-      const left = x + 12 + i * (CHIP_W + 4);
-      renderer.rect(left, y + 55, CHIP_W, 20, { fill: rgba(chip.color), radius: 2 });
-      this.write(renderer, chip.text, left + CHIP_W / 2, y + 65, { size: 12, bold: true }, [1, 1, 1, 1], 'center', CHIP_W - 2);
+      const left = x + 14 + i * (CHIP_W + 4);
+      renderer.rect(left, y + 61, CHIP_W, 22, { fill: rgba(chip.color), radius: 2 });
+      this.write(renderer, chip.text, left + CHIP_W / 2, y + 72, { size: 14, bold: true }, [1, 1, 1, 1], 'center', CHIP_W - 2);
     });
-    if (hpText) this.write(renderer, hpText, x + 320, y + 64, { size: 18, bold: true }, BOX_INK, 'right');
+    if (hpText) this.write(renderer, hpText, x + BOX_W - 14, y + 72, { size: 20, bold: true }, BOX_INK, 'right');
   }
 
   /** The bar's width now: sliding to a new HP over BAR_MS; at once for a new Pokémon. */
@@ -705,31 +730,32 @@ export class BattleFieldScene {
     const rows = (['p1', 'p2'] as const).flatMap((side) => (ratings[side] ? [{ side, rating: ratings[side]! }] : []));
     const updating = this.store.rated() && rows.length === 0;
     const extra = rows.length > 0 ? rows.length : updating ? 1 : 0;
-    const head = 96 + (series ? 32 : 0);
-    const height = head + extra * 32 + (extra > 0 ? 12 : 0);
+    const head = 108 + (series ? 36 : 0);
+    const height = head + extra * 36 + (extra > 0 ? 14 : 0);
     const left = Math.round((FIELD_W - RESULT_W) / 2);
     const t = Math.min(1, (now - this.resultBorn) / 350);
-    const top = Math.round((FIELD_H - height) / 2) - (1 - easeOut(t)) * 40;
+    // Over the field's upper part: the command panel holds the way on below.
+    const top = Math.round((RESULT_AREA_H - height) / 2) - (1 - easeOut(t)) * 40;
     const alpha = t;
 
     renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [0, 0, 0, 0.25 * alpha] });
-    renderer.rect(left, top, RESULT_W, height, { fill: withAlpha(PANEL, alpha), stroke: withAlpha(accent, alpha), radius: 6, border: 4 });
-    this.write(renderer, kicker.toUpperCase().split('').join(' '), left + RESULT_W / 2, top + 24, { size: 16, bold: true }, withAlpha(accent, alpha), 'center');
-    this.write(renderer, title, left + RESULT_W / 2, top + 60, { size: 30, bold: true }, withAlpha(WHITE, alpha), 'center', RESULT_W - 16);
+    renderer.rect(left, top, RESULT_W, height, { fill: withAlpha(PANEL, alpha), stroke: withAlpha(accent, alpha), radius: 8, border: 4 });
+    this.write(renderer, kicker.toUpperCase().split('').join(' '), left + RESULT_W / 2, top + 28, { size: 18, bold: true }, withAlpha(accent, alpha), 'center');
+    this.write(renderer, title, left + RESULT_W / 2, top + 68, { size: 34, bold: true }, withAlpha(WHITE, alpha), 'center', RESULT_W - 16);
     if (series) {
       const sides = this.store.sides();
       const line = `Game ${series.game} of ${series.bestOf} · ${sides.p1.name} ${series.wins.p1} – ${series.wins.p2} ${sides.p2.name}`;
-      this.write(renderer, line, left + RESULT_W / 2, top + 102, { size: 18 }, withAlpha(rgba('#e5e7eb'), alpha), 'center', RESULT_W - 16);
+      this.write(renderer, line, left + RESULT_W / 2, top + 114, { size: 20 }, withAlpha(rgba('#e5e7eb'), alpha), 'center', RESULT_W - 16);
     }
     rows.forEach(({ side, rating }, i) => {
-      const rowY = top + head + i * 32 + 14;
-      this.write(renderer, rating.name, left + 28, rowY, { size: 18, bold: true }, withAlpha(SIDE_INK[side], alpha), 'left', 236);
-      this.write(renderer, `${rating.before} → ${rating.after}`, left + 428, rowY, { size: 18 }, withAlpha(rgba('#e5e7eb'), alpha), 'right');
+      const rowY = top + head + i * 36 + 16;
+      this.write(renderer, rating.name, left + 32, rowY, { size: 20, bold: true }, withAlpha(SIDE_INK[side], alpha), 'left', 260);
+      this.write(renderer, `${rating.before} → ${rating.after}`, left + 488, rowY, { size: 20 }, withAlpha(rgba('#e5e7eb'), alpha), 'right');
       const changeColor = rating.change > 0 ? '#15803d' : rating.change < 0 ? '#b91c1c' : '#4b5563';
-      renderer.rect(left + 440, rowY - 14, 88, 28, { fill: withAlpha(rgba(changeColor), alpha), radius: 6 });
-      this.write(renderer, signed(rating.change), left + 484, rowY, { size: 18, bold: true }, withAlpha(WHITE, alpha), 'center');
+      renderer.rect(left + 504, rowY - 15, 100, 30, { fill: withAlpha(rgba(changeColor), alpha), radius: 6 });
+      this.write(renderer, signed(rating.change), left + 554, rowY, { size: 20, bold: true }, withAlpha(WHITE, alpha), 'center');
     });
-    if (updating) this.write(renderer, 'Updating ratings…', left + RESULT_W / 2, top + head + 14, { size: 16 }, withAlpha(rgba('#d1d5db'), alpha), 'center');
+    if (updating) this.write(renderer, 'Updating ratings…', left + RESULT_W / 2, top + head + 16, { size: 18 }, withAlpha(rgba('#d1d5db'), alpha), 'center');
   }
 
   /** Text with its middle at `cy` (see drawText). */
@@ -737,28 +763,37 @@ export class BattleFieldScene {
     if (this.text) drawText(renderer, this.text, value, x, cy, style, color, { align, maxWidth });
   }
 
-  /** Sky, drifting clouds, the light on the horizon, the ground and the platforms. */
+  /**
+   * Sky, drifting clouds, the light on the horizon, the ground and the platforms, each where the camera
+   * shows it: the clouds far off barely move, the platforms go with their Pokémon. The one choosing (or
+   * the target) has a ring of light around its platform.
+   */
   private drawScenery(renderer: GlRenderer, now: number, ground: typeof DEFAULT_GROUND): void {
     const disc = this.disc!;
     const t = now / 1000;
     for (let i = 0; i < 4; i++) {
-      const w = 220 + i * 50;
-      const x = ((t * (8 + i * 4) + i * 300) % (FIELD_W + w)) - w;
-      const y = 30 + ((i * 53) % 140);
+      const restW = 260 + i * 60;
+      const restX = ((t * (8 + i * 4) + i * 300) % (FIELD_W + restW)) - restW;
+      const at = this.camera.place(restX + restW / 2, 40 + ((i * 67) % 180), CAMERA_DEPTHS.clouds);
+      const w = restW * at.scale;
+      const x = at.x - w / 2;
+      const y = at.y;
       renderer.rect(x, y, w, w * 0.32, { fill: [1, 1, 1, 0.35], texture: disc });
       renderer.rect(x + w * 0.25, y - w * 0.08, w * 0.5, w * 0.3, { fill: [1, 1, 1, 0.3], texture: disc });
     }
+    const groundY = this.camera.place(FIELD_W / 2, GROUND_Y, CAMERA_DEPTHS.groundEdge).y;
+    this.groundY = groundY;
     // A soft light along the horizon.
-    renderer.rect(-100, 262, FIELD_W + 200, 76, { fill: [1, 1, 1, 0.1], texture: disc, additive: true });
-    renderer.rect(0, 300, FIELD_W, 200, { fill: rgba(ground.ground) });
-    renderer.rect(0, 300, FIELD_W, 6, { fill: withAlpha(rgba(ground.edge), 0.35) });
-    const { spriteSize, stands } = this.layout();
-    for (const [key, stand] of Object.entries(stands)) {
-      const own = key.startsWith('p1');
-      const width = Math.round(own ? spriteSize * 1.25 : spriteSize);
-      const height = own ? OWN_PLATFORM_HEIGHT : Math.round(spriteSize * 0.27);
-      const top = own ? OWN_PLATFORM_TOP : Math.round(stand.y - height / 2);
-      const left = Math.round(stand.x - width / 2);
+    renderer.rect(-100, groundY - 40, FIELD_W + 200, 80, { fill: [1, 1, 1, 0.1], texture: disc, additive: true });
+    renderer.rect(0, groundY, FIELD_W, Math.max(0, FIELD_H - groundY), { fill: rgba(ground.ground) });
+    renderer.rect(0, groundY, FIELD_W, 6, { fill: withAlpha(rgba(ground.edge), 0.35) });
+    for (const slot of this.slots()) {
+      const width = Math.round(slot.own ? slot.size * 1.25 : slot.size);
+      const height = Math.round(slot.size * (slot.own ? 0.32 : 0.27));
+      const top = Math.round(slot.feetY - height / 2);
+      const left = Math.round(slot.feetX - width / 2);
+      const glow = this.camera.look(slot.key).glow;
+      if (glow > 0.01) renderer.rect(left - 6, top - 4, width + 12, height + 8, { fill: withAlpha(CHOOSER_LIGHT, glow), texture: disc });
       renderer.rect(left, top, width, height, { fill: rgba(ground.edge), texture: disc });
       renderer.rect(left + 3, top + 3, width - 6, height - 6, { fill: rgba(ground.platform), texture: disc });
       renderer.rect(left + width * 0.15, top + height * 0.12, width * 0.5, height * 0.35, { fill: [1, 1, 1, 0.12], texture: disc, additive: true });
@@ -783,11 +818,18 @@ export class BattleFieldScene {
     }
     const texture = this.sprites?.get(pokemon.sprite, slot.own) ?? null;
     if (!texture || visual.alpha <= 0.01) return;
+    const { glow, dim } = this.camera.look(slot.key);
     const x = slot.left + visual.dx;
-    const y = slot.top + visual.dy;
+    const y = slot.top + visual.dy - CHOOSER_LIFT_PX * glow;
     // A shadow at its feet, under the sprite.
-    renderer.rect(x + slot.size * 0.22, y + slot.size * 0.86, slot.size * 0.56, slot.size * 0.1, { fill: [0, 0, 0, 0.18 * visual.alpha], texture: this.disc });
-    renderer.rect(x, y, slot.size, slot.size, { fill: [1, 1, 1, visual.alpha], texture });
+    renderer.rect(x + slot.size * 0.22, slot.top + visual.dy + slot.size * 0.86, slot.size * 0.56, slot.size * 0.1, { fill: [0, 0, 0, 0.18 * visual.alpha], texture: this.disc });
+    // The target being picked: a soft light behind it, breathing (the one choosing a move needs none).
+    if (glow > 0.01 && this.cameraFocus.kind === 'target') {
+      const breath = 0.8 + 0.2 * Math.sin(now / 260);
+      renderer.rect(x + slot.size * 0.08, y + slot.size * 0.12, slot.size * 0.84, slot.size * 0.8, { fill: withAlpha(CHOOSER_LIGHT, 0.4 * glow * breath), texture: this.disc });
+    }
+    const shade = 1 - CAMERA_TUNING.dimAmount * dim;
+    renderer.rect(x, y, slot.size, slot.size, { fill: [shade, shade, shade, visual.alpha], texture });
     if (visual.bright > 1.01) {
       const extra = visual.bright - 1;
       renderer.rect(x, y, slot.size, slot.size, { fill: [extra, extra, extra, visual.alpha], texture, additive: true });
@@ -798,15 +840,15 @@ export class BattleFieldScene {
   private drawMotes(renderer: GlRenderer, dt: number, terrain: string | null, now: number): void {
     if (terrain !== this.terrain) {
       this.terrain = terrain;
-      this.motes = terrain && TERRAIN_MOTES[terrain] ? Array.from({ length: 40 }, () => this.newMote(true)) : [];
+      this.motes = terrain && TERRAIN_MOTES[terrain] ? Array.from({ length: 56 }, () => this.newMote(true)) : [];
     }
     const color = terrain ? TERRAIN_MOTES[terrain] : null;
     if (!color) return;
     for (const mote of this.motes) {
       mote.y -= mote.speed * dt;
-      if (mote.y < 260) Object.assign(mote, this.newMote(false));
+      if (mote.y < this.groundY - 40) Object.assign(mote, this.newMote(false));
       const sway = Math.sin(now / 600 + mote.phase) * 8;
-      const fade = Math.min(1, (mote.y - 260) / 60);
+      const fade = Math.min(1, (mote.y - (this.groundY - 40)) / 60);
       glowDot(renderer, mote.x + sway, mote.y, mote.size, color, 0.8 * fade, true);
     }
   }
@@ -814,7 +856,7 @@ export class BattleFieldScene {
   private newMote(anywhere: boolean): Mote {
     return {
       x: Math.random() * FIELD_W,
-      y: anywhere ? 300 + Math.random() * 200 : FIELD_H + 10,
+      y: anywhere ? this.groundY + Math.random() * Math.max(0, FIELD_H - this.groundY) : FIELD_H + 10,
       speed: 20 + Math.random() * 30,
       phase: Math.random() * 10,
       size: 3 + Math.random() * 4,
@@ -825,7 +867,7 @@ export class BattleFieldScene {
   private drawWeather(renderer: GlRenderer, dt: number, kind: WeatherKind, now: number): void {
     if (kind !== this.weatherKind) {
       this.weatherKind = kind;
-      const count = kind === 'rain' ? 160 : kind === 'snow' ? 130 : kind === 'sand' ? 180 : kind === 'wind' ? 14 : 0;
+      const count = kind === 'rain' ? 260 : kind === 'snow' ? 210 : kind === 'sand' ? 290 : kind === 'wind' ? 22 : 0;
       this.weather = Array.from({ length: count }, () => ({
         x: Math.random() * FIELD_W,
         y: Math.random() * FIELD_H,
@@ -874,9 +916,9 @@ export class BattleFieldScene {
         return;
       case 'sun':
         renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [1, 0.8, 0.4, 0.05], additive: true });
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 7; i++) {
           const sway = Math.sin(t * 0.6 + i * 1.7);
-          const x = 80 + i * 170 + sway * 30;
+          const x = 80 + i * 190 + sway * 30;
           const alpha = 0.1 + 0.06 * Math.sin(t * 1.3 + i);
           renderer.rect(x - 40, -120, 80, FIELD_H + 240, { fill: [1, 0.95, 0.75, alpha], radius: 40, softness: 40, angle: 0.35, additive: true });
         }
@@ -904,37 +946,37 @@ export class BattleFieldScene {
     this.statLabels = this.statLabels.filter((s) => s.until > now);
 
     for (const { item, born } of this.popups) {
-      const { left, top } = this.bannerPosition(item.slot, 46);
+      const { left, top } = this.bannerPosition(item.slot, BANNER_HEIGHT + 4);
       const border = item.kind === 'item' ? rgba('#2dd4bf') : item.kind === 'notice' ? rgba('#9ca3af') : rgba('#facc15');
       const nameColor = item.kind === 'item' ? rgba('#99f6e4') : item.kind === 'notice' ? WHITE : rgba('#fde68a');
-      this.card(renderer, now - born, left, top, BANNER_WIDTH, 42, PANEL, border, [
-        { text: item.name, size: 16, bold: true, color: nameColor, y: 11 },
-        { text: this.pokemonAt(item.slot)?.name ?? '', size: 12, color: WHITE, y: 29 },
+      this.card(renderer, now - born, left, top, BANNER_WIDTH, BANNER_HEIGHT, PANEL, border, [
+        { text: item.name, size: 20, bold: true, color: nameColor, y: 16 },
+        { text: this.pokemonAt(item.slot)?.name ?? '', size: 15, color: WHITE, y: 37 },
       ]);
     }
     for (const { item, born } of this.hpLabels) {
       const top = this.hpLabelPosition(item.slot);
       const left = item.crit ? this.centredOver(item.slot, HP_LABEL_WIDTH + CRIT_LABEL_GAP + CRIT_LABEL_WIDTH) : this.centredOver(item.slot, HP_LABEL_WIDTH);
       const rise = Math.min(1, (now - born) / 600) * -10;
-      this.card(renderer, now - born, left, top + rise, HP_LABEL_WIDTH, 32, item.change < 0 ? HP_LOST : HP_RESTORED, WHITE, [
-        { text: `${item.change > 0 ? '+' : ''}${item.change}%`, size: 18, bold: true, color: WHITE, y: 16 },
+      this.card(renderer, now - born, left, top + rise, HP_LABEL_WIDTH, LABEL_HEIGHT, item.change < 0 ? HP_LOST : HP_RESTORED, WHITE, [
+        { text: `${item.change > 0 ? '+' : ''}${item.change}%`, size: 22, bold: true, color: WHITE, y: 20 },
       ]);
       if (item.crit) {
-        this.card(renderer, now - born, left + HP_LABEL_WIDTH + CRIT_LABEL_GAP, top + rise, CRIT_LABEL_WIDTH, 32, CRIT, WHITE, [
-          { text: 'Critical hit!', size: 16, bold: true, color: WHITE, y: 16 },
+        this.card(renderer, now - born, left + HP_LABEL_WIDTH + CRIT_LABEL_GAP, top + rise, CRIT_LABEL_WIDTH, LABEL_HEIGHT, CRIT, WHITE, [
+          { text: 'Critical hit!', size: 20, bold: true, color: WHITE, y: 20 },
         ]);
       }
     }
     for (const { item, born } of this.statusLabels) {
       const info = STATUS[item.status];
       const name = info?.name ?? item.status;
-      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, 32, rgba(info?.color ?? '#374151'), WHITE, [
-        { text: `${name[0].toUpperCase()}${name.slice(1)}!`, size: 16, bold: true, color: WHITE, y: 16 },
+      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, rgba(info?.color ?? '#374151'), WHITE, [
+        { text: `${name[0].toUpperCase()}${name.slice(1)}!`, size: 20, bold: true, color: WHITE, y: 20 },
       ]);
     }
     for (const { item, born } of this.statLabels) {
-      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, 32, item.amount > 0 ? STAT_UP : STAT_DOWN, WHITE, [
-        { text: `${STAT_NAMES[item.stat] ?? item.stat} ${item.amount > 0 ? '+' : ''}${item.amount}`, size: 16, bold: true, color: WHITE, y: 16 },
+      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, item.amount > 0 ? STAT_UP : STAT_DOWN, WHITE, [
+        { text: `${STAT_NAMES[item.stat] ?? item.stat} ${item.amount > 0 ? '+' : ''}${item.amount}`, size: 20, bold: true, color: WHITE, y: 20 },
       ]);
     }
 
@@ -946,14 +988,14 @@ export class BattleFieldScene {
       const { left, top } = this.bannerPosition(action.attacker, 0);
       const color = rgba(typeColor(action.type) || '#374151');
       const age = now - this.banner.born;
-      this.card(renderer, age, left, top, BANNER_WIDTH, 42, color, WHITE, [
-        { text: action.move, size: 16, bold: true, color: WHITE, y: 11 },
-        { text: detail, size: 12, color: WHITE, y: 29 },
+      this.card(renderer, age, left, top, BANNER_WIDTH, BANNER_HEIGHT, color, WHITE, [
+        { text: action.move, size: 20, bold: true, color: WHITE, y: 16 },
+        { text: detail, size: 15, color: WHITE, y: 37 },
       ]);
       // A shine sweeping across the banner as it appears.
       if (age < 500) {
         const sweep = left - 40 + (BANNER_WIDTH + 80) * (age / 500);
-        renderer.rect(sweep, top + 2, 24, 38, { fill: [1, 1, 1, 0.35 * (1 - age / 500)], radius: 8, softness: 10, angle: 0.3, additive: true });
+        renderer.rect(sweep, top + 2, 28, BANNER_HEIGHT - 4, { fill: [1, 1, 1, 0.35 * (1 - age / 500)], radius: 8, softness: 10, angle: 0.3, additive: true });
       }
     }
   }
@@ -995,22 +1037,46 @@ export class BattleFieldScene {
     const t = Math.min(1, age / 450);
     const e = easeOut(t);
     const s = 0.85 + 0.15 * backOut(t);
-    const cx = 232 + 260;
-    const cy = 184 + 66;
+    const cx = FIELD_W / 2;
+    const cy = RESULT_AREA_H / 2;
     renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [0, 0, 0, 0.25 * e] });
-    renderer.rect(cx - 260 * s, cy - 66 * s, 520 * s, 132 * s, { fill: withAlpha(PANEL, e), stroke: withAlpha(WHITE, e), radius: 8, border: 2 });
-    const p1 = this.label(intro.p1, { size: 24, bold: true });
-    const vs = this.label('vs', { size: 18, bold: true });
-    const p2 = this.label(intro.p2, { size: 24, bold: true });
-    if (p1) renderer.image(p1, cx - p1.width / 2 - 200 * (1 - e), cy - 34 - p1.height / 2, 1, withAlpha(WHITE, e));
+    renderer.rect(cx - 320 * s, cy - 84 * s, 640 * s, 168 * s, { fill: withAlpha(PANEL, e), stroke: withAlpha(WHITE, e), radius: 10, border: 2 });
+    const p1 = this.label(intro.p1, { size: 30, bold: true });
+    const vs = this.label('vs', { size: 22, bold: true });
+    const p2 = this.label(intro.p2, { size: 30, bold: true });
+    if (p1) renderer.image(p1, cx - p1.width / 2 - 200 * (1 - e), cy - 44 - p1.height / 2, 1, withAlpha(WHITE, e));
     if (vs) {
       const pulse = 1 + 0.08 * Math.sin(age / 150);
       renderer.image(vs, cx - (vs.width * pulse) / 2, cy - (vs.height * pulse) / 2, pulse, withAlpha(rgba('#fde68a'), e));
     }
-    if (p2) renderer.image(p2, cx - p2.width / 2 + 200 * (1 - e), cy + 34 - p2.height / 2, 1, withAlpha(WHITE, e));
+    if (p2) renderer.image(p2, cx - p2.width / 2 + 200 * (1 - e), cy + 44 - p2.height / 2, 1, withAlpha(WHITE, e));
   }
 
   // ---------------------------------------------------------------- positions
+
+  /** What the camera looks at; the screen says so every frame. */
+  focusOn(focus: CameraFocus): void {
+    this.cameraFocus = focus;
+  }
+
+  /** Every stand where the camera shows it now. */
+  private slots(): Slot[] {
+    return this.occupants().map((occupant) => {
+      const at = this.camera.project(occupant.stand.x, occupant.stand.y, depthOf(occupant.key));
+      const size = Math.round(96 * at.k);
+      return { ...occupant, size, feetX: at.x, feetY: at.y, left: Math.round(at.x - size / 2), top: Math.round(at.y + feetGap(size) - size) };
+    });
+  }
+
+  /** The target being picked: its status box lights up too. */
+  private isPicked(slot: SlotKey): boolean {
+    return this.cameraFocus.kind === 'target' && this.cameraFocus.slot === slot;
+  }
+
+  /** A slot's sprite size now (for effects on it). */
+  private sizeOf(slot: SlotKey): number {
+    return this.slotData(slot)?.size ?? 96 * CAMERA_TUNING.rest.own;
+  }
 
   private slotData(slot: SlotKey): Slot | undefined {
     return this.slots().find((s) => s.key === slot);
@@ -1024,6 +1090,13 @@ export class BattleFieldScene {
     const data = this.slotData(slot);
     if (!data?.pokemon || data.pokemon.fainted) return null;
     return { x: Math.round(data.left + data.size / 2), y: Math.round(data.top + data.size * 0.55) };
+  }
+
+  /** Where a Pokémon on the field is drawn (field coordinates), for the screen's marks over it; null for an empty slot. */
+  spriteArea(slot: SlotKey): { left: number; top: number; size: number } | null {
+    const data = this.slotData(slot);
+    if (!data?.pokemon || data.pokemon.fainted) return null;
+    return { left: data.left, top: data.top, size: data.size };
   }
 
   private hpLabelPosition(slot: SlotKey): number {
@@ -1043,7 +1116,7 @@ export class BattleFieldScene {
     const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
     const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
     const top = from?.top ?? 0;
-    return { left, top: (own ? top - 34 : Math.max(4, top - 18)) + drop };
+    return { left, top: (own ? top - 40 : Math.max(4, top - 18)) + drop };
   }
 
   private label(text: string, style: TextStyle): Texture | null {

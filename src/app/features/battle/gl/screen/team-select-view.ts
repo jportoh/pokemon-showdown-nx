@@ -9,14 +9,16 @@ import { spriteId } from '@shared/utils/sprite-id';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { retroPalette } from './overlay-views';
 import { INK, ScreenContext, hint, ring, write } from './screen-context';
-import { SheetButton } from './side-column-view';
 
-const TOP = 48;
+const TOP = 44;
 const SLOTS = 6;
 const ROW_TOP = 52;
 const ROW_STEP = 96;
 const PILL_W = 150;
 export const DONE_ID = 'team-done';
+
+/** What ZL does about the opponent's open team sheet: shows it, agrees to open sheets, or waits. */
+export type SheetButton = 'sheet' | 'accept' | 'waiting';
 
 /**
  * Team preview in formats played with our own teams, as BattleTeamSelect: the server waits for us to

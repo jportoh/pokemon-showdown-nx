@@ -11,8 +11,9 @@ export const STAT_NAMES: Record<string, string> = {
 };
 
 /**
- * Where each Pokémon stands: its platform's centre (x) and its feet (y), and where its status box
- * goes. The player's stand below the bottom edge, seen from behind and cut off as in Gen 3.
+ * Where each Pokémon stands as the camera sees it at rest (field coordinates): its platform's centre (x)
+ * and its feet (y), and where its status box goes (fixed, whatever the camera does). Its size and its
+ * place while the camera moves come from BattleCamera (camera-tuning.ts).
  */
 export interface Stand {
   x: number;
@@ -21,52 +22,50 @@ export interface Stand {
   boxTop: number;
 }
 
-/**
- * A field layout: the sprites' size (a multiple of Showdown's 96px; Gen 3 doubled its own) and where
- * each Pokémon stands. Platforms, shields, labels and banners follow from them.
- */
 export interface FieldLayout {
-  spriteSize: number;
   stands: Record<SlotKey, Stand>;
 }
 
-/**
- * Doubles at 2.5x (3x doesn't fit: the opponent's two would overlap and run off the field). The
- * opponent's first slot is on the right, as it faces the player. Their status boxes top left, the
- * player's bottom right.
- */
+/** The field: the stage between the top bar and the command bar (1280x566 from 0,44). */
+export const FIELD_W = 1280;
+export const FIELD_H = 566;
+/** Where the field starts on the stage. */
+export const FIELD_TOP = 44;
+/** Where the ground meets the sky at rest. */
+export const GROUND_Y = 238;
+
+/** The command bar, always along the foot of the stage. */
+export const BAR_TOP = FIELD_TOP + FIELD_H;
+export const BAR_H = 720 - BAR_TOP;
+
+/** Our status boxes' left edge: the right of the field stays theirs. */
+export const OWN_BOX_LEFT = 916;
+
+/** Doubles. The opponent's first slot is on the right, as it faces the player; their boxes top left, ours right above the bar. */
 export const DOUBLES: FieldLayout = {
-  spriteSize: Math.round(96 * 2.5),
   stands: {
-    p2a: { x: 850, y: 228, boxLeft: 20, boxTop: 30 },
-    p2b: { x: 600, y: 228, boxLeft: 44, boxTop: 126 },
-    p1a: { x: 150, y: 494, boxLeft: 600, boxTop: 310 },
-    p1b: { x: 420, y: 494, boxLeft: 616, boxTop: 404 },
+    p2a: { x: 1040, y: 274, boxLeft: 24, boxTop: 12 },
+    p2b: { x: 790, y: 274, boxLeft: 44, boxTop: 110 },
+    p1a: { x: 245, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 368 },
+    p1b: { x: 600, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 466 },
   },
 };
 
-/**
- * Singles at 3x, as the third-generation games lay them out: the opponent's Pokémon back right, the
- * player's front left, each status box on the other side of the field from its Pokémon. The
- * opponent stands a little lower than in doubles, so its bigger sprite isn't cut by the top edge.
- */
+/** Singles, as the third-generation games lay them out: the opponent's Pokémon back right, the player's front left. */
 export const SINGLES: FieldLayout = {
-  spriteSize: 96 * 3,
   stands: {
-    p2a: { x: 720, y: 250, boxLeft: 40, boxTop: 60 },
-    p1a: { x: 260, y: 494, boxLeft: 608, boxTop: 356 },
+    p2a: { x: 900, y: 280, boxLeft: 24, boxTop: 12 },
+    p1a: { x: 330, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 466 },
   },
 };
 
-/** The player's platforms are cut off by the bottom edge: this tall, from here. */
-export const OWN_PLATFORM_HEIGHT = 96;
-export const OWN_PLATFORM_TOP = 452;
+/** The status boxes. */
+export const BOX_W = 352;
+export const BOX_H = 90;
 
-/** The sprite box of a Pokémon standing there. */
-export function spriteBox(stand: Stand, size: number): { left: number; top: number } {
-  // Showdown's sprites have the feet about 10px (of 96) above the bottom of their box.
-  const feetGap = Math.round((10 * size) / 96);
-  return { left: stand.x - size / 2, top: stand.y + feetGap - size };
+/** Showdown's sprites have the feet about 10px (of 96) above the bottom of their box. */
+export function feetGap(size: number): number {
+  return Math.round((10 * size) / 96);
 }
 
 export const DEFAULT_SKY = '#d8ecc0';

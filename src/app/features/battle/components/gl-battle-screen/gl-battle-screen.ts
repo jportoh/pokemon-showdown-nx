@@ -7,29 +7,34 @@ import { TextTextures } from '@core/gl/gl-textures';
 import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
 import { BattleFieldScene } from '@features/battle/gl/battle-field-scene';
+import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
-import { LogView, TeamSheetView, TeamsOverviewView } from '@features/battle/gl/screen/overlay-views';
-import { PlayPanelView } from '@features/battle/gl/screen/play-panel-view';
+import { INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
+import { TeamsOverviewView } from '@features/battle/gl/screen/overlay-views';
+import { PartyView } from '@features/battle/gl/screen/party-view';
+import { PlayPanelView, targetSlot } from '@features/battle/gl/screen/play-panel-view';
 import { INK, ScreenContext, write } from '@features/battle/gl/screen/screen-context';
-import { SheetButton, SideColumnView } from '@features/battle/gl/screen/side-column-view';
-import { DONE_ID, TeamSelectView } from '@features/battle/gl/screen/team-select-view';
+import { SideStripView } from '@features/battle/gl/screen/side-strip-view';
+import { DONE_ID, SheetButton, TeamSelectView } from '@features/battle/gl/screen/team-select-view';
 import { PANEL_IDS, WatchPanelView } from '@features/battle/gl/screen/watch-panel-view';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 
-const FIELD = { x: 12, y: 48, w: 985, h: 500 };
+const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
 
 /**
- * The battle screen, drawn as a scene on the app's one canvas (GlStage), all 1280x720 of it: the match header, the field
- * (BattleFieldScene), the right column (teams and conditions), the command panel (our moves, targets
- * and switches; a replay's controls; a spectator's), and over them the battle log (ZR), the
- * opponent's open team sheet (ZL), team preview (picking ours, or a spectator's view of both) and
- * "Joining battle…". The focus lives in the canvas (CanvasFocus), the
- * controller's d-pad, A and B come straight here (through the stage), the page buttons
- * (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's under it. R3
- * shows the frame-time diagnostics while it has no timer to toggle.
+ * The battle screen, drawn as a scene on the app's one canvas (GlStage), all 1280x720 of it: the top
+ * bar, and under it the field (BattleFieldScene) over the whole stage, with each side's Poké Balls and
+ * conditions by its status boxes. While we choose, the command panel rises over the field's foot
+ * (moves, targets; Switch opens the party screen, as a forced switch does); while the turn plays, only
+ * the message box; watching, a replay's or a live battle's controls. Over it all on request, Battle
+ * info (ZR; ZL opens it on the opponent's team): both teams, the field's conditions and the log; and
+ * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
+ * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
+ * the page buttons (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's
+ * under it. R3 shows the frame-time diagnostics while it has no timer to toggle.
  */
 @Component({
   selector: 'app-gl-battle-screen',
@@ -58,7 +63,6 @@ export class GlBattleScreen {
 
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
-  private readonly inspection = inject(PokemonInspection);
   private readonly navigation = inject(KeyboardNavigation);
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly diagnostics = inject(GlDiagnostics);
@@ -66,29 +70,34 @@ export class GlBattleScreen {
 
   private readonly field = new BattleFieldScene();
   private readonly header = new HeaderView();
-  private readonly side = new SideColumnView();
+  private readonly strips = new SideStripView();
   private readonly watchPanel = new WatchPanelView();
   private readonly playPanel = new PlayPanelView();
-  private readonly log = new LogView();
+  private readonly party = new PartyView();
+  private readonly info = new InfoView();
   private readonly overview = new TeamsOverviewView();
-  private readonly sheet = new TeamSheetView();
   private readonly teamSelect = new TeamSelectView();
   private readonly focus = new CanvasFocus();
 
-  private logOpen = false;
-  private sheetOpen = false;
+  /** Battle info's tab while it's open; null while it's closed. */
+  private infoTab: InfoTab | null = null;
+  /** The tab it opens on with ZR: the last one shown. */
+  private lastTab: InfoTab = 'p2';
+  /** Switch was pressed: the party screen is open (a forced switch opens it by itself). */
+  private partyOpen = false;
   private diagnosticsShown = false;
   private ctx: ScreenContext | null = null;
   /** The panel's view last drawn, and its buttons, so a new view focuses its first. */
   private lastViewKey = '';
   private panelPicks: string[] = [];
   private teamSelectWasShown = false;
+  private partyWasShown = false;
   /** The battle drawn last: a new one (a rematch, a set's next game) closes what was open over the old. */
   private shownBattle: unknown = null;
 
   /**
-   * The opponent's card's ZL button: their open team sheet, when it's here; agreeing to open team
-   * sheets, while offered; waiting for the opponent to agree too; or none.
+   * ZL's part with the opponent's open team sheet: agreeing to open team sheets while offered, or
+   * waiting for the opponent to agree too; 'sheet' once it's here (it shows on their team's tab).
    */
   private readonly sheetButton = computed((): SheetButton | null => {
     if (this.store.teamSheets().p2) return 'sheet';
@@ -99,7 +108,7 @@ export class GlBattleScreen {
 
   constructor() {
     const unregister = [
-      this.navigation.registerButton('buttonZR', () => this.toggleLog()),
+      this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
       this.navigation.registerButton('buttonR3', () => {
@@ -124,8 +133,6 @@ export class GlBattleScreen {
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
       hide();
-      this.inspection.pointed.set(null);
-      this.choices.hoveredSwitch.set(null);
     });
   }
 
@@ -136,8 +143,8 @@ export class GlBattleScreen {
     const battle = this.store.battleId();
     if (battle !== this.shownBattle) {
       this.shownBattle = battle;
-      this.sheetOpen = false;
-      this.logOpen = false;
+      this.infoTab = null;
+      this.partyOpen = false;
     }
     renderer.beginPlain(INK.header);
     this.focus.begin();
@@ -145,24 +152,26 @@ export class GlBattleScreen {
     const hold = this.forfeitHold();
     const canForfeit = !this.store.result() && !this.store.watching() && this.forfeitState() === 'idle';
     if (hold?.step(now, canForfeit)) this.forfeit.emit();
-    this.header.draw(ctx, {
-      logOpen: this.logOpen,
-      toggleLog: () => this.toggleLog(),
-      forfeitState: this.forfeitState(),
-      forfeitProgress: hold?.progress ?? 0,
-      forfeit: () => hold?.press(),
-      toggleTimer: () => this.toggleTimer.emit(),
-    });
+    // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
+    const party = this.partyShown();
+    const picking = !party && this.teamSelect.shown();
+    this.field.focusOn(this.cameraFocus(party || picking));
     renderer.setView(1, FIELD.x, FIELD.y);
     renderer.clip(FIELD);
     this.field.draw(renderer, now, dt);
     renderer.clip(null);
     renderer.setView(1, 0, 0);
-    const sheetButton = this.sheetButton();
-    this.side.draw(ctx, sheetButton ? { button: sheetButton, open: this.sheetOpen, press: () => this.pressSheet() } : null);
+    this.header.draw(ctx, {
+      infoOpen: this.infoTab !== null,
+      toggleInfo: () => this.pressInfo(),
+      forfeitState: this.forfeitState(),
+      forfeitProgress: hold?.progress ?? 0,
+      forfeit: () => hold?.press(),
+      toggleTimer: () => this.toggleTimer.emit(),
+    });
+    this.strips.draw(ctx);
 
-    const watching = this.store.watching();
-    if (watching) {
+    if (this.store.watching()) {
       this.panelPicks = [];
       this.watchPanel.draw(ctx, {
         again: () => this.again.emit(),
@@ -176,20 +185,23 @@ export class GlBattleScreen {
         rematchNote: this.rematchNote(),
         rematch: () => this.rematch.emit(),
         leave: () => this.leave.emit(),
+        openParty: () => (this.partyOpen = true),
       });
+      this.drawTargetMark(ctx);
     }
 
-    // Over the field and the column: team preview (ours to pick, or a spectator's), then on request the sheet and the log.
-    const picking = this.teamSelect.shown();
-    if (picking) {
-      // A fresh frame of controls: team preview covers the rest, whose controls must not take the d-pad.
+    if (party) {
+      // A fresh frame of controls: the party screen covers the rest, whose controls must not take the d-pad.
       this.focus.begin();
-      this.teamSelect.draw(ctx, sheetButton ? { button: sheetButton, press: () => this.pressSheet() } : null, () => this.focus.focus(DONE_ID));
+      this.party.draw(ctx, !this.choices.forceSwitch() || this.choices.canGoBack());
+    } else if (picking) {
+      this.focus.begin();
+      const sheet = this.sheetButton();
+      this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet() } : null, () => this.focus.focus(DONE_ID));
     } else if (this.overview.shown()) {
       this.overview.draw(ctx);
     }
-    if (this.sheetOpen) this.sheet.draw(ctx);
-    if (this.logOpen) this.log.draw(ctx);
+    if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
     if (this.joining()) {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
@@ -197,12 +209,60 @@ export class GlBattleScreen {
     if (this.diagnosticsShown) this.drawDiagnostics(renderer, hudText, now);
 
     this.focus.end();
-    this.settleFocus(picking);
+    this.settleFocus(picking, party);
     renderer.end();
   }
 
+  /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */
+  private partyShown(): boolean {
+    if (this.choices.slot() === null || this.store.result() || this.store.watching()) {
+      this.partyOpen = false;
+      return false;
+    }
+    return this.choices.forceSwitch() || (this.partyOpen && this.playPanel.choosing() && !this.choices.pendingMove());
+  }
+
+  /**
+   * What the field's camera looks at: one of ours choosing its move, or the target pointed at (the
+   * opponent's side) while picking one; otherwise, at rest.
+   */
+  private cameraFocus(covered: boolean): CameraFocus {
+    if (covered || this.store.watching() || !this.playPanel.choosing()) return REST_FOCUS;
+    if (this.choices.pendingMove()) {
+      const focused = this.focus.focused;
+      return { kind: 'target', slot: focused?.startsWith('target-') ? targetSlot(Number(focused.slice('target-'.length))) : null };
+    }
+    return { kind: 'choose', slot: this.choices.slot() === 1 ? 'p1b' : 'p1a' };
+  }
+
+  /** The target pointed at in the picker: a bobbing arrow over it on the field. */
+  private drawTargetMark(ctx: ScreenContext): void {
+    const focused = this.focus.focused;
+    if (!focused?.startsWith('target-') || !this.choices.pendingMove()) return;
+    const area = this.field.spriteArea(targetSlot(Number(focused.slice('target-'.length))));
+    if (!area) return;
+    const x = area.left + area.size / 2;
+    const y = FIELD.y + Math.max(24, area.top + area.size * 0.12) + Math.sin(ctx.now / 160) * 6;
+    write(ctx, '▼', x + 2, y + 3, { size: 44, bold: true }, [0, 0, 0, 0.45], 'center');
+    write(ctx, '▼', x, y, { size: 44, bold: true }, INK.yellow300, 'center');
+  }
+
+  /** What ZL does on the opponent's tab while open team sheets are being agreed. */
+  private sheetHint(): string {
+    const button = this.sheetButton();
+    return button === 'accept' ? 'ZL Accept open team sheets' : button === 'waiting' ? 'Waiting for their answer on team sheets' : '';
+  }
+
   /** Where the focus goes as views change: a new set of buttons focuses its first. */
-  private settleFocus(picking: boolean): void {
+  private settleFocus(picking: boolean, party: boolean): void {
+    if (party) {
+      const first = this.party.firstId();
+      if (!this.partyWasShown && first) this.focus.focus(first);
+      this.partyWasShown = true;
+      return;
+    }
+    const partyClosed = this.partyWasShown;
+    this.partyWasShown = false;
     if (picking) {
       if (!this.teamSelectWasShown) this.focus.focus(this.teamSelect.firstId);
       this.teamSelectWasShown = true;
@@ -214,32 +274,26 @@ export class GlBattleScreen {
         const first = this.store.replay() ? PANEL_IDS.play : PANEL_IDS.leaveLive;
         if (this.focus.has(first)) this.focus.focus(first);
       }
-    } else {
-      const key = this.playPanel.viewKey();
-      if (key !== this.lastViewKey) {
-        this.lastViewKey = key;
-        const first = this.choices.forceSwitch() && this.choices.slot() !== null ? this.side.firstSwitch() : this.panelPicks[0];
-        if (first) this.focus.focus(first);
-      }
-      if (this.focus.focused === null && this.panelPicks[0]) this.focus.focus(this.panelPicks[0]);
+      return;
     }
-    // What the focus points at: a team member to inspect, or a switch for the Pokémon card.
-    const tile = this.side.tile(this.focus.focused);
-    const pointed = tile?.inspect ?? null;
-    if (this.inspection.pointed() !== pointed) this.inspection.pointed.set(pointed);
-    const switchIndex = tile?.switchIndex ?? null;
-    if (!this.store.watching() && this.choices.hoveredSwitch() !== switchIndex) this.choices.hoveredSwitch.set(switchIndex);
+    const key = this.playPanel.viewKey();
+    if (key !== this.lastViewKey) {
+      this.lastViewKey = key;
+      this.partyOpen = false;
+      if (this.panelPicks[0]) this.focus.focus(this.panelPicks[0]);
+    } else if (partyClosed && this.focus.has('switch')) {
+      // Back from the party screen: on Switch again.
+      this.focus.focus('switch');
+    }
+    if ((this.focus.focused === null || !this.focus.has(this.focus.focused)) && this.panelPicks[0]) this.focus.focus(this.panelPicks[0]);
   }
 
   /** The controller's d-pad, A and B (everything else comes as page buttons). */
   private onAction(action: CanvasAction): boolean {
-    if (this.logOpen) {
-      if (action === 'back') this.toggleLog();
-      else if (action === 'up' || action === 'down' || action === 'first' || action === 'last') this.log.page(action, this.ctx);
-      return true;
-    }
-    if (this.sheetOpen) {
-      if (action === 'back') this.toggleSheet();
+    if (this.infoTab) {
+      if (action === 'back') this.infoTab = null;
+      else if (action === 'left' || action === 'right') this.stepTab(action === 'left' ? -1 : 1);
+      else if (this.infoTab === 'log' && (action === 'up' || action === 'down' || action === 'first' || action === 'last')) this.info.log.page(action, this.ctx);
       return true;
     }
     if (isDirection(action)) {
@@ -256,10 +310,8 @@ export class GlBattleScreen {
 
   /** B: closes or steps back from whatever is in front. */
   private pressBack(): void {
-    const tile = this.side.tile(this.focus.focused);
     if (this.store.watching()) {
       if (this.store.replay()) this.leaveReplay.emit();
-      else if (tile?.inspect) this.focus.focus(PANEL_IDS.leaveLive);
       else this.leaveLive.emit();
       return;
     }
@@ -267,35 +319,42 @@ export class GlBattleScreen {
       this.teamSelect.undo();
       return;
     }
-    // From the opponent's tiles (or ours while the turn plays), back to the panel's first choice (or the first switch on a forced one).
-    if (tile?.side === 'p2' || (tile && this.choices.slot() === null)) {
-      const first = this.choices.forceSwitch() ? this.side.firstSwitch() : this.panelPicks[0];
-      if (first) this.focus.focus(first);
+    // The party screen opened with Switch closes; a forced one steps back only when there's a choice to take back.
+    if (this.partyOpen && !this.choices.forceSwitch()) {
+      this.partyOpen = false;
+      this.choices.notice.set('');
       return;
     }
     this.back.emit();
   }
 
-  private toggleLog(): boolean {
-    this.logOpen = !this.logOpen;
-    if (this.logOpen) {
-      this.sheetOpen = false;
-      this.log.reset();
-    }
+  /** ZR: opens Battle info (on the tab last shown), or moves to the next tab. */
+  private pressInfo(): boolean {
+    if (this.infoTab) this.stepTab(1);
+    else this.openInfo(this.lastTab);
     return true;
   }
 
-  /** ZL: agrees to open team sheets, or shows or hides the opponent's. */
+  /** ZL: agrees to open team sheets while offered; otherwise the previous tab, or Battle info on the opponent's team. */
   private pressSheet(): boolean {
-    const button = this.sheetButton();
-    if (button === 'accept') this.store.acceptTeamSheets();
-    else if (button === 'sheet') this.toggleSheet();
-    return button !== null;
+    if (this.sheetButton() === 'accept') {
+      this.store.acceptTeamSheets();
+      return true;
+    }
+    if (this.infoTab) this.stepTab(-1);
+    else this.openInfo('p2');
+    return true;
   }
 
-  private toggleSheet(): void {
-    this.sheetOpen = !this.sheetOpen;
-    if (this.sheetOpen) this.logOpen = false;
+  private openInfo(tab: InfoTab): void {
+    this.infoTab = tab;
+    this.lastTab = tab;
+    if (tab === 'log') this.info.log.reset();
+  }
+
+  private stepTab(step: number): void {
+    const index = INFO_TABS.indexOf(this.infoTab ?? this.lastTab);
+    this.openInfo(INFO_TABS[(index + step + INFO_TABS.length) % INFO_TABS.length]);
   }
 
   private hudLines: string[] = [];

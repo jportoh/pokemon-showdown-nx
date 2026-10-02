@@ -1,55 +1,60 @@
 import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
-import { PokemonCardMode, pokemonCardView } from '@features/battle/gl/screen/pokemon-card-view';
-import { pokemonInfoView } from '@features/battle/gl/screen/pokemon-info-view';
-import { RequestPokemon } from '@features/battle/models/battle';
-import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
-import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
-import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
+import { abilityName, itemName } from '@core/dex/names';
 import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
+import { BAR_TOP } from '@features/battle/gl/field-layout';
+import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
+import { BattleStore } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
+import { BAR_FILL, drawCommandBar, drawMessage } from './message-box';
 import { INK, ScreenContext, button, hint, ring, write, writeLines } from './screen-context';
-import { drawPokemonInfo } from './watch-panel-view';
 
-const PANEL_X = 12;
-const PANEL_Y = 548;
-/** The panel's content, inside its 12px margin: 961x148. */
-const X = PANEL_X + 12;
-const Y = PANEL_Y + 12;
-const WIDTH = 961;
+const X = 16;
+const RIGHT = 1264;
 const GAP = 12;
-const BIG_W = Math.floor((WIDTH - GAP) / 2);
-const ROW_TOPS = [36, 96];
-const CARD_W = 340;
-const LEFT_W = WIDTH - GAP - CARD_W;
-const MOVE_W = Math.floor((LEFT_W - GAP) / 2);
-const MOVE_H = 53;
-const MOVE_TOPS = [36, 36 + MOVE_H + 6];
+/** The four moves in a row, Switch and Mega or Tera stacked on their right. */
+const MOVE_W = 252;
+const MOVE_H = 86;
+const MOVE_Y = BAR_TOP + 12;
+const SIDE_X = X + 4 * (MOVE_W + GAP);
+const SIDE_W = RIGHT - SIDE_X;
+const SIDE_H = 40;
+/** Two rows of 40px in the bar: chips on top, the legend or a second line under. */
+const ROW_1 = BAR_TOP + 14;
+const ROW_2 = BAR_TOP + 62;
+const ROW_H = 40;
+/** The tab over the bar while choosing: who's choosing, its item and ability. */
+const TAB_H = 40;
+const TAB_MAX_W = 880;
 const AMBER: Rgba = rgba('#fcd34d');
+/** Type colours on the dark bar (Dark, Ghost) need an edge to stand out. */
+const TYPE_EDGE: Rgba = [1, 1, 1, 0.35];
 
-/** What the panel's buttons do beyond the battle's own state. */
+/** What the bar's buttons do beyond the battle's own state. */
 export interface PlayActions {
   canRematch: boolean;
   rematchLabel: string;
   rematchNote: string;
   rematch: () => void;
   leave: () => void;
+  /** Switch: opens the party screen. */
+  openParty: () => void;
 }
 
 /**
- * The command panel in our own battles (985x172 under the field): the four moves
- * two by two on their types' colours (category icon, power, accuracy, PP) beside the card of the
- * Pokémon choosing (switching is done on the team tiles on the right, the card following the one
- * pointed at); the target picker when a move needs one; a forced switch's prompt; what each Pokémon
- * was told to do while the turn plays (Cancel while the opponent still chooses); and at the end, the
- * result with Rematch and Back to Home. An opponent's team tile pointed at shows its card over it all.
- * `draw` returns the ids of the view's buttons in order, so a new view can focus its first.
+ * The command bar in our own battles, along the stage's foot, always the same size. While the turn
+ * plays, its message; choosing, the four moves in a row on their types' colours (category, power, PP)
+ * with Switch (the party screen) and Mega or Tera (L) on their right, and a tab over the bar with who's
+ * choosing (its item and ability, and the first slot's order while the second chooses); picking a
+ * target, the move and the targets as chips (the field marks the one pointed at); while the opponent
+ * chooses, each order and Cancel; at the end, the result with Rematch and Back to Home. `draw` returns
+ * the ids of the view's buttons in order, so a new view can focus its first.
  */
 export class PlayPanelView {
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
-  private readonly inspection = inject(PokemonInspection);
   private readonly dex = inject(ChampionsDex);
 
   /** Changes whenever a new set of buttons appears, so the focus moves to it. */
@@ -58,51 +63,40 @@ export class PlayPanelView {
     return [this.store.result(), request?.rqid, this.choices.slot(), !!this.choices.pendingMove(), this.store.canUndo()].join('|');
   });
 
-  /** The opponent's team member pointed at on the right; null for none. */
-  private readonly opponent = computed(() => {
-    const shown = this.inspection.shown();
-    return shown?.side === 'p2' ? shown : null;
-  });
-
-  private readonly opponentInfo = computed(() => pokemonInfoView(this.opponent(), this.store.sides().p2.name || 'Opponent'));
+  /** Choosing a move or its target (the party screen takes forced switches). */
+  readonly choosing = computed(() => this.choices.slot() !== null && !this.choices.forceSwitch() && !this.store.result());
 
   private readonly moves = computed(() =>
     this.choices.moves().map((move, i) => {
       const info = this.dex.move(move.id) ?? moveInfo(move.id);
       const type = info?.type ?? '';
-      const power = info && info.basePower > 0 ? `${info.basePower} BP` : '';
-      const accuracy = info && info.category !== 'Status' ? (info.accuracy > 0 ? `${info.accuracy}%` : 'Never misses') : '';
       return {
         index: i,
         name: move.move,
         disabled: !!move.disabled || move.pp <= 0,
+        type,
         color: rgba(typeColor(type) || '#4b5563'),
-        detail: [type, power, accuracy].filter(Boolean).join(' · '),
-        category: (info?.category ?? '').toLowerCase(),
+        power: info && info.basePower > 0 ? String(info.basePower) : '',
+        category: info?.category ?? '',
         pp: `${move.pp}/${move.maxpp}`,
-        x: X + (i % 2) * (MOVE_W + GAP),
-        y: Y + (MOVE_TOPS[Math.floor(i / 2)] ?? 0),
+        x: X + i * (MOVE_W + GAP),
       };
     }),
   );
 
-  /** The Pokémon the card shows: the team member pointed at to switch in (its moves), else the one choosing (its stats). */
-  private readonly inspected = computed<{ pokemon: RequestPokemon | null; mode: PokemonCardMode }>(() => {
-    const team = this.store.team();
-    const pointed = this.choices.slot() !== null ? this.choices.hoveredSwitch() : null;
-    if (pointed !== null && team[pointed - 1]) return { pokemon: team[pointed - 1], mode: 'moves' };
-    // While the turn plays, one of our team tiles pointed at: that member, with its moves.
-    const shown = this.inspection.shown();
-    if (this.choices.slot() === null && shown?.side === 'p1') {
-      const member = team.find((pokemon) => pokemon.details.split(',')[0] === shown.member.species);
-      if (member) return { pokemon: member, mode: 'moves' };
-    }
-    if (this.choices.forceSwitch()) return { pokemon: null, mode: 'moves' };
-    const pokemon = this.choices.pokemon() ?? team.find((member) => member.active && !parseCondition(member.condition, 100).fainted) ?? null;
-    return { pokemon, mode: 'stats' };
+  /** The one choosing: its item and ability, from the request. */
+  private readonly chooser = computed(() => {
+    const pokemon = this.choices.pokemon();
+    if (!pokemon) return null;
+    return {
+      itemId: pokemon.item,
+      item: itemName(pokemon.item) || 'No item',
+      ability: abilityName(pokemon.ability ?? ''),
+    };
   });
 
-  private readonly card = computed(() => ({ ...pokemonCardView(this.inspected().pokemon, this.inspected().mode), mode: this.inspected().mode }));
+  /** How many slots choose this turn: 2 in doubles. */
+  private readonly slotCount = computed(() => (this.store.gameType() === 'singles' ? 1 : (this.store.request()?.active?.length ?? 1)));
 
   /** Each active slot's order this turn, on its move type's colour; before any order, who's out there. */
   private readonly plans = computed(() => {
@@ -111,95 +105,131 @@ export class PlayPanelView {
     const slots = this.store.gameType() === 'singles' ? active.slice(0, 1) : active;
     return slots.map((pokemon, slot) => {
       const plan = submitted.find((p) => p.slot === slot);
-      const top = MOVE_TOPS[slot] ?? 0;
-      if (plan) return { ...plan, top, color: rgba(typeColor(plan.type) || '#374151') };
+      if (plan) return { ...plan, color: rgba(typeColor(plan.type) || '#374151') };
       const action = !pokemon ? '' : pokemon.fainted ? 'Fainted' : 'Getting ready';
-      return { slot, top, name: pokemon?.name ?? '', action, detail: '', color: INK.gray700 };
+      return { slot, name: pokemon?.name ?? '', action, detail: '', color: INK.gray700 };
     });
   });
 
   draw(ctx: ScreenContext, actions: PlayActions): string[] {
-    ctx.renderer.rect(PANEL_X, PANEL_Y, 985, 172, { fill: INK.panel });
-    let picks: string[];
-    if (this.store.result()) picks = this.drawResult(ctx, actions);
-    else if (this.choices.slot() !== null) {
-      if (this.choices.pendingMove()) picks = this.drawTargets(ctx);
-      else if (this.choices.forceSwitch()) picks = this.drawForcedSwitch(ctx);
-      else picks = this.drawMoves(ctx);
-    } else picks = this.drawWaiting(ctx);
-    const opponent = this.opponent();
-    if (opponent) {
-      // Over the view, which stays (B goes back to its first button).
-      ctx.renderer.rect(PANEL_X, PANEL_Y, 985, 172, { fill: INK.panel });
-      write(ctx, `${this.store.sides().p2.name || 'Opponent'}'s team:`, X, Y + 12, { size: 16, bold: true }, INK.white, 'left', 300);
-      write(ctx, 'everything seen so far.', X, Y + 36, { size: 16 }, INK.gray200, 'left', 300);
-      ctx.renderer.rect(X, Y + 116, 24, 20, { fill: INK.header, radius: 2 });
-      write(ctx, 'B', X + 12, Y + 126, { size: 14, bold: true }, INK.white, 'center');
-      write(ctx, 'Back to your choices', X + 32, Y + 126, { size: 16 }, INK.gray200);
-      drawPokemonInfo(ctx, X + 316, Y, this.opponentInfo());
+    drawCommandBar(ctx);
+    if (this.store.result()) return this.drawResult(ctx, actions);
+    if (this.choices.slot() !== null) {
+      // A forced switch is chosen on the party screen.
+      if (this.choices.forceSwitch()) return [];
+      return this.choices.pendingMove() ? this.drawTargets(ctx) : this.drawMoves(ctx, actions);
     }
-    return picks;
+    if (!this.store.playing() && this.choices.submitted().length > 0) return this.drawWaiting(ctx);
+    drawMessage(ctx, this.store.log());
+    return [];
   }
 
   private drawResult(ctx: ScreenContext, actions: PlayActions): string[] {
     const result = this.store.result();
-    const text = result === 'win' ? 'You won!' : result === 'loss' ? 'You lost.' : 'The battle ended in a tie.';
-    write(ctx, text, X, Y + 14, { size: 18, bold: true }, INK.white, 'left', WIDTH);
+    const text = result === 'win' ? 'You won!' : result === 'loss' ? 'You lost.' : 'A tie.';
+    const buttonW = 340;
+    const textW = RIGHT - X - 2 * (buttonW + GAP) - GAP;
+    write(ctx, text, X + 12, BAR_TOP + 32, { size: 28, bold: true }, INK.white, 'left', textW);
+    writeLines(ctx, actions.rematchNote, X + 12, BAR_TOP + 52, textW, 24, { size: 16 }, INK.gray200, 2);
     const picks: string[] = [];
+    const leave = { x: RIGHT - buttonW, y: MOVE_Y, w: buttonW, h: MOVE_H };
     if (actions.canRematch) {
-      bigButton(ctx, 'result-rematch', { x: X, y: Y + 40, w: 474, h: 60 }, actions.rematchLabel, 'primary', actions.rematch);
+      bigButton(ctx, 'result-rematch', { ...leave, x: leave.x - buttonW - GAP }, actions.rematchLabel, 'primary', actions.rematch);
       picks.push('result-rematch');
     }
-    const leave = actions.canRematch ? { x: X + 486, y: Y + 40, w: 474, h: 60 } : { x: X, y: Y + 40, w: WIDTH, h: 60 };
     bigButton(ctx, 'result-leave', leave, 'Back to Home', 'plain', actions.leave);
     picks.push('result-leave');
-    writeLines(ctx, actions.rematchNote, X, Y + 106, WIDTH, 20, { size: 14 }, INK.gray200, 2);
     return picks;
   }
 
-  private drawTargets(ctx: ScreenContext): string[] {
-    write(ctx, 'Choose a target', X, Y + 14, { size: 16 }, INK.gray200);
-    const picks: string[] = [];
-    this.choices.targetOptions().forEach((option, i) => {
-      const box = { x: X + (i % 2) * (BIG_W + GAP), y: Y + (ROW_TOPS[Math.floor(i / 2)] ?? 0), w: 474, h: 52 };
-      const id = `target-${option.target}`;
-      const focused = option.allowed && ctx.focus.control({ id, ...box, accept: () => this.choices.chooseTarget(option.target) });
-      if (option.allowed) picks.push(id);
-      const look = !option.allowed
-        ? { fill: INK.gray700, border: INK.gray600, ink: INK.gray400 }
-        : option.foe
-          ? { fill: rgba('#7f1d1d'), border: INK.red300, ink: INK.white }
-          : { fill: rgba('#1e3a8a'), border: INK.blue300, ink: INK.white };
-      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: look.fill, stroke: look.border, radius: 6, border: 1 });
-      write(ctx, option.pokemon?.name ?? 'Empty', box.x + 12, box.y + 16, { size: 18, bold: true }, look.ink, 'left', 450);
-      write(ctx, targetDetail(option), box.x + 12, box.y + 38, { size: 14 }, look.ink, 'left', 450);
-      if (focused) ring(ctx, box, 6);
-    });
-    this.backButton(ctx);
-    return picks;
-  }
-
-  private drawForcedSwitch(ctx: ScreenContext): string[] {
-    const bold = 'Choose a Pokémon to send out';
-    const width = write(ctx, bold, X, Y + 14, { size: 16, bold: true }, INK.white);
-    write(ctx, ' on your team, on the right →', X + width + 4, Y + 14, { size: 16 }, INK.gray200);
-    const name = this.choices.pokemonName();
-    if (name) write(ctx, this.choices.pokemonFainted() ? `${name} has fainted.` : `${name} is coming back.`, X, Y + 48, { size: 14 }, INK.gray300, 'left', 609);
-    write(ctx, this.choices.notice(), X, Y + 78, { size: 14, bold: true }, AMBER, 'left', 609);
-    if (this.choices.canGoBack()) this.backButton(ctx);
-    this.drawCard(ctx);
-    return [];
-  }
-
-  private drawMoves(ctx: ScreenContext): string[] {
+  /** The tab over the bar's left: who's choosing (1 and 2 in doubles), its item and ability, `extra` after. */
+  private drawTab(ctx: ScreenContext, extra?: { text: string; color: Rgba }): void {
+    const { renderer } = ctx;
+    const slot = this.choices.slot() ?? 0;
+    const doubles = this.slotCount() > 1;
+    const chooser = this.chooser();
     const notice = this.choices.notice();
-    const canSwitch = this.choices.switchOptions().some((option) => option.allowed);
-    const heading = notice || this.choices.pokemonName();
-    const width = write(ctx, heading, X, Y + 14, { size: 16, bold: true }, notice ? AMBER : INK.white, 'left', 627);
-    if (!notice) write(ctx, canSwitch ? ' — choose a move, or switch on the right →' : ' — choose a move', X + width + 2, Y + 14, { size: 16 }, INK.gray200, 'left', 625 - width);
+    const name = this.choices.pokemonName();
+    const nameW = ctx.text.measure(name, { size: 22, bold: true });
+    const info = chooser ? `${chooser.item} · ${chooser.ability}` : '';
+    const infoW = info ? Math.min(360, ctx.text.measure(info, { size: 18 })) + 34 : 0;
+    const extraText = notice || extra?.text || '';
+    const extraW = extraText ? Math.min(400, ctx.text.measure(extraText, { size: 16, bold: true }) + 24) + 14 : 0;
+    const width = Math.min(TAB_MAX_W, 14 + (doubles ? 64 : 0) + nameW + 14 + infoW + extraW + 14);
+    const top = BAR_TOP - TAB_H;
+    renderer.rect(X, top, width, TAB_H + 14, { fill: BAR_FILL, stroke: INK.sky300, radius: 12, border: 3 });
+    // The tab opens into the bar: its lower edge is the bar itself.
+    renderer.rect(X, BAR_TOP + 3, width, 14, { fill: BAR_FILL });
+    const mid = top + TAB_H / 2 + 2;
+    let x = X + 14;
+    if (doubles) {
+      for (let i = 0; i < 2; i++) {
+        const on = i === slot;
+        renderer.rect(x + i * 32, mid - 13, 26, 26, { fill: on ? INK.blue700 : INK.gray700, stroke: on ? INK.blue300 : INK.gray600, radius: 13, border: 2 });
+        write(ctx, String(i + 1), x + i * 32 + 13, mid, { size: 15, bold: true }, INK.white, 'center');
+      }
+      x += 64;
+    }
+    write(ctx, name, x, mid, { size: 22, bold: true }, INK.white);
+    x += nameW + 14;
+    if (chooser) {
+      ctx.images.drawItem(chooser.itemId, x - 2, mid - 14, 28);
+      write(ctx, info, x + 30, mid, { size: 18 }, INK.gray300, 'left', infoW - 34);
+      x += infoW;
+    }
+    if (notice) write(ctx, notice, x, mid, { size: 16, bold: true }, AMBER, 'left', extraW - 14);
+    else if (extra) {
+      const w = extraW - 14;
+      renderer.rect(x, mid - 14, w, 28, { fill: extra.color, stroke: TYPE_EDGE, radius: 6, border: 1 });
+      write(ctx, extra.text, x + 12, mid, { size: 16, bold: true }, INK.white, 'left', w - 24);
+    }
+  }
+
+  private drawMoves(ctx: ScreenContext, actions: PlayActions): string[] {
+    const { renderer } = ctx;
+    const picks: string[] = [];
+    // The second slot shows the first one's order.
+    const slot = this.choices.slot() ?? 0;
+    const before = slot > 0 ? this.choices.planned().find((plan) => plan.slot === slot - 1) : undefined;
+    this.drawTab(ctx, before ? { text: `✓ ${before.name} · ${before.action}`, color: rgba(typeColor(before.type) || '#374151') } : undefined);
+
+    for (const move of this.moves()) {
+      const box = { x: move.x, y: MOVE_Y, w: MOVE_W, h: MOVE_H };
+      const id = `move-${move.index}`;
+      const focused = !move.disabled && ctx.focus.control({ id, ...box, accept: () => this.choices.chooseMove(move.index) });
+      if (!move.disabled) picks.push(id);
+      const ink = move.disabled ? INK.gray400 : INK.white;
+      renderer.rect(box.x, box.y, box.w, box.h, { fill: move.disabled ? INK.gray700 : move.color, stroke: move.disabled ? INK.gray600 : [1, 1, 1, 0.35], radius: 10, border: 2 });
+      write(ctx, move.name, box.x + 14, box.y + 24, { size: 22, bold: true }, ink, 'left', MOVE_W - 28);
+      // Type, category icon, power; PP on the right.
+      const rowY = box.y + 62;
+      let x = box.x + 14;
+      if (move.type) {
+        renderer.rect(x, rowY - 11, 66, 22, { fill: [0, 0, 0, 0.3], stroke: [1, 1, 1, 0.35], radius: 4, border: 1 });
+        write(ctx, move.type.toUpperCase(), x + 33, rowY, { size: 13, bold: true }, ink, 'center', 62);
+        x += 72;
+      }
+      const icon = categoryIcon(renderer, move.category);
+      if (icon) {
+        renderer.rect(x, rowY - CATEGORY_ICON_H / 2, CATEGORY_ICON_W, CATEGORY_ICON_H, { fill: move.disabled ? [1, 1, 1, 0.5] : INK.white, texture: icon });
+        x += CATEGORY_ICON_W + 8;
+      }
+      if (move.power) write(ctx, move.power, x, rowY, { size: 16, bold: true }, move.disabled ? INK.gray400 : INK.gray100);
+      write(ctx, move.pp, box.x + MOVE_W - 14, rowY, { size: 16, bold: true }, ink, 'right');
+      if (focused) ring(ctx, box, 10);
+    }
+
+    // Switch: the party screen.
+    const switches = this.choices.switchOptions().filter((option) => option.allowed).length;
+    const switchBox = { x: SIDE_X, y: MOVE_Y, w: SIDE_W, h: SIDE_H };
+    const switchFocused = ctx.focus.control({ id: 'switch', ...switchBox, accept: actions.openParty });
+    renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 8, border: 2 });
+    write(ctx, 'Switch', switchBox.x + 14, switchBox.y + SIDE_H / 2, { size: 20, bold: true }, switches > 0 ? INK.white : INK.gray400);
+    write(ctx, switches > 0 ? `${switches} ▶` : 'None', switchBox.x + SIDE_W - 14, switchBox.y + SIDE_H / 2, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'right');
+    if (switchFocused) ring(ctx, switchBox, 8);
 
     // L does this on the controller; the button is for clicks.
-    const megaBox = { x: X + 641, y: Y, w: 168, h: 28 };
+    const megaBox = { x: SIDE_X, y: MOVE_Y + MOVE_H - SIDE_H, w: SIDE_W, h: SIDE_H };
     if (this.choices.canMega()) {
       const on = this.choices.mega();
       hint(ctx, 'mega', megaBox, 'L', on ? 'Mega Evolving' : 'Mega Evolve', false, () => this.choices.toggleMega(), on ? { fill: rgba('#6b2a73'), border: rgba('#f0abfc') } : { fill: INK.gray700, border: INK.gray400 });
@@ -208,99 +238,88 @@ export class PlayPanelView {
       const type = this.choices.teraType();
       hint(ctx, 'tera', megaBox, 'L', on ? 'Terastallizing' : `Tera: ${type}`, false, () => this.choices.toggleTera(), on ? { fill: rgba(typeColor(type) || '#374151'), border: INK.white } : { fill: INK.gray700, border: INK.gray500 });
     }
-    if (this.choices.canGoBack()) this.backButton(ctx);
+    // The first move takes the focus; Switch after them.
+    return [...picks, 'switch'];
+  }
+
+  private drawTargets(ctx: ScreenContext): string[] {
+    const { renderer } = ctx;
+    const pending = this.choices.pendingMove();
+    const move = pending ? this.moves()[pending.move] : null;
+    let x = X;
+    if (move) {
+      const w = ctx.text.measure(move.name, { size: 21, bold: true }) + 28;
+      renderer.rect(x, ROW_1, w, ROW_H, { fill: move.color, stroke: TYPE_EDGE, radius: 8, border: 2 });
+      write(ctx, move.name, x + 14, ROW_1 + ROW_H / 2, { size: 21, bold: true }, INK.white);
+      x += w + 12;
+      write(ctx, '→', x, ROW_1 + ROW_H / 2, { size: 22, bold: true }, INK.gray300);
+      x += 34;
+    }
 
     const picks: string[] = [];
-    for (const move of this.moves()) {
-      const box = { x: move.x, y: move.y, w: MOVE_W, h: MOVE_H };
-      const id = `move-${move.index}`;
-      const focused = !move.disabled && ctx.focus.control({ id, ...box, accept: () => this.choices.chooseMove(move.index) });
-      if (!move.disabled) picks.push(id);
-      const ink = move.disabled ? INK.gray400 : INK.white;
-      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: move.disabled ? INK.gray700 : move.color, stroke: move.disabled ? INK.gray600 : INK.gray300, radius: 6, border: 1 });
-      write(ctx, move.name, box.x + 10, box.y + 16, { size: 18, bold: true }, ink, 'left', 200);
-      write(ctx, move.pp, box.x + 286, box.y + 16, { size: 14 }, ink, 'right');
-      const icon = move.category ? ctx.images.image(`categories/${move.category}.png`) : null;
-      if (icon) ctx.renderer.rect(box.x + 10, box.y + 31, 32, 14, { fill: INK.white, texture: icon });
-      write(ctx, move.detail, box.x + (move.category ? 48 : 10), box.y + 38, { size: 14 }, ink, 'left', move.category ? 238 : 276);
-      if (focused) ring(ctx, box, 6);
+    for (const option of this.choices.targetOptions()) {
+      const label = targetLabel(option);
+      const box = { x, y: ROW_1, w: ctx.text.measure(label, { size: 20, bold: true }) + 32, h: ROW_H };
+      const id = targetId(option.target);
+      const focused = option.allowed && ctx.focus.control({ id, ...box, accept: () => this.choices.chooseTarget(option.target) });
+      if (option.allowed) picks.push(id);
+      const look = !option.allowed
+        ? { fill: INK.gray700, border: INK.gray600, ink: INK.gray400 }
+        : focused
+          ? { fill: INK.blue700, border: INK.yellow300, ink: INK.white }
+          : { fill: INK.card, border: option.foe ? INK.gray500 : INK.sky300, ink: INK.white };
+      renderer.rect(box.x, box.y, box.w, box.h, { fill: look.fill, stroke: look.border, radius: 8, border: 2 });
+      write(ctx, label, box.x + 16, box.y + ROW_H / 2, { size: 20, bold: true }, look.ink);
+      x += box.w + 10;
     }
-    this.drawCard(ctx);
+
+    const notice = this.choices.notice();
+    write(ctx, notice || '◀ ▶ Target   ·   A Confirm   ·   B Back to moves', X, ROW_2 + ROW_H / 2, { size: 18, bold: !!notice }, notice ? AMBER : INK.gray300, 'left', 1000);
+    // For clicks: B does this on the controller.
+    hint(ctx, 'choice-back', { x: RIGHT - 170, y: ROW_2, w: 170, h: 36 }, 'B', 'Back', false, () => this.choices.back());
     return picks;
   }
 
   private drawWaiting(ctx: ScreenContext): string[] {
-    const title = this.store.playing() ? (this.store.turn() > 0 ? `Turn ${this.store.turn()} in progress…` : 'The battle is starting…') : 'Waiting for the opponent…';
-    write(ctx, title, X, Y + 14, { size: 16 }, INK.gray200, 'left', 609);
-    const picks: string[] = [];
-    if (this.store.canUndo()) {
-      // Showdown's Cancel: while the opponent is still choosing, the choices can be made again (B too).
-      button(ctx, 'cancel', { x: X + 821, y: Y, w: 140, h: 28 }, 'B  Cancel', 'plain', () => this.store.undo());
-      picks.push('cancel');
-    }
-    // Each order is a place for the focus to rest while the turn plays (A does nothing there).
-    for (const plan of this.plans()) {
-      const box = { x: X, y: Y + plan.top, w: 609, h: 53 };
-      const id = `plan-${plan.slot}`;
-      const focused = ctx.focus.control({ id, ...box });
-      picks.push(id);
-      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: plan.color, stroke: INK.gray500, radius: 6, border: 1 });
-      write(ctx, `${plan.name}${plan.detail ? ` · ${plan.detail}` : ''}`, box.x + 12, box.y + 14, { size: 14 }, INK.gray200, 'left', 585);
-      write(ctx, plan.action, box.x + 12, box.y + 36, { size: 20, bold: true }, INK.white, 'left', 585);
-      if (focused) ring(ctx, box, 6);
-    }
-    this.drawCard(ctx);
-    return picks;
-  }
-
-  private backButton(ctx: ScreenContext): void {
-    button(ctx, 'choice-back', { x: X + 821, y: Y, w: 140, h: 28 }, 'Back', 'plain', () => this.choices.back());
-  }
-
-  /** The Pokémon card (340x112), as BattlePokemonCard: stats of the one choosing, or the moves of the one pointed at. */
-  private drawCard(ctx: ScreenContext): void {
-    const { renderer } = ctx;
-    const v = this.card();
-    const x = X + 621;
-    const y = Y + 36;
-    const moves = v.mode === 'moves';
-    renderer.rect(x, y, CARD_W, 112, { fill: rgba(moves ? '#1b3354' : '#1f2937'), stroke: moves ? INK.sky300 : INK.gray500, radius: 6, border: 1 });
-    if (!v.name) return;
-    ctx.images.drawItem(v.itemId, x + 9, y + 8, 32);
-    write(ctx, v.name, x + 50, y + 17, { size: 16, bold: true }, INK.white, 'left', 184);
-    if (v.tera) {
-      renderer.rect(x + 240, y + 7, 90, 20, { fill: rgba(v.tera.color), stroke: v.tera.done ? INK.white : [0, 0, 0, 0], radius: 10, border: v.tera.done ? 1 : 0 });
-      write(ctx, v.tera.text, x + 285, y + 17, { size: 12, bold: true }, INK.white, 'center', 86);
-    }
-    const itemWidth = write(ctx, v.item, x + 50, y + 38, { size: 14, bold: true }, INK.white, 'left', 280);
-    if (v.ability) write(ctx, ` · ${v.ability}`, x + 50 + itemWidth, y + 38, { size: 14 }, INK.gray300, 'left', 280 - itemWidth);
-    if (moves) {
-      for (const move of v.moves) {
-        renderer.rect(x + move.left, y + move.top, 157, 23, { fill: rgba(move.color), radius: 2 });
-        write(ctx, move.name, x + move.left + 78.5, y + move.top + 11.5, { size: 14, bold: true }, INK.white, 'center', 151);
-      }
-    } else if (v.stats.length > 0) {
-      renderer.rect(x + 8, y + 54, 322, 50, { fill: rgba('#111827'), radius: 6 });
-      for (const stat of v.stats) {
-        write(ctx, stat.label.toUpperCase(), x + stat.left + 32, y + 67, { size: 11, bold: true }, INK.gray400, 'center');
-        write(ctx, String(stat.value), x + stat.left + 32, y + 88, { size: 18, bold: true }, INK.white, 'center');
-      }
-    }
+    const plans = this.plans();
+    const width = plans.length > 1 ? (RIGHT - X - GAP) / 2 : RIGHT - X;
+    plans.forEach((plan, i) => {
+      const box = { x: X + i * (width + GAP), y: ROW_1, w: width, h: ROW_H };
+      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: plan.color, stroke: TYPE_EDGE, radius: 8, border: 2 });
+      const head = `${plan.name} · ${plan.action}`;
+      const headW = write(ctx, head, box.x + 14, box.y + ROW_H / 2, { size: 18, bold: true }, INK.white, 'left', box.w - 28);
+      if (plan.detail && headW < box.w - 80) write(ctx, plan.detail, box.x + 26 + headW, box.y + ROW_H / 2, { size: 15 }, INK.gray200, 'left', box.w - 40 - headW);
+    });
+    const opponent = this.store.sides().p2.name || 'the opponent';
+    write(ctx, `Waiting for ${opponent}…`, X, ROW_2 + ROW_H / 2, { size: 20, bold: true }, INK.gray300, 'left', 800);
+    if (!this.store.canUndo()) return [];
+    // Showdown's Cancel: while the opponent is still choosing, the choices can be made again (B too).
+    button(ctx, 'cancel', { x: RIGHT - 160, y: ROW_2, w: 160, h: 36 }, 'B  Cancel', 'plain', () => this.store.undo());
+    return ['cancel'];
   }
 }
 
-/** A big button, as the result's: 20px bold text. */
+/** A target button's id: its Showdown target number. */
+export function targetId(target: number): string {
+  return `target-${target}`;
+}
+
+/** The field slot a target number points at: 1, 2 the foes' slots; -1, -2 ours. */
+export function targetSlot(target: number): string {
+  return `${target > 0 ? 'p2' : 'p1'}${Math.abs(target) === 1 ? 'a' : 'b'}`;
+}
+
+/** A big button, as the result's: 24px bold text. */
 function bigButton(ctx: ScreenContext, id: string, box: { x: number; y: number; w: number; h: number }, label: string, look: 'primary' | 'plain', accept: () => void): void {
   const focused = ctx.focus.control({ id, ...box, accept });
   const primary = look === 'primary';
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: primary ? INK.blue700 : INK.gray600, stroke: primary ? INK.blue300 : INK.gray400, radius: 6, border: 1 });
-  write(ctx, label, box.x + box.w / 2, box.y + box.h / 2, { size: 20, bold: true }, INK.white, 'center', box.w - 16);
-  if (focused) ring(ctx, box, 6);
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: primary ? INK.blue700 : INK.gray600, stroke: primary ? INK.blue300 : INK.gray400, radius: 10, border: 2 });
+  write(ctx, label, box.x + box.w / 2, box.y + box.h / 2, { size: 24, bold: true }, INK.white, 'center', box.w - 16);
+  if (focused) ring(ctx, box, 10);
 }
 
-/** "Foe · 73% HP", "Ally · Fainted". */
-function targetDetail({ pokemon, foe }: TargetOption): string {
-  if (!pokemon) return '';
-  const percent = pokemon.maxHp > 0 ? Math.max(pokemon.hp > 0 ? 1 : 0, Math.round((pokemon.hp / pokemon.maxHp) * 100)) : 0;
-  return `${foe ? 'Foe' : 'Ally'} · ${pokemon.fainted ? 'Fainted' : `${percent}% HP`}`;
+/** "Garchomp", "Kingambit (ally)", "Garchomp (fainted)". */
+function targetLabel({ pokemon, foe }: TargetOption): string {
+  if (!pokemon) return 'Empty';
+  return `${pokemon.name}${pokemon.fainted ? ' (fainted)' : foe ? '' : ' (ally)'}`;
 }

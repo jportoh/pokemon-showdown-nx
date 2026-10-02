@@ -3,7 +3,7 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, ListView, UiContext, focusRing, label, textField } from '@core/gl/ui/retro-kit';
 import { toId } from '@shared/utils/to-id';
-import { CATEGORY_ICON_W } from './category-icons';
+import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
 import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, typeRgba } from './tb-draw';
 
 export interface ChooserOption {
