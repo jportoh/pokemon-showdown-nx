@@ -100,11 +100,17 @@ export function hint(
   active: boolean,
   accept: () => void,
   look?: { fill: Rgba; border: Rgba },
+  held?: { progress: number; color: Rgba },
 ): void {
   ctx.focus.control({ id, ...box, accept, skip: true });
   const fill = look?.fill ?? (active ? INK.selected : INK.tab);
   const border = look?.border ?? (active ? INK.sky300 : INK.gray500);
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 6, border: 1 });
+  // Filling in red from the left while its button is held down (Forfeit).
+  if (held && held.progress > 0) {
+    const width = (box.w - 2) * Math.min(1, held.progress);
+    ctx.renderer.rect(box.x + 1, box.y + 1, width, box.h - 2, { fill: held.color, radius: Math.min(5, width / 2) });
+  }
   const keyWidth = ctx.text.measure(key, { size: 14, bold: true }) + 12;
   const labelWidth = ctx.text.measure(label, { size: 14, bold: true });
   const start = box.x + (box.w - keyWidth - 6 - labelWidth) / 2;

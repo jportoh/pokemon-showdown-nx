@@ -6,6 +6,7 @@ import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { TextStyle, iconTexture, maskTexture, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
+import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -23,8 +24,6 @@ import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { groupDigits } from '@shared/utils/group-digits';
 
-/** How long a first ZR press to disconnect waits for the second one. */
-const DISCONNECT_CONFIRM_MS = 4000;
 /** Tiles slide in one after another on arrival, and the chosen one zooms out on leaving. */
 const INTRO_MS = 450;
 const LEAVE_MS = 260;
@@ -62,7 +61,7 @@ interface MenuLine {
  * controller's buttons with the players and battles on Showdown (or a challenge's notice). The tile
  * pointed at grows and glows, the ▶ glides to it, tiles slide in on arrival and the chosen one zooms
  * out on leaving; the backdrop drifts. ZR opens the login box (which also connects as a guest), or,
- * pressed twice, disconnects or logs out; L opens the Trainer Card for a registered name (A on its
+ * held down, disconnects or logs out; L opens the Trainer Card for a registered name (A on its
  * avatar picks another), or registering the player's own name. B closes whichever box is open. R3
  * opens the UI kit gallery (a developer's test page).
  */
@@ -91,8 +90,8 @@ export class HomeScene {
   private readonly loginOpen = signal(false);
   /** L's box is open: the Trainer Card, or registering the name (whichever the name allows). */
   private readonly lBoxOpen = signal(false);
-  private readonly confirmingDisconnect = signal(false);
-  private confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Disconnect (or Log out), filling while ZR is held. */
+  private readonly disconnectHold = new HoldAction(inject(KeyboardNavigation), 'buttonZR');
 
   /** Nothing asked for yet, or a login that lost its name while its box is closed. */
   private readonly offline = computed(() => {
@@ -119,7 +118,6 @@ export class HomeScene {
 
   private readonly zrLabel = computed(() => {
     if (this.offline()) return 'Log in';
-    if (this.confirmingDisconnect()) return 'Press again';
     return this.login.state().ownName ? 'Log out' : 'Disconnect';
   });
   private readonly lLabel = computed(() => (this.canShowCard() ? 'Card' : this.canRegister() ? 'Register' : null));
@@ -196,7 +194,6 @@ export class HomeScene {
     inject(DestroyRef).onDestroy(() => {
       hide();
       release.forEach((fn) => fn());
-      this.cancelDisconnect();
       this.stage.whenReady(({ renderer }) => {
         for (const texture of [...this.icons.values(), this.ball, this.cursorTexture]) if (texture) renderer.deleteTexture(texture);
       });
@@ -253,24 +250,22 @@ export class HomeScene {
     return true;
   }
 
-  /** Connected (not while the login box is open): asks first, then disconnects. */
+  /** Connected (not while the login box is open): starts filling ZR's button; held to the end, disconnects. */
   private disconnect(): boolean {
-    if (this.offline() || this.loginOpen()) return false;
-    if (!this.confirmingDisconnect()) {
-      this.confirmingDisconnect.set(true);
-      this.confirmTimer = setTimeout(() => this.cancelDisconnect(), DISCONNECT_CONFIRM_MS);
-      return true;
-    }
-    this.cancelDisconnect();
-    this.lBoxOpen.set(false);
-    this.login.disconnect();
+    if (!this.canDisconnect()) return false;
+    this.disconnectHold.press();
     return true;
   }
 
-  private cancelDisconnect(): void {
-    if (this.confirmTimer !== null) clearTimeout(this.confirmTimer);
-    this.confirmTimer = null;
-    this.confirmingDisconnect.set(false);
+  private canDisconnect(): boolean {
+    return !this.offline() && !this.loginOpen() && !this.leaving;
+  }
+
+  /** Every frame: the Disconnect hold; disconnects on the frame it fills up. */
+  private stepDisconnect(now: number): void {
+    if (!this.disconnectHold.step(now, this.canDisconnect())) return;
+    this.lBoxOpen.set(false);
+    this.login.disconnect();
   }
 
   /** Connected with a name, or backed out (which disconnects one that has no name yet). */
@@ -321,6 +316,7 @@ export class HomeScene {
     this.followBox();
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
+    this.stepDisconnect(now);
     this.drawHeader(ctx);
 
     const box = this.box();
@@ -476,7 +472,7 @@ export class HomeScene {
     label(ctx, 'Move', x + 78, y + 32, { size: 20 }, p.ink);
     pill(ctx, 'A', x + 182, y + 32, 28);
     label(ctx, 'Select', x + 236, y + 32, { size: 20 }, p.ink);
-    this.footerButton(ctx, 'footer-zr', x + 332, y + 12, 188, 'ZR', this.zrLabel(), () => this.pressZR());
+    this.footerButton(ctx, 'footer-zr', x + 332, y + 12, 188, 'ZR', this.zrLabel(), () => this.pressZR(), this.disconnectHold.progress);
     const lLabel = this.lLabel();
     if (lLabel) this.footerButton(ctx, 'footer-l', x + 530, y + 12, 164, 'L', lLabel, () => this.toggleLBox());
     const right = this.footerRight();
@@ -488,11 +484,15 @@ export class HomeScene {
     }
   }
 
-  /** A footer button: for clicks (the controller has the button itself), never on the d-pad's path. */
-  private footerButton(ctx: UiContext, id: string, x: number, y: number, w: number, key: string, text: string, accept: () => void): void {
+  /**
+   * A footer button: for clicks (the controller has the button itself), never on the d-pad's path;
+   * `held` fills it in red from the left while its button is held down (Disconnect).
+   */
+  private footerButton(ctx: UiContext, id: string, x: number, y: number, w: number, key: string, text: string, accept: () => void, held = 0): void {
     ctx.focus.control({ id, x, y, w, h: 40, accept, skip: true });
+    if (held > 0) ctx.renderer.rect(x, y, w * Math.min(1, held), 40, { fill: HOLD_FILL, radius: Math.min(6, (w * held) / 2) });
     const width = pill(ctx, key, x + 8, y + 20, 28);
-    label(ctx, text, x + 16 + width, y + 20, { size: 20 }, ctx.palette.ink, { maxWidth: w - width - 20 });
+    label(ctx, text, x + 16 + width, y + 20, { size: 20 }, held > 0.5 ? [1, 1, 1, 1] : ctx.palette.ink, { maxWidth: w - width - 20 });
   }
 }
 

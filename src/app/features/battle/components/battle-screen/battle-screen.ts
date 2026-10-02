@@ -1,5 +1,6 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { HoldAction } from '@core/gl/ui/hold-action';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { GlBattleScreen } from '@features/battle/components/gl-battle-screen/gl-battle-screen';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
@@ -14,8 +15,6 @@ import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { toId } from '@shared/utils/to-id';
 
-/** How long the forfeit confirmation waits for the second press. */
-const FORFEIT_CONFIRM_MS = 4000;
 
 /**
  * A battle (doubles, or singles with one Pokémon a side) against a real player on Showdown (a ladder
@@ -23,10 +22,10 @@ const FORFEIT_CONFIRM_MS = 4000;
  * replay server. It takes the whole 1280x720 stage (no app header: a battle can't be left until it's
  * over), drawn on one WebGL canvas (GlBattleScreen: header, field, the right column with both teams
  * and the conditions, the command panel, and the log, team sheet and team preview over them). This
- * component starts the battle and owns what lies beyond the screen: the forfeit's confirmation, the
+ * component starts the battle and owns what lies beyond the screen: forfeiting (R held down), the
  * rematch or the next game of a set, leaving. The battle itself lives in root services.
- * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (pressed
- * twice), R3 turns the battle timer on or off (real battles); ZL (the opponent's open team sheet) and
+ * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (held
+ * down), R3 turns the battle timer on or off (real battles); ZL (the opponent's open team sheet) and
  * ZR (the battle log) are the canvas screen's.
  */
 @Component({
@@ -35,6 +34,7 @@ const FORFEIT_CONFIRM_MS = 4000;
   template: `
     <app-gl-battle-screen
       [forfeitState]="forfeitState()"
+      [forfeitHold]="forfeitHold"
       [canRematch]="rematchView().can"
       [rematchLabel]="rematchView().label"
       [rematchNote]="rematchView().note"
@@ -121,7 +121,8 @@ export class BattleScreen {
   );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
-  private forfeitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** R held down: fills Forfeit (GlBattleScreen steps it and emits forfeit when it's full). */
+  protected readonly forfeitHold = new HoldAction(inject(KeyboardNavigation), 'buttonR');
 
   constructor() {
     // After a ladder match or an accepted challenge: the real battle in its server room. From the list
@@ -140,7 +141,7 @@ export class BattleScreen {
 
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
-      this.navigation.registerButton('buttonR', () => this.forfeit()),
+      this.navigation.registerButton('buttonR', () => this.pressForfeit()),
       this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
     ];
     inject(DestroyRef).onDestroy(() => {
@@ -201,27 +202,22 @@ export class BattleScreen {
     return true;
   }
 
-  /**
-   * The first press (R or a click) asks for confirmation, which lapses after a few seconds; the second
-   * forfeits. Further presses do nothing while the server ends the battle.
-   */
-  protected forfeit(): boolean {
+  /** R: starts filling Forfeit; further presses do nothing while the server ends the battle. */
+  private pressForfeit(): boolean {
     if (this.store.result() || this.store.watching()) return false;
-    if (this.forfeitState() === 'forfeiting') return true;
-    if (this.forfeitState() === 'idle') {
-      this.forfeitState.set('confirming');
-      this.forfeitTimer = setTimeout(() => this.cancelForfeit(), FORFEIT_CONFIRM_MS);
-      return true;
-    }
-    this.cancelForfeit();
-    this.forfeitState.set('forfeiting');
-    this.store.forfeit();
+    if (this.forfeitState() === 'idle') this.forfeitHold.press();
     return true;
   }
 
+  /** Forfeit filled up (R held to the end): the server ends the battle. */
+  protected forfeit(): void {
+    if (this.store.result() || this.store.watching() || this.forfeitState() !== 'idle') return;
+    this.forfeitState.set('forfeiting');
+    this.store.forfeit();
+  }
+
   private cancelForfeit(): void {
-    if (this.forfeitTimer !== null) clearTimeout(this.forfeitTimer);
-    this.forfeitTimer = null;
+    this.forfeitHold.reset();
     this.forfeitState.set('idle');
   }
 

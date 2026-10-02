@@ -1,19 +1,22 @@
 import { computed, inject } from '@angular/core';
 import { BattleStore, timerSecondsLeft } from '@features/battle/state/battle-store';
 import { rgba } from '@core/gl/gl-renderer';
+import { HOLD_FILL } from '@core/gl/ui/hold-action';
 import { INK, ScreenContext, hint, write } from './screen-context';
 
 /** The timer turns red with this little left of the turn (the last minute). */
 const LOW_SECONDS = 60;
 
-/** Forfeit's first press waits for the second (confirming), then the server ends the battle (forfeiting). */
-export type ForfeitState = 'idle' | 'confirming' | 'forfeiting';
+/** Forfeit is held down until it fills up, then the server ends the battle (forfeiting). */
+export type ForfeitState = 'idle' | 'forfeiting';
 
 /** What the header's buttons do and show. */
 export interface HeaderActions {
   logOpen: boolean;
   toggleLog: () => void;
   forfeitState: ForfeitState;
+  /** How full Forfeit is while R is held, 0 to 1. */
+  forfeitProgress: number;
   forfeit: () => void;
   toggleTimer: () => void;
 }
@@ -69,8 +72,7 @@ export class HeaderView {
         renderer.rect(1003, 7, 130, 32, { fill: rgba('#7f1d1d'), stroke: INK.red300, radius: 6, border: 1 });
         write(ctx, 'Forfeiting…', 1068, 23, { size: 14, bold: true }, INK.white, 'center');
       } else {
-        const confirming = actions.forfeitState === 'confirming';
-        hint(ctx, 'header-forfeit', { x: 1003, y: 7, w: 130, h: 32 }, 'R', confirming ? 'Confirm' : 'Forfeit', false, actions.forfeit, confirming ? { fill: INK.red800, border: INK.red300 } : undefined);
+        hint(ctx, 'header-forfeit', { x: 1003, y: 7, w: 130, h: 32 }, 'R', 'Forfeit', false, actions.forfeit, undefined, { progress: actions.forfeitProgress, color: HOLD_FILL });
       }
     }
 

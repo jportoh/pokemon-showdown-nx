@@ -1,13 +1,31 @@
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { TextStyle } from '@core/gl/gl-textures';
 import { maskOf } from '@core/gl/ui/masks';
 import { typeColor } from '@shared/data/type-colors';
+import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from './category-icons';
 
-/** The page under the bar: the team list's column on the left, the panel (920 wide) beside it. */
+/** The page under the bar. */
 export const TOP = PAGE_BAR_H;
-export const PANEL_X = 360;
+
+/** The controls' legend at the bottom of every view of the teambuilder. */
+export const LEGEND_H = 52;
+
+/**
+ * The set editor, which has the whole width: its header under the bar, the body (the Pokémon's card
+ * on the left, 500 wide, or 260 while a list or the Stats need the room), and the controls' legend.
+ */
+export const EDIT_X = 24;
+export const EDIT_RIGHT = STAGE_W - 24;
+export const EDIT_BODY_Y = TOP + 60;
+export const EDIT_BODY_BOTTOM = STAGE_H - LEGEND_H - 12;
+export const HERO_W = 500;
+export const HERO_COMPACT_W = 260;
+/** Where what's beside the card starts, beside the full card or the compact one. */
+export const BESIDE_HERO_X = EDIT_X + HERO_W + 24;
+export const BESIDE_COMPACT_X = EDIT_X + HERO_COMPACT_W + 20;
 
 export const WHITE: Rgba = [1, 1, 1, 1];
 /** A move card's detail on its type's colour (a light grey). */
@@ -46,12 +64,63 @@ export function typeRgba(type: string): Rgba | null {
 }
 
 /** Type pills in a row from `x` (72x20 and 80 apart). */
-export function typePills(ctx: UiContext, types: readonly string[], x: number, y: number, width = 72, step = 80, height = 20): void {
+export function typePills(ctx: UiContext, types: readonly string[], x: number, y: number, width = 72, step = 80, height = 20, size = 12): void {
   types.forEach((type, i) => {
     const px = x + i * step;
     ctx.renderer.rect(px, y, width, height, { fill: typeRgba(type) ?? ctx.palette.rim, radius: 3 });
-    label(ctx, type, px + width / 2, y + height / 2, { size: 12, bold: true }, WHITE, { align: 'center', maxWidth: width - 6 });
+    label(ctx, type, px + width / 2, y + height / 2, { size, bold: true }, WHITE, { align: 'center', maxWidth: width - 6 });
   });
+}
+
+/** A coloured pill with white text (a type, a move's category), `height` high; returns its width. */
+export function tag(ctx: UiContext, text: string, x: number, y: number, fill: Rgba, height = 30, size = 18): number {
+  const width = ctx.text.measure(text, { size, bold: true }) + 28;
+  ctx.renderer.rect(x, y, width, height, { fill, radius: 4 });
+  label(ctx, text, x + width / 2, y + height / 2, { size, bold: true }, WHITE, { align: 'center' });
+  return width;
+}
+
+/** The moves' categories, in the type colours' style: Physical red, Special blue, Status grey. */
+export const CATEGORY_FILL: Readonly<Record<string, Rgba>> = {
+  Physical: rgba('#9a2e12'),
+  Special: rgba('#1f4e99'),
+  Status: rgba('#5b5b58'),
+};
+
+/** A move's category as its icon (60x26, as tall as the type pills) centred on `cy`; a plain pill if unknown. */
+export function categoryBadge(ctx: UiContext, category: string, x: number, cy: number): void {
+  const icon = categoryIcon(ctx.renderer, category);
+  const y = cy - CATEGORY_ICON_H / 2;
+  if (icon) ctx.renderer.rect(x, y, CATEGORY_ICON_W, CATEGORY_ICON_H, { fill: WHITE, texture: icon });
+  else ctx.renderer.rect(x, y, CATEGORY_ICON_W, CATEGORY_ICON_H, { fill: ctx.palette.rim, radius: 4 });
+}
+
+export interface LegendEntry {
+  keys: readonly string[];
+  text: string;
+}
+
+/** The legend at the bottom of the page: each control's buttons, and what it does. */
+export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]): void {
+  const p = ctx.palette;
+  const top = STAGE_H - LEGEND_H;
+  ctx.renderer.rect(0, top, STAGE_W, LEGEND_H, { fill: p.bar });
+  ctx.renderer.rect(0, top, STAGE_W, 2, { fill: p.rim });
+  const cy = top + LEGEND_H / 2 + 1;
+  let x = EDIT_X;
+  for (const entry of entries) {
+    for (const key of entry.keys) x += keyPill(ctx, key, x, cy) + 6;
+    x += label(ctx, entry.text, x + 2, cy, { size: 18 }, p.muted) + 32;
+  }
+}
+
+/** A controller button's name in a box (A, ZL…), 28 high and centred on `cy`; returns its width. */
+export function keyPill(ctx: UiContext, key: string, x: number, cy: number): number {
+  const p = ctx.palette;
+  const width = Math.max(34, ctx.text.measure(key, { size: 16, bold: true }) + 14);
+  ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.button, stroke: p.outline, radius: 6, border: 2 });
+  label(ctx, key, x + width / 2, cy, { size: 16, bold: true }, p.ink, { align: 'center' });
+  return width;
 }
 
 /** How a card looks: the field whose list is open, or a plain one (lit while focused), or disabled. */
@@ -99,14 +168,20 @@ export function shortcutButton(
   box: Box,
   key: string,
   text: string,
-  options: { primary?: boolean; disabled?: boolean; size?: number; accept: () => void },
+  options: { primary?: boolean; disabled?: boolean; size?: number; accept: () => void; held?: { progress: number; color: Rgba } },
 ): void {
   const p = ctx.palette;
   const focused = !options.disabled && ctx.focus.control({ id, ...box, accept: options.accept, skip: true });
   const fill = options.disabled ? p.bg : options.primary ? p.accent : focused ? p.select : p.button;
   const stroke = options.disabled ? p.rim : options.primary ? p.bar : p.outline;
-  const ink = options.disabled ? p.muted : options.primary ? WHITE : p.ink;
+  const held = options.held && options.held.progress > 0 ? options.held : null;
+  // Over halfway filled, the text sits on the fill.
+  const ink = options.disabled ? p.muted : options.primary || (held && held.progress > 0.5) ? WHITE : p.ink;
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke, radius: 6, border: 2 });
+  if (held) {
+    const width = (box.w - 4) * Math.min(1, held.progress);
+    ctx.renderer.rect(box.x + 2, box.y + 2, width, box.h - 4, { fill: held.color, radius: Math.min(4, width / 2) });
+  }
   const pillH = Math.min(24, box.h - 10);
   const pillW = Math.max(28, ctx.text.measure(key, { size: 14, bold: true }) + 12);
   ctx.renderer.rect(box.x + 7, box.y + (box.h - pillH) / 2, pillW, pillH, { fill: options.primary ? p.accentHover : p.bg, radius: 3 });
@@ -117,4 +192,15 @@ export function shortcutButton(
     maxWidth: box.x + box.w - 6 - textLeft,
   });
   if (focused) focusRing(ctx, box);
+}
+
+/** How far an entrance has come, 0 to 1 (easing out): `delay` ms after `since`, over `ms`. */
+export function entrance(now: number, since: number, delay: number, ms = 340): number {
+  const t = Math.max(0, Math.min(1, (now - since - delay) / ms));
+  return 1 - (1 - t) * (1 - t);
+}
+
+/** Something coming in: the page's background over it, fading out as `shown` reaches 1. */
+export function fadeIn(ctx: UiContext, box: Box, shown: number): void {
+  if (shown < 1) ctx.renderer.rect(box.x - 4, box.y - 4, box.w + 8, box.h + 8, { fill: withAlpha(ctx.palette.bg, 1 - shown) });
 }

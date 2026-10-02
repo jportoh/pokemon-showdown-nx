@@ -121,6 +121,7 @@ function moveRef(id) {
       pp: move.pp ?? 5,
       priority: move.priority ?? 0,
       target: move.target ?? 'normal',
+      desc: move.shortDesc || move.desc || '',
     });
   }
   return moveIndex.get(id);
