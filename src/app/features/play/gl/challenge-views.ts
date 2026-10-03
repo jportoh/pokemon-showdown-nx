@@ -1,14 +1,22 @@
 import { inject } from '@angular/core';
+import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
+import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, UiContext, button, label, modal, pill, textField } from '@core/gl/ui/retro-kit';
 import { Challenge, ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { packTeam } from '@features/teambuilder/data/packed-team';
-import { Team } from '@features/teambuilder/models/team';
+import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { PlayableFormat } from '@shared/data/formats';
+import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
 const POPUP_BOX: Box = { x: 248, y: 234, w: 784, h: 328 };
+/** A challenge played with our own teams: room for the team's Pokémon, to see which team it is. */
+const TEAM_POPUP_BOX: Box = { x: 136, y: 120, w: 1008, h: 500 };
+/** The team's Pokémon in the bigger box: 96px sprites on tiles. */
+const SPRITE_TILE = 120;
+const SPRITE_GAP = 12;
 const FORM_BOX: Box = { x: 248, y: 234, w: 784, h: 296 };
 export const POPUP_CARD_ID = 'popup-card';
 
@@ -33,6 +41,7 @@ export interface PopupModel {
  */
 export class ChallengePopupView {
   private readonly challenges = inject(ShowdownChallenges);
+  private readonly dex = inject(ChampionsDex);
   private shownFrom: string | null = null;
   private teamIndex = 0;
 
@@ -56,14 +65,14 @@ export class ChallengePopupView {
   }
 
   draw(ctx: UiContext, model: PopupModel): void {
+    if (model.challenge.needsTeam && model.teams.length > 0) {
+      this.drawWithTeam(ctx, model);
+      return;
+    }
     const p = ctx.palette;
     const { challenge, teams } = model;
     const canAccept = (team: Team | null) => !challenge.needsTeam || team !== null;
-    if (this.shownFrom !== challenge.fromId) {
-      this.shownFrom = challenge.fromId;
-      this.teamIndex = Math.max(0, teams.findIndex((team) => team.id === model.preferredTeam));
-      this.focus.focus(canAccept(teams[this.teamIndex] ?? null) ? 'popup-accept' : 'popup-reject');
-    }
+    this.start(model);
     const team = teams[this.teamIndex] ?? null;
     const x = POPUP_BOX.x + 32;
     const y = POPUP_BOX.y;
@@ -94,6 +103,82 @@ export class ChallengePopupView {
     const width = pill(ctx, 'B', x, y + 274, 24);
     label(ctx, 'Answer later', x + width + 8, y + 274, { size: 16 }, p.muted);
     button(ctx, POPUP_CARD_ID, { x: x + 492, y: y + 250, w: 220, h: 44 }, 'Trainer Card', { size: 18, accept: model.viewCard });
+  }
+
+  /** The focus on the first showing of a challenge: Accept, or Reject when it can't be accepted. */
+  private start(model: PopupModel): void {
+    const { challenge, teams } = model;
+    if (this.shownFrom === challenge.fromId) return;
+    this.shownFrom = challenge.fromId;
+    this.teamIndex = Math.max(0, teams.findIndex((team) => team.id === model.preferredTeam));
+    this.focus.focus(!challenge.needsTeam || teams[this.teamIndex] ? 'popup-accept' : 'popup-reject');
+  }
+
+  /**
+   * The bigger box for a challenge played with our own teams: the team to accept with as its six
+   * Pokémon (not just its name), ◀ ▶ around them for L/R, "2 of 5" under them.
+   */
+  private drawWithTeam(ctx: UiContext, model: PopupModel): void {
+    this.start(model);
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const { challenge, teams } = model;
+    const team = teams[this.teamIndex] ?? teams[0];
+    const box = TEAM_POPUP_BOX;
+    const x = box.x + 40;
+    const y = box.y;
+    const width = box.w - 80;
+    modal(ctx, box);
+    label(ctx, `${challenge.from} wants to battle!`, x, y + 52, { size: 38, bold: true }, p.accentText, { maxWidth: width });
+    const others = model.waiting > 0 ? ` · ${model.waiting} more waiting` : '';
+    label(ctx, challenge.formatName + others, x, y + 100, { size: 22 }, p.ink, { maxWidth: width });
+
+    // The team: its name, then its Pokémon on tiles between the arrows.
+    const many = teams.length > 1;
+    label(ctx, `With your team ${team.name}`, x, y + 146, { size: 24, bold: true }, p.ink, { maxWidth: width - 200 });
+    if (many) label(ctx, `${this.teamIndex + 1} of ${teams.length}`, x + width, y + 146, { size: 20 }, p.muted, { align: 'right' });
+    const rowW = MAX_TEAM_SIZE * SPRITE_TILE + (MAX_TEAM_SIZE - 1) * SPRITE_GAP;
+    const left = box.x + (box.w - rowW) / 2;
+    const top = y + 176;
+    for (let i = 0; i < MAX_TEAM_SIZE; i++) {
+      const tile = { x: left + i * (SPRITE_TILE + SPRITE_GAP), y: top, w: SPRITE_TILE, h: SPRITE_TILE };
+      renderer.rect(tile.x, tile.y, tile.w, tile.h, { fill: p.panel, stroke: p.rim, radius: 10, border: 2 });
+      const set = team.sets[i];
+      if (!set) continue;
+      const sprite = this.dex.mega(set.species, set.item)?.sprite ?? spriteId(set.species);
+      const texture = ctx.images.sprite(sprite, false, ImagePriority.Screen);
+      if (texture) renderer.rect(tile.x + (SPRITE_TILE - 96) / 2, tile.y + 4, 96, 96, { fill: [1, 1, 1, 1], texture });
+      label(ctx, set.species, tile.x + SPRITE_TILE / 2, tile.y + SPRITE_TILE - 12, { size: 14, bold: true }, p.ink, { align: 'center', maxWidth: SPRITE_TILE - 8 });
+    }
+    if (many) {
+      // L/R change the team; the arrows are clickable too.
+      const arrows = [
+        { id: 'popup-team-prev', key: 'L', glyph: '◀', at: left - 60, by: -1 as const },
+        { id: 'popup-team-next', key: 'R', glyph: '▶', at: left + rowW + 12, by: 1 as const },
+      ];
+      for (const arrow of arrows) {
+        const control = { x: arrow.at, y: top + 24, w: 48, h: 72 };
+        ctx.focus.control({ id: arrow.id, ...control, skip: true, accept: () => this.cycle(model, arrow.by) });
+        label(ctx, arrow.glyph, control.x + 24, control.y + 26, { size: 30, bold: true }, p.accentText, { align: 'center' });
+        label(ctx, arrow.key, control.x + 24, control.y + 60, { size: 16, bold: true }, p.muted, { align: 'center' });
+      }
+    }
+
+    const buttonsY = top + SPRITE_TILE + 36;
+    if (this.joining(challenge)) {
+      label(ctx, 'Joining battle…', x, buttonsY + 30, { size: 26, bold: true }, p.ink);
+      return;
+    }
+    const buttonW = (width - 24) / 2;
+    button(ctx, 'popup-accept', { x, y: buttonsY, w: buttonW, h: 60 }, 'Accept', {
+      primary: true,
+      size: 26,
+      accept: () => this.challenges.accept(challenge, packTeam(team.sets)),
+    });
+    button(ctx, 'popup-reject', { x: x + buttonW + 24, y: buttonsY, w: buttonW, h: 60 }, 'Reject', { size: 26, accept: () => this.challenges.reject(challenge) });
+    const pillWidth = pill(ctx, 'B', x, buttonsY + 104, 24);
+    label(ctx, 'Answer later', x + pillWidth + 8, buttonsY + 104, { size: 18 }, p.muted);
+    button(ctx, POPUP_CARD_ID, { x: x + width - 240, y: buttonsY + 80, w: 240, h: 48 }, 'Trainer Card', { size: 20, accept: model.viewCard });
   }
 }
 
