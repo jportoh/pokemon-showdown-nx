@@ -762,8 +762,12 @@ export class BattleStore {
           this.updateSide(side, (s) => ({ ...s, preview: [...s.preview, species] }));
         return 0;
       }
+      case 'teampreview':
+        this.music.preview();
+        return 0;
       case 'start': {
         const { p1, p2 } = this.sidesSignal();
+        this.music.begin();
         this.introSignal.set({ p1: p1.name, p2: p2.name });
         // Too late to agree to the open team sheets now.
         this.sheetOfferSignal.set('none');
@@ -958,12 +962,13 @@ export class BattleStore {
         this.actionSignal.set(null);
         this.winnerSignal.set(args[0]);
         this.resultSignal.set(args[0] === this.sidesSignal().p1.name ? 'win' : 'loss');
-        // Our own battles end on the victory or the defeat theme; watched ones keep their music.
-        if (!this.watching() && !this.catchingUp) this.music.end(this.resultSignal() === 'win');
+        // Our own battles end on the victory or the defeat theme; watched ones on the victory's.
+        this.music.end(this.watching() || this.resultSignal() === 'win');
         return this.say(`${args[0]} won the battle!`, 'result');
       case 'tie':
         this.actionSignal.set(null);
         this.resultSignal.set('tie');
+        this.music.end(this.watching());
         return this.say('The battle ended in a tie!', 'result');
       case '-message':
         return this.say(args[0]);

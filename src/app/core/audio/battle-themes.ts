@@ -1,10 +1,10 @@
 import { Note, Wave, noteFreq } from '@core/audio/chip-synth';
 
 /**
- * The end of our own battles: an original victory theme (a bright fanfare in C major) and an original
- * defeat theme (slow, in A minor), 8-bar loops written for the app in the style of a GBA game, as the
- * menu theme. AudioEngine renders them while the loading screen shows; BattleMusic plays one when the
- * battle ends.
+ * Battles' own themes, loops written for the app in the style of a GBA game, as the menu theme: team
+ * preview's (tense, in D minor: the calm before the battle) and, at the end, an original victory
+ * theme (a bright fanfare in C major) or an original defeat theme (slow, in A minor). AudioEngine
+ * renders them after the loading screen; BattleMusic plays them.
  */
 
 interface LoopScore {
@@ -27,8 +27,36 @@ const CHORDS: Record<string, readonly string[]> = {
   Am: ['A3', 'C4', 'E4'],
   Dm: ['D4', 'F4', 'A4'],
   E: ['E3', 'G#3', 'B3'],
+  Bb: ['Bb3', 'D4', 'F4'],
+  A: ['A3', 'C#4', 'E4'],
 };
-const BASS: Record<string, string> = { C: 'C2', F: 'F2', G: 'G1', Am: 'A1', Dm: 'D2', E: 'E2' };
+const BASS: Record<string, string> = { C: 'C2', F: 'F2', G: 'G1', Am: 'A1', Dm: 'D2', E: 'E2', Bb: 'Bb1', A: 'A1' };
+
+const PREVIEW: LoopScore = {
+  bpm: 112,
+  progression: ['Dm', 'Dm', 'Bb', 'C', 'Dm', 'Bb', 'C', 'A', 'Bb', 'C', 'Dm', 'A', 'Bb', 'C', 'Dm', 'A'],
+  melody: [
+    'D5 - - A4 D5 - E5 F5',
+    'E5 - D5 - A4 - - -',
+    'F5 - - D5 Bb4 - D5 F5',
+    'G5 - - E5 C5 - - -',
+    'A5 - - F5 D5 - F5 A5',
+    'Bb5 - A5 - F5 - D5 -',
+    'C6 - Bb5 - G5 - E5 -',
+    'C#5 - E5 - A5 - - .',
+    'D5 - F5 - Bb5 - A5 F5',
+    'E5 - G5 - C6 - Bb5 G5',
+    'A5 - - - F5 - D5 -',
+    'E5 - - C#5 A4 - - -',
+    'F5 - Bb5 - D6 - C6 Bb5',
+    'C6 - - G5 E5 - G5 -',
+    'F5 - E5 - D5 - A4 -',
+    'C#5 - - - E5 - A5 .',
+  ],
+  lead: 'pulse50',
+  drums: true,
+  arpeggio: 4,
+};
 
 const VICTORY: LoopScore = {
   bpm: 136,
@@ -66,16 +94,18 @@ const DEFEAT: LoopScore = {
   arpeggio: 2,
 };
 
-export type ResultTheme = 'victory' | 'defeat';
+export type BattleTheme = 'preview' | 'victory' | 'defeat';
+
+const SCORES: Record<BattleTheme, LoopScore> = { preview: PREVIEW, victory: VICTORY, defeat: DEFEAT };
 
 /** Every note of the theme's loop. */
-export function resultThemeNotes(theme: ResultTheme): Note[] {
-  return loopNotes(theme === 'victory' ? VICTORY : DEFEAT);
+export function battleThemeNotes(theme: BattleTheme): Note[] {
+  return loopNotes(SCORES[theme]);
 }
 
 /** The loop's length in seconds (it's played whole, over and over). */
-export function resultThemeSeconds(theme: ResultTheme): number {
-  const score = theme === 'victory' ? VICTORY : DEFEAT;
+export function battleThemeSeconds(theme: BattleTheme): number {
+  const score = SCORES[theme];
   return (score.progression.length * 4 * 60) / score.bpm;
 }
 

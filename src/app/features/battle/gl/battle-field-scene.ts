@@ -85,6 +85,8 @@ const IMAGE_WAIT_MS = 1500;
 const ENTRY_WAIT_MS = 250;
 const MEGA_MS = 900;
 const POPUP_MS = 1400;
+/** Stat changes closer together than this sound once. */
+const STAT_SOUND_GAP_MS = 400;
 const HP_LABEL_MS = 1100;
 /** Labels and banners pop in over this long. */
 const POP_MS = 180;
@@ -298,9 +300,14 @@ export class BattleFieldScene {
     this.follow(this.store.popups, (list) => (this.popups = list), () => this.popups, POPUP_MS);
     this.follow(this.store.hpChanges, (list) => (this.hpLabels = list), () => this.hpLabels, HP_LABEL_MS);
     this.follow(this.store.statusChanges, (list) => (this.statusLabels = list), () => this.statusLabels, POPUP_MS);
+    let lastStatSound = 0;
     this.follow(this.store.statChanges, (list) => (this.statLabels = list), () => this.statLabels, POPUP_MS, (change) => {
       const at = this.effectPoint(change.slot);
       if (at) this.effects.statChange(at, change.amount > 0, this.sizeOf(change.slot));
+      // Several stats changing at once (Dragon Dance, Intimidate on both) sound once.
+      const now = performance.now();
+      if (now - lastStatSound > STAT_SOUND_GAP_MS) this.audio.play(change.amount > 0 ? 'statUp' : 'statDown');
+      lastStatSound = now;
     });
     effect(() => {
       if (this.store.intro()) this.introBorn = performance.now();

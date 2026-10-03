@@ -2,7 +2,7 @@ import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
 import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
@@ -21,8 +21,15 @@ const MOVE_Y = BAR_TOP + 12;
 const SIDE_X = X + 4 * (MOVE_W + GAP);
 const SIDE_W = RIGHT - SIDE_X;
 const SIDE_H = 40;
-/** Mega's (or Tera's) button by the chooser's status box. */
+/** Tera's button by the chooser's status box. */
 const MEGA_W = 176;
+/** Mega's emblem by the chooser's status box: its circle's radius, and its centre left of the box. */
+const EMBLEM_R = 30;
+const EMBLEM_LEFT = 92;
+const MEGA_PINK: Rgba = rgba('#f0abfc');
+const MEGA_MAGENTA: Rgba = rgba('#d946ef');
+const MEGA_TEAL: Rgba = rgba('#5eead4');
+const MEGA_VIOLET: Rgba = rgba('#7c3aed');
 /** Two rows of 40px in the bar: chips on top, the legend or a second line under. */
 const ROW_1 = BAR_TOP + 14;
 const ROW_2 = BAR_TOP + 62;
@@ -234,8 +241,7 @@ export class PlayPanelView {
     // controller; the button is for clicks.
     const megaBox = this.megaBox();
     if (this.choices.canMega()) {
-      const on = this.choices.mega();
-      hint(ctx, 'mega', megaBox, 'L', on ? 'Mega Evolving' : 'Mega Evolve', false, () => this.choices.toggleMega(), on ? { fill: rgba('#6b2a73'), border: rgba('#f0abfc') } : { fill: INK.gray700, border: INK.gray400 });
+      this.drawMegaEmblem(ctx, megaBox);
     } else if (this.choices.teraType()) {
       const on = this.choices.tera();
       const type = this.choices.teraType();
@@ -243,6 +249,61 @@ export class PlayPanelView {
     }
     // The first move takes the focus; Switch after them.
     return [...picks, 'switch'];
+  }
+
+  /**
+   * Mega Evolution's emblem, as the newer games show it: the Mega symbol (a two-coloured drop) in a
+   * circle, a ring of sparkles turning round it, "MEGA EVOLVE" and L's chip under. Chosen, it lights
+   * up (the sparkles race, the ring turns white) and reads "MEGA EVOLVING". Left of the chooser's
+   * status box; L does it on the controller, a click on it in a browser.
+   */
+  private drawMegaEmblem(ctx: ScreenContext, box: { x: number; y: number; w: number; h: number }): void {
+    const { renderer, now } = ctx;
+    const on = this.choices.mega();
+    const cx = this.megaBoxCenter(box);
+    const cy = box.y + box.h / 2 - 14;
+    const R = EMBLEM_R;
+    const area = { x: cx - 74, y: cy - R - 14, w: 148, h: 2 * R + 50 };
+    ctx.focus.control({ id: 'mega', ...area, accept: () => this.choices.toggleMega(), skip: true });
+
+    // The aura, breathing.
+    const breath = 0.5 + 0.5 * Math.sin(now / (on ? 180 : 420));
+    const aura = R * (on ? 2 : 1.7);
+    renderer.rect(cx - aura, cy - aura, aura * 2, aura * 2, { fill: withAlpha(MEGA_MAGENTA, (on ? 0.5 : 0.28) + 0.15 * breath), texture: ctx.disc, additive: true });
+    // The sparkles, turning round it (faster once chosen), each twinkling on its own beat.
+    const count = 18;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * 2 * Math.PI + now / (on ? 500 : 1600);
+      const twinkle = 0.5 + 0.5 * Math.sin(now / 160 + i * 1.7);
+      const radius = R + 8 + 3 * Math.sin(now / 300 + i);
+      const size = 2 + 3 * twinkle;
+      const color = i % 3 === 0 ? INK.white : i % 3 === 1 ? MEGA_PINK : MEGA_MAGENTA;
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      renderer.rect(x - size / 2, y - size / 2, size, size, { fill: withAlpha(color, 0.5 + 0.5 * twinkle), radius: size / 2, additive: true });
+    }
+    // The circle and the symbol in it: a teal drop with a violet one curling inside, and a glint.
+    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: rgba('#2e1065'), stroke: on ? INK.white : MEGA_PINK, radius: R, border: 3 });
+    drop(ctx, cx - 1, cy + 2, R * 0.52, MEGA_TEAL);
+    drop(ctx, cx - 5, cy + 6, R * 0.3, MEGA_VIOLET);
+    renderer.rect(cx + 3, cy - 9, 6, 6, { fill: withAlpha(INK.white, 0.9), radius: 3 });
+    if (on) renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: withAlpha(MEGA_PINK, 0.25 * breath), radius: R, additive: true });
+
+    // Under it: L's chip and the label, on a dark band so they read over any sky.
+    const label = on ? 'MEGA EVOLVING' : 'MEGA EVOLVE';
+    const font = { size: 15, bold: true };
+    const width = 22 + 6 + ctx.text.measure(label, font);
+    const left = cx - width / 2;
+    const y = cy + R + 16;
+    renderer.rect(left - 8, y - 13, width + 16, 26, { fill: [0.07, 0.04, 0.12, 0.78], radius: 13 });
+    renderer.rect(left, y - 10, 22, 20, { fill: INK.header, stroke: INK.gray400, radius: 3, border: 1 });
+    write(ctx, 'L', left + 11, y, { size: 13, bold: true }, INK.white, 'center');
+    write(ctx, label, left + 28, y, font, on ? MEGA_PINK : INK.white);
+  }
+
+  /** Where Mega's emblem is centred, left of the chooser's status box. */
+  private megaBoxCenter(box: { x: number; w: number }): number {
+    return box.x + box.w + 10 - EMBLEM_LEFT;
   }
 
   /** Mega's (or Tera's) button: on the field, left of the chooser's status box (which stays put whatever the camera does). */
@@ -332,4 +393,10 @@ function bigButton(ctx: ScreenContext, id: string, box: { x: number; y: number; 
 function targetLabel({ pokemon, foe }: TargetOption): string {
   if (!pokemon) return 'Empty';
   return `${pokemon.name}${pokemon.fainted ? ' (fainted)' : foe ? '' : ' (ally)'}`;
+}
+
+/** A drop pointing up and to the right: a circle with a square on its upper right quarter. */
+function drop(ctx: ScreenContext, cx: number, cy: number, r: number, color: Rgba): void {
+  ctx.renderer.rect(cx - r, cy - r, r * 2, r * 2, { fill: color, radius: r });
+  ctx.renderer.rect(cx, cy - r, r, r, { fill: color });
 }

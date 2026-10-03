@@ -4,10 +4,22 @@ import { Note, noteFreq } from '@core/audio/chip-synth';
 export type SoundId = 'move' | 'accept' | 'back' | 'page' | 'hold' | BattleSoundId;
 
 /**
- * Battle sounds: a hit as the games tell its effectiveness (a plain thump, a heavier double one when
- * super effective, a dull tap when not very), and a move starting, by its category.
+ * Battle sounds: a hit as the games tell its effectiveness (normal, super effective, not very), a move
+ * starting, by its category, a stat rising or falling, and a challenge coming in.
  */
-export type BattleSoundId = 'hit' | 'hitSuper' | 'hitWeak' | 'physical' | 'special' | 'status';
+export type BattleSoundId = 'hit' | 'hitSuper' | 'hitWeak' | 'physical' | 'special' | 'status' | 'statUp' | 'statDown' | 'challenge';
+
+/**
+ * Sounds recorded from the games, bundled with the app (public/audio): Ruby's three hits and the stat
+ * changes. Each replaces its synthesized stand-in below once decoded, after the loading screen.
+ */
+export const SOUND_FILES: Partial<Record<SoundId, string>> = {
+  hit: 'audio/hit.wav',
+  hitSuper: 'audio/hit-super.wav',
+  hitWeak: 'audio/hit-weak.wav',
+  statUp: 'audio/stat-up.mp3',
+  statDown: 'audio/stat-down.mp3',
+};
 
 const n = noteFreq;
 
@@ -49,18 +61,34 @@ export const SOUNDS: Record<SoundId, readonly Note[]> = {
     { at: 0, dur: 0.06, freq: 1500, wave: 'noise', gain: 0.16, decay: 50 },
     { at: 0, dur: 0.07, freq: 140, slideTo: 95, wave: 'triangle', gain: 0.18, decay: 35 },
   ],
-  // A physical move: a rush of air.
-  physical: [{ at: 0, dur: 0.2, freq: 1800, slideTo: 9000, wave: 'noise', gain: 0.13, decay: 7 }],
-  // A special move: energy gathering, two rising sweeps.
+  // A physical move: a whoosh of air rising over a low swing (loud enough to be heard over the music).
+  physical: [
+    { at: 0, dur: 0.26, freq: 1200, slideTo: 9000, wave: 'noise', gain: 0.3, decay: 5 },
+    { at: 0, dur: 0.2, freq: n('A3'), slideTo: n('A4'), wave: 'pulse25', gain: 0.12, decay: 8 },
+  ],
+  // A special move: energy gathering, two rising sweeps and a hiss.
   special: [
-    { at: 0, dur: 0.24, freq: n('C5'), slideTo: n('C7'), wave: 'pulse12', gain: 0.1, decay: 4 },
-    { at: 0.05, dur: 0.22, freq: n('G5'), slideTo: n('G7'), wave: 'pulse25', gain: 0.07, decay: 5 },
+    { at: 0, dur: 0.32, freq: n('C5'), slideTo: n('C7'), wave: 'pulse12', gain: 0.22, decay: 3 },
+    { at: 0.06, dur: 0.3, freq: n('G5'), slideTo: n('G7'), wave: 'pulse25', gain: 0.16, decay: 4 },
+    { at: 0, dur: 0.3, freq: 4000, slideTo: 12000, wave: 'noise', gain: 0.07, decay: 6 },
   ],
   // A status move: a twinkle up a chord.
   status: [
-    { at: 0, dur: 0.07, freq: n('E6'), wave: 'pulse12', gain: 0.1, decay: 18 },
-    { at: 0.05, dur: 0.07, freq: n('G#6'), wave: 'pulse12', gain: 0.1, decay: 18 },
-    { at: 0.1, dur: 0.07, freq: n('B6'), wave: 'pulse12', gain: 0.1, decay: 18 },
-    { at: 0.15, dur: 0.12, freq: n('E7'), wave: 'pulse12', gain: 0.09, decay: 14 },
+    { at: 0, dur: 0.08, freq: n('E6'), wave: 'pulse12', gain: 0.2, decay: 14 },
+    { at: 0.06, dur: 0.08, freq: n('G#6'), wave: 'pulse12', gain: 0.2, decay: 14 },
+    { at: 0.12, dur: 0.08, freq: n('B6'), wave: 'pulse12', gain: 0.2, decay: 14 },
+    { at: 0.18, dur: 0.16, freq: n('E7'), wave: 'pulse12', gain: 0.18, decay: 10 },
+  ],
+  // Stand-ins for the recorded ones: a sweep up, or down.
+  statUp: [{ at: 0, dur: 0.4, freq: n('C5'), slideTo: n('C7'), wave: 'pulse25', gain: 0.16, decay: 3 }],
+  statDown: [{ at: 0, dur: 0.4, freq: n('C7'), slideTo: n('C5'), wave: 'pulse25', gain: 0.16, decay: 3 }],
+  // A challenge coming in: a bright three-note call, twice, as a phone ringing.
+  challenge: [
+    { at: 0, dur: 0.08, freq: n('G5'), wave: 'pulse25', gain: 0.22 },
+    { at: 0.08, dur: 0.08, freq: n('C6'), wave: 'pulse25', gain: 0.22 },
+    { at: 0.16, dur: 0.16, freq: n('E6'), wave: 'pulse25', gain: 0.22, decay: 8 },
+    { at: 0.36, dur: 0.08, freq: n('G5'), wave: 'pulse25', gain: 0.22 },
+    { at: 0.44, dur: 0.08, freq: n('C6'), wave: 'pulse25', gain: 0.22 },
+    { at: 0.52, dur: 0.24, freq: n('G6'), wave: 'pulse25', gain: 0.22, decay: 6 },
   ],
 };

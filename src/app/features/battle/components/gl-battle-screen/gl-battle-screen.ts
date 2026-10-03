@@ -112,6 +112,8 @@ export class GlBattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
+      // L sends team preview's picks (Done); while choosing moves it's BattleScreen's (Mega, Tera).
+      this.navigation.registerButton('buttonL', () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
       // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
       this.navigation.registerButton('buttonR3', () => {
         if (this.store.canToggleTimer() && !this.store.result()) return false;

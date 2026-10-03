@@ -1,12 +1,12 @@
 import { Service, effect, inject, signal } from '@angular/core';
 import { Note, notesLength, renderNote } from '@core/audio/chip-synth';
 import { MENU_THEME_SECONDS, menuThemeNotes } from '@core/audio/menu-theme';
-import { ResultTheme, resultThemeNotes, resultThemeSeconds } from '@core/audio/result-themes';
-import { SOUNDS, SoundId } from '@core/audio/sfx';
+import { BattleTheme, battleThemeNotes, battleThemeSeconds } from '@core/audio/battle-themes';
+import { SOUND_FILES, SOUNDS, SoundId } from '@core/audio/sfx';
 import { AppSettings } from '@core/settings/app-settings';
 
-/** Time per slice for what's synthesized after the loading screen. */
-const BACKGROUND_SLICE_MS = 6;
+/** Time per frame for what's synthesized after the loading screen. */
+const BACKGROUND_SLICE_MS = 4;
 /** How long music takes to fade in or out when it changes. */
 const FADE_S = 0.8;
 
@@ -31,8 +31,10 @@ type AudioContextClass = typeof AudioContext;
  * wav, while <audio> elements never play (probe S1). Two buses, music and sound effects, follow the
  * volumes in Settings.
  *
- * The interface's and battles' sounds, the menu theme and the victory and defeat themes are
- * synthesized (chip-synth) while the loading screen shows (prepare); battles bring their own music and cries (BattleAudio). In a browser the context
+ * The interface's and battles' sounds and the menu theme are synthesized (chip-synth) while the
+ * loading screen shows (prepare), then the battle themes (team preview, victory, defeat) a slice per
+ * frame, while the sounds recorded from the games (SOUND_FILES) load. Battles bring their own music
+ * and cries (BattleMusic, BattleCries). In a browser the context
  * starts suspended until the first key or click, so anything before that is silent.
  */
 @Service()
@@ -44,7 +46,9 @@ export class AudioEngine {
   private readonly soundBus: GainNode | null = null;
   private readonly sounds = new Map<SoundId, AudioBuffer>();
   private menuTheme: MusicTrack | null = null;
-  private readonly resultThemes = new Map<ResultTheme, MusicTrack>();
+  private readonly battleThemes = new Map<BattleTheme, MusicTrack>();
+  /** A battle theme asked for before it was synthesized: it plays once it is. */
+  private wantedTheme: BattleTheme | null = null;
   private playing: Playing | null = null;
   /** What's still to synthesize, a note at a time: 'ready' once the loading screen's part is done. */
   private job: Iterator<'ready' | void> | null = null;
@@ -87,6 +91,7 @@ export class AudioEngine {
       const step = job.next();
       if (step.done || step.value === 'ready') {
         this.ready.set(true);
+        this.loadFiles();
         this.finishInBackground();
         return true;
       }
@@ -95,8 +100,8 @@ export class AudioEngine {
   }
 
   /**
-   * The victory and defeat themes, after the loading screen: a slice at a time between frames (no
-   * battle ends that soon).
+   * The battle themes, after the loading screen: a slice each frame (the console's timers are too slow
+   * to wait for between slices).
    */
   private finishInBackground(): void {
     const job = this.job;
@@ -108,7 +113,14 @@ export class AudioEngine {
         return;
       }
     }
-    setTimeout(() => this.finishInBackground(), 0);
+    nextFrame(() => this.finishInBackground());
+  }
+
+  /** The sounds recorded from the games, each in place of its synthesized stand-in once decoded. */
+  private loadFiles(): void {
+    for (const [id, url] of Object.entries(SOUND_FILES) as [SoundId, string][]) {
+      void this.load(url).then((buffer) => buffer && this.sounds.set(id, buffer));
+    }
   }
 
   /** Plays one of the interface's sounds. */
@@ -133,14 +145,16 @@ export class AudioEngine {
     if (this.menuTheme) this.playMusic(this.menuTheme);
   }
 
-  /** The end of one of our battles: the victory or the defeat theme. */
-  playResultTheme(theme: ResultTheme): void {
-    const track = this.resultThemes.get(theme);
+  /** Team preview's theme, or the victory or the defeat theme: as soon as it's synthesized. */
+  playBattleTheme(theme: BattleTheme): void {
+    const track = this.battleThemes.get(theme);
     if (track) this.playMusic(track);
+    else this.wantedTheme = theme;
   }
 
   /** Fades the current music out and `track` in; nothing changes if it's already playing. */
   playMusic(track: MusicTrack): void {
+    this.wantedTheme = null;
     const context = this.context;
     if (!context || !this.musicBus || this.playing?.id === track.id) return;
     this.stopMusic();
@@ -225,16 +239,24 @@ export class AudioEngine {
     }
     this.menuTheme = { id: 'menu', buffer: theme };
     yield 'ready';
-    for (const id of ['victory', 'defeat'] as const) {
-      const buffer = context.createBuffer(1, Math.ceil(resultThemeSeconds(id) * rate), rate);
+    for (const id of ['preview', 'victory', 'defeat'] as const) {
+      const buffer = context.createBuffer(1, Math.ceil(battleThemeSeconds(id) * rate), rate);
       const channel = buffer.getChannelData(0);
-      for (const note of resultThemeNotes(id)) {
+      for (const note of battleThemeNotes(id)) {
         renderNote(channel, rate, note, seed++);
         yield;
       }
-      this.resultThemes.set(id, { id, buffer });
+      const track = { id, buffer };
+      this.battleThemes.set(id, track);
+      if (this.wantedTheme === id) this.playMusic(track);
     }
   }
+}
+
+/** Runs `fn` on the next frame (or soon, where there are no frames). */
+function nextFrame(fn: () => void): void {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => fn());
+  else setTimeout(fn, 0);
 }
 
 function createContext(): AudioContext | null {
