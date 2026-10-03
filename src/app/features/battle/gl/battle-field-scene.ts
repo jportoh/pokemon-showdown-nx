@@ -1,4 +1,5 @@
 import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
+import { AudioEngine } from '@core/audio/audio-engine';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleCries } from '@features/battle/audio/battle-cries';
 import { movePattern } from '@features/battle/gl/move-patterns';
@@ -203,6 +204,9 @@ export class BattleFieldScene {
   private readonly dex = inject(ChampionsDex);
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly cries = inject(BattleCries);
+  private readonly audio = inject(AudioEngine);
+  /** The last move's effectiveness on each slot: its hits sound by it (a multi-hit's later ones too). */
+  private hitEffectiveness: MoveAction['effectiveness'] = {};
 
   private readonly layout = computed<FieldLayout>(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
@@ -499,6 +503,8 @@ export class BattleFieldScene {
   private playMove(action: MoveAction): void {
     const effects = this.effects;
     effects.speed = this.store.speed();
+    this.hitEffectiveness = action.effectiveness;
+    this.audio.play(action.category === 'Physical' ? 'physical' : action.category === 'Special' ? 'special' : 'status');
     // Effects take the size of the Pokémon they're on: ours are drawn bigger than the opponent's.
     const size = this.sizeOf(action.attacker);
     const sizeAt = (slot: SlotKey) => this.sizeOf(slot);
@@ -610,7 +616,10 @@ export class BattleFieldScene {
     });
   }
 
+  /** A hit: the Pokémon blinks, and the hit sounds as effective as it was. */
   private blink(slot: SlotKey, shake = false): void {
+    const effectiveness = this.hitEffectiveness[slot];
+    this.audio.play(effectiveness === 'super' ? 'hitSuper' : effectiveness === 'resisted' ? 'hitWeak' : 'hit');
     this.animate(slot, BLINK_MS, (v, p) => {
       const phase = Math.min(BLINKS - 1, Math.floor(p * BLINKS));
       v.alpha = p < 1 && phase % 2 === 0 ? 0.2 : 1;

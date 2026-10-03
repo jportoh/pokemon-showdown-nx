@@ -52,6 +52,12 @@ export class BattleMusic {
     this.audio.playMusic({ id: `battle-${battle}`, buffer, loopStart: track.loopStart / 1000, loopEnd: track.loopEnd / 1000 });
   }
 
+  /** One of our battles ended: the victory or the defeat theme, in place of its music (or of one still decoding). */
+  end(won: boolean): void {
+    this.battle++;
+    this.audio.playResultTheme(won ? 'victory' : 'defeat');
+  }
+
   /** The battle closed: back to the menu theme. */
   stop(): void {
     this.battle++;

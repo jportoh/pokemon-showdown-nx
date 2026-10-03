@@ -1,9 +1,12 @@
 import { Service, effect, inject, signal } from '@angular/core';
 import { Note, notesLength, renderNote } from '@core/audio/chip-synth';
 import { MENU_THEME_SECONDS, menuThemeNotes } from '@core/audio/menu-theme';
+import { ResultTheme, resultThemeNotes, resultThemeSeconds } from '@core/audio/result-themes';
 import { SOUNDS, SoundId } from '@core/audio/sfx';
 import { AppSettings } from '@core/settings/app-settings';
 
+/** Time per slice for what's synthesized after the loading screen. */
+const BACKGROUND_SLICE_MS = 6;
 /** How long music takes to fade in or out when it changes. */
 const FADE_S = 0.8;
 
@@ -28,8 +31,8 @@ type AudioContextClass = typeof AudioContext;
  * wav, while <audio> elements never play (probe S1). Two buses, music and sound effects, follow the
  * volumes in Settings.
  *
- * The interface's sounds and the menu theme are synthesized (chip-synth) while the loading screen
- * shows (prepare); battles bring their own music and cries (BattleAudio). In a browser the context
+ * The interface's and battles' sounds, the menu theme and the victory and defeat themes are
+ * synthesized (chip-synth) while the loading screen shows (prepare); battles bring their own music and cries (BattleAudio). In a browser the context
  * starts suspended until the first key or click, so anything before that is silent.
  */
 @Service()
@@ -41,9 +44,10 @@ export class AudioEngine {
   private readonly soundBus: GainNode | null = null;
   private readonly sounds = new Map<SoundId, AudioBuffer>();
   private menuTheme: MusicTrack | null = null;
+  private readonly resultThemes = new Map<ResultTheme, MusicTrack>();
   private playing: Playing | null = null;
-  /** What prepare() still has to synthesize, a note at a time. */
-  private job: Iterator<void> | null = null;
+  /** What's still to synthesize, a note at a time: 'ready' once the loading screen's part is done. */
+  private job: Iterator<'ready' | void> | null = null;
 
   /** The interface's sounds and the menu theme are ready (see prepare). */
   readonly ready = signal(false);
@@ -77,16 +81,34 @@ export class AudioEngine {
    */
   prepare(budgetMs: number): boolean {
     const job = this.job;
-    if (!job) return true;
+    if (!job || this.ready()) return true;
     const until = performance.now() + budgetMs;
     while (performance.now() < until) {
-      if (job.next().done) {
-        this.job = null;
+      const step = job.next();
+      if (step.done || step.value === 'ready') {
         this.ready.set(true);
+        this.finishInBackground();
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * The victory and defeat themes, after the loading screen: a slice at a time between frames (no
+   * battle ends that soon).
+   */
+  private finishInBackground(): void {
+    const job = this.job;
+    if (!job) return;
+    const until = performance.now() + BACKGROUND_SLICE_MS;
+    while (performance.now() < until) {
+      if (job.next().done) {
+        this.job = null;
+        return;
+      }
+    }
+    setTimeout(() => this.finishInBackground(), 0);
   }
 
   /** Plays one of the interface's sounds. */
@@ -109,6 +131,12 @@ export class AudioEngine {
   /** Back to the menu theme (after a battle, or once the loading screen is done). */
   playMenuTheme(): void {
     if (this.menuTheme) this.playMusic(this.menuTheme);
+  }
+
+  /** The end of one of our battles: the victory or the defeat theme. */
+  playResultTheme(theme: ResultTheme): void {
+    const track = this.resultThemes.get(theme);
+    if (track) this.playMusic(track);
   }
 
   /** Fades the current music out and `track` in; nothing changes if it's already playing. */
@@ -179,7 +207,7 @@ export class AudioEngine {
   }
 
   /** The synthesis, one note per step: the sounds first, then the menu theme straight into its buffer. */
-  private *synthesize(context: AudioContext): Iterator<void> {
+  private *synthesize(context: AudioContext): Iterator<'ready' | void> {
     const rate = context.sampleRate;
     for (const [id, notes] of Object.entries(SOUNDS) as [SoundId, readonly Note[]][]) {
       const buffer = context.createBuffer(1, Math.ceil(notesLength(notes) * rate), rate);
@@ -196,6 +224,16 @@ export class AudioEngine {
       yield;
     }
     this.menuTheme = { id: 'menu', buffer: theme };
+    yield 'ready';
+    for (const id of ['victory', 'defeat'] as const) {
+      const buffer = context.createBuffer(1, Math.ceil(resultThemeSeconds(id) * rate), rate);
+      const channel = buffer.getChannelData(0);
+      for (const note of resultThemeNotes(id)) {
+        renderNote(channel, rate, note, seed++);
+        yield;
+      }
+      this.resultThemes.set(id, { id, buffer });
+    }
   }
 }
 
