@@ -1,24 +1,27 @@
 import { inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
+import { withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, UiContext, button, label, modal, pill, textField } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, button, label, modal, pill, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { Challenge, ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
-import { PlayableFormat } from '@shared/data/formats';
+import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
-const POPUP_BOX: Box = { x: 248, y: 234, w: 784, h: 328 };
-/** A challenge played with our own teams: room for the team's Pokémon, to see which team it is. */
-const TEAM_POPUP_BOX: Box = { x: 136, y: 120, w: 1008, h: 500 };
-/** The team's Pokémon in the bigger box: 96px sprites on tiles. */
-const SPRITE_TILE = 120;
-const SPRITE_GAP = 12;
+/** The challenge's panel, against the right edge; it slides in from off the stage. */
+const PANEL: Box = { x: 744, y: 96, w: 512, h: 600 };
+const SLIDE_MS = 420;
+const BAND_H = 64;
+/** The team to accept with: 64px sprites in a row. */
+const SPRITE = 64;
+const SPRITE_STEP = 74;
 const FORM_BOX: Box = { x: 248, y: 234, w: 784, h: 296 };
 export const POPUP_CARD_ID = 'popup-card';
+const WHITE = [1, 1, 1, 1] as const;
 
 /** What the Battle page shows a challenge with. */
 export interface PopupModel {
@@ -33,21 +36,23 @@ export interface PopupModel {
 }
 
 /**
- * A challenge from another player, in a box over the Battle page (ChallengePopup on the canvas):
- * Accept (with one of our teams for its format, L/R to pick another) or Reject, after a look at the
- * challenger's Trainer Card if wanted. B leaves it for later (the page's call). The focus starts on
- * Accept (or Reject when it can't be accepted), again for each challenge in line. Once accepted,
- * "Joining battle…" stays in place of the buttons until the battle opens.
+ * A challenge from another player, as a panel that slides in from the right over the dimmed Battle
+ * page (ChallengePopup on the canvas): who and in what format, the team to accept with (its six
+ * Pokémon; L/R pick another), Accept, Reject and their Trainer Card. B leaves it for later (the page's
+ * call). The focus starts on Accept (or Reject when it can't be accepted), again for each challenge
+ * in line. Once accepted, "Joining battle…" stays in place of the buttons until the battle opens.
  */
 export class ChallengePopupView {
   private readonly challenges = inject(ShowdownChallenges);
   private readonly dex = inject(ChampionsDex);
   private shownFrom: string | null = null;
+  private shownAt = 0;
   private teamIndex = 0;
+  private teamAt = 0;
 
   constructor(private readonly focus: CanvasFocus) {}
 
-  /** The box went away (or another one covers it): the next showing starts over. */
+  /** The panel went away (or another box covers it): the next showing starts over. */
   reset(): void {
     this.shownFrom = null;
   }
@@ -61,125 +66,145 @@ export class ChallengePopupView {
     const count = model.teams.length;
     if (!model.challenge.needsTeam || count < 2 || this.joining(model.challenge)) return false;
     this.teamIndex = (this.teamIndex + by + count) % count;
+    this.teamAt = performance.now();
     return true;
   }
 
   draw(ctx: UiContext, model: PopupModel): void {
-    if (model.challenge.needsTeam && model.teams.length > 0) {
-      this.drawWithTeam(ctx, model);
-      return;
-    }
+    this.start(model, ctx.now);
     const p = ctx.palette;
+    const { renderer, now } = ctx;
     const { challenge, teams } = model;
-    const canAccept = (team: Team | null) => !challenge.needsTeam || team !== null;
-    this.start(model);
-    const team = teams[this.teamIndex] ?? null;
-    const x = POPUP_BOX.x + 32;
-    const y = POPUP_BOX.y;
-    modal(ctx, POPUP_BOX);
-    label(ctx, `${challenge.from} wants to battle!`, x, y + 48, { size: 36, bold: true }, p.accentText, { maxWidth: 712 });
-    const others = model.waiting > 0 ? ` · ${model.waiting} more waiting` : '';
-    label(ctx, challenge.formatName + others, x, y + 104, { size: 20 }, p.ink, { maxWidth: 712 });
-    const teamLine = !challenge.needsTeam
-      ? 'Showdown hands out the teams.'
-      : !team
-        ? 'You have no team for this format.'
-        : teams.length > 1
-          ? `With your team ${team.name} · L/R to change`
-          : `With your team ${team.name}`;
-    label(ctx, teamLine, x, y + 136, { size: 18 }, p.muted, { maxWidth: 712 });
+    const team = challenge.needsTeam ? (teams[this.teamIndex] ?? null) : null;
+    const canAccept = !challenge.needsTeam || team !== null;
+
+    // The page dims and its controls can't be reached; the panel slides in, overshooting a little.
+    renderer.rect(0, 0, 1280, 720, { fill: withAlpha(p.bg, 0.65) });
+    ctx.focus.trap();
+    const t = Math.min(1, (now - this.shownAt) / SLIDE_MS);
+    const x = PANEL.x + (1280 - PANEL.x) * (1 - backOut(t));
+    const y = PANEL.y;
+    const w = PANEL.w;
+    retroBox(ctx, { ...PANEL, x });
+    renderer.rect(x + 3, y + 3, w - 6, BAND_H, { fill: p.accent, radius: 11 });
+    renderer.rect(x + 3, y + BAND_H - 12, w - 6, 15, { fill: p.accent });
+    label(ctx, 'CHALLENGE', x + 24, y + 3 + BAND_H / 2, { size: 18, bold: true }, WHITE);
+    const formatLabel = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.label ?? challenge.formatName;
+    label(ctx, formatLabel, x + w - 24, y + 3 + BAND_H / 2, { size: 15, bold: true }, WHITE, { align: 'right', maxWidth: 300 });
+
+    const left = x + 28;
+    const inner = w - 56;
+    label(ctx, challenge.from, left, y + 112, { size: 34, bold: true }, p.accentText, {
+      maxWidth: inner,
+    });
+    label(ctx, 'wants to battle!', left, y + 152, { size: 22 }, p.ink);
+    if (model.waiting > 0) label(ctx, `${model.waiting} more waiting`, left, y + 182, { size: 16 }, p.muted);
+
+    // What it's played with.
+    const teamBox = { x: left, y: y + 204, w: inner, h: 160 };
+    renderer.rect(teamBox.x, teamBox.y, teamBox.w, teamBox.h, {
+      fill: p.bg,
+      stroke: p.rim,
+      radius: 12,
+      border: 2,
+    });
+    if (!challenge.needsTeam) {
+      label(ctx, 'Random teams', teamBox.x + 20, teamBox.y + 40, { size: 22, bold: true }, p.ink);
+      label(ctx, 'Showdown hands out the teams.', teamBox.x + 20, teamBox.y + 76, { size: 18 }, p.muted);
+    } else if (!team) {
+      label(ctx, 'No team for this format', teamBox.x + 20, teamBox.y + 40, { size: 22, bold: true }, p.danger);
+      label(ctx, 'Build one in the Teambuilder to accept.', teamBox.x + 20, teamBox.y + 76, { size: 18 }, p.muted, { maxWidth: teamBox.w - 40 });
+    } else {
+      const many = teams.length > 1;
+      label(ctx, `With ${team.name}`, teamBox.x + 20, teamBox.y + 30, { size: 20, bold: true }, p.ink, { maxWidth: teamBox.w - (many ? 170 : 40) });
+      if (many) this.drawCycle(ctx, model, teamBox);
+      this.drawTeam(ctx, team, teamBox, now);
+    }
+
+    const buttonsY = teamBox.y + teamBox.h + 24;
     if (this.joining(challenge)) {
-      label(ctx, 'Joining battle…', x, y + 212, { size: 24, bold: true }, p.ink);
+      label(ctx, 'Joining battle…', left, buttonsY + 32, { size: 26, bold: true }, p.ink);
       return;
     }
-    if (canAccept(team)) {
-      button(ctx, 'popup-accept', { x, y: y + 184, w: 344, h: 56 }, 'Accept', {
+    if (canAccept) {
+      button(ctx, 'popup-accept', { x: left, y: buttonsY, w: inner, h: 64 }, 'Accept', {
         primary: true,
-        size: 24,
-        accept: () => this.challenges.accept(challenge, challenge.needsTeam && team ? packTeam(team.sets) : null),
+        size: 26,
+        accept: () => this.challenges.accept(challenge, team ? packTeam(team.sets) : null),
       });
     }
-    button(ctx, 'popup-reject', { x: x + 368, y: y + 184, w: 344, h: 56 }, 'Reject', { size: 24, accept: () => this.challenges.reject(challenge) });
-    const width = pill(ctx, 'B', x, y + 274, 24);
-    label(ctx, 'Answer later', x + width + 8, y + 274, { size: 16 }, p.muted);
-    button(ctx, POPUP_CARD_ID, { x: x + 492, y: y + 250, w: 220, h: 44 }, 'Trainer Card', { size: 18, accept: model.viewCard });
+    const half = (inner - 16) / 2;
+    button(ctx, 'popup-reject', { x: left, y: buttonsY + 80, w: half, h: 52 }, 'Reject', {
+      size: 22,
+      accept: () => this.challenges.reject(challenge),
+    });
+    button(ctx, POPUP_CARD_ID, { x: left + half + 16, y: buttonsY + 80, w: half, h: 52 }, 'Trainer Card', { size: 20, accept: model.viewCard });
+    const width = pill(ctx, 'B', left, y + PANEL.h - 30, 24);
+    label(ctx, 'Answer later', left + width + 8, y + PANEL.h - 30, { size: 16 }, p.muted);
+  }
+
+  /** "2/5" and the L/R pills, clickable. */
+  private drawCycle(ctx: UiContext, model: PopupModel, box: Box): void {
+    const p = ctx.palette;
+    const cy = box.y + 30;
+    const right = box.x + box.w - 16;
+    const keys = [
+      { id: 'popup-team-prev', key: 'L', x: right - 84, by: -1 as const },
+      { id: 'popup-team-next', key: 'R', x: right - 40, by: 1 as const },
+    ];
+    label(ctx, `${this.teamIndex + 1}/${model.teams.length}`, right - 96, cy, { size: 15, bold: true }, p.muted, { align: 'right' });
+    for (const key of keys) {
+      ctx.focus.control({
+        id: key.id,
+        x: key.x,
+        y: cy - 14,
+        w: 36,
+        h: 28,
+        skip: true,
+        accept: () => this.cycle(model, key.by),
+      });
+      pill(ctx, key.key, key.x, cy, 26);
+    }
+  }
+
+  /** The team's six, dropping in one after another when it changes. */
+  private drawTeam(ctx: UiContext, team: Team, box: Box, now: number): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const rowW = (MAX_TEAM_SIZE - 1) * SPRITE_STEP + SPRITE;
+    const left = box.x + (box.w - rowW) / 2;
+    for (let i = 0; i < MAX_TEAM_SIZE; i++) {
+      const sx = left + i * SPRITE_STEP;
+      const sy = box.y + 60;
+      renderer.rect(sx + 6, sy + SPRITE - 8, SPRITE - 12, 12, { fill: p.rim, radius: 6 });
+      const set = team.sets[i];
+      if (!set) continue;
+      const texture = ctx.images.sprite(this.dex.mega(set.species, set.item)?.sprite ?? spriteId(set.species), false, ImagePriority.Screen);
+      const drop = Math.min(1, Math.max(0, (now - this.teamAt - i * 40) / 220));
+      if (texture) renderer.rect(sx, sy - (1 - drop) * 20, SPRITE, SPRITE, { fill: [1, 1, 1, drop], texture });
+      label(ctx, set.species, sx + SPRITE / 2, sy + SPRITE + 16, { size: 11, bold: true }, p.muted, { align: 'center', maxWidth: SPRITE_STEP - 4 });
+    }
   }
 
   /** The focus on the first showing of a challenge: Accept, or Reject when it can't be accepted. */
-  private start(model: PopupModel): void {
+  private start(model: PopupModel, now: number): void {
     const { challenge, teams } = model;
     if (this.shownFrom === challenge.fromId) return;
     this.shownFrom = challenge.fromId;
-    this.teamIndex = Math.max(0, teams.findIndex((team) => team.id === model.preferredTeam));
+    this.shownAt = now;
+    this.teamAt = now;
+    this.teamIndex = Math.max(
+      0,
+      teams.findIndex((team) => team.id === model.preferredTeam),
+    );
     this.focus.focus(!challenge.needsTeam || teams[this.teamIndex] ? 'popup-accept' : 'popup-reject');
   }
+}
 
-  /**
-   * The bigger box for a challenge played with our own teams: the team to accept with as its six
-   * Pokémon (not just its name), ◀ ▶ around them for L/R, "2 of 5" under them.
-   */
-  private drawWithTeam(ctx: UiContext, model: PopupModel): void {
-    this.start(model);
-    const p = ctx.palette;
-    const { renderer } = ctx;
-    const { challenge, teams } = model;
-    const team = teams[this.teamIndex] ?? teams[0];
-    const box = TEAM_POPUP_BOX;
-    const x = box.x + 40;
-    const y = box.y;
-    const width = box.w - 80;
-    modal(ctx, box);
-    label(ctx, `${challenge.from} wants to battle!`, x, y + 52, { size: 38, bold: true }, p.accentText, { maxWidth: width });
-    const others = model.waiting > 0 ? ` · ${model.waiting} more waiting` : '';
-    label(ctx, challenge.formatName + others, x, y + 100, { size: 22 }, p.ink, { maxWidth: width });
-
-    // The team: its name, then its Pokémon on tiles between the arrows.
-    const many = teams.length > 1;
-    label(ctx, `With your team ${team.name}`, x, y + 146, { size: 24, bold: true }, p.ink, { maxWidth: width - 200 });
-    if (many) label(ctx, `${this.teamIndex + 1} of ${teams.length}`, x + width, y + 146, { size: 20 }, p.muted, { align: 'right' });
-    const rowW = MAX_TEAM_SIZE * SPRITE_TILE + (MAX_TEAM_SIZE - 1) * SPRITE_GAP;
-    const left = box.x + (box.w - rowW) / 2;
-    const top = y + 176;
-    for (let i = 0; i < MAX_TEAM_SIZE; i++) {
-      const tile = { x: left + i * (SPRITE_TILE + SPRITE_GAP), y: top, w: SPRITE_TILE, h: SPRITE_TILE };
-      renderer.rect(tile.x, tile.y, tile.w, tile.h, { fill: p.panel, stroke: p.rim, radius: 10, border: 2 });
-      const set = team.sets[i];
-      if (!set) continue;
-      const sprite = this.dex.mega(set.species, set.item)?.sprite ?? spriteId(set.species);
-      const texture = ctx.images.sprite(sprite, false, ImagePriority.Screen);
-      if (texture) renderer.rect(tile.x + (SPRITE_TILE - 96) / 2, tile.y + 4, 96, 96, { fill: [1, 1, 1, 1], texture });
-      label(ctx, set.species, tile.x + SPRITE_TILE / 2, tile.y + SPRITE_TILE - 12, { size: 14, bold: true }, p.ink, { align: 'center', maxWidth: SPRITE_TILE - 8 });
-    }
-    if (many) {
-      // L/R change the team; the arrows are clickable too.
-      const arrows = [
-        { id: 'popup-team-prev', key: 'L', glyph: '◀', at: left - 60, by: -1 as const },
-        { id: 'popup-team-next', key: 'R', glyph: '▶', at: left + rowW + 12, by: 1 as const },
-      ];
-      for (const arrow of arrows) {
-        const control = { x: arrow.at, y: top + 24, w: 48, h: 72 };
-        ctx.focus.control({ id: arrow.id, ...control, skip: true, accept: () => this.cycle(model, arrow.by) });
-        label(ctx, arrow.glyph, control.x + 24, control.y + 26, { size: 30, bold: true }, p.accentText, { align: 'center' });
-        label(ctx, arrow.key, control.x + 24, control.y + 60, { size: 16, bold: true }, p.muted, { align: 'center' });
-      }
-    }
-
-    const buttonsY = top + SPRITE_TILE + 36;
-    if (this.joining(challenge)) {
-      label(ctx, 'Joining battle…', x, buttonsY + 30, { size: 26, bold: true }, p.ink);
-      return;
-    }
-    const buttonW = (width - 24) / 2;
-    button(ctx, 'popup-accept', { x, y: buttonsY, w: buttonW, h: 60 }, 'Accept', {
-      primary: true,
-      size: 26,
-      accept: () => this.challenges.accept(challenge, packTeam(team.sets)),
-    });
-    button(ctx, 'popup-reject', { x: x + buttonW + 24, y: buttonsY, w: buttonW, h: 60 }, 'Reject', { size: 26, accept: () => this.challenges.reject(challenge) });
-    const pillWidth = pill(ctx, 'B', x, buttonsY + 104, 24);
-    label(ctx, 'Answer later', x + pillWidth + 8, buttonsY + 104, { size: 18 }, p.muted);
-    button(ctx, POPUP_CARD_ID, { x: x + width - 240, y: buttonsY + 80, w: 240, h: 48 }, 'Trainer Card', { size: 20, accept: model.viewCard });
-  }
+/** Easing out past the end and back (the panel's slide). */
+function backOut(t: number): number {
+  const c = 1.4;
+  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 }
 
 /**

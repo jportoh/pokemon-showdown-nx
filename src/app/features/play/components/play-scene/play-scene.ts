@@ -3,13 +3,13 @@ import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { speciesInfo } from '@core/dex/species';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
-import { withAlpha } from '@core/gl/gl-renderer';
+import { Texture, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
+import { pixelTexture } from '@core/gl/gl-textures';
 import { GlTheme } from '@core/gl/ui/gl-theme';
-import { maskOf } from '@core/gl/ui/masks';
-import { OptionPickerView } from '@core/gl/ui/option-picker';
+import { OptionPickerView, PickerOption } from '@core/gl/ui/option-picker';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { Box, UiContext, button, focusRing, label, modal, paragraph, pill, retroBox } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, button, focusRing, label, modal, paragraph } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
@@ -17,18 +17,18 @@ import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
+import { BALL } from '@features/home/gl/logo-ball';
 import { BOX as CARD_BOX } from '@features/home/gl/login-view';
 import { ChallengeFormView, ChallengePopupView, POPUP_CARD_ID, PopupModel } from '@features/play/gl/challenge-views';
-import { PreviewCard, drawTeamPreview } from '@features/play/gl/team-preview-view';
+import { FormatCard, FormatCarouselView } from '@features/play/gl/format-carousel';
+import { ShowcaseTeam, TeamShowcaseView } from '@features/play/gl/team-showcase';
 import { PlaySelection } from '@features/play/state/play-selection';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE } from '@features/teambuilder/models/team';
 import { newestFirst } from '@features/teambuilder/gl/team-grid-view';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
-import { PickerOption } from '@core/gl/ui/option-picker';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
-import { typeColor } from '@shared/data/type-colors';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
@@ -44,23 +44,24 @@ const FORMAT_OPTIONS: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) =>
   category: format.category,
 }));
 
-/** The page's three boxes, under the bar. */
-const SELECT_BOX: Box = { x: 32, y: 100, w: 440, h: 296 };
-const ACTION_BOX: Box = { x: 32, y: 412, w: 440, h: 284 };
-const PREVIEW_BOX: Box = { x: 496, y: 100, w: 752, h: 596 };
+/** The actions along the foot: who's playing on the left, BATTLE! in the middle, challenges on the right. */
+const BATTLE_BOX: Box = { x: 400, y: 592, w: 480, h: 108 };
+const CHALLENGE_BOX: Box = { x: 904, y: 606, w: 344, h: 80 };
+const PLAYER_X = 32;
+const PLAYER_W = 348;
 const LEAVE_MS = 180;
-/** The selectors' ▼ (7x4) and the team's ◀ ▶ (4x7). */
-const DOWN = ['xxxxxxx', '.xxxxx.', '..xxx..', '...x...'];
-const LEFT = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];
-const RIGHT = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
+const WHITE = [1, 1, 1, 1] as const;
 
 /**
- * The Battle page, drawn on the stage: pick a format and a team and search Showdown's ladder for an
- * opponent (BATTLE!, which cancels the search while it runs; a match opens the battle, see App), or
- * send and answer challenges. On the left the format and the team (each opens a list to pick from;
- * L/R also step through the teams) over the actions; on the right the team picked, large. Challenges
- * that arrive show in a box over the page (B leaves one for later, and a button brings it back), as do
- * the lists, the form to challenge someone and a challenger's Trainer Card.
+ * The Battle page, drawn on the stage as a showcase in three rows: the formats as a carousel that
+ * goes round, the teams for the format picked as another (each Pokémon with its sprite, types, item
+ * and ability), and the actions: BATTLE! searches Showdown's ladder for an opponent (it cancels the
+ * search while it runs, and the format's card turns over to show it; a match opens the battle, see
+ * App), and players can be challenged and challenges answered. ZL/ZR change the format and L/R the
+ * team from anywhere, so the focus can stay on BATTLE!; up reaches the rows, whose left/right turn
+ * them and A opens their list. Challenges that arrive show in a panel over the page (B leaves one for
+ * later, and a button brings it back), as do the lists, the form to challenge someone and a
+ * challenger's Trainer Card.
  */
 @Component({
   selector: 'app-play-scene',
@@ -87,11 +88,27 @@ export class PlayScene {
   private readonly popup = new ChallengePopupView(this.focus);
   private readonly form = new ChallengeFormView(this.focus);
   private readonly card = new TrainerCardView(this.focus);
+  private readonly formats = new FormatCarouselView();
+  private readonly showcase = new TeamShowcaseView();
+  /** The Poké Ball the cards are drawn with (the logo's), made with the stage's renderer. */
+  private ball: Texture | null = null;
 
   private readonly format = this.selection.playFormat;
+  private readonly formatIndex = computed(() =>
+    Math.max(
+      0,
+      PLAYABLE_FORMATS.findIndex((format) => format.id === this.format().id),
+    ),
+  );
   private readonly randomTeams = computed(() => this.format().randomTeams);
   private readonly teams = this.selection.teams;
   private readonly chosenTeam = this.selection.team;
+  private readonly teamIndex = computed(() =>
+    Math.max(
+      0,
+      this.teams().findIndex((team) => team.id === this.chosenTeam()?.id),
+    ),
+  );
 
   private readonly teamOptions = computed((): PickerOption[] =>
     this.teams().map((team) => ({
@@ -102,33 +119,40 @@ export class PlayScene {
     })),
   );
 
-  private readonly teamPosition = computed(() => {
-    const teams = this.teams();
-    const index = teams.findIndex((team) => team.id === this.chosenTeam()?.id);
-    return teams.length > 1 ? `${index + 1} of ${teams.length} teams` : 'Your only team for this format';
+  /** Every format's card: how many teams the player has for it. */
+  private readonly formatCards = computed((): FormatCard[] => {
+    const teams = this.teamStore.teams().filter((team) => team.sets.length > 0);
+    return PLAYABLE_FORMATS.map((format) => ({
+      format,
+      teams: format.randomTeams ? 0 : teams.filter((team) => team.format === (format.teamFormat ?? format.id)).length,
+    }));
   });
 
-  /** Six cards; null for an empty slot (or a "?" one with random teams). */
-  private readonly cards = computed((): (PreviewCard | null)[] => {
-    const sets = this.randomTeams() ? [] : (this.chosenTeam()?.sets ?? []);
-    const cards = sets.slice(0, MAX_TEAM_SIZE).map((set): PreviewCard => {
-      const info = speciesInfo(set.species);
-      return {
-        // Holding its Mega Stone, it shows as the Mega it becomes.
-        sprite: this.dex.mega(set.species, set.item)?.sprite ?? this.dex.species(set.species)?.sprite ?? spriteId(set.species),
-        species: info?.name ?? set.species,
-        types: (info?.types ?? []).map((name) => ({ name, color: typeColor(name) || '#4b5563' })),
-        item: set.item,
-        itemId: this.dex.item(set.item)?.id ?? toId(set.item),
-      };
-    });
-    return [...cards, ...Array<null>(MAX_TEAM_SIZE - cards.length).fill(null)];
-  });
+  /** The format's teams as the showcase draws them. */
+  private readonly showcaseTeams = computed((): ShowcaseTeam[] =>
+    this.teams().map((team) => ({
+      name: team.name,
+      members: team.sets.slice(0, MAX_TEAM_SIZE).map((set) => {
+        const info = speciesInfo(set.species);
+        return {
+          // Holding its Mega Stone, it shows as the Mega it becomes.
+          sprite: this.dex.mega(set.species, set.item)?.sprite ?? this.dex.species(set.species)?.sprite ?? spriteId(set.species),
+          species: info?.name ?? set.species,
+          types: info?.types ?? [],
+          item: set.item,
+          itemId: this.dex.item(set.item)?.id ?? toId(set.item),
+          ability: set.ability,
+        };
+      }),
+    })),
+  );
 
   /** Connected with a name: Showdown only lets named players search. */
   private readonly online = computed(() => this.login.state().status === 'named' && this.connection.state().status === 'connected');
   /** A ladder search is under way (in any format: the home screen's Random Battle searches too). */
   private readonly searching = computed(() => this.search.searching() !== null);
+  /** The format and team can't change: a search is under way, or its battle is opening. */
+  private readonly locked = computed(() => this.searching() || this.rooms.joining());
   private readonly hasTeam = computed(() => this.randomTeams() || this.chosenTeam() !== null);
   /** BATTLE! searches (online, with a team for the format), cancels the search, or goes back to the open battle. */
   private readonly canBattle = computed(() => this.session.active() || this.searching() || (this.online() && this.hasTeam()));
@@ -143,11 +167,12 @@ export class PlayScene {
     if (status === 'offline') return 'Connect from the home menu first';
     if (status === 'unavailable') return 'No name on Showdown: online battles unavailable';
     if (!this.online()) return 'Connecting to Showdown…';
-    return 'Find an opponent on the ladder';
+    const team = this.chosenTeam();
+    return team ? `Ladder · with ${team.name}` : 'Find an opponent on the ladder';
   });
-  private readonly canCycle = computed(() => !this.randomTeams() && this.teams().length > 1);
+  private readonly canCycleTeams = computed(() => !this.randomTeams() && this.teams().length > 1 && !this.locked());
 
-  // The challenge panel, under BATTLE! (ChallengePanel).
+  // Who's playing, left of BATTLE!.
   /** Our name once the server calls us by it, for other players to challenge. */
   private readonly name = computed(() => (this.online() ? this.login.state().name : null));
   private readonly statusText = computed(() => {
@@ -173,13 +198,13 @@ export class PlayScene {
     if (problem) return problem;
     if (outgoing) return `Waiting for ${outgoing.to} to accept your ${PLAYABLE_FORMATS.find((f) => f.id === outgoing.format)?.label ?? outgoing.format} challenge…`;
     if (this.postponedCount() > 0) return `${this.challenges.incoming()[0]?.from ?? 'A player'} is waiting for your answer.`;
-    return 'Players can challenge this name, or challenge one yourself in the format picked.';
+    return 'Players can challenge this name.';
   });
 
-  /** Challenges left for later (by the challenger's ID): no box for them until asked for. */
+  /** Challenges left for later (by the challenger's ID): no panel for them until asked for. */
   private readonly postponed = signal<readonly string[]>([]);
   private readonly unanswered = computed(() => this.challenges.incoming().filter((challenge) => !this.postponed().includes(challenge.fromId)));
-  /** The challenge in the box: the one accepted while its battle opens, else the next one unanswered. */
+  /** The challenge in the panel: the one accepted while its battle opens, else the next one unanswered. */
   private readonly popupChallenge = computed(() => this.challenges.accepted() ?? this.unanswered()[0] ?? null);
   /** The teams the challenge on show can be accepted with (its format's, or the one it borrows them from). */
   private readonly popupTeams = computed(() => {
@@ -197,6 +222,9 @@ export class PlayScene {
   /** Where the focus goes when the page shows again. */
   private returnTo: PageControl = 'battle';
   private leaving: { at: number; path: string } | null = null;
+  /** When the search on the format's card began (the clock on its back). */
+  private searchSince = 0;
+  private wasSearching = false;
 
   constructor() {
     const hide = this.stage.show({
@@ -209,10 +237,14 @@ export class PlayScene {
     const release = [
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
       this.navigation.registerButton('buttonR', () => this.pressLR(1)),
+      this.navigation.registerButton('buttonZL', () => this.pressZ(-1)),
+      this.navigation.registerButton('buttonZR', () => this.pressZ(1)),
     ];
     inject(DestroyRef).onDestroy(() => {
       hide();
       release.forEach((fn) => fn());
+      const ball = this.ball;
+      if (ball) this.stage.whenReady(({ renderer }) => renderer.deleteTexture(ball));
     });
   }
 
@@ -248,10 +280,27 @@ export class PlayScene {
     const layer = this.layer();
     if (layer === 'picker') return this.picker.page(by);
     if (layer === 'popup') return this.popupModel() !== null && this.popup.cycle(this.popupModel()!, by);
-    if (layer !== 'page' || !this.canCycle() || this.searching()) return false;
+    if (layer !== 'page') return false;
+    return this.stepTeam(by);
+  }
+
+  /** ZL/ZR: the page's format (wrapping around), from wherever the focus is. */
+  private pressZ(by: 1 | -1): boolean {
+    if (this.layer() !== 'page') return false;
+    return this.stepFormat(by);
+  }
+
+  private stepFormat(by: 1 | -1): boolean {
+    if (this.locked()) return false;
+    const count = PLAYABLE_FORMATS.length;
+    this.selection.format.set(PLAYABLE_FORMATS[(this.formatIndex() + by + count) % count].id);
+    return true;
+  }
+
+  private stepTeam(by: 1 | -1): boolean {
+    if (!this.canCycleTeams()) return false;
     const teams = this.teams();
-    const index = teams.findIndex((team) => team.id === this.chosenTeam()?.id);
-    this.selection.teamId.set(teams[(index + by + teams.length) % teams.length].id);
+    this.selection.teamId.set(teams[(this.teamIndex() + by + teams.length) % teams.length].id);
     return true;
   }
 
@@ -313,6 +362,13 @@ export class PlayScene {
     this.search.search(this.format().id, team ? packTeam(team.sets) : null);
   }
 
+  /** The challenge button: cancels the challenge sent, brings back the ones left for later, or opens the form. */
+  private challengeAction(): void {
+    if (this.challenges.outgoing()) this.challenges.cancelChallenge();
+    else if (this.postponedCount() > 0) this.postponed.set([]);
+    else if (this.name()) this.openForm();
+  }
+
   private leave(path: string): void {
     this.leaving ??= { at: performance.now(), path };
   }
@@ -320,8 +376,8 @@ export class PlayScene {
   /** The page shows again: the control that opened the box, or the nearest one that works. */
   private focusPage(): void {
     const enabled: Record<PageControl, boolean> = {
-      format: !this.searching(),
-      team: !this.searching() && !this.randomTeams(),
+      format: !this.locked(),
+      team: !this.locked() && !this.randomTeams(),
       challenge: this.challenges.outgoing() !== null || this.postponedCount() > 0 || this.name() !== null,
       battle: this.canBattle(),
     };
@@ -348,6 +404,7 @@ export class PlayScene {
     const p = this.theme.palette();
     const ctx: UiContext = { ...frame, focus: this.focus, palette: p };
     const { renderer, now } = frame;
+    this.ball ??= pixelTexture(renderer, BALL);
     const layer = this.layer();
     if (layer !== this.lastLayer) {
       if (layer === 'page') this.focusPage();
@@ -355,12 +412,17 @@ export class PlayScene {
       if (this.lastLayer === 'popup' && layer !== 'card') this.popup.reset();
       this.lastLayer = layer;
     }
+    if (this.searching() && !this.wasSearching) this.searchSince = now;
+    this.wasSearching = this.searching();
+
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
     this.bar.draw(ctx, { title: 'Battle', icon: 'battle', back: () => this.onAction('back') });
-    this.drawSelectors(ctx);
-    this.drawActions(ctx);
-    this.drawPreview(ctx);
+    this.drawFormats(ctx);
+    this.drawTeams(ctx);
+    this.drawPlayer(ctx);
+    this.drawBattle(ctx);
+    this.drawChallenge(ctx);
 
     if (layer === 'picker') this.picker.draw(ctx);
     else if (layer === 'form') this.form.draw(ctx, this.format(), this.chosenTeam(), () => this.closeForm());
@@ -383,96 +445,118 @@ export class PlayScene {
     renderer.end();
   }
 
-  /** The format and team selectors: the choice, its detail and a ▼ to open its list. */
-  private selector(ctx: UiContext, id: string, y: number, title: string, detail: string, disabled: boolean, accept: () => void, arrow = true): void {
-    const p = ctx.palette;
-    const box = { x: SELECT_BOX.x + 12, y, w: 410, h: 84 };
-    const focused = !disabled && ctx.focus.control({ id, ...box, accept });
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.button, stroke: p.outline, radius: 6, border: 2 });
-    label(ctx, title, box.x + 18, box.y + 26, { size: 24, bold: true }, disabled ? p.muted : p.ink, { maxWidth: arrow ? 330 : 370 });
-    label(ctx, detail, box.x + 18, box.y + 58, { size: 16 }, p.muted, { maxWidth: arrow ? 330 : 370 });
-    if (arrow) ctx.renderer.image(maskOf(ctx.renderer, DOWN), box.x + 366, box.y + 34, 4, disabled ? p.muted : p.accentText);
-    if (focused) focusRing(ctx, box);
+  private drawFormats(ctx: UiContext): void {
+    const searched = this.search.searching();
+    const joining = this.rooms.joining();
+    const searchedLabel = PLAYABLE_FORMATS.find((format) => format.id === searched)?.label ?? this.format().label;
+    this.formats.draw(ctx, {
+      cards: this.formatCards(),
+      index: this.formatIndex(),
+      focused: this.focus.focused === 'format',
+      locked: this.locked(),
+      ball: this.ball,
+      search:
+        joining || searched
+          ? {
+              since: this.searchSince,
+              title: joining ? 'Opponent found!' : `Searching… ${clock(ctx.now - this.searchSince)}`,
+              line: joining ? 'Joining battle…' : `Ladder · ${searchedLabel}`,
+            }
+          : null,
+      open: () => this.openPicker('format'),
+      step: (by) => this.stepFormat(by),
+    });
   }
 
-  private drawSelectors(ctx: UiContext): void {
-    const p = ctx.palette;
-    const { renderer } = ctx;
-    retroBox(ctx, SELECT_BOX);
-    const x = SELECT_BOX.x;
-    const y = SELECT_BOX.y;
-    const searching = this.searching();
-    label(ctx, 'FORMAT', x + 20, y + 26, { size: 20, bold: true }, p.muted);
-    this.selector(ctx, 'format', y + 44, this.format().label, this.format().detail, searching, () => this.openPicker('format'));
-
-    label(ctx, 'TEAM', x + 20, y + 162, { size: 20, bold: true }, p.muted);
-    if (this.canCycle()) {
-      pill(ctx, 'L', x + 274, y + 162, 28);
-      renderer.image(maskOf(renderer, LEFT), x + 330, y + 155, 2, p.muted);
-      renderer.image(maskOf(renderer, RIGHT), x + 354, y + 155, 2, p.muted);
-      pill(ctx, 'R', x + 382, y + 162, 28);
-    }
-    const team = this.chosenTeam();
-    if (this.randomTeams()) {
-      renderer.rect(x + 12, y + 180, 410, 84, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 6, border: 2 });
-      label(ctx, 'Random team', x + 30, y + 206, { size: 24, bold: true }, p.ink);
-      label(ctx, 'Showdown hands each player one', x + 30, y + 238, { size: 16 }, p.muted);
-    } else if (team) {
-      this.selector(ctx, 'team', y + 180, team.name, this.teamPosition(), searching, () => this.openPicker('team'));
-    } else {
-      this.selector(ctx, 'team', y + 180, 'No teams yet', 'Build one in the Teambuilder', false, () => {
-        this.leave('/teambuilder');
-      }, false);
-    }
+  private drawTeams(ctx: UiContext): void {
+    this.showcase.draw(ctx, {
+      teams: this.showcaseTeams(),
+      index: this.teamIndex(),
+      random: this.randomTeams(),
+      formatLabel: this.format().label,
+      focused: this.focus.focused === 'team',
+      locked: this.locked(),
+      ball: this.ball,
+      open: () => (this.teams().length > 0 ? this.openPicker('team') : this.leave('/teambuilder')),
+      step: (by) => this.stepTeam(by),
+    });
   }
 
-  private drawActions(ctx: UiContext): void {
+  /** Who's playing (or why nobody is yet), a guest's New name, and the page's hint or problem. */
+  private drawPlayer(ctx: UiContext): void {
     const p = ctx.palette;
-    retroBox(ctx, ACTION_BOX);
-    const x = ACTION_BOX.x + 12;
-    const y = ACTION_BOX.y;
-
-    // BATTLE!, big, with what it does now under it.
-    const battle = { x, y: y + 14, w: 410, h: 96 };
-    const enabled = this.canBattle();
-    const focused = enabled && ctx.focus.control({ id: 'battle', ...battle, accept: () => this.battle() });
-    ctx.renderer.rect(battle.x, battle.y, battle.w, battle.h, { fill: enabled ? p.accent : p.rim, stroke: enabled ? p.bar : p.outline, radius: 6, border: 2 });
-    const ink = enabled ? ([1, 1, 1, 1] as const) : p.muted;
-    label(ctx, this.searching() ? 'CANCEL' : 'BATTLE!', battle.x + battle.w / 2, battle.y + 36, { size: 48, bold: true }, ink, { align: 'center' });
-    label(ctx, this.battleLine(), battle.x + battle.w / 2, battle.y + 74, { size: 16 }, ink, { align: 'center', maxWidth: 390 });
-    if (focused) focusRing(ctx, battle);
-
-    // The challenge panel.
-    const top = y + 124;
-    const panelButton = { x, y: top, w: 410, h: 52 };
-    const outgoing = this.challenges.outgoing();
-    const postponed = this.postponedCount();
-    if (outgoing) {
-      button(ctx, 'challenge', panelButton, 'Cancel challenge', { primary: true, size: 24, accept: () => this.challenges.cancelChallenge() });
-    } else if (postponed > 0) {
-      button(ctx, 'challenge', panelButton, `Answer challenge${postponed > 1 ? `s (${postponed})` : ''}`, { primary: true, size: 24, accept: () => this.postponed.set([]) });
-    } else {
-      button(ctx, 'challenge', panelButton, 'Challenge a player', { size: 24, disabled: !this.name(), accept: () => this.openForm() });
-    }
+    const top = BATTLE_BOX.y;
     const name = this.name();
     if (name) {
-      label(ctx, 'Name:', x, top + 82, { size: 18 }, p.muted);
-      label(ctx, name, x + 72, top + 82, { size: 20, bold: true }, p.ink, { maxWidth: 218 });
+      label(ctx, 'Playing as', PLAYER_X, top + 14, { size: 16 }, p.muted);
+      label(ctx, name, PLAYER_X, top + 42, { size: 24, bold: true }, p.ink, {
+        maxWidth: this.canRename() ? 220 : PLAYER_W,
+      });
     } else {
-      label(ctx, this.statusText(), x, top + 82, { size: 18 }, p.muted, { maxWidth: 290 });
+      label(ctx, this.statusText(), PLAYER_X, top + 28, { size: 18, bold: true }, p.muted, {
+        maxWidth: this.canRename() ? 220 : PLAYER_W,
+      });
     }
     // A guest's name is random: another one, for when it's taken or blocked.
-    if (this.canRename()) button(ctx, 'new-name', { x: x + 300, y: top + 66, w: 110, h: 32 }, 'New name', { size: 16, accept: () => this.login.newName() });
+    if (this.canRename()) button(ctx, 'new-name', { x: PLAYER_X + PLAYER_W - 110, y: top + 10, w: 110, h: 32 }, 'New name', { size: 16, accept: () => this.login.newName() });
     const problem = this.problem();
-    paragraph(ctx, this.hintText(), x, top + 104, 410, 22, { size: 14, bold: !!problem }, problem ? p.danger : p.muted, 2);
+    paragraph(ctx, this.hintText(), PLAYER_X, top + 62, PLAYER_W, 20, { size: 14, bold: !!problem }, problem ? p.danger : p.muted, 2);
   }
 
-  private drawPreview(ctx: UiContext): void {
+  /** BATTLE!, big, with what it does now under it; CANCEL while searching. */
+  private drawBattle(ctx: UiContext): void {
     const p = ctx.palette;
-    retroBox(ctx, PREVIEW_BOX);
-    const title = this.randomTeams() ? 'Random team' : (this.chosenTeam()?.name ?? 'No team for this format');
-    label(ctx, title, PREVIEW_BOX.x + 24, PREVIEW_BOX.y + 32, { size: 30, bold: true }, p.ink, { maxWidth: 440 });
-    label(ctx, this.format().label, PREVIEW_BOX.x + 716, PREVIEW_BOX.y + 34, { size: 18 }, p.muted, { align: 'right', maxWidth: 236 });
-    drawTeamPreview(ctx, PREVIEW_BOX.x + 15, PREVIEW_BOX.y + 68, this.cards(), this.randomTeams());
+    const box = BATTLE_BOX;
+    const enabled = this.canBattle();
+    const focused = enabled && ctx.focus.control({ id: 'battle', ...box, accept: () => this.battle() });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, {
+      fill: enabled ? p.accent : p.rim,
+      stroke: enabled ? p.bar : p.outline,
+      radius: 8,
+      border: 2,
+    });
+    const ink = enabled ? WHITE : p.muted;
+    label(ctx, this.searching() ? 'CANCEL' : 'BATTLE!', box.x + box.w / 2, box.y + 42, { size: 48, bold: true }, ink, { align: 'center' });
+    label(ctx, this.battleLine(), box.x + box.w / 2, box.y + 84, { size: 16 }, ink, {
+      align: 'center',
+      maxWidth: box.w - 24,
+    });
+    if (focused) focusRing(ctx, box, 8);
   }
+
+  /** Challenge a player, Cancel challenge or Answer challenges, with a line under it. */
+  private drawChallenge(ctx: UiContext): void {
+    const p = ctx.palette;
+    const box = CHALLENGE_BOX;
+    const outgoing = this.challenges.outgoing();
+    const postponed = this.postponedCount();
+    const waiting = outgoing !== null || postponed > 0;
+    const enabled = waiting || this.name() !== null;
+    const title = outgoing ? 'Cancel challenge' : postponed > 0 ? `Answer challenge${postponed > 1 ? `s (${postponed})` : ''}` : 'Challenge a player';
+    const line = outgoing ? `to ${outgoing.to}` : postponed > 0 ? `${this.challenges.incoming()[0]?.from ?? 'A player'} is waiting` : 'by name';
+    const focused = enabled && ctx.focus.control({ id: 'challenge', ...box, accept: () => this.challengeAction() });
+    const fill = !enabled ? p.rim : waiting ? p.accent : focused ? p.select : p.button;
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, {
+      fill,
+      stroke: waiting ? p.bar : p.outline,
+      radius: 8,
+      border: 2,
+    });
+    const ink = !enabled ? p.muted : waiting ? WHITE : p.ink;
+    label(ctx, title, box.x + box.w / 2, box.y + 30, { size: 22, bold: true }, ink, {
+      align: 'center',
+      maxWidth: box.w - 24,
+    });
+    label(ctx, line, box.x + box.w / 2, box.y + 58, { size: 15 }, waiting ? WHITE : p.muted, {
+      align: 'center',
+      maxWidth: box.w - 24,
+    });
+    if (focused) focusRing(ctx, box, 8);
+  }
+}
+
+/** A search's clock: 0:07. */
+function clock(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }

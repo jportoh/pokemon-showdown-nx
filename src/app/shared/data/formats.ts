@@ -29,6 +29,8 @@ export interface PlayableFormat extends BattleFormat {
   category: string;
   /** One line under its name: how it's played. */
   detail: string;
+  /** The rules in short, for the Battle page's format card ("Bring 6, pick 4 · Level 50"). */
+  rules: string;
   /** The teams it's played with, when they're another format's (a best-of-3 uses its format's teams). */
   teamFormat?: string;
 }
@@ -54,6 +56,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: false,
     category: 'Doubles',
     detail: 'Doubles · one of your teams',
+    rules: 'Bring 6, pick 4 · Level 50',
   },
   {
     id: BO3_TEAM_FORMAT,
@@ -62,6 +65,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: false,
     category: 'Doubles',
     detail: 'Best of 3 · open team sheets',
+    rules: 'Bring 6, pick 4 · first to 2 wins',
     teamFormat: DEFAULT_TEAM_FORMAT,
   },
   {
@@ -71,6 +75,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: false,
     category: 'Singles',
     detail: 'Singles · bring 6, pick 3 · one of your teams',
+    rules: 'Bring 6, pick 3 · Level 50',
   },
   {
     id: RANDOM_BATTLE_FORMAT,
@@ -79,6 +84,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random teams',
+    rules: 'Level-balanced random sets',
   },
   {
     id: 'gen9randomdoublesbattle',
@@ -87,6 +93,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random teams',
+    rules: 'Level-balanced random sets',
   },
   {
     id: 'gen9championsrandombattle',
@@ -95,6 +102,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Champions teams',
+    rules: 'Random Champions sets',
   },
   {
     id: 'gen9championsrandomdoublesbattle',
@@ -103,6 +111,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random Champions teams',
+    rules: 'Random Champions sets',
   },
 ];
 
