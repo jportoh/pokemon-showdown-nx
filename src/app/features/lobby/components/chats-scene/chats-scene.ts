@@ -10,6 +10,7 @@ import { maskOf } from '@core/gl/ui/masks';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { Box, UiContext, button, label, pill, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { LoginOverlay } from '@features/home/gl/login-overlay';
 import { CHAT_ROOMS } from '@features/lobby/data/chat-rooms';
 import { ChatLogView, ChatUsersView } from '@features/lobby/gl/chat-log-view';
 import { ChatRoom } from '@features/lobby/models/chat';
@@ -19,6 +20,10 @@ import { ChatRoomStore } from '@features/lobby/state/chat-room-store';
 const MAX_MESSAGE_LENGTH = 300;
 const ROOMS_BOX: Box = { x: 32, y: 100, w: 300, h: 596 };
 const ROOM_BOX: Box = { x: 348, y: 100, w: 904, h: 596 };
+/** The rooms' menu: rows big enough to read, as many as fit over the "more" arrow (it scrolls). */
+const ROOMS_TOP = ROOMS_BOX.y + 60;
+const ROOM_STEP = 68;
+const ROOMS_SHOWN = 7;
 /** The log or the users, under the room's title. */
 const VIEW_BOX: Box = { x: ROOM_BOX.x + 12, y: ROOM_BOX.y + 72, w: 868, h: 420 };
 const LEAVE_MS = 180;
@@ -45,6 +50,8 @@ export class ChatsScene {
   private readonly store = inject(ChatRoomStore);
 
   private readonly focus = new CanvasFocus();
+  /** Offline, ZR opens the menu's login box over the page. */
+  private readonly loginBox = new LoginOverlay(this.focus);
   private readonly log = new ChatLogView();
   private readonly usersView = new ChatUsersView();
 
@@ -55,7 +62,7 @@ export class ChatsScene {
   private readonly offline = computed(() => this.store.connectionState().status === 'offline');
   private readonly usersShown = signal(false);
   private readonly idleMessage = computed(() => {
-    if (this.offline()) return 'Offline: connect from the menu to chat.';
+    if (this.offline()) return 'Offline: press ZR to log in (or connect as a guest) and chat.';
     if (this.joining()) return `Joining ${this.roomTitle()}…`;
     return this.store.joinError() ?? 'Pick a room and press A to join it.';
   });
@@ -66,6 +73,8 @@ export class ChatsScene {
   private lastJoinState = this.store.joinState();
   /** The room whose button gets the focus back if the join ends without a room (refused, or left). */
   private roomOnIdle: string | null = null;
+  /** The first room shown in the menu. */
+  private roomStart = 0;
   private logOnJoin = false;
   private leaving: { at: number } | null = null;
 
@@ -79,9 +88,10 @@ export class ChatsScene {
     this.stage.whenReady(({ renderer }) => (this.chatsIcon = iconTexture(renderer, 'chats', true)));
     // Focus starts on the room joined, or the first one.
     this.focus.focus(`room-${this.store.room()?.id ?? CHAT_ROOMS[0].id}`);
-    // The console buttons, while in a room: ZR writes, ZL shows or hides the users, L leaves.
+    // The console buttons, while in a room: ZR writes (offline, it opens the login box), ZL shows or hides the users, L leaves.
     const release = [
       this.navigation.registerButton('buttonZR', () => {
+        if (this.loginBox.pressZR()) return true;
         if (this.joined()) this.write();
         return true;
       }),
@@ -109,6 +119,7 @@ export class ChatsScene {
   private onAction(action: CanvasAction): boolean {
     if (this.leaving) return true;
     if (action === 'back') {
+      if (this.loginBox.back()) return true;
       // From the users: back to the log, on the button that shows them.
       if (this.usersShown() && this.joined()) {
         this.usersShown.set(false);
@@ -194,6 +205,7 @@ export class ChatsScene {
     this.bar.draw(ctx, { title: 'Chats', icon: 'chats', back: () => this.onAction('back') });
     this.drawRooms(ctx);
     this.drawRoom(ctx);
+    this.loginBox.draw(ctx);
     if (this.leaving) {
       const t = Math.min(1, (now - this.leaving.at) / LEAVE_MS);
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: withAlpha(p.bg, t) });
@@ -214,15 +226,42 @@ export class ChatsScene {
     label(ctx, 'Rooms', ROOMS_BOX.x + 20, ROOMS_BOX.y + 34, { size: 30, bold: true }, p.ink);
     const offline = this.offline();
     const current = this.store.room()?.id ?? null;
-    CHAT_ROOMS.forEach((room, i) => {
-      const box = { x: ROOMS_BOX.x + 8, y: ROOMS_BOX.y + 60 + i * 48, w: 272, h: 46 };
-      const focused = this.focus.control({ id: `room-${room.id}`, ...box, accept: () => this.pickRoom(room) });
+    // A window of the rooms, big enough to read, that follows the focus; arrows say there's more.
+    const focusedIndex = CHAT_ROOMS.findIndex((room) => `room-${room.id}` === this.focus.focused);
+    if (focusedIndex !== -1) this.revealRoom(focusedIndex);
+    const end = Math.min(CHAT_ROOMS.length, this.roomStart + ROOMS_SHOWN);
+    for (let i = this.roomStart; i < end; i++) {
+      const room = CHAT_ROOMS[i];
+      const box = { x: ROOMS_BOX.x + 8, y: ROOMS_TOP + (i - this.roomStart) * ROOM_STEP, w: 272, h: ROOM_STEP - 4 };
+      const focused = this.focus.control({
+        id: `room-${room.id}`,
+        ...box,
+        accept: () => this.pickRoom(room),
+        // Past the rows shown: on to the next room (the window follows).
+        move: (direction) => {
+          const next = direction === 'down' && i === end - 1 ? i + 1 : direction === 'up' && i === this.roomStart ? i - 1 : -1;
+          if (next < 0 || next >= CHAT_ROOMS.length) return false;
+          this.focus.focus(`room-${CHAT_ROOMS[next].id}`);
+          this.revealRoom(next);
+          return true;
+        },
+      });
       renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.panel, radius: 8, border: 2 });
-      if (focused) renderer.image(maskOf(renderer, CURSOR), box.x + 10, box.y + 12, 3, p.accentText);
-      label(ctx, room.title, box.x + 32, box.y + 13, { size: 20, bold: true }, offline ? p.muted : p.ink, { maxWidth: 196 });
-      label(ctx, this.roomDetail(room.id), box.x + 32, box.y + 33, { size: 14 }, p.muted, { maxWidth: 228, fast: true });
-      if (room.id === current && this.joined()) renderer.rect(box.x + 240, box.y + 6, 12, 12, { fill: p.accentText, radius: 6 });
-    });
+      if (focused) renderer.image(maskOf(renderer, CURSOR), box.x + 10, box.y + 16, 3, p.accentText);
+      label(ctx, room.title, box.x + 32, box.y + 20, { size: 24, bold: true }, offline ? p.muted : p.ink, { maxWidth: 200 });
+      label(ctx, this.roomDetail(room.id), box.x + 32, box.y + 46, { size: 17 }, p.muted, { maxWidth: 228, fast: true });
+      if (room.id === current && this.joined()) renderer.rect(box.x + 246, box.y + 8, 14, 14, { fill: p.accentText, radius: 7 });
+    }
+    const arrowX = ROOMS_BOX.x + ROOMS_BOX.w - 30;
+    if (this.roomStart > 0) label(ctx, '▲', arrowX, ROOMS_BOX.y + 34, { size: 22, bold: true }, p.accentText, { align: 'center' });
+    if (end < CHAT_ROOMS.length) label(ctx, `▼ ${CHAT_ROOMS.length - end} more`, ROOMS_BOX.x + ROOMS_BOX.w / 2, ROOMS_BOX.y + ROOMS_BOX.h - 20, { size: 18, bold: true }, p.accentText, { align: 'center' });
+  }
+
+  /** Moves the rooms' window so room `index` shows. */
+  private revealRoom(index: number): void {
+    if (index < this.roomStart) this.roomStart = index;
+    if (index >= this.roomStart + ROOMS_SHOWN) this.roomStart = index - ROOMS_SHOWN + 1;
+    this.roomStart = Math.max(0, Math.min(this.roomStart, CHAT_ROOMS.length - ROOMS_SHOWN));
   }
 
   /** The line under a room's name in the menu. */

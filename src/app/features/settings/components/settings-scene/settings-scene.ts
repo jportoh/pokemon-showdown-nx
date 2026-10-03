@@ -34,8 +34,11 @@ interface SettingRow {
 const BOX = { x: 32, y: 100, w: 1216, h: 596 };
 const ROW_X = BOX.x + 24;
 const ROW_W = 1162;
-const ROW_H = 56;
-const rowY = (index: number): number => BOX.y + 20 + index * 62;
+const ROW_H = 76;
+const ROW_STEP = 84;
+/** Rows shown at once, big enough to read: the list scrolls under them, with arrows when there's more. */
+const ROWS_SHOWN = 6;
+const rowY = (index: number): number => BOX.y + 20 + index * ROW_STEP;
 /** Rows slide in one after another on arrival; the page fades out on leaving. */
 const INTRO_MS = 320;
 const LEAVE_MS = 180;
@@ -169,6 +172,8 @@ export class SettingsScene {
   private readonly focusAnim = new Map<SettingId, number>();
   private readonly changedAt = new Map<SettingId, number>();
   private leaving: { at: number; then: () => void } | null = null;
+  /** The first row shown. */
+  private rowStart = 0;
 
   constructor() {
     const hide = this.stage.show({
@@ -268,14 +273,24 @@ export class SettingsScene {
     this.bar.draw(ctx, { title: 'Settings', icon: 'settings', back: () => this.leave('/') });
     retroBox(ctx, BOX);
     const ease = 1 - Math.exp(-dt * 16);
-    this.rows().forEach((row, i) => {
-      const intro = clamp01((now - this.start - i * 40) / INTRO_MS);
+    const rows = this.rows();
+    const focusedIndex = rows.findIndex((row) => this.focus.focused === `row-${row.id}`);
+    if (focusedIndex !== -1) this.revealRow(focusedIndex, rows.length);
+    const end = Math.min(rows.length, this.rowStart + ROWS_SHOWN);
+    rows.slice(this.rowStart, end).forEach((row, shown) => {
+      const i = this.rowStart + shown;
+      const intro = clamp01((now - this.start - shown * 40) / INTRO_MS);
       const arrive = 1 - Math.pow(1 - intro, 3);
       const target = this.focus.focused === `row-${row.id}` ? 1 : 0;
       const f = (this.focusAnim.get(row.id) ?? target) + (target - (this.focusAnim.get(row.id) ?? target)) * ease;
       this.focusAnim.set(row.id, f);
-      this.drawRow(ctx, row, rowY(i), f, arrive);
+      this.drawRow(ctx, row, rowY(shown), f, arrive, {
+        up: i === this.rowStart && i > 0 ? rows[i - 1].id : null,
+        down: i === end - 1 && i < rows.length - 1 ? rows[i + 1].id : null,
+      });
     });
+    if (this.rowStart > 0) label(ctx, '▲ more', BOX.x + BOX.w / 2, BOX.y + 8, { size: 16, bold: true }, p.accentText, { align: 'center' });
+    if (end < rows.length) label(ctx, `▼ ${rows.length - end} more`, BOX.x + BOX.w / 2, BOX.y + BOX.h - 26, { size: 20, bold: true }, p.accentText, { align: 'center' });
     if (this.leaving) {
       const t = clamp01((now - this.leaving.at) / LEAVE_MS);
       renderer.rect(0, 0, STAGE_W, 720, { fill: withAlpha(p.bg, t) });
@@ -289,7 +304,15 @@ export class SettingsScene {
     renderer.end();
   }
 
-  private drawRow(ctx: UiContext, row: SettingRow, y: number, f: number, arrive: number): void {
+  /** Moves the rows' window so row `index` shows. */
+  private revealRow(index: number, count: number): void {
+    if (index < this.rowStart) this.rowStart = index;
+    if (index >= this.rowStart + ROWS_SHOWN) this.rowStart = index - ROWS_SHOWN + 1;
+    this.rowStart = Math.max(0, Math.min(this.rowStart, count - ROWS_SHOWN));
+  }
+
+  /** `beyond`: the row up or down past the window's edge, which the d-pad goes on to (the window follows). */
+  private drawRow(ctx: UiContext, row: SettingRow, y: number, f: number, arrive: number, beyond: { up: SettingId | null; down: SettingId | null }): void {
     const p = ctx.palette;
     const { renderer, now } = ctx;
     const box = { x: ROW_X, y, w: ROW_W, h: ROW_H };
@@ -297,21 +320,27 @@ export class SettingsScene {
       id: `row-${row.id}`,
       ...box,
       accept: () => this.activate(row),
-      move: (direction) => (direction === 'left' || direction === 'right') && this.change(row, direction === 'right' ? 1 : -1),
+      move: (direction) => {
+        if (direction === 'left' || direction === 'right') return this.change(row, direction === 'right' ? 1 : -1);
+        const next = beyond[direction];
+        if (!next) return false;
+        ctx.focus.focus(`row-${next}`);
+        return true;
+      },
     });
     const alpha = arrive;
     const x = box.x + (1 - arrive) * 32;
     const a = (color: Rgba): Rgba => withAlpha(color, alpha);
     renderer.rect(x, y, ROW_W, ROW_H, { fill: a(mixRgba(p.button, p.select, f)), stroke: a(p.rim), radius: 8, border: 2 });
 
-    label(ctx, row.label, x + 22, y + 18, { size: 22, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
-    label(ctx, row.detail, x + 22, y + 41, { size: 16 }, a(p.muted), { maxWidth: 720 });
+    label(ctx, row.label, x + 22, y + 24, { size: 28, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
+    label(ctx, row.detail, x + 22, y + 54, { size: 19 }, a(p.muted), { maxWidth: 720 });
 
     // The value, flashing white for a moment when it changes, its ◀ ▶ nudging the way it went.
     const valueColor = row.disabled ? p.muted : row.kind === 'toggle' ? (row.on ? p.teal : p.muted) : p.accentText;
     const flash = 1 - clamp01((now - (this.changedAt.get(row.id) ?? -Infinity)) / FLASH_MS);
     const pop = 1 + 0.12 * flash * flash;
-    const valueStyle = { size: 24, bold: true };
+    const valueStyle = { size: 28, bold: true };
     const shown = ctx.text.fit(row.value, valueStyle, 320);
     const texture = ctx.text.get(shown, valueStyle);
     if (texture) {
@@ -321,8 +350,8 @@ export class SettingsScene {
     }
     const arrowColor = a(mixRgba(p.muted, p.accentText, f));
     const nudge = Math.max(0, Math.sin((now / 1000) * 6)) * 3 * f;
-    if (row.steppable && this.leftArrow) renderer.image(this.leftArrow, x + 762 - nudge, y + 14, 4, arrowColor);
-    if ((row.steppable || row.kind === 'link') && this.rightArrow) renderer.image(this.rightArrow, x + 1126 + nudge, y + 14, 4, arrowColor);
+    if (row.steppable && this.leftArrow) renderer.image(this.leftArrow, x + 762 - nudge, y + (ROW_H - 28) / 2, 4, arrowColor);
+    if ((row.steppable || row.kind === 'link') && this.rightArrow) renderer.image(this.rightArrow, x + 1126 + nudge, y + (ROW_H - 28) / 2, 4, arrowColor);
     if (focused) focusRing(ctx, { ...box, x }, 8);
   }
 }

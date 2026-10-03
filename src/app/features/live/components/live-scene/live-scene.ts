@@ -4,6 +4,7 @@ import { AppSettings } from '@core/settings/app-settings';
 import { FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { LoginOverlay } from '@features/home/gl/login-overlay';
 import { LiveBattle, LiveBattles } from '@features/live/state/live-battles';
 import { PlayerRatings } from '@features/live/state/player-ratings';
 import { PickerOption } from '@core/gl/ui/option-picker';
@@ -48,7 +49,7 @@ export class LiveScene {
   private readonly battles = computed(() => (this.live.format() === this.shownFormat() ? this.live.battles() : []));
 
   private readonly message = computed(() => {
-    if (!this.connected()) return 'Offline: connect from the menu to watch live battles.';
+    if (!this.connected()) return 'Offline: press ZR to log in (or connect as a guest) and watch live battles.';
     if (this.live.loading()) return 'Looking for battles…';
     if (this.live.format() === this.shownFormat() && this.battles().length === 0) return 'No battles in this format right now. Try Refresh.';
     return null;
@@ -73,6 +74,8 @@ export class LiveScene {
     detailX: 880,
     open: (index) => this.watch(this.battles()[index]),
     shown: (from, to) => this.showRatings(from, to),
+    // Offline, ZR opens the menu's login box here.
+    overlay: (focus) => new LoginOverlay(focus),
   });
 
   constructor() {
