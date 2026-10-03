@@ -9,9 +9,13 @@ export type SoundId = 'move' | 'accept' | 'back' | 'page' | 'hold' | BattleSound
  */
 export type BattleSoundId = 'hit' | 'hitSuper' | 'hitWeak' | 'physical' | 'special' | 'status' | 'statUp' | 'statDown' | 'challenge';
 
+/** Sounds the music dips under for a moment, so they stand out: the hits. */
+export const DUCKING_SOUNDS: ReadonlySet<SoundId> = new Set<SoundId>(['hit', 'hitSuper', 'hitWeak']);
+
 /**
- * Sounds recorded from the games, bundled with the app (public/audio): Ruby's three hits and the stat
- * changes. Each replaces its synthesized stand-in below once decoded, after the loading screen.
+ * Sounds recorded from the games, bundled with the app (public/audio): Ruby's three hits (raised to
+ * full volume) and the stat changes. Each replaces its synthesized stand-in below once decoded, after
+ * the loading screen.
  */
 export const SOUND_FILES: Partial<Record<SoundId, string>> = {
   hit: 'audio/hit.wav',

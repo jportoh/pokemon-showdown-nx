@@ -2,12 +2,13 @@ import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
-import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
 import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
+import { megaSymbolTexture } from './mega-symbol';
 import { BAR_FILL, drawCommandBar, drawMessage } from './message-box';
 import { INK, ScreenContext, button, hint, ring, write, writeLines } from './screen-context';
 
@@ -28,8 +29,6 @@ const EMBLEM_R = 30;
 const EMBLEM_LEFT = 92;
 const MEGA_PINK: Rgba = rgba('#f0abfc');
 const MEGA_MAGENTA: Rgba = rgba('#d946ef');
-const MEGA_TEAL: Rgba = rgba('#5eead4');
-const MEGA_VIOLET: Rgba = rgba('#7c3aed');
 /** Two rows of 40px in the bar: chips on top, the legend or a second line under. */
 const ROW_1 = BAR_TOP + 14;
 const ROW_2 = BAR_TOP + 62;
@@ -62,6 +61,8 @@ export interface PlayActions {
  * the ids of the view's buttons in order, so a new view can focus its first.
  */
 export class PlayPanelView {
+  /** The Mega symbol, made on first use. */
+  private megaSymbol: Texture | null = null;
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
   private readonly dex = inject(ChampionsDex);
@@ -252,8 +253,8 @@ export class PlayPanelView {
   }
 
   /**
-   * Mega Evolution's emblem, as the newer games show it: the Mega symbol (a two-coloured drop) in a
-   * circle, a ring of sparkles turning round it, "MEGA EVOLVE" and L's chip under. Chosen, it lights
+   * Mega Evolution's emblem, as the newer games show it: the Mega symbol (the helix on its rainbow
+   * sphere), a ring of sparkles turning round it, "MEGA EVOLVE" and L's chip under. Chosen, it lights
    * up (the sparkles race, the ring turns white) and reads "MEGA EVOLVING". Left of the chooser's
    * status box; L does it on the controller, a click on it in a browser.
    */
@@ -282,11 +283,10 @@ export class PlayPanelView {
       const y = cy + Math.sin(angle) * radius;
       renderer.rect(x - size / 2, y - size / 2, size, size, { fill: withAlpha(color, 0.5 + 0.5 * twinkle), radius: size / 2, additive: true });
     }
-    // The circle and the symbol in it: a teal drop with a violet one curling inside, and a glint.
-    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: rgba('#2e1065'), stroke: on ? INK.white : MEGA_PINK, radius: R, border: 3 });
-    drop(ctx, cx - 1, cy + 2, R * 0.52, MEGA_TEAL);
-    drop(ctx, cx - 5, cy + 6, R * 0.3, MEGA_VIOLET);
-    renderer.rect(cx + 3, cy - 9, 6, 6, { fill: withAlpha(INK.white, 0.9), radius: 3 });
+    // The symbol, ringed.
+    this.megaSymbol ??= megaSymbolTexture(renderer);
+    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: INK.white, texture: this.megaSymbol });
+    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: [0, 0, 0, 0], stroke: on ? INK.white : MEGA_PINK, radius: R, border: on ? 3 : 2 });
     if (on) renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: withAlpha(MEGA_PINK, 0.25 * breath), radius: R, additive: true });
 
     // Under it: L's chip and the label, on a dark band so they read over any sky.
@@ -393,10 +393,4 @@ function bigButton(ctx: ScreenContext, id: string, box: { x: number; y: number; 
 function targetLabel({ pokemon, foe }: TargetOption): string {
   if (!pokemon) return 'Empty';
   return `${pokemon.name}${pokemon.fainted ? ' (fainted)' : foe ? '' : ' (ally)'}`;
-}
-
-/** A drop pointing up and to the right: a circle with a square on its upper right quarter. */
-function drop(ctx: ScreenContext, cx: number, cy: number, r: number, color: Rgba): void {
-  ctx.renderer.rect(cx - r, cy - r, r * 2, r * 2, { fill: color, radius: r });
-  ctx.renderer.rect(cx, cy - r, r, r, { fill: color });
 }

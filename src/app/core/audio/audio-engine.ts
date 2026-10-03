@@ -2,13 +2,17 @@ import { Service, effect, inject, signal } from '@angular/core';
 import { Note, notesLength, renderNote } from '@core/audio/chip-synth';
 import { MENU_THEME_SECONDS, menuThemeNotes } from '@core/audio/menu-theme';
 import { BattleTheme, battleThemeNotes, battleThemeSeconds } from '@core/audio/battle-themes';
-import { SOUND_FILES, SOUNDS, SoundId } from '@core/audio/sfx';
+import { DUCKING_SOUNDS, SOUND_FILES, SOUNDS, SoundId } from '@core/audio/sfx';
 import { AppSettings } from '@core/settings/app-settings';
 
 /** Time per frame for what's synthesized after the loading screen. */
 const BACKGROUND_SLICE_MS = 4;
 /** How long music takes to fade in or out when it changes. */
 const FADE_S = 0.8;
+/** A hit lowers the music to this (gain) at once, holds it up to DUCK_HOLD_S, then brings it back over DUCK_RELEASE_S. */
+const DUCK_LEVEL = 0.35;
+const DUCK_HOLD_S = 0.4;
+const DUCK_RELEASE_S = 0.35;
 
 /** A piece of music to loop: the whole buffer, or from loopStart to loopEnd (seconds) after the intro. */
 export interface MusicTrack {
@@ -43,6 +47,8 @@ export class AudioEngine {
 
   private readonly context: AudioContext | null = createContext();
   private readonly musicBus: GainNode | null = null;
+  /** After the music bus: lowered for a moment under the hits (see DUCKING_SOUNDS). */
+  private readonly duckBus: GainNode | null = null;
   private readonly soundBus: GainNode | null = null;
   private readonly sounds = new Map<SoundId, AudioBuffer>();
   private menuTheme: MusicTrack | null = null;
@@ -64,7 +70,9 @@ export class AudioEngine {
     }
     this.musicBus = context.createGain();
     this.soundBus = context.createGain();
-    this.musicBus.connect(context.destination);
+    this.duckBus = context.createGain();
+    this.musicBus.connect(this.duckBus);
+    this.duckBus.connect(context.destination);
     this.soundBus.connect(context.destination);
     effect(() => {
       const { musicVolume, soundVolume } = this.settings.settings();
@@ -126,7 +134,22 @@ export class AudioEngine {
   /** Plays one of the interface's sounds. */
   play(id: SoundId): void {
     const buffer = this.sounds.get(id);
-    if (buffer) this.playBuffer(buffer);
+    if (!buffer) return;
+    this.playBuffer(buffer);
+    if (DUCKING_SOUNDS.has(id)) this.duck(Math.min(buffer.duration, DUCK_HOLD_S));
+  }
+
+  /** Lowers the music under a sound `seconds` long, so it stands out, then brings it back. */
+  private duck(seconds: number): void {
+    const context = this.context;
+    const gain = this.duckBus?.gain;
+    if (!context || !gain || context.state !== 'running') return;
+    const now = context.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(DUCK_LEVEL, now + 0.03);
+    gain.setValueAtTime(DUCK_LEVEL, now + 0.03 + seconds);
+    gain.linearRampToValueAtTime(1, now + 0.03 + seconds + DUCK_RELEASE_S);
   }
 
   /** Plays a decoded sound (a cry) on the sound effects' bus; `rate` below 1 plays it lower and slower. */
