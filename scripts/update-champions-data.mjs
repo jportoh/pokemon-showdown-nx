@@ -15,6 +15,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadOverrides, overrideUrl } from './sprite-overrides.mjs';
 
 const DATA_URL = 'https://play.pokemonshowdown.com/data';
 /** Showdown's Black/White-style sprites (96x96), the ones it has for every species and most formes. */
@@ -195,13 +196,15 @@ for (const name of [...abilityNames].sort((a, b) => a.localeCompare(b))) {
   abilities.push({ id, ...ability });
 }
 
-// Some formes (new Megas especially) don't have a sprite yet: they show their base species' instead.
+// Some formes (new Megas especially) don't have a sprite yet: they show their base species' instead,
+// unless missing-sprites.json links one (update:sprites bundles it).
 const baseSprite = (sprite) => sprite.split('-')[0];
+const overrides = loadOverrides();
 const entries = [...species, ...megas];
 for (let i = 0; i < entries.length; i += 16) {
   await Promise.all(
     entries.slice(i, i + 16).map(async (entry) => {
-      if (entry.sprite === baseSprite(entry.sprite)) return;
+      if (entry.sprite === baseSprite(entry.sprite) || overrideUrl(overrides, entry.sprite, false)) return;
       const response = await fetch(`${SPRITES_URL}/${entry.sprite}.png`, { method: 'HEAD' });
       if (response.status === 404) {
         console.log(`No sprite for ${entry.name}: using ${baseSprite(entry.sprite)}`);

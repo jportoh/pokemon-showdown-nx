@@ -7,13 +7,15 @@
 // Why: the console's network takes ~100 ms per request however many run at once (test p3: 30 sprites
 // all at once 3.6 s, 6 at a time 2.9 s), so 685 sprites took 70 s to load; a few sheets take a few
 // requests. Fronts fill the first sheets (the team builder needs only those), backs the last ones.
-// Run it again after update:champions. Sprites Showdown has no back for (some new Megas) are left out:
-// the app draws their front instead.
+// Run it again after update:champions. Sprites missing-sprites.json links come from there instead
+// (see sprite-overrides.mjs); those with no back anywhere (some new Megas) are left out: the app draws
+// their front instead.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
+import { downloadOverride, loadOverrides, overrideUrl } from './sprite-overrides.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEX = join(ROOT, 'src/app/core/dex/champions-regmc.json');
@@ -156,7 +158,54 @@ function encodePng(width, height, pixels) {
   ]);
 }
 
-async function download(url) {
+/**
+ * A sprite at most a cell big. Fan-made ones are often Showdown-style sprites drawn at twice the size
+ * (each pixel a 2x2 block): those are halved, losing nothing. Any extra margin is cropped, keeping the
+ * Pokémon whole.
+ */
+function fitCell(name, image) {
+  let { width, height, pixels } = image;
+  const doubled = (width > SIZE || height > SIZE) && width % 2 === 0 && height % 2 === 0;
+  if (doubled && everyBlockAlike(image)) {
+    const half = Buffer.alloc((width / 2) * (height / 2) * 4);
+    for (let y = 0; y < height / 2; y++) {
+      for (let x = 0; x < width / 2; x++) pixels.copy(half, (y * (width / 2) + x) * 4, (2 * y * width + 2 * x) * 4, (2 * y * width + 2 * x) * 4 + 4);
+    }
+    [width, height, pixels] = [width / 2, height / 2, half];
+  }
+  if (width <= SIZE && height <= SIZE) return { width, height, pixels };
+  let [left, top, right, bottom] = [width, height, -1, -1];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!pixels[(y * width + x) * 4 + 3]) continue;
+      [left, top, right, bottom] = [Math.min(left, x), Math.min(top, y), Math.max(right, x), Math.max(bottom, y)];
+    }
+  }
+  if (right - left >= SIZE || bottom - top >= SIZE) throw new Error(`${name}: ${right - left + 1}x${bottom - top + 1} drawn, bigger than a cell`);
+  // The centre of the picture, moved as little as needed to keep the Pokémon in.
+  const crop = (size, first, last) => (size <= SIZE ? 0 : Math.min(first, Math.max(last - SIZE + 1, Math.floor((size - SIZE) / 2))));
+  const [cropX, cropY] = [crop(width, left, right), crop(height, top, bottom)];
+  const [w, h] = [Math.min(width, SIZE), Math.min(height, SIZE)];
+  const cropped = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) pixels.copy(cropped, y * w * 4, ((cropY + y) * width + cropX) * 4, ((cropY + y) * width + cropX + w) * 4);
+  return { width: w, height: h, pixels: cropped };
+}
+
+/** Whether every 2x2 block of the picture is one colour. */
+function everyBlockAlike({ width, height, pixels }) {
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const pixel = pixels.readUInt32BE((y * width + x) * 4);
+      for (const at of [y * width + x + 1, (y + 1) * width + x, (y + 1) * width + x + 1]) if (pixels.readUInt32BE(at * 4) !== pixel) return false;
+    }
+  }
+  return true;
+}
+
+async function download({ name, back }) {
+  const own = overrideUrl(overrides, name, back);
+  if (own) return downloadOverride(own);
+  const url = `${SPRITES_URL}/${back ? 'gen5-back' : 'gen5'}/${name}.png`;
   const response = await fetch(url);
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
@@ -164,13 +213,13 @@ async function download(url) {
 }
 
 /** Downloads `jobs` a few at a time, in order. */
-async function downloadAll(urls) {
-  const results = new Array(urls.length);
+async function downloadAll(jobs) {
+  const results = new Array(jobs.length);
   let next = 0;
   const lane = async () => {
-    while (next < urls.length) {
+    while (next < jobs.length) {
       const i = next++;
-      results[i] = await download(urls[i]);
+      results[i] = await download(jobs[i]);
     }
   };
   await Promise.all(Array.from({ length: DOWNLOADS }, lane));
@@ -178,18 +227,19 @@ async function downloadAll(urls) {
 }
 
 const dex = JSON.parse(readFileSync(DEX, 'utf8'));
+const overrides = loadOverrides();
 const names = [...new Set([...dex.species.map((s) => s.sprite), ...dex.megas.map((m) => m.sprite), ...EXTRA])].sort();
+const unused = Object.keys(overrides).filter((name) => !names.includes(name));
+if (unused.length) console.log(`Not in the format, skipped: ${unused.join(', ')}`);
 const jobs = [...names.map((name) => ({ name, back: false })), ...names.map((name) => ({ name, back: true }))];
 console.log(`Downloading ${jobs.length} sprites…`);
-const files = await downloadAll(jobs.map(({ name, back }) => `${SPRITES_URL}/${back ? 'gen5-back' : 'gen5'}/${name}.png`));
+const files = await downloadAll(jobs);
 
 const placed = [];
 const missing = [];
 jobs.forEach((job, i) => {
   if (!files[i]) return missing.push(`${job.name}${job.back ? ' (back)' : ''}`);
-  const image = decodePng(files[i]);
-  if (image.width > SIZE || image.height > SIZE) throw new Error(`${job.name}: ${image.width}x${image.height}, bigger than a cell`);
-  placed.push({ ...job, image });
+  placed.push({ ...job, image: fitCell(job.name, decodePng(files[i])) });
 });
 
 const perSheet = COLUMNS * ROWS;

@@ -1,0 +1,67 @@
+{
+  "_help": "Megas que Showdown aún no tiene en gen5 / gen5-back. Pon en cada campo vacío el link a la imagen (PNG o GIF; mejor 96x96 estilo BW). 'front' = de frente, 'back' = de espaldas. Lo que quede vacío sigue con el fallback actual.",
+  "barbaracle-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/689_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/689b_1.png"
+  },
+  "dragalge-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/691_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/691b_1.png"
+  },
+  "eelektross-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/604_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/604b_1.png"
+  },
+  "falinks-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/870_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/870b_1.png"
+  },
+  "malamar-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/687_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/687b_1.png"
+  },
+  "pyroar-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/668_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/668b_1.png"
+  },
+  "raichu-megax": {
+    "front": "https://rejuvenation.wiki.gg/images/026_3.png",
+    "back": ""
+  },
+  "raichu-megay": {
+    "front": "https://rejuvenation.wiki.gg/images/026_2.png",
+    "back": ""
+  },
+  "scolipede-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/545_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/545b_1.png"
+  },
+  "scrafty-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/560_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/560b_1.png"
+  },
+  "staraptor-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/398_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/398b_1.png"
+  },
+  "absol-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/359_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/359b_2.png"
+  },
+  "baxcalibur-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/998_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/998b_1.png"
+  },
+  "garchomp-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/445_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/445b_2.png"
+  },
+  "golisopod-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/768_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/768b_2.png"
+  },
+  "lucario-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/448_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/448b_2.png"
+  }
+}
