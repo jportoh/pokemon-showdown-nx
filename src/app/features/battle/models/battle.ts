@@ -244,6 +244,8 @@ export interface ReplaySummary {
 /** A replay with its log: the protocol lines a spectator saw, with no requests. */
 export interface Replay extends ReplaySummary {
   log: string;
+  /** The page it was opened from, where leaving it goes (the app's own; the replays when absent). */
+  backTo?: string;
 }
 
 /** Sends the player's choices and delivers the server's messages (Showdown frames: lines joined with \n). */

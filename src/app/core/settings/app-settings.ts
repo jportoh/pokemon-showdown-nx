@@ -27,6 +27,8 @@ export interface Settings {
   teamFormat: string;
   /** Others may watch our battles; off makes each one invite-only. */
   allowSpectators: boolean;
+  /** Each battle we play is saved to Showdown's replay server as it ends (the battle history lists them). */
+  saveReplays: boolean;
   /** The login box starts with the name last logged in with. */
   rememberName: boolean;
   /** The app logs in to the saved registered name when it starts (its password saved on the SD card). */
@@ -47,6 +49,7 @@ const DEFAULTS: Settings = {
   battleFormat: PLAYABLE_FORMATS[0].id,
   teamFormat: TEAM_FORMATS[0].id,
   allowSpectators: true,
+  saveReplays: true,
   rememberName: false,
   autoLogin: false,
   musicVolume: 60,
@@ -77,6 +80,7 @@ function loadSettings(): Settings {
     battleFormat: PLAYABLE_FORMATS.some((format) => format.id === settings.battleFormat) ? settings.battleFormat : DEFAULTS.battleFormat,
     teamFormat: TEAM_FORMATS.some((format) => format.id === settings.teamFormat) ? settings.teamFormat : DEFAULTS.teamFormat,
     allowSpectators: settings.allowSpectators !== false,
+    saveReplays: settings.saveReplays !== false,
     rememberName: settings.rememberName === true,
     autoLogin: settings.autoLogin === true,
     musicVolume: validVolume(settings.musicVolume, DEFAULTS.musicVolume),

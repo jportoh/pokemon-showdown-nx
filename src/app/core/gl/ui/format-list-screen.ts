@@ -2,7 +2,7 @@ import { DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CanvasFocus, focusInput } from '../canvas-ui';
-import { withAlpha } from '../gl-renderer';
+import { Rgba, rgba, withAlpha } from '../gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '../gl-stage';
 import { GlTheme } from './gl-theme';
 import { maskOf } from './masks';
@@ -14,7 +14,21 @@ import { ListView, UiContext, button, focusRing, label, retroBox } from './retro
 export interface FormatListRow {
   title: string;
   detail: string;
+  /** A pill before the detail ("Won" in green, "Lost" in red; neutral in the theme's colours). */
+  badge?: { text: string; tone: 'good' | 'bad' | 'neutral' };
 }
+
+/**
+ * The badges' fixed colours, the same in every theme (a win is green, a loss red): white on them
+ * passes WCAG AA (5.3:1 and 6.5:1). Neutral ones use the theme's select and ink.
+ */
+/** A badge's least width ("Won" and "Lost" the same), and the room kept for one before the detail ("Unfinished" fits). */
+const BADGE_MIN_W = 72;
+const BADGE_SLOT_W = 124;
+const BADGE_TONES:Partial<Record<'good' | 'bad' | 'neutral', { fill: Rgba; ink: Rgba }>> = {
+  good: { fill: rgba('#1e7b3c'), ink: rgba('#ffffff') },
+  bad: { fill: rgba('#b3261e'), ink: rgba('#ffffff') },
+};
 
 /** A box a page opens over itself (Watch Live's login): its ZR and B come first, and it's drawn last. */
 export interface PageOverlay {
@@ -30,8 +44,8 @@ export interface PageOverlay {
 /** What a list page shows and does; the screen draws it and handles the controller. */
 export interface FormatListModel {
   page: Omit<PageBarInfo, 'back'>;
-  /** Where B (and the bar's Back) goes. */
-  backTo: string;
+  /** Where B (and the bar's Back) goes; a function is asked as the page is left. */
+  backTo: string | (() => string);
   formats: readonly PickerOption[];
   format(): string;
   formatLabel(): string;
@@ -148,7 +162,9 @@ export class FormatListScreen {
   }
 
   private leave(): void {
-    this.leaving ??= { at: performance.now(), path: this.model.backTo };
+    if (this.leaving) return;
+    const { backTo } = this.model;
+    this.leaving = { at: performance.now(), path: typeof backTo === 'string' ? backTo : backTo() };
   }
 
   private openPicker(): void {
@@ -227,7 +243,16 @@ export class FormatListScreen {
         const a = arrive;
         ctx.renderer.rect(x, box.y, box.w, box.h, { fill: withAlpha(focused ? p.select : p.button, a), stroke: withAlpha(p.rim, a), radius: 8, border: 2 });
         label(ctx, row.title, x + 20, box.y + box.h / 2, { size: 20, bold: true }, withAlpha(p.ink, a), { maxWidth: this.model.detailX - 40 });
-        label(ctx, row.detail, x + this.model.detailX, box.y + box.h / 2, { size: 18 }, withAlpha(p.muted, a), { maxWidth: box.w - this.model.detailX - 20 });
+        let detailX = this.model.detailX;
+        if (row.badge) {
+          const width = Math.max(BADGE_MIN_W, ctx.text.measure(row.badge.text, { size: 16, bold: true }) + 24);
+          const tone = BADGE_TONES[row.badge.tone];
+          ctx.renderer.rect(x + detailX, box.y + box.h / 2 - 15, width, 30, { fill: withAlpha(tone?.fill ?? p.select, a), radius: 15 });
+          label(ctx, row.badge.text, x + detailX + width / 2, box.y + box.h / 2, { size: 16, bold: true }, withAlpha(tone?.ink ?? p.ink, a), { align: 'center' });
+          // The details line up after any badge that fits its slot.
+          detailX += Math.max(BADGE_SLOT_W, width + 12);
+        }
+        label(ctx, row.detail, x + detailX, box.y + box.h / 2, { size: 18 }, withAlpha(p.muted, a), { maxWidth: box.w - detailX - 20 });
         if (focused) focusRing(ctx, { ...box, x }, 8);
       },
       (index) => this.model.open(index),

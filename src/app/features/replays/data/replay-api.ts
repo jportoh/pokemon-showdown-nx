@@ -14,11 +14,13 @@ export class ReplayApi {
   /** Games already looked up (or being), by replay ID: a replay never changes once saved. */
   private readonly games = new Map<string, Promise<ReplayGame>>();
 
-  /** The latest public replays of a format (about 50, newest first). */
-  async search(formatId: string): Promise<ReplaySummary[]> {
-    const replays = await getJson<ReplaySummary[]>(
-      `${REPLAY_SERVER}/search.json?format=${encodeURIComponent(formatId)}`,
-    );
+  /**
+   * The latest public replays (about 50, newest first) of a format, or of a player (one of the two)
+   * in a format or in any (an empty format).
+   */
+  async search(formatId: string, userId = ''): Promise<ReplaySummary[]> {
+    const query = [userId && `user=${encodeURIComponent(userId)}`, formatId && `format=${encodeURIComponent(formatId)}`].filter(Boolean).join('&');
+    const replays = await getJson<ReplaySummary[]>(`${REPLAY_SERVER}/search.json?${query}`);
     return Array.isArray(replays) ? replays : [];
   }
 

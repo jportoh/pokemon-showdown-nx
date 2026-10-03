@@ -3,6 +3,7 @@ import { Router, RouterOutlet } from '@angular/router';
 import { GlStageHost } from '@core/gl/gl-stage-host';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
+import { ReplayAutoSave } from '@features/connection/replay-auto-save';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -26,6 +27,8 @@ export class App {
     inject(ShowdownLogin).logInSaved();
     // The server lists its formats once, on connecting: their names, for ladder ratings.
     inject(ShowdownFormats);
+    // Our battles' replays are saved as they end, for the battle history.
+    inject(ReplayAutoSave);
     // An accepted challenge opens its battle, unless one is already open.
     inject(BattleRooms).started.subscribe((roomId) => {
       if (session.active()) return;

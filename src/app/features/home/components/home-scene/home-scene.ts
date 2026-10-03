@@ -16,7 +16,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
 import { LoginView, RegisterView } from '@features/home/gl/login-view';
-import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
+import { CARD_CLOSE_ID, CARD_HISTORY_ID, TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
@@ -115,6 +115,8 @@ export class HomeScene {
     return null;
   });
   private shownBox: 'login' | 'card' | 'register' | null = null;
+  /** The control the Trainer Card opens on. */
+  private cardFocus = CARD_CLOSE_ID;
 
   private readonly zrLabel = computed(() => {
     if (this.offline()) return 'Log in';
@@ -182,8 +184,13 @@ export class HomeScene {
       this.ball = pixelTexture(renderer, BALL);
       this.cursorTexture = maskTexture(renderer, CURSOR_ROWS);
     });
-    // Back from a page: the focus on the tile that opened it.
+    // Back from a page: the focus on the tile that opened it, or the Trainer Card open again on the button that left it.
     this.focus.focus(`tile-${this.menu.lastItem()}`);
+    if (this.menu.openCard()) {
+      this.menu.openCard.set(false);
+      this.lBoxOpen.set(true);
+      this.cardFocus = CARD_HISTORY_ID;
+    }
     const release = [
       this.navigation.registerButton('buttonZR', () => this.pressZR()),
       this.navigation.registerButton('buttonL', () => (this.box() === 'card' && this.cardView.picking() ? this.cardView.turn(-1) : this.toggleLBox())),
@@ -300,7 +307,8 @@ export class HomeScene {
       this.registerView.reset();
       this.focus.focus(this.registerView.firstId);
     } else if (box === 'card') {
-      this.cardView.open();
+      this.cardView.open(null, this.cardFocus);
+      this.cardFocus = CARD_CLOSE_ID;
     } else {
       this.focus.focus(`tile-${this.menu.lastItem()}`);
     }
@@ -322,7 +330,7 @@ export class HomeScene {
     const box = this.box();
     if (box === 'login') this.loginView.draw(ctx);
     else if (box === 'register') this.registerView.draw(ctx);
-    else if (box === 'card') this.cardView.draw(ctx, () => this.closeLBox());
+    else if (box === 'card') this.cardView.draw(ctx, () => this.closeLBox(), () => void this.router.navigateByUrl('/history?from=card'));
     else {
       const ease = 1 - Math.exp(-dt * 14);
       const offline = this.offline();

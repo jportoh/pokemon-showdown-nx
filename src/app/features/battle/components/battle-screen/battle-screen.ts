@@ -234,10 +234,11 @@ export class BattleScreen {
     if (replay) this.store.start(new ReplayBattleConnection(replay));
   }
 
-  /** Closes the replay (so the page can be left) and goes back to the list. */
+  /** Closes the replay (so the page can be left) and goes back to the list it was opened from. */
   protected leaveReplay(): void {
+    const backTo = this.store.replay()?.backTo ?? '/replays';
     this.store.close();
-    void this.router.navigateByUrl('/replays');
+    void this.router.navigateByUrl(backTo);
   }
 
   /** Stops watching the live battle (leaving its room) and goes back to the list of live battles. */
