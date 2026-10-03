@@ -165,13 +165,17 @@ function encodePng(width, height, pixels) {
  */
 function fitCell(name, image) {
   let { width, height, pixels } = image;
-  const doubled = (width > SIZE || height > SIZE) && width % 2 === 0 && height % 2 === 0;
-  if (doubled && everyBlockAlike(image)) {
-    const half = Buffer.alloc((width / 2) * (height / 2) * 4);
-    for (let y = 0; y < height / 2; y++) {
-      for (let x = 0; x < width / 2; x++) pixels.copy(half, (y * (width / 2) + x) * 4, (2 * y * width + 2 * x) * 4, (2 * y * width + 2 * x) * 4 + 4);
+  const grid = width > SIZE || height > SIZE ? blockGrid(image) : null;
+  if (grid) {
+    const [halfW, halfH] = [Math.floor((width - grid.x) / 2), Math.floor((height - grid.y) / 2)];
+    const half = Buffer.alloc(halfW * halfH * 4);
+    for (let y = 0; y < halfH; y++) {
+      for (let x = 0; x < halfW; x++) {
+        const at = ((grid.y + 2 * y) * width + grid.x + 2 * x) * 4;
+        pixels.copy(half, (y * halfW + x) * 4, at, at + 4);
+      }
     }
-    [width, height, pixels] = [width / 2, height / 2, half];
+    [width, height, pixels] = [halfW, halfH, half];
   }
   if (width <= SIZE && height <= SIZE) return { width, height, pixels };
   let [left, top, right, bottom] = [width, height, -1, -1];
@@ -191,20 +195,32 @@ function fitCell(name, image) {
   return { width: w, height: h, pixels: cropped };
 }
 
-/** Whether every 2x2 block of the picture is one colour. */
-function everyBlockAlike({ width, height, pixels }) {
-  for (let y = 0; y < height; y += 2) {
-    for (let x = 0; x < width; x += 2) {
-      const pixel = pixels.readUInt32BE((y * width + x) * 4);
-      for (const at of [y * width + x + 1, (y + 1) * width + x, (y + 1) * width + x + 1]) if (pixels.readUInt32BE(at * 4) !== pixel) return false;
+/**
+ * Where the 2x2 blocks of a picture drawn at twice the size start (the grid can be a pixel off, and the
+ * size odd, when the edge rows and columns out of it are clear), or null if it isn't one.
+ */
+function blockGrid({ width, height, pixels }) {
+  const pixel = (x, y) => pixels.readUInt32BE((y * width + x) * 4);
+  for (const [gx, gy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    const [right, bottom] = [gx + 2 * Math.floor((width - gx) / 2), gy + 2 * Math.floor((height - gy) / 2)];
+    let alike = true;
+    for (let y = 0; y < height && alike; y++) {
+      for (let x = 0; x < width && alike; x++) {
+        const outside = x < gx || y < gy || x >= right || y >= bottom;
+        if (outside) alike = pixels[(y * width + x) * 4 + 3] === 0;
+        else alike = pixel(x, y) === pixel(x - ((x - gx) % 2), y - ((y - gy) % 2));
+      }
     }
+    if (alike) return { x: gx, y: gy };
   }
-  return true;
+  return null;
 }
 
 async function download({ name, back }) {
   const own = overrideUrl(overrides, name, back);
   if (own) return downloadOverride(own);
+  // A front from elsewhere with no back: the app draws that front, not Showdown's back to another one.
+  if (back && overrideUrl(overrides, name, false)) return null;
   const url = `${SPRITES_URL}/${back ? 'gen5-back' : 'gen5'}/${name}.png`;
   const response = await fetch(url);
   if (response.status === 404) return null;

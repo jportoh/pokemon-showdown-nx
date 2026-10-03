@@ -3,7 +3,8 @@
 //
 //   { "raichu-megax": { "front": "https://…/026_3.png", "back": "" }, … }
 //
-// An empty or absent link leaves that sprite to Showdown (and a back Showdown lacks to the front).
+// An empty or absent link leaves that sprite to Showdown (and a back Showdown lacks to the front),
+// except a back of a front linked here: that one is the front too.
 // Without the file, both update:champions and update:sprites use Showdown alone.
 
 import { existsSync, readFileSync } from 'node:fs';
