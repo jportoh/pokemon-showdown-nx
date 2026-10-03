@@ -44,7 +44,7 @@ const BOTTOM: readonly { id: BottomKey; text: string; button: string }[] = [
 /**
  * The app's on-screen keyboard, drawn on the canvas over the whole stage (for the screens' text
  * fields): the field's name, the text, and the
- * keys, which the d-pad walks and A types. B deletes (and cancels once the text is empty), L is
+ * keys, which the d-pad walks (round each row) and A types. B deletes (held, it repeats), L is
  * Shift, R a space, ZR OK and ZL Cancel; the mouse clicks keys, and a computer's keyboard types.
  * It never opens on its own (the console's own keyboard must not open either): a field opens it on A.
  */
@@ -67,7 +67,9 @@ export class CanvasKeyboard {
     this.text = entry.value;
     this.shift = false;
     this.focus.focus(FIRST_KEY);
+    this.navigation.repeatBack = true;
     this.release = [
+      () => (this.navigation.repeatBack = false),
       this.navigation.registerButton('buttonL', () => ((this.shift = !this.shift), true)),
       this.navigation.registerButton('buttonR', () => (this.type(' '), true)),
       this.navigation.registerButton('buttonZR', () => (this.close(this.text), true)),
@@ -78,11 +80,12 @@ export class CanvasKeyboard {
     this.stage.setOverlay({
       draw: (frame) => this.draw(frame),
       input: (action) => {
+        // B only deletes (held, it goes on deleting): a burst of presses mustn't cancel the entry.
         if (action === 'back') {
-          if (this.text) this.text = this.text.slice(0, -1);
-          else this.close(null);
+          this.text = this.text.slice(0, -1);
           return true;
         }
+        if ((action === 'left' || action === 'right') && this.wrap(action)) return true;
         return focusInput(this.focus, action) ?? true;
       },
       click: (x, y) => this.focus.click(x, y),
@@ -99,6 +102,20 @@ export class CanvasKeyboard {
     this.stage.setOverlay(null);
     this.entry.set(null);
     entry.done(value);
+  }
+
+  /** Right from a row's last key goes to its first one, left from its first key to its last. */
+  private wrap(direction: 'left' | 'right'): boolean {
+    const focused = this.focus.focused ?? '';
+    const row = /^key-(\d+)-\d+$/.exec(focused)?.[1];
+    const ids = focused.startsWith('bottom-')
+      ? BOTTOM.map((key) => `bottom-${key.id}`)
+      : row !== undefined
+        ? ROWS[Number(row)].map((_, c) => `key-${row}-${c}`)
+        : [];
+    if (!ids.length || focused !== (direction === 'right' ? ids[ids.length - 1] : ids[0])) return false;
+    this.focus.focus(direction === 'right' ? ids[0] : ids[ids.length - 1]);
+    return true;
   }
 
   private type(character: string): void {
@@ -164,7 +181,7 @@ export class CanvasKeyboard {
       label(ctx, key.text, box.x + 12 + width + (box.w - 24 - width) / 2, box.y + box.h / 2, { size: 24, bold: true }, key.id === 'ok' ? [1, 1, 1, 1] : p.ink, { align: 'center' });
       if (focused && key.id === 'shift' && this.shift) renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: [0.98, 0.8, 0.08, 1], radius: 6, border: 3 });
     });
-    const footer = entry.hint ? entry.hint(this.text) : 'A types the key pointed at · B deletes, and cancels once the text is empty';
+    const footer = entry.hint ? entry.hint(this.text) : 'A types the key pointed at · B deletes (hold it to keep deleting) · ZL cancels';
     label(ctx, footer, KEY_LEFT, 672, { size: 20 }, p.muted, { maxWidth: 1152 });
     this.focus.end();
     renderer.end();

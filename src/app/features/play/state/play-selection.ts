@@ -1,5 +1,6 @@
 import { Service, computed, inject, linkedSignal, signal } from '@angular/core';
 import { AppSettings } from '@core/settings/app-settings';
+import { newestFirst } from '@features/teambuilder/gl/team-grid-view';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
 
@@ -20,13 +21,13 @@ export class PlaySelection {
   /** The format picked, as the app offers it. */
   readonly playFormat = computed(() => PLAYABLE_FORMATS.find((f) => f.id === this.format()) ?? PLAYABLE_FORMATS[0]);
 
-  /** The player's teams for the format, with at least one Pokémon. */
+  /** The player's teams for the format, with at least one Pokémon, newest first (as the teambuilder shows them). */
   readonly teams = computed(() => {
     const format = this.playFormat();
-    return this.teamStore.teams().filter((team) => team.format === (format.teamFormat ?? format.id) && team.sets.length > 0);
+    return newestFirst(this.teamStore.teams()).filter((team) => team.format === (format.teamFormat ?? format.id) && team.sets.length > 0);
   });
 
-  /** The team picked, or the first one that fits while none is (or the picked one is gone); none with random teams. */
+  /** The team picked, or the newest one that fits while none is (or the picked one is gone); none with random teams. */
   readonly team = computed(() => {
     if (this.playFormat().randomTeams) return null;
     const teams = this.teams();
