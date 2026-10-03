@@ -641,6 +641,13 @@ export class BattleFieldScene {
       renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [0, 0, 0, 0], stroke: withAlpha(TRICK_ROOM, pulse), border: 6 });
     }
     for (const slot of this.slots()) this.drawHpBox(renderer, slot, now);
+  }
+
+  /**
+   * What goes over everything on the field, the host's strips (balls, side conditions) too: the
+   * move and ability labels, the intro and the result. Placed and clipped as `draw`.
+   */
+  drawOver(renderer: GlRenderer, now: number): void {
     this.drawLabels(renderer, now);
     this.drawIntro(renderer, now);
     this.drawResult(renderer, now);

@@ -355,6 +355,8 @@ export class BattleStore {
     this.reset();
     this.battleIdSignal.update((id) => id + 1);
     this.replaySignal.set(connection.replay ?? null);
+    // Only replays have a speed control: a live battle after one at x2 or x4 plays at normal speed.
+    if (!connection.replay) this.speedSignal.set(1);
     this.spectatingSignal.set(!!connection.spectating);
     this.catchingUp = !!connection.spectating;
     this.session.setActive(true);

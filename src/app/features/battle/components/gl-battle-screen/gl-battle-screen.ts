@@ -83,8 +83,8 @@ export class GlBattleScreen {
   private infoTab: InfoTab | null = null;
   /** The tab it opens on with ZR: the last one shown. */
   private lastTab: InfoTab = 'p2';
-  /** Switch was pressed: the party screen is open (a forced switch opens it by itself). */
-  private partyOpen = false;
+  /** The slot Switch was pressed for: the party screen is open while it chooses (a forced switch opens it by itself). */
+  private partyOpen: number | null = null;
   private diagnosticsShown = false;
   private ctx: ScreenContext | null = null;
   /** The panel's view last drawn, and its buttons, so a new view focuses its first. */
@@ -144,7 +144,7 @@ export class GlBattleScreen {
     if (battle !== this.shownBattle) {
       this.shownBattle = battle;
       this.infoTab = null;
-      this.partyOpen = false;
+      this.partyOpen = null;
     }
     renderer.beginPlain(INK.header);
     this.focus.begin();
@@ -170,6 +170,12 @@ export class GlBattleScreen {
       toggleTimer: () => this.toggleTimer.emit(),
     });
     this.strips.draw(ctx);
+    // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
+    renderer.setView(1, FIELD.x, FIELD.y);
+    renderer.clip(FIELD);
+    this.field.drawOver(renderer, now);
+    renderer.clip(null);
+    renderer.setView(1, 0, 0);
 
     if (this.store.watching()) {
       this.panelPicks = [];
@@ -185,7 +191,7 @@ export class GlBattleScreen {
         rematchNote: this.rematchNote(),
         rematch: () => this.rematch.emit(),
         leave: () => this.leave.emit(),
-        openParty: () => (this.partyOpen = true),
+        openParty: () => (this.partyOpen = this.choices.slot()),
       });
       this.drawTargetMark(ctx);
     }
@@ -216,10 +222,10 @@ export class GlBattleScreen {
   /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */
   private partyShown(): boolean {
     if (this.choices.slot() === null || this.store.result() || this.store.watching()) {
-      this.partyOpen = false;
+      this.partyOpen = null;
       return false;
     }
-    return this.choices.forceSwitch() || (this.partyOpen && this.playPanel.choosing() && !this.choices.pendingMove());
+    return this.choices.forceSwitch() || (this.partyOpen !== null && this.partyOpen === this.choices.slot() && this.playPanel.choosing() && !this.choices.pendingMove());
   }
 
   /**
@@ -279,7 +285,7 @@ export class GlBattleScreen {
     const key = this.playPanel.viewKey();
     if (key !== this.lastViewKey) {
       this.lastViewKey = key;
-      this.partyOpen = false;
+      this.partyOpen = null;
       if (this.panelPicks[0]) this.focus.focus(this.panelPicks[0]);
     } else if (partyClosed && this.focus.has('switch')) {
       // Back from the party screen: on Switch again.
@@ -320,8 +326,8 @@ export class GlBattleScreen {
       return;
     }
     // The party screen opened with Switch closes; a forced one steps back only when there's a choice to take back.
-    if (this.partyOpen && !this.choices.forceSwitch()) {
-      this.partyOpen = false;
+    if (this.partyOpen !== null && !this.choices.forceSwitch()) {
+      this.partyOpen = null;
       this.choices.notice.set('');
       return;
     }

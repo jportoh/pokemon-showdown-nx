@@ -2,6 +2,7 @@ import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { toId } from '@shared/utils/to-id';
+import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { SavedLogin } from './saved-login';
 import { ShowdownConnection } from './showdown-connection';
 import { LOGIN_ASSERTION_URL, LOGIN_URL, REGISTER_URL } from './showdown-config';
@@ -42,8 +43,12 @@ interface Credentials {
   password: string;
 }
 
-/** The avatar the player chose (a trainer sprite's name), set again on every connection. */
-const AVATAR_STORAGE_KEY = 'psb.avatar.v1';
+/**
+ * The avatars the player chose (a trainer sprite's name), set again on every connection: one per
+ * registered name, by its ID, and one for guest names (GUEST_AVATAR). v1 kept a single one for all.
+ */
+const AVATAR_STORAGE_KEY = 'psb.avatars.v2';
+const GUEST_AVATAR = '';
 
 /** Names tried in a row before giving up: registered ones, or ones someone is already using. */
 const MAX_NAME_TRIES = 3;
@@ -87,10 +92,10 @@ export class ShowdownLogin {
   private tries = 0;
   /** The player's own name, once asked for: claimed again on each new connection. */
   private credentials: Credentials | null = null;
-  /** The avatar the player chose, if any: the server gives a random one to each new connection. */
-  private chosenAvatar = readJson<string | null>(AVATAR_STORAGE_KEY, null);
-  /** The chosen avatar was already asked for on this connection's name. */
-  private avatarApplied = false;
+  /** The avatars the player chose, by name (see AVATAR_STORAGE_KEY): the server gives a random one to each new connection. */
+  private readonly chosenAvatars = readAvatars();
+  /** Whose chosen avatar was last asked for on this connection (a registered name's ID, or GUEST_AVATAR). */
+  private avatarAppliedFor: string | null = null;
 
   readonly state = this.stateSignal.asReadonly();
 
@@ -108,7 +113,7 @@ export class ShowdownLogin {
     });
     this.connection.opened.subscribe(() => {
       // A new connection has a new random avatar.
-      this.avatarApplied = false;
+      this.avatarAppliedFor = null;
       if (this.stateSignal().mode) this.setState({ status: 'connecting', error: null });
     });
     // Closed by something else (it doesn't happen while the player is connected, but just in case).
@@ -232,12 +237,15 @@ export class ShowdownLogin {
 
   /**
    * Changes the player's avatar (a trainer sprite's name, as the client sends it: `/avatar dawn`)
-   * and keeps it, for this and later connections, as Showdown's client does.
+   * and keeps it, for this and later connections with the same name (registered) or as a guest.
    */
   setAvatar(avatar: string): void {
-    if (this.stateSignal().status !== 'named') return;
-    this.chosenAvatar = avatar;
-    writeJson(AVATAR_STORAGE_KEY, avatar);
+    const state = this.stateSignal();
+    if (state.status !== 'named') return;
+    const owner = avatarOwner(state.name, state.registered);
+    this.chosenAvatars[owner] = avatar;
+    this.avatarAppliedFor = owner;
+    writeJson(AVATAR_STORAGE_KEY, this.chosenAvatars);
     this.connection.send('', `/avatar ${avatar}`);
     // Shown at once: the server's own update may come later, or not at all.
     this.setState({ avatar });
@@ -258,7 +266,7 @@ export class ShowdownLogin {
   }
 
   private reset(): void {
-    this.avatarApplied = false;
+    this.avatarAppliedFor = null;
     this.setState({
       status: 'offline',
       mode: null,
@@ -363,10 +371,10 @@ export class ShowdownLogin {
       this.setState({ name, avatar });
       return;
     }
-    this.applyChosenAvatar(avatar);
     const ownName = this.credentials !== null && toId(name) === toId(this.credentials.name);
     // Only a registered name needs its password, so one given means it's registered.
     const registered = ownName && this.credentials?.password !== '';
+    this.applyChosenAvatar(avatar, avatarOwner(name, registered));
     // Just logged in (or registered): kept as Settings say.
     const previous = this.stateSignal();
     if (ownName && this.credentials && (previous.loggingIn || previous.registering)) this.saved.loggedIn(name, this.credentials.password);
@@ -383,13 +391,16 @@ export class ShowdownLogin {
   }
 
   /**
-   * Once per connection, as soon as it has a name: asks for the avatar the player chose, silently
-   * (`,1`, as the client does), when the server gave another one.
+   * Once per connection and name, as soon as it has one: asks for the avatar the player chose for it
+   * (a registered name's, or the guests'), silently (`,1`, as the client does), when the server gave
+   * another one. A name without one gets a random one again, not the last name's.
    */
-  private applyChosenAvatar(current: string): void {
-    if (this.avatarApplied || !this.chosenAvatar) return;
-    this.avatarApplied = true;
-    if (current !== this.chosenAvatar) this.connection.send('', `/avatar ${this.chosenAvatar},1`);
+  private applyChosenAvatar(current: string, owner: string): void {
+    if (this.avatarAppliedFor === owner) return;
+    const previous = this.avatarAppliedFor;
+    this.avatarAppliedFor = owner;
+    const chosen = this.chosenAvatars[owner] ?? (previous !== null && current === this.chosenAvatars[previous] ? randomAvatar() : null);
+    if (chosen && current !== chosen) this.connection.send('', `/avatar ${chosen},1`);
   }
 
   private fail(error: string): void {
@@ -475,4 +486,20 @@ interface LoginAnswer {
 
 function isLoginAnswer(data: unknown): data is LoginAnswer {
   return typeof data === 'object' && data !== null;
+}
+
+/** Whose chosen avatar a name uses: a registered name's own (by its ID), or the guests'. */
+function avatarOwner(name: string, registered: boolean): string {
+  return registered ? toId(name) : GUEST_AVATAR;
+}
+
+function readAvatars(): Record<string, string> {
+  const stored = readJson<unknown>(AVATAR_STORAGE_KEY, {});
+  if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {};
+  return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+}
+
+/** Any of the avatars the client offers, as a new connection would get. */
+function randomAvatar(): string {
+  return AVATAR_CHOICES[Math.floor(Math.random() * AVATAR_CHOICES.length)];
 }
