@@ -71,6 +71,9 @@ export class KeyboardNavigation {
   /** Screens drawn on the canvas, newest last: the newest takes the d-pad, A and B (see captureInput). */
   private readonly canvasInputs: CanvasInput[] = [];
 
+  /** B repeats while held, like a direction (the on-screen keyboard deletes with it). */
+  repeatBack = false;
+
   private gamepadConnected = false;
   /** Actions held on the controller: when they started and when they last fired (for repeats). */
   private held = new Map<InputAction, { since: number; fired: number; repeats: number }>();
@@ -217,8 +220,8 @@ export class KeyboardNavigation {
         continue;
       }
       held.set(action, previous);
-      // Only directions repeat while held: a held A shouldn't press over and over.
-      const isDirection = action === 'up' || action === 'down' || action === 'left' || action === 'right';
+      // Only directions repeat while held (and B where it deletes): a held A shouldn't press over and over.
+      const isDirection = action === 'up' || action === 'down' || action === 'left' || action === 'right' || (action === 'back' && this.repeatBack);
       const interval = Math.max(GAMEPAD_REPEAT_MIN_MS, GAMEPAD_REPEAT_START_MS * Math.pow(GAMEPAD_REPEAT_SPEEDUP, previous.repeats));
       if (isDirection && now - previous.since >= GAMEPAD_REPEAT_DELAY_MS && now - previous.fired >= interval) {
         previous.fired = now;

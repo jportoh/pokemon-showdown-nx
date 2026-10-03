@@ -154,6 +154,8 @@ export interface MoveAction {
   type: string;
   /** Physical, Special or Status, which picks its animation; '' when unknown. */
   category: string;
+  /** The slots it's super effective or not very effective on (read ahead in the log), for the hits' sounds. */
+  effectiveness: Partial<Record<SlotKey, 'super' | 'resisted'>>;
 }
 
 /**

@@ -1,0 +1,159 @@
+{
+  "_help": "Sprites que Showdown no tiene en gen5 / gen5-back o que se ven mal (renders reducidos, borrosos). Pon en cada campo el link a la imagen (PNG; mejor 96x96 estilo BW o al doble, 192x192). front = de frente, back = de espaldas. Lo que quede vacío sigue con el sprite de Showdown, salvo una espalda vacía con frente propio: usa ese frente.",
+  "barbaracle-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/689_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/689b_1.png"
+  },
+  "dragalge-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/691_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/691b_1.png"
+  },
+  "eelektross-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/604_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/604b_1.png"
+  },
+  "falinks-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/870_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/870b_1.png"
+  },
+  "malamar-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/687_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/687b_1.png"
+  },
+  "pyroar-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/668_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/668b_1.png"
+  },
+  "raichu-megax": {
+    "front": "https://rejuvenation.wiki.gg/images/026_3.png",
+    "back": ""
+  },
+  "raichu-megay": {
+    "front": "https://rejuvenation.wiki.gg/images/026_2.png",
+    "back": ""
+  },
+  "scolipede-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/545_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/545b_1.png"
+  },
+  "scrafty-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/560_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/560b_1.png"
+  },
+  "staraptor-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/398_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/398b_1.png"
+  },
+  "absol-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/359_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/359b_2.png"
+  },
+  "baxcalibur-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/998_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/998b_1.png"
+  },
+  "garchomp-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/445_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/445b_2.png"
+  },
+  "golisopod-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/768_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/768b_2.png"
+  },
+  "lucario-megaz": {
+    "front": "https://rejuvenation.wiki.gg/images/448_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/448b_2.png"
+  },
+  "chandelure-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/609_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/609b_2.png"
+  },
+  "chesnaught-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/652_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/652b_1.png"
+  },
+  "chimecho-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/358_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/358b_1.png"
+  },
+  "clefable-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/036_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/036b_1.png"
+  },
+  "crabominable-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/740_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/740b_1.png"
+  },
+  "delphox-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/655_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/655b_1.png"
+  },
+  "drampa-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/780_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/780b_1.png"
+  },
+  "emboar-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/500_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/500b_1.png"
+  },
+  "excadrill-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/530_1.png",
+    "back": ""
+  },
+  "farigiraf": {
+    "front": "https://rejuvenation.wiki.gg/images/981.png",
+    "back": "https://rejuvenation.wiki.gg/images/981b.png"
+  },
+  "feraligatr-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/160_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/160b_1.png"
+  },
+  "floette-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/670_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/670b_1.png"
+  },
+  "froslass-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/478_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/478b_2.png"
+  },
+  "glimmora-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/970_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/970b_2.png"
+  },
+  "golurk-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/623_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/623b_1.png"
+  },
+  "greninja-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/658_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/658b_1.png"
+  },
+  "hawlucha-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/701_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/701b_1.png"
+  },
+  "meganium-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/154_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/154b_1.png"
+  },
+  "meowstic-fmega": {
+    "front": "https://rejuvenation.wiki.gg/images/678_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/678b_2.png"
+  },
+  "meowstic-mmega": {
+    "front": "https://rejuvenation.wiki.gg/images/678_2.png",
+    "back": "https://rejuvenation.wiki.gg/images/678b_2.png"
+  },
+  "scovillain-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/952_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/952b_1.png"
+  },
+  "skarmory-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/227_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/227b_1.png"
+  },
+  "starmie-mega": {
+    "front": "https://rejuvenation.wiki.gg/images/121_1.png",
+    "back": "https://rejuvenation.wiki.gg/images/121b_1.png"
+  }
+}

@@ -16,6 +16,17 @@ export interface FormatListRow {
   detail: string;
 }
 
+/** A box a page opens over itself (Watch Live's login): its ZR and B come first, and it's drawn last. */
+export interface PageOverlay {
+  /** Whether it took the press (opening the box, or while it's open). */
+  pressZR(): boolean;
+  /** Whether it took B (closing the box). */
+  back(): boolean;
+  /** The box is open (the page's jumps wait). */
+  isOpen(): boolean;
+  draw(ctx: UiContext): void;
+}
+
 /** What a list page shows and does; the screen draws it and handles the controller. */
 export interface FormatListModel {
   page: Omit<PageBarInfo, 'back'>;
@@ -35,6 +46,8 @@ export interface FormatListModel {
   open(index: number): void;
   /** The rows shown now (from, to): for lookups made only for those. */
   shown?(from: number, to: number): void;
+  /** A box over the page, made with the page's focus. */
+  overlay?(focus: CanvasFocus): PageOverlay;
 }
 
 const ROWS = 8;
@@ -74,8 +87,10 @@ export class FormatListScreen {
   /** A row had the focus when the list went away (a refresh): the new list's first row gets it. */
   private rowFocusLost = false;
   private leaving: { at: number; path: string } | null = null;
+  private readonly overlay: PageOverlay | null;
 
   constructor(private readonly model: FormatListModel) {
+    this.overlay = model.overlay?.(this.focus) ?? null;
     const hide = this.stage.show({
       draw: (frame) => this.draw(frame),
       input: (action) => this.onAction(action),
@@ -88,6 +103,7 @@ export class FormatListScreen {
       this.navigation.registerButton('buttonR', () => (this.picker.isOpen ? this.picker.page(1) : this.movePage(1))),
       this.navigation.registerButton('buttonZR', () => {
         if (this.picker.isOpen) return false;
+        if (this.overlay?.pressZR()) return true;
         if (this.model.canRefresh()) this.model.refresh();
         return true;
       }),
@@ -115,11 +131,11 @@ export class FormatListScreen {
     const picker = this.picker.input(action);
     if (picker !== null) return picker;
     if (action === 'back') {
-      this.leave();
+      if (!this.overlay?.back()) this.leave();
       return true;
     }
     if (action === 'first' || action === 'last') {
-      if (!this.picker.isOpen && this.rowsShown()) this.list.jump(action, this.model.rows().length, this.focus);
+      if (!this.picker.isOpen && !this.overlay?.isOpen() && this.rowsShown()) this.list.jump(action, this.model.rows().length, this.focus);
       return true;
     }
     return focusInput(this.focus, action) ?? false;
@@ -159,6 +175,7 @@ export class FormatListScreen {
     if (message) label(ctx, message, BOX.x + 24, BOX.y + 38, { size: 20 }, p.ink, { maxWidth: 1160 });
     else this.drawRows(ctx);
     this.picker.draw(ctx);
+    this.overlay?.draw(ctx);
     if (this.leaving) {
       const t = Math.min(1, (now - this.leaving.at) / LEAVE_MS);
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: withAlpha(p.bg, t) });

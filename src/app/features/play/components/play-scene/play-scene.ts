@@ -23,6 +23,7 @@ import { PreviewCard, drawTeamPreview } from '@features/play/gl/team-preview-vie
 import { PlaySelection } from '@features/play/state/play-selection';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE } from '@features/teambuilder/models/team';
+import { newestFirst } from '@features/teambuilder/gl/team-grid-view';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { PickerOption } from '@core/gl/ui/option-picker';
@@ -185,7 +186,7 @@ export class PlayScene {
     const challenge = this.popupChallenge();
     if (!challenge?.needsTeam) return [];
     const teamFormat = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.teamFormat ?? challenge.format;
-    return this.teamStore.teams().filter((team) => team.format === teamFormat && team.sets.length > 0);
+    return newestFirst(this.teamStore.teams()).filter((team) => team.format === teamFormat && team.sets.length > 0);
   });
   private readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - (this.challenges.accepted() ? 0 : 1)));
   private readonly postponedCount = computed(() => this.challenges.incoming().length - this.unanswered().length);

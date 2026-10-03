@@ -78,13 +78,15 @@ export class GlBattleScreen {
   private readonly overview = new TeamsOverviewView();
   private readonly teamSelect = new TeamSelectView();
   private readonly focus = new CanvasFocus();
+  /** Accepting open team sheets, filling in green while ZL is held. */
+  private readonly sheetHold = new HoldAction(this.navigation, 'buttonZL');
 
   /** Battle info's tab while it's open; null while it's closed. */
   private infoTab: InfoTab | null = null;
   /** The tab it opens on with ZR: the last one shown. */
   private lastTab: InfoTab = 'p2';
-  /** Switch was pressed: the party screen is open (a forced switch opens it by itself). */
-  private partyOpen = false;
+  /** The slot Switch was pressed for: the party screen is open while it chooses (a forced switch opens it by itself). */
+  private partyOpen: number | null = null;
   private diagnosticsShown = false;
   private ctx: ScreenContext | null = null;
   /** The panel's view last drawn, and its buttons, so a new view focuses its first. */
@@ -110,6 +112,8 @@ export class GlBattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
+      // L sends team preview's picks (Done); while choosing moves it's BattleScreen's (Mega, Tera).
+      this.navigation.registerButton('buttonL', () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
       // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
       this.navigation.registerButton('buttonR3', () => {
         if (this.store.canToggleTimer() && !this.store.result()) return false;
@@ -144,7 +148,7 @@ export class GlBattleScreen {
     if (battle !== this.shownBattle) {
       this.shownBattle = battle;
       this.infoTab = null;
-      this.partyOpen = false;
+      this.partyOpen = null;
     }
     renderer.beginPlain(INK.header);
     this.focus.begin();
@@ -152,6 +156,7 @@ export class GlBattleScreen {
     const hold = this.forfeitHold();
     const canForfeit = !this.store.result() && !this.store.watching() && this.forfeitState() === 'idle';
     if (hold?.step(now, canForfeit)) this.forfeit.emit();
+    if (this.sheetHold.step(now, this.sheetButton() === 'accept')) this.store.acceptTeamSheets();
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
     const party = this.partyShown();
     const picking = !party && this.teamSelect.shown();
@@ -170,6 +175,12 @@ export class GlBattleScreen {
       toggleTimer: () => this.toggleTimer.emit(),
     });
     this.strips.draw(ctx);
+    // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
+    renderer.setView(1, FIELD.x, FIELD.y);
+    renderer.clip(FIELD);
+    this.field.drawOver(renderer, now);
+    renderer.clip(null);
+    renderer.setView(1, 0, 0);
 
     if (this.store.watching()) {
       this.panelPicks = [];
@@ -185,7 +196,7 @@ export class GlBattleScreen {
         rematchNote: this.rematchNote(),
         rematch: () => this.rematch.emit(),
         leave: () => this.leave.emit(),
-        openParty: () => (this.partyOpen = true),
+        openParty: () => (this.partyOpen = this.choices.slot()),
       });
       this.drawTargetMark(ctx);
     }
@@ -197,11 +208,12 @@ export class GlBattleScreen {
     } else if (picking) {
       this.focus.begin();
       const sheet = this.sheetButton();
-      this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet() } : null, () => this.focus.focus(DONE_ID));
+      this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet(), held: this.sheetHold.progress } : null, () => this.focus.focus(DONE_ID));
     } else if (this.overview.shown()) {
       this.overview.draw(ctx);
     }
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
+    this.header.drawCountdown(ctx);
     if (this.joining()) {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
@@ -216,10 +228,10 @@ export class GlBattleScreen {
   /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */
   private partyShown(): boolean {
     if (this.choices.slot() === null || this.store.result() || this.store.watching()) {
-      this.partyOpen = false;
+      this.partyOpen = null;
       return false;
     }
-    return this.choices.forceSwitch() || (this.partyOpen && this.playPanel.choosing() && !this.choices.pendingMove());
+    return this.choices.forceSwitch() || (this.partyOpen !== null && this.partyOpen === this.choices.slot() && this.playPanel.choosing() && !this.choices.pendingMove());
   }
 
   /**
@@ -250,7 +262,7 @@ export class GlBattleScreen {
   /** What ZL does on the opponent's tab while open team sheets are being agreed. */
   private sheetHint(): string {
     const button = this.sheetButton();
-    return button === 'accept' ? 'ZL Accept open team sheets' : button === 'waiting' ? 'Waiting for their answer on team sheets' : '';
+    return button === 'accept' ? 'Hold ZL to accept open team sheets' : button === 'waiting' ? 'Waiting for their answer on team sheets' : '';
   }
 
   /** Where the focus goes as views change: a new set of buttons focuses its first. */
@@ -279,7 +291,7 @@ export class GlBattleScreen {
     const key = this.playPanel.viewKey();
     if (key !== this.lastViewKey) {
       this.lastViewKey = key;
-      this.partyOpen = false;
+      this.partyOpen = null;
       if (this.panelPicks[0]) this.focus.focus(this.panelPicks[0]);
     } else if (partyClosed && this.focus.has('switch')) {
       // Back from the party screen: on Switch again.
@@ -320,8 +332,8 @@ export class GlBattleScreen {
       return;
     }
     // The party screen opened with Switch closes; a forced one steps back only when there's a choice to take back.
-    if (this.partyOpen && !this.choices.forceSwitch()) {
-      this.partyOpen = false;
+    if (this.partyOpen !== null && !this.choices.forceSwitch()) {
+      this.partyOpen = null;
       this.choices.notice.set('');
       return;
     }
@@ -335,10 +347,13 @@ export class GlBattleScreen {
     return true;
   }
 
-  /** ZL: agrees to open team sheets while offered; otherwise the previous tab, or Battle info on the opponent's team. */
+  /**
+   * ZL: held down, agrees to open team sheets while offered (it can't be taken back); otherwise the
+   * previous tab, or Battle info on the opponent's team.
+   */
   private pressSheet(): boolean {
     if (this.sheetButton() === 'accept') {
-      this.store.acceptTeamSheets();
+      this.sheetHold.press();
       return true;
     }
     if (this.infoTab) this.stepTab(-1);

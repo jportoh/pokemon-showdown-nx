@@ -2,25 +2,33 @@ import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
-import { BAR_TOP } from '@features/battle/gl/field-layout';
+import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
+import { megaSymbolTexture } from './mega-symbol';
 import { BAR_FILL, drawCommandBar, drawMessage } from './message-box';
 import { INK, ScreenContext, button, hint, ring, write, writeLines } from './screen-context';
 
 const X = 16;
 const RIGHT = 1264;
 const GAP = 12;
-/** The four moves in a row, Switch and Mega or Tera stacked on their right. */
+/** The four moves in a row, Switch on their right. */
 const MOVE_W = 252;
 const MOVE_H = 86;
 const MOVE_Y = BAR_TOP + 12;
 const SIDE_X = X + 4 * (MOVE_W + GAP);
 const SIDE_W = RIGHT - SIDE_X;
 const SIDE_H = 40;
+/** Tera's button by the chooser's status box. */
+const MEGA_W = 176;
+/** Mega's emblem by the chooser's status box: its circle's radius, and its centre left of the box. */
+const EMBLEM_R = 30;
+const EMBLEM_LEFT = 92;
+const MEGA_PINK: Rgba = rgba('#f0abfc');
+const MEGA_MAGENTA: Rgba = rgba('#d946ef');
 /** Two rows of 40px in the bar: chips on top, the legend or a second line under. */
 const ROW_1 = BAR_TOP + 14;
 const ROW_2 = BAR_TOP + 62;
@@ -46,13 +54,15 @@ export interface PlayActions {
 /**
  * The command bar in our own battles, along the stage's foot, always the same size. While the turn
  * plays, its message; choosing, the four moves in a row on their types' colours (category, power, PP)
- * with Switch (the party screen) and Mega or Tera (L) on their right, and a tab over the bar with who's
- * choosing (its item and ability, and the first slot's order while the second chooses); picking a
+ * with Switch (the party screen) on their right, Mega or Tera (L) by the chooser's status box while it
+ * can, and a tab over the bar with who's choosing (its item and ability, and the first slot's order while the second chooses); picking a
  * target, the move and the targets as chips (the field marks the one pointed at); while the opponent
  * chooses, each order and Cancel; at the end, the result with Rematch and Back to Home. `draw` returns
  * the ids of the view's buttons in order, so a new view can focus its first.
  */
 export class PlayPanelView {
+  /** The Mega symbol, made on first use. */
+  private megaSymbol: Texture | null = null;
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
   private readonly dex = inject(ChampionsDex);
@@ -219,20 +229,20 @@ export class PlayPanelView {
       if (focused) ring(ctx, box, 10);
     }
 
-    // Switch: the party screen.
+    // Switch, as tall as the moves: the party screen.
     const switches = this.choices.switchOptions().filter((option) => option.allowed).length;
-    const switchBox = { x: SIDE_X, y: MOVE_Y, w: SIDE_W, h: SIDE_H };
+    const switchBox = { x: SIDE_X, y: MOVE_Y, w: SIDE_W, h: MOVE_H };
     const switchFocused = ctx.focus.control({ id: 'switch', ...switchBox, accept: actions.openParty });
-    renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 8, border: 2 });
-    write(ctx, 'Switch', switchBox.x + 14, switchBox.y + SIDE_H / 2, { size: 20, bold: true }, switches > 0 ? INK.white : INK.gray400);
-    write(ctx, switches > 0 ? `${switches} ▶` : 'None', switchBox.x + SIDE_W - 14, switchBox.y + SIDE_H / 2, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'right');
-    if (switchFocused) ring(ctx, switchBox, 8);
+    renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 10, border: 2 });
+    write(ctx, 'Switch', switchBox.x + switchBox.w / 2, switchBox.y + 30, { size: 26, bold: true }, switches > 0 ? INK.white : INK.gray400, 'center');
+    write(ctx, switches > 0 ? `${switches} in reserve ▶` : 'None left', switchBox.x + switchBox.w / 2, switchBox.y + 62, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'center');
+    if (switchFocused) ring(ctx, switchBox, 10);
 
-    // L does this on the controller; the button is for clicks.
-    const megaBox = { x: SIDE_X, y: MOVE_Y + MOVE_H - SIDE_H, w: SIDE_W, h: SIDE_H };
+    // Mega or Tera, only while it can: by the chooser's status box, on the field. L does it on the
+    // controller; the button is for clicks.
+    const megaBox = this.megaBox();
     if (this.choices.canMega()) {
-      const on = this.choices.mega();
-      hint(ctx, 'mega', megaBox, 'L', on ? 'Mega Evolving' : 'Mega Evolve', false, () => this.choices.toggleMega(), on ? { fill: rgba('#6b2a73'), border: rgba('#f0abfc') } : { fill: INK.gray700, border: INK.gray400 });
+      this.drawMegaEmblem(ctx, megaBox);
     } else if (this.choices.teraType()) {
       const on = this.choices.tera();
       const type = this.choices.teraType();
@@ -240,6 +250,67 @@ export class PlayPanelView {
     }
     // The first move takes the focus; Switch after them.
     return [...picks, 'switch'];
+  }
+
+  /**
+   * Mega Evolution's emblem, as the newer games show it: the Mega symbol (the helix on its rainbow
+   * sphere), a ring of sparkles turning round it, "MEGA EVOLVE" and L's chip under. Chosen, it lights
+   * up (the sparkles race, the ring turns white) and reads "MEGA EVOLVING". Left of the chooser's
+   * status box; L does it on the controller, a click on it in a browser.
+   */
+  private drawMegaEmblem(ctx: ScreenContext, box: { x: number; y: number; w: number; h: number }): void {
+    const { renderer, now } = ctx;
+    const on = this.choices.mega();
+    const cx = this.megaBoxCenter(box);
+    const cy = box.y + box.h / 2 - 14;
+    const R = EMBLEM_R;
+    const area = { x: cx - 74, y: cy - R - 14, w: 148, h: 2 * R + 50 };
+    ctx.focus.control({ id: 'mega', ...area, accept: () => this.choices.toggleMega(), skip: true });
+
+    // The aura, breathing.
+    const breath = 0.5 + 0.5 * Math.sin(now / (on ? 180 : 420));
+    const aura = R * (on ? 2 : 1.7);
+    renderer.rect(cx - aura, cy - aura, aura * 2, aura * 2, { fill: withAlpha(MEGA_MAGENTA, (on ? 0.5 : 0.28) + 0.15 * breath), texture: ctx.disc, additive: true });
+    // The sparkles, turning round it (faster once chosen), each twinkling on its own beat.
+    const count = 18;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * 2 * Math.PI + now / (on ? 500 : 1600);
+      const twinkle = 0.5 + 0.5 * Math.sin(now / 160 + i * 1.7);
+      const radius = R + 8 + 3 * Math.sin(now / 300 + i);
+      const size = 2 + 3 * twinkle;
+      const color = i % 3 === 0 ? INK.white : i % 3 === 1 ? MEGA_PINK : MEGA_MAGENTA;
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      renderer.rect(x - size / 2, y - size / 2, size, size, { fill: withAlpha(color, 0.5 + 0.5 * twinkle), radius: size / 2, additive: true });
+    }
+    // The symbol, ringed.
+    this.megaSymbol ??= megaSymbolTexture(renderer);
+    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: INK.white, texture: this.megaSymbol });
+    renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: [0, 0, 0, 0], stroke: on ? INK.white : MEGA_PINK, radius: R, border: on ? 3 : 2 });
+    if (on) renderer.rect(cx - R, cy - R, R * 2, R * 2, { fill: withAlpha(MEGA_PINK, 0.25 * breath), radius: R, additive: true });
+
+    // Under it: L's chip and the label, on a dark band so they read over any sky.
+    const label = on ? 'MEGA EVOLVING' : 'MEGA EVOLVE';
+    const font = { size: 15, bold: true };
+    const width = 22 + 6 + ctx.text.measure(label, font);
+    const left = cx - width / 2;
+    const y = cy + R + 16;
+    renderer.rect(left - 8, y - 13, width + 16, 26, { fill: [0.07, 0.04, 0.12, 0.78], radius: 13 });
+    renderer.rect(left, y - 10, 22, 20, { fill: INK.header, stroke: INK.gray400, radius: 3, border: 1 });
+    write(ctx, 'L', left + 11, y, { size: 13, bold: true }, INK.white, 'center');
+    write(ctx, label, left + 28, y, font, on ? MEGA_PINK : INK.white);
+  }
+
+  /** Where Mega's emblem is centred, left of the chooser's status box. */
+  private megaBoxCenter(box: { x: number; w: number }): number {
+    return box.x + box.w + 10 - EMBLEM_LEFT;
+  }
+
+  /** Mega's (or Tera's) button: on the field, left of the chooser's status box (which stays put whatever the camera does). */
+  private megaBox(): { x: number; y: number; w: number; h: number } {
+    const layout = this.store.gameType() === 'singles' ? SINGLES : DOUBLES;
+    const stand = layout.stands[this.choices.slot() === 1 ? 'p1b' : 'p1a'] ?? layout.stands['p1a'];
+    return { x: stand.boxLeft - MEGA_W - 10, y: FIELD_TOP + stand.boxTop + (BOX_H - SIDE_H) / 2, w: MEGA_W, h: SIDE_H };
   }
 
   private drawTargets(ctx: ScreenContext): string[] {

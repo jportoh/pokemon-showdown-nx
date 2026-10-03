@@ -6,6 +6,8 @@ import { INK, ScreenContext, hint, write } from './screen-context';
 
 /** The timer turns red with this little left of the turn (the last minute). */
 const LOW_SECONDS = 60;
+/** With this little left, the seconds show big in the middle of the screen. */
+const URGENT_SECONDS = 15;
 /** The bar's height: the field starts under it. */
 export const BAR_H = 44;
 
@@ -81,6 +83,25 @@ export class HeaderView {
   }
 
   /**
+   * The last seconds of our turn on the timer, big in the middle of the screen over everything (so
+   * time doesn't run out unnoticed): a red disc with the seconds, beating once a second.
+   */
+  drawCountdown(ctx: ScreenContext): void {
+    const timer = this.store.battleTimer();
+    if (!timer || timer.since === null || this.store.result() || this.store.watching()) return;
+    const now = Date.now();
+    const seconds = timerSecondsLeft(timer, now);
+    if (seconds === null || seconds > URGENT_SECONDS) return;
+    // A beat at each new second: big, then settling.
+    const beat = 1 - ((now - timer.since) % 1000) / 1000;
+    const radius = 84 + 14 * beat * beat;
+    const { renderer } = ctx;
+    renderer.rect(640 - radius, 360 - radius, radius * 2, radius * 2, { fill: [0.6, 0.06, 0.06, 0.82], stroke: INK.red300, radius, border: 4 });
+    write(ctx, String(seconds), 640, 352, { size: 88, bold: true }, INK.white, 'center');
+    write(ctx, seconds === 1 ? 'second' : 'seconds', 640, 414, { size: 20, bold: true }, INK.red300, 'center');
+  }
+
+  /**
    * Our time left this turn while the battle timer is on ("2:30"): green while it runs, red when it's
    * running low, grey and still while we wait for the opponent. Off, a button that turns it on (R3),
    * or how long until the server allows it again.
@@ -100,8 +121,9 @@ export class HeaderView {
       if (canToggle) ctx.focus.control({ id: 'header-timer', ...box, accept: toggle, skip: true });
       renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 14, border: 1 });
       if (canToggle) {
-        renderer.rect(box.x + 6, box.y + 5, 24, 18, { fill: INK.header, radius: 2 });
-        write(ctx, 'R3', box.x + 18, box.y + 14, { size: 12, bold: true }, INK.white, 'center');
+        // R3, the right stick pressed: a round chip with an R.
+        renderer.rect(box.x + 8, box.y + 4, 22, 22, { fill: INK.header, stroke: INK.gray400, radius: 11, border: 1.5 });
+        write(ctx, 'R', box.x + 19, box.y + 15, { size: 13, bold: true }, INK.white, 'center');
       }
       // A clock whose hand ticks every second while it runs; two pause bars while it's stopped.
       const cx = box.x + 44;

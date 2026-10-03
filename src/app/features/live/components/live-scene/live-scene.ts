@@ -1,12 +1,14 @@
 import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { Router } from '@angular/router';
+import { AppSettings } from '@core/settings/app-settings';
 import { FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { LoginOverlay } from '@features/home/gl/login-overlay';
 import { LiveBattle, LiveBattles } from '@features/live/state/live-battles';
 import { PlayerRatings } from '@features/live/state/player-ratings';
 import { PickerOption } from '@core/gl/ui/option-picker';
-import { PLAYABLE_FORMATS, RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
+import { PLAYABLE_FORMATS } from '@shared/data/formats';
 import { RowLookups } from '@shared/utils/row-lookups';
 
 /** Battles whose players' ratings are downloaded at once (two requests each). */
@@ -40,14 +42,14 @@ export class LiveScene {
    */
   private readonly averages = new RowLookups<number>((roomId) => this.averageOf(roomId), LOOKUPS_AT_ONCE, () => undefined);
 
-  /** The format shown. */
-  private readonly shownFormat = signal(this.live.format() ?? RANDOM_BATTLE_FORMAT);
+  /** The format shown: the last one watched, else Settings' battle format. */
+  private readonly shownFormat = signal(this.live.format() ?? inject(AppSettings).settings().battleFormat);
   private readonly connected = computed(() => this.connection.state().status === 'connected');
   /** The list, once it's the shown format's. */
   private readonly battles = computed(() => (this.live.format() === this.shownFormat() ? this.live.battles() : []));
 
   private readonly message = computed(() => {
-    if (!this.connected()) return 'Offline: connect from the menu to watch live battles.';
+    if (!this.connected()) return 'Offline: press ZR to log in (or connect as a guest) and watch live battles.';
     if (this.live.loading()) return 'Looking for battles…';
     if (this.live.format() === this.shownFormat() && this.battles().length === 0) return 'No battles in this format right now. Try Refresh.';
     return null;
@@ -72,6 +74,8 @@ export class LiveScene {
     detailX: 880,
     open: (index) => this.watch(this.battles()[index]),
     shown: (from, to) => this.showRatings(from, to),
+    // Offline, ZR opens the menu's login box here.
+    overlay: (focus) => new LoginOverlay(focus),
   });
 
   constructor() {

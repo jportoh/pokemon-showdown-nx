@@ -17,6 +17,8 @@ export interface ChooserOption {
   icon?: string;
   /** Shown at the row's end: a move's power, an item's kind. */
   value?: string;
+  /** IDs a search also finds it by (a species' abilities and moves). */
+  keywords?: readonly string[];
 }
 
 /** How the rows look: a species (its types), an ability, an item (its icon), a move (its colours). */
@@ -238,7 +240,7 @@ export class ChooserView {
       maxLength: MAX_QUERY_LENGTH,
       hint: (text) => {
         const words = searchWords(text);
-        if (words.length === 0) return 'Type part of a name';
+        if (words.length === 0) return spec.rows === 'species' ? 'Type part of a name, an ability or a move' : 'Type part of a name';
         const found = matching(this.pool(spec, true), words);
         if (found.length === 0) return 'No matches';
         const names = found.slice(0, HINT_NAMES).map((option) => option.name).join(', ');
@@ -302,7 +304,13 @@ function searchWords(query: string): string[] {
   return query.toLowerCase().split(/\s+/).map(toId).filter(Boolean);
 }
 
-/** The options whose name has every word; names starting with the first word come first. */
+/** A keyword search needs this many letters (fewer would match nearly every species). */
+const MIN_KEYWORD_QUERY = 3;
+
+/**
+ * The options whose name has every word, names starting with the first word first; then the ones
+ * with a keyword starting with the whole query (a species' ability or move: "fake out").
+ */
 function matching(options: readonly ChooserOption[], words: readonly string[]): readonly ChooserOption[] {
   if (words.length === 0) return options;
   const found = options.filter((option) => {
@@ -310,5 +318,9 @@ function matching(options: readonly ChooserOption[], words: readonly string[]): 
     return words.every((word) => name.includes(word));
   });
   const first = words[0];
-  return [...found.filter((o) => toId(o.name).startsWith(first)), ...found.filter((o) => !toId(o.name).startsWith(first))];
+  const query = words.join('');
+  const byName = new Set(found);
+  const byKeyword =
+    query.length < MIN_KEYWORD_QUERY ? [] : options.filter((option) => !byName.has(option) && !!option.keywords?.some((keyword) => keyword.startsWith(query)));
+  return [...found.filter((o) => toId(o.name).startsWith(first)), ...found.filter((o) => !toId(o.name).startsWith(first)), ...byKeyword];
 }

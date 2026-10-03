@@ -3,6 +3,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
 import { speciesInfo } from '@core/dex/species';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { ACCEPT_FILL } from '@core/gl/ui/hold-action';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { MovePill, movePills, sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleRequest } from '@features/battle/models/battle';
@@ -32,6 +33,9 @@ const DONE_BOX = { x: 884, y: 636, w: 160, h: 56 };
 const SHEET_BOX = { x: 1052, y: 648, w: 116, h: 32 };
 const SWAP_MS = 280;
 const POP_MS = 200;
+/** Done's beat while it waits to be pressed (all picked), and its shake when L comes too soon. */
+const DONE_BEAT_MS = 900;
+const NUDGE_MS = 420;
 export const DONE_ID = 'team-done';
 
 /** What ZL does about the opponent's open team sheet: shows it, agrees to open sheets, or waits. */
@@ -139,6 +143,11 @@ export class TeamSelectView {
   private ownActive = true;
   /** When each bring slot was filled, for its pop. */
   private filledAt: number[] = [];
+  /** Since when all are picked and Done waits (its beat starts there); null while not. */
+  private readySince: number | null = null;
+  /** L pressed before all were picked: the count shakes (set on the next frame). */
+  private nudgeAt = -1e4;
+  private nudgeAsked = false;
 
   /** The first of ours, where the focus starts. */
   readonly firstId = 'pick-0';
@@ -167,7 +176,16 @@ export class TeamSelectView {
     this.store.choose(`team ${this.order().map((i) => i + 1).join('')}`);
   }
 
-  draw(ctx: ScreenContext, sheet: { button: SheetButton; press: () => void } | null, onAllPicked: () => void): void {
+  /** L: Done from anywhere on the screen; too soon, the count shakes. False when it isn't ours to use. */
+  pressDone(): boolean {
+    if (!this.pending()) return false;
+    if (this.ready()) this.done();
+    else this.nudgeAsked = true;
+    return true;
+  }
+
+  /** `sheet.held`: how full Accept is while ZL is held (accepting open team sheets), 0 to 1. */
+  draw(ctx: ScreenContext, sheet: { button: SheetButton; press: () => void; held: number } | null, onAllPicked: () => void): void {
     const { renderer } = ctx;
     const p = this.palette;
     this.followFocus(ctx);
@@ -218,18 +236,60 @@ export class TeamSelectView {
     this.drawSlots(ctx, own);
 
     const ready = this.ready() && !standing;
+    if (!ready) this.readySince = null;
+    else if (this.readySince === null) this.readySince = ctx.now;
+    if (this.nudgeAsked) {
+      this.nudgeAsked = false;
+      this.nudgeAt = ctx.now;
+    }
     const focused = ctx.focus.control({ id: DONE_ID, ...DONE_BOX, accept: () => this.done(), move: (direction) => this.moveFromDone(ctx, direction) });
-    renderer.rect(DONE_BOX.x, DONE_BOX.y, DONE_BOX.w, DONE_BOX.h, { fill: ready ? p.accent : INK.gray700, stroke: ready ? p.accentText : INK.gray600, radius: 8, border: 2 });
-    write(ctx, standing ? 'Sent' : 'Done', DONE_BOX.x + DONE_BOX.w / 2, DONE_BOX.y + DONE_BOX.h / 2, { size: 22, bold: true }, ready ? INK.white : INK.gray400, 'center');
-    if (focused) ring(ctx, DONE_BOX, 8);
+    this.drawDone(ctx, ready, standing, focused);
     if (sheet) {
       const label = { sheet: 'Sheet', accept: 'Accept', waiting: 'Waiting' }[sheet.button];
-      hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline });
+      const held = sheet.button === 'accept' ? { progress: sheet.held, color: ACCEPT_FILL } : undefined;
+      hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline }, held);
     }
-    const status = standing ? 'Team sent' : `${order.length}/${this.toBring()} chosen`;
-    write(ctx, status, CARD.own, 640, { size: 18, bold: true }, ready || standing ? p.teal : p.ink, 'left', 290);
+    const status = standing ? 'Team sent' : ready ? 'Ready! Confirm with L' : `${order.length}/${this.toBring()} chosen`;
+    const nudge = (ctx.now - this.nudgeAt) / NUDGE_MS;
+    const shake = nudge < 1 ? Math.sin(nudge * 6 * Math.PI) * 8 * (1 - nudge) : 0;
+    write(ctx, status, CARD.own + shake, 640, { size: 18, bold: true }, nudge < 1 ? INK.red300 : ready || standing ? p.teal : p.ink, 'left', 290);
     write(ctx, this.hint(sheet?.button ?? null), CARD.own, 672, { size: 14 }, p.muted, 'left', 290);
     write(ctx, standing ? '' : 'B undo', CARD.own, 696, { size: 14 }, p.muted, 'left', 290);
+  }
+
+  /**
+   * Done, with L's chip. Once all are picked it beats (a glow swelling out of it, the button growing a
+   * little) until it's pressed, so it's clear the picks wait for it.
+   */
+  private drawDone(ctx: ScreenContext, ready: boolean, standing: boolean, focused: boolean): void {
+    const { renderer } = ctx;
+    const p = this.palette;
+    let box = DONE_BOX;
+    if (ready && this.readySince !== null) {
+      const phase = ((ctx.now - this.readySince) % DONE_BEAT_MS) / DONE_BEAT_MS;
+      const swell = easeOut(phase);
+      const pad = 6 + 22 * swell;
+      renderer.rect(box.x - pad, box.y - pad, box.w + pad * 2, box.h + pad * 2, {
+        fill: withAlpha(p.accent, 0.55 * (1 - swell)),
+        radius: 8 + pad,
+        softness: 10,
+        additive: true,
+      });
+      const grow = 1 + 0.05 * Math.max(0, Math.sin(phase * 2 * Math.PI));
+      const w = box.w * grow;
+      const h = box.h * grow;
+      box = { x: box.x - (w - box.w) / 2, y: box.y - (h - box.h) / 2, w, h };
+    }
+    renderer.rect(box.x, box.y, box.w, box.h, { fill: ready ? p.accent : INK.gray700, stroke: ready ? p.accentText : INK.gray600, radius: 8, border: 2 });
+    const cy = box.y + box.h / 2;
+    if (standing) {
+      write(ctx, 'Sent', box.x + box.w / 2, cy, { size: 22, bold: true }, INK.gray400, 'center');
+    } else {
+      renderer.rect(box.x + 18, cy - 13, 26, 26, { fill: ready ? INK.header : INK.gray600, radius: 3 });
+      write(ctx, 'L', box.x + 31, cy, { size: 16, bold: true }, INK.white, 'center');
+      write(ctx, 'Done', box.x + 52 + (box.w - 52) / 2 - 6, cy, { size: 22, bold: true }, ready ? INK.white : INK.gray400, 'center');
+    }
+    if (focused) ring(ctx, box, 8);
   }
 
   /** The side and Pokémon shown follow the focus: a new one slides in. */
@@ -394,10 +454,10 @@ export class TeamSelectView {
 
   private hint(sheet: SheetButton | null): string {
     if (this.standingBy()) return sheet === 'sheet' ? 'ZL their full team sheet' : '';
-    if (sheet === 'sheet') return 'A pick · ◀▶ sides · ZL their sheet';
-    if (sheet === 'accept') return 'A pick · ◀▶ sides · ZL accept sheets';
-    if (sheet === 'waiting') return 'A pick · ◀▶ sides · waiting on sheets';
-    return 'A pick · ◀▶ sides';
+    if (sheet === 'sheet') return 'A pick · L done · ZL their sheet';
+    if (sheet === 'accept') return 'A pick · L done · hold ZL: accept sheets';
+    if (sheet === 'waiting') return 'A pick · L done · waiting on sheets';
+    return 'A pick · ◀▶ sides · L done';
   }
 }
 

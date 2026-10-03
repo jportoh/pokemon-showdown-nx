@@ -1,4 +1,5 @@
 import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
+import { AudioEngine } from '@core/audio/audio-engine';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleCries } from '@features/battle/audio/battle-cries';
 import { movePattern } from '@features/battle/gl/move-patterns';
@@ -80,8 +81,12 @@ const FAINT_DROP_PX = 64;
 const SWITCH_MS = 450;
 const SWITCH_PX = 140;
 const IMAGE_WAIT_MS = 1500;
+/** How long a new Pokémon waits hidden for its send-out before it just appears. */
+const ENTRY_WAIT_MS = 250;
 const MEGA_MS = 900;
 const POPUP_MS = 1400;
+/** Stat changes closer together than this sound once. */
+const STAT_SOUND_GAP_MS = 400;
 const HP_LABEL_MS = 1100;
 /** Labels and banners pop in over this long. */
 const POP_MS = 180;
@@ -106,6 +111,8 @@ const CRIT: Rgba = rgba('#b45309');
 const STAT_UP: Rgba = rgba('#15803d');
 const STAT_DOWN: Rgba = rgba('#b91c1c');
 const TRICK_ROOM: Rgba = rgba('#a855f7');
+/** Trick Room's grid squares on the wall over the horizon. */
+const TRICK_ROOM_CELL = 64;
 
 /** Motes floating up from a terrain, in a brighter shade of its colour. */
 const TERRAIN_MOTES: Record<string, Rgba> = {
@@ -199,6 +206,9 @@ export class BattleFieldScene {
   private readonly dex = inject(ChampionsDex);
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly cries = inject(BattleCries);
+  private readonly audio = inject(AudioEngine);
+  /** The last move's effectiveness on each slot: its hits sound by it (a multi-hit's later ones too). */
+  private hitEffectiveness: MoveAction['effectiveness'] = {};
 
   private readonly layout = computed<FieldLayout>(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
@@ -237,6 +247,13 @@ export class BattleFieldScene {
   private readonly anims = new Map<SlotKey, SlotAnim>();
   private readonly shownIdents = new Map<SlotKey, string>();
   private readonly fainting = new Set<SlotKey>();
+  /** Slots whose Pokémon went back to its ball: empty until the next one comes in. */
+  private readonly withdrawn = new Set<SlotKey>();
+  /**
+   * When a new Pokémon showed up in a slot before its send-out did (the store changes first, the event
+   * is seen a frame later): it stays hidden till then, rather than standing in place before it slides in.
+   */
+  private readonly entering = new Map<SlotKey, number>();
   /** Each status box's bar: the width shown, and its slide when the HP changes. */
   private readonly bars = new Map<SlotKey, { ident: string; width: number; from: number; to: number; start: number; duration: number }>();
   private shake: { start: number; duration: number } | null = null;
@@ -283,9 +300,14 @@ export class BattleFieldScene {
     this.follow(this.store.popups, (list) => (this.popups = list), () => this.popups, POPUP_MS);
     this.follow(this.store.hpChanges, (list) => (this.hpLabels = list), () => this.hpLabels, HP_LABEL_MS);
     this.follow(this.store.statusChanges, (list) => (this.statusLabels = list), () => this.statusLabels, POPUP_MS);
+    let lastStatSound = 0;
     this.follow(this.store.statChanges, (list) => (this.statLabels = list), () => this.statLabels, POPUP_MS, (change) => {
       const at = this.effectPoint(change.slot);
       if (at) this.effects.statChange(at, change.amount > 0, this.sizeOf(change.slot));
+      // Several stats changing at once (Dragon Dance, Intimidate on both) sound once.
+      const now = performance.now();
+      if (now - lastStatSound > STAT_SOUND_GAP_MS) this.audio.play(change.amount > 0 ? 'statUp' : 'statDown');
+      lastStatSound = now;
     });
     effect(() => {
       if (this.store.intro()) this.introBorn = performance.now();
@@ -370,6 +392,9 @@ export class BattleFieldScene {
       this.shownIdents.set(slot.key, ident);
       this.anims.delete(slot.key);
       this.fainting.delete(slot.key);
+      this.withdrawn.delete(slot.key);
+      if (ident) this.entering.set(slot.key, performance.now());
+      else this.entering.delete(slot.key);
     }
   }
 
@@ -409,6 +434,7 @@ export class BattleFieldScene {
       case 'withdraw':
       case 'send-out': {
         const leaving = event.kind === 'withdraw';
+        this.entering.delete(event.slot);
         const away = event.slot.startsWith('p1') ? -SWITCH_PX : SWITCH_PX;
         const sprite = slot?.pokemon?.sprite ?? '';
         const own = event.slot.startsWith('p1');
@@ -432,7 +458,7 @@ export class BattleFieldScene {
             }
             if (!leaving) v.bright = 1 + 1.5 * (1 - p);
           },
-          { waitFor: leaving ? undefined : () => !this.sprites?.pending(sprite, own) },
+          leaving ? { done: () => this.withdrawn.add(event.slot) } : { waitFor: () => !this.sprites?.pending(sprite, own) },
         );
         return;
       }
@@ -484,6 +510,8 @@ export class BattleFieldScene {
   private playMove(action: MoveAction): void {
     const effects = this.effects;
     effects.speed = this.store.speed();
+    this.hitEffectiveness = action.effectiveness;
+    this.audio.play(action.category === 'Physical' ? 'physical' : action.category === 'Special' ? 'special' : 'status');
     // Effects take the size of the Pokémon they're on: ours are drawn bigger than the opponent's.
     const size = this.sizeOf(action.attacker);
     const sizeAt = (slot: SlotKey) => this.sizeOf(slot);
@@ -595,7 +623,10 @@ export class BattleFieldScene {
     });
   }
 
+  /** A hit: the Pokémon blinks, and the hit sounds as effective as it was. */
   private blink(slot: SlotKey, shake = false): void {
+    const effectiveness = this.hitEffectiveness[slot];
+    this.audio.play(effectiveness === 'super' ? 'hitSuper' : effectiveness === 'resisted' ? 'hitWeak' : 'hit');
     this.animate(slot, BLINK_MS, (v, p) => {
       const phase = Math.min(BLINKS - 1, Math.floor(p * BLINKS));
       v.alpha = p < 1 && phase % 2 === 0 ? 0.2 : 1;
@@ -630,7 +661,7 @@ export class BattleFieldScene {
     }
     renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: sky });
     renderer.originX = baseX + shakeX;
-    this.drawScenery(renderer, now, ground);
+    this.drawScenery(renderer, now, ground, rooms.some((room) => room.id === 'Trick Room'));
     this.drawMotes(renderer, dt, terrain?.id ?? null, now);
     for (const slot of this.slots()) this.drawPokemon(renderer, slot, now);
     this.effects.draw(renderer);
@@ -641,6 +672,13 @@ export class BattleFieldScene {
       renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [0, 0, 0, 0], stroke: withAlpha(TRICK_ROOM, pulse), border: 6 });
     }
     for (const slot of this.slots()) this.drawHpBox(renderer, slot, now);
+  }
+
+  /**
+   * What goes over everything on the field, the host's strips (balls, side conditions) too: the
+   * move and ability labels, the intro and the result. Placed and clipped as `draw`.
+   */
+  drawOver(renderer: GlRenderer, now: number): void {
     this.drawLabels(renderer, now);
     this.drawIntro(renderer, now);
     this.drawResult(renderer, now);
@@ -778,7 +816,7 @@ export class BattleFieldScene {
    * shows it: the clouds far off barely move, the platforms go with their Pokémon. The one choosing (or
    * the target) has a ring of light around its platform.
    */
-  private drawScenery(renderer: GlRenderer, now: number, ground: typeof DEFAULT_GROUND): void {
+  private drawScenery(renderer: GlRenderer, now: number, ground: typeof DEFAULT_GROUND, trickRoom: boolean): void {
     const disc = this.disc!;
     const t = now / 1000;
     for (let i = 0; i < 4; i++) {
@@ -797,6 +835,7 @@ export class BattleFieldScene {
     renderer.rect(-100, groundY - 40, FIELD_W + 200, 80, { fill: [1, 1, 1, 0.1], texture: disc, additive: true });
     renderer.rect(0, groundY, FIELD_W, Math.max(0, FIELD_H - groundY), { fill: rgba(ground.ground) });
     renderer.rect(0, groundY, FIELD_W, 6, { fill: withAlpha(rgba(ground.edge), 0.35) });
+    if (trickRoom) this.drawTrickRoomGrid(renderer, now);
     for (const slot of this.slots()) {
       const width = Math.round(slot.own ? slot.size * 1.25 : slot.size);
       const height = Math.round(slot.size * (slot.own ? 0.32 : 0.27));
@@ -810,9 +849,42 @@ export class BattleFieldScene {
     }
   }
 
+  /**
+   * Trick Room's twisted space, behind the Pokémon (as Showdown and the games show it): a violet grid,
+   * a wall over the horizon and a floor in perspective under it, its lines breathing slowly.
+   */
+  private drawTrickRoomGrid(renderer: GlRenderer, now: number): void {
+    const groundY = this.groundY;
+    const alpha = 0.28 + 0.08 * Math.sin(now / 600);
+    const color = withAlpha(TRICK_ROOM, alpha);
+    renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: withAlpha(TRICK_ROOM, 0.1) });
+    // The wall: squares from the horizon up.
+    for (let x = (FIELD_W / 2) % TRICK_ROOM_CELL; x < FIELD_W; x += TRICK_ROOM_CELL) renderer.rect(x - 1, 0, 2, groundY, { fill: color });
+    for (let y = groundY - TRICK_ROOM_CELL; y > -TRICK_ROOM_CELL; y -= TRICK_ROOM_CELL) renderer.rect(0, y - 1, FIELD_W, 2, { fill: color });
+    // The floor: rows closer together towards the horizon, columns running to a point above it.
+    const depth = FIELD_H - groundY;
+    for (let i = 1; i <= 8; i++) {
+      const y = groundY + depth * (i / 8) * (i / 8);
+      renderer.rect(0, y - 1, FIELD_W, 2, { fill: color });
+    }
+    const vanishY = groundY - depth * 1.5;
+    const narrowing = (groundY - vanishY) / (FIELD_H - vanishY);
+    for (let i = -12; i <= 12; i++) {
+      const bottomX = FIELD_W / 2 + i * TRICK_ROOM_CELL * 2;
+      const topX = FIELD_W / 2 + (bottomX - FIELD_W / 2) * narrowing;
+      line(renderer, topX, groundY, bottomX, FIELD_H, 2, color);
+    }
+  }
+
   private drawPokemon(renderer: GlRenderer, slot: Slot, now: number): void {
     const pokemon = slot.pokemon;
-    if (!pokemon || (pokemon.fainted && !this.fainting.has(slot.key))) return;
+    if (!pokemon || (pokemon.fainted && !this.fainting.has(slot.key)) || this.withdrawn.has(slot.key)) return;
+    const entering = this.entering.get(slot.key);
+    if (entering !== undefined) {
+      // No send-out coming (a spectator catching up, Illusion's reveal): it just appears.
+      if (now - entering < ENTRY_WAIT_MS) return;
+      this.entering.delete(slot.key);
+    }
     const visual: Visual = { dx: 0, dy: 0, alpha: 1, bright: 1 };
     const anim = this.anims.get(slot.key);
     if (anim) {
@@ -1071,9 +1143,10 @@ export class BattleFieldScene {
 
   /** Every stand where the camera shows it now. */
   private slots(): Slot[] {
+    const { scale } = this.layout();
     return this.occupants().map((occupant) => {
       const at = this.camera.project(occupant.stand.x, occupant.stand.y, depthOf(occupant.key));
-      const size = Math.round(96 * at.k);
+      const size = Math.round(96 * at.k * scale);
       return { ...occupant, size, feetX: at.x, feetY: at.y, left: Math.round(at.x - size / 2), top: Math.round(at.y + feetGap(size) - size) };
     });
   }
@@ -1138,4 +1211,10 @@ export class BattleFieldScene {
 function backOut(t: number): number {
   const c = 1.7;
   return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
+}
+
+/** A straight line from (x1, y1) to (x2, y2), `width` thick. */
+function line(renderer: GlRenderer, x1: number, y1: number, x2: number, y2: number, width: number, color: Rgba): void {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  renderer.rect((x1 + x2) / 2 - length / 2, (y1 + y2) / 2 - width / 2, length, width, { fill: color, angle: Math.atan2(y2 - y1, x2 - x1) });
 }

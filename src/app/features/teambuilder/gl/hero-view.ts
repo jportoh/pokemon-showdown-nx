@@ -10,6 +10,8 @@ import { EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, typePill
 export type Gender = '' | 'M' | 'F';
 
 export const SPECIES_ID = 'card-species';
+/** The Details rows' first one (see set-rows-view's cardId). */
+const ITEM_ID = 'card-item';
 export const NICKNAME_ID = 'hero-nickname';
 export const GENDER_ID = 'hero-gender';
 /** Showdown's limit for a nickname. */
@@ -102,7 +104,13 @@ export class HeroView {
 
     // The name and the stage are the species' control: A opens the list.
     const speciesBox = { x: box.x + 8, y: box.y + 8, w: box.w - 16, h: 368 };
-    const focused = ctx.focus.control({ id: SPECIES_ID, ...speciesBox, accept: model.openSpecies });
+    // Right goes to the rows' first one (the item), not the one level with the tall card's middle.
+    const focused = ctx.focus.control({
+      id: SPECIES_ID,
+      ...speciesBox,
+      accept: model.openSpecies,
+      move: (direction) => direction === 'right' && ctx.focus.has(ITEM_ID) && (ctx.focus.focus(ITEM_ID), true),
+    });
     drawHeroName(ctx, box, form, set?.species || 'New Pokémon');
     if (focused) focusRing(ctx, speciesBox, 10);
     drawHeroTypes(ctx, box, form);
@@ -188,15 +196,9 @@ export function drawHeroName(ctx: UiContext, box: Box, form: DexSpecies | DexMeg
   if (form) label(ctx, `Lv. 50 · BST ${baseStatTotal(form)}`, box.x + box.w - 24, box.y + 36, { size: 18 }, p.muted, { align: 'right' });
 }
 
-/** The full card's types under the stage, and the place of its Tera Type. */
+/** The full card's types under the stage (the teambuilder's formats have no Tera Types to show). */
 export function drawHeroTypes(ctx: UiContext, box: Box, form: DexSpecies | DexMega | undefined): void {
-  const p = ctx.palette;
-  const pillsY = box.y + 390;
-  typePills(ctx, form?.types ?? [], box.x + 24, pillsY, 112, 120, 32, 18);
-  // Tera Types aren't in the format yet: their place, greyed out.
-  const tera = { x: box.x + box.w - 24 - 156, y: pillsY, w: 156, h: 32 };
-  ctx.renderer.rect(tera.x, tera.y, tera.w, tera.h, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 4, border: 2 });
-  label(ctx, 'Tera: soon', tera.x + tera.w / 2, tera.y + tera.h / 2, { size: 18 }, p.muted, { align: 'center' });
+  typePills(ctx, form?.types ?? [], box.x + 24, box.y + 390, 112, 120, 32, 18);
 }
 
 /** A field of the card (nickname, gender): lit while focused, dimmed when it can't change. */

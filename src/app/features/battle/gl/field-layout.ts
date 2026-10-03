@@ -24,6 +24,8 @@ export interface Stand {
 
 export interface FieldLayout {
   stands: Record<SlotKey, Stand>;
+  /** The sprites' size over the camera's (singles have room for them bigger). */
+  scale: number;
 }
 
 /** The field: the stage between the top bar and the command bar (1280x566 from 0,44). */
@@ -49,14 +51,17 @@ export const DOUBLES: FieldLayout = {
     p1a: { x: 245, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 368 },
     p1b: { x: 600, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 466 },
   },
+  scale: 1,
 };
 
 /** Singles, as the third-generation games lay them out: the opponent's Pokémon back right, the player's front left. */
 export const SINGLES: FieldLayout = {
   stands: {
-    p2a: { x: 900, y: 280, boxLeft: 24, boxTop: 12 },
-    p1a: { x: 330, y: 544, boxLeft: OWN_BOX_LEFT, boxTop: 466 },
+    p2a: { x: 900, y: 304, boxLeft: 24, boxTop: 12 },
+    p1a: { x: 360, y: 552, boxLeft: OWN_BOX_LEFT, boxTop: 466 },
   },
+  // One a side: both much bigger than in doubles, nearer the camera.
+  scale: 1.35,
 };
 
 /** The status boxes. */

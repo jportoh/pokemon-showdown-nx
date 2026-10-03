@@ -1,4 +1,5 @@
 import { Service, inject, signal } from '@angular/core';
+import { AudioEngine } from '@core/audio/audio-engine';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { AppSettings } from '@core/settings/app-settings';
 import { merge } from 'rxjs';
@@ -48,6 +49,7 @@ export class ShowdownChallenges {
   private readonly render = inject(RenderScheduler);
   private readonly rooms = inject(BattleRooms);
   private readonly settings = inject(AppSettings);
+  private readonly audio = inject(AudioEngine);
   private readonly incomingSignal = signal<readonly Challenge[]>([]);
   private readonly errorSignal = signal<string | null>(null);
   private readonly outgoingSignal = signal<OutgoingChallenge | null>(null);
@@ -181,6 +183,8 @@ export class ShowdownChallenges {
       formatName: formatName(format),
       needsTeam: !format.includes('random'),
     };
+    // A new challenge rings (not one sent again, as when its format changes).
+    if (others.length === this.incomingSignal().length) this.audio.play('challenge');
     this.setIncoming([...others, challenge]);
   }
 

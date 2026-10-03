@@ -355,6 +355,8 @@ export class BattleStore {
     this.reset();
     this.battleIdSignal.update((id) => id + 1);
     this.replaySignal.set(connection.replay ?? null);
+    // Only replays have a speed control: a live battle after one at x2 or x4 plays at normal speed.
+    if (!connection.replay) this.speedSignal.set(1);
     this.spectatingSignal.set(!!connection.spectating);
     this.catchingUp = !!connection.spectating;
     this.session.setActive(true);
@@ -760,8 +762,12 @@ export class BattleStore {
           this.updateSide(side, (s) => ({ ...s, preview: [...s.preview, species] }));
         return 0;
       }
+      case 'teampreview':
+        this.music.preview();
+        return 0;
       case 'start': {
         const { p1, p2 } = this.sidesSignal();
+        this.music.begin();
         this.introSignal.set({ p1: p1.name, p2: p2.name });
         // Too late to agree to the open team sheets now.
         this.sheetOfferSignal.set('none');
@@ -956,10 +962,13 @@ export class BattleStore {
         this.actionSignal.set(null);
         this.winnerSignal.set(args[0]);
         this.resultSignal.set(args[0] === this.sidesSignal().p1.name ? 'win' : 'loss');
+        // Our own battles end on the victory or the defeat theme; watched ones on the victory's.
+        this.music.end(this.watching() || this.resultSignal() === 'win');
         return this.say(`${args[0]} won the battle!`, 'result');
       case 'tie':
         this.actionSignal.set(null);
         this.resultSignal.set('tie');
+        this.music.end(this.watching());
         return this.say('The battle ended in a tie!', 'result');
       case '-message':
         return this.say(args[0]);
@@ -1018,7 +1027,7 @@ export class BattleStore {
     const category = dexMove?.category ?? moveInfo(move)?.category ?? '';
     const hits = this.upcomingHits().filter((slot) => slot !== from);
     hits.forEach((slot) => this.blinkedHits.add(slot));
-    return { id: this.nextEventId++, attacker: from, targets, hits, move, type, category };
+    return { id: this.nextEventId++, attacker: from, targets, hits, move, type, category, effectiveness: this.upcomingEffectiveness() };
   }
 
   /**
@@ -1036,6 +1045,22 @@ export class BattleStore {
       if (slot) hits.add(slot);
     }
     return [...hits];
+  }
+
+  /**
+   * How effective the move is on each slot it hits, from the `|-supereffective|` and `|-resisted|`
+   * lines that follow it in the queue (before the next action), for the hits' sounds.
+   */
+  private upcomingEffectiveness(): MoveAction['effectiveness'] {
+    const effectiveness: MoveAction['effectiveness'] = {};
+    for (const line of this.queue) {
+      const [command, ...rest] = line.slice(1).split('|');
+      if (ACTION_BOUNDARIES.has(command)) break;
+      if (command !== '-supereffective' && command !== '-resisted') continue;
+      const slot = this.slotOf(splitArgs(rest).args[0] ?? '');
+      if (slot) effectiveness[slot] = command === '-supereffective' ? 'super' : 'resisted';
+    }
+    return effectiveness;
   }
 
   /**

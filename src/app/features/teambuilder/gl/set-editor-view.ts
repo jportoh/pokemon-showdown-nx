@@ -1,5 +1,5 @@
 import { Signal, computed, inject, signal } from '@angular/core';
-import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
+import { ChampionsDex, DexMega, DexMove, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -75,10 +75,11 @@ export class SetEditorView {
   });
 
   // The species and item lists, built once: the data only has what the format allows. Megas are
-  // listed as species too: picking one picks its base species holding the Mega Stone.
+  // listed as species too: picking one picks its base species holding the Mega Stone. A search finds
+  // them by their abilities and the moves they learn too ("fake out", "intimidate").
   private readonly speciesOptions: readonly ChooserOption[] = [
-    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, types: species.types })),
-    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, types: mega.types })),
+    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, types: species.types, keywords: speciesKeywords(species.abilities, species.moves) })),
+    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, types: mega.types, keywords: speciesKeywords([mega.ability], this.dex.species(mega.base)?.moves ?? []) })),
   ].sort((a, b) => a.name.localeCompare(b.name));
   private readonly megaStoneIds = new Set(this.dex.allMegas.map((mega) => mega.item));
   private readonly itemOptions: readonly ChooserOption[] = this.dex.allItems.map((item) => ({
@@ -505,4 +506,9 @@ export class SetEditorView {
 
 function newPokemon(): PokemonSet {
   return { name: '', species: '', item: '', ability: '', gender: '', shiny: false, evs: {}, nature: 'Serious', moves: [] };
+}
+
+/** What a species search also looks through: its abilities' and moves' IDs. */
+function speciesKeywords(abilities: readonly string[], moves: readonly DexMove[]): readonly string[] {
+  return [...abilities.map(toId), ...moves.map((move) => move.id)];
 }
