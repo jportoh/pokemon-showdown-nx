@@ -6,6 +6,7 @@ import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-co
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
 import { ReplayGame } from '@features/replays/data/replay-game';
+import { errorText, gameDetail, timeAgo } from '@features/replays/data/replay-rows';
 import { PickerOption } from '@core/gl/ui/option-picker';
 import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
 import { RowLookup, RowLookups } from '@shared/utils/row-lookups';
@@ -159,31 +160,4 @@ function ratingDetail(row: ReplayRow, game: RowLookup<ReplayGame> | undefined): 
 function toRow(replay: ReplaySummary, now: number): ReplayRow {
   const [p1, p2] = replay.players;
   return { ...replay, title: `${p1} vs ${p2}`, age: timeAgo(now - replay.uploadtime) };
-}
-
-/**
- * "Game 2 · Avg rating 1190": the game's number in its set, and the average of the players' ratings as
- * it started. In words: Brewser's font draws "~" as a raised accent.
- */
-function gameDetail(game: ReplayGame): string[] {
-  const rating = !game.rated
-    ? 'Unrated'
-    : game.ratings.length > 0
-      ? `Avg rating ${Math.round(game.ratings.reduce((sum, value) => sum + value, 0) / game.ratings.length)}`
-      : 'Rated';
-  return game.game === null ? [rating] : [`Game ${game.game}`, rating];
-}
-
-/** "3 min ago", "2 h ago", "4 days ago". */
-function timeAgo(seconds: number): string {
-  const minutes = Math.max(0, Math.round(seconds / 60));
-  if (minutes < 60) return minutes <= 1 ? 'just now' : `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? 'yesterday' : `${days} days ago`;
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

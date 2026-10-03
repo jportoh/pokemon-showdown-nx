@@ -32,4 +32,6 @@ export const HOME_MENU_ITEMS: readonly HomeMenuItem[] = [
 @Service()
 export class HomeMenu {
   readonly lastItem = signal<PixelIconName>('battle');
+  /** Coming back from a page the Trainer Card opened (the battle history): the menu opens the card again. */
+  readonly openCard = signal(false);
 }

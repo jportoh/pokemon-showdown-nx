@@ -41,6 +41,11 @@ export const routes: Routes = [
     loadComponent: () => import('@features/replays/components/replays-scene/replays-scene').then((c) => c.ReplaysScene),
   },
   {
+    // The player's own battles, opened from the Trainer Card or Settings (?from=), where B goes back.
+    path: 'history',
+    loadComponent: () => import('@features/replays/components/history-scene/history-scene').then((c) => c.HistoryScene),
+  },
+  {
     path: 'live',
     loadComponent: () => import('@features/live/components/live-scene/live-scene').then((c) => c.LiveScene),
   },

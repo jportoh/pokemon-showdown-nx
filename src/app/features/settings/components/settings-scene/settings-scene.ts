@@ -13,7 +13,18 @@ import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 
-type SettingId = 'theme' | 'musicVolume' | 'soundVolume' | 'battleFormat' | 'teamFormat' | 'allowSpectators' | 'rememberName' | 'autoLogin' | 'replays';
+type SettingId =
+  | 'theme'
+  | 'musicVolume'
+  | 'soundVolume'
+  | 'battleFormat'
+  | 'teamFormat'
+  | 'allowSpectators'
+  | 'saveReplays'
+  | 'rememberName'
+  | 'autoLogin'
+  | 'history'
+  | 'replays';
 
 interface SettingRow {
   id: SettingId;
@@ -48,13 +59,13 @@ const FLASH_MS = 400;
 const LEFT_ROWS = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];
 const RIGHT_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 
-/** The row focused when coming back from a page Settings opened (the replays). */
+/** The row focused when coming back from a page Settings opened (the battle history, the replays). */
 let returnRow: SettingId = 'theme';
 
 /**
  * Settings, drawn on the stage: a list of rows, each with its value on the right. A changes it (the
- * next value, or on/off), and so do left/right (back for left); the theme applies at once. The last
- * row opens the replays, whose B comes back here. B goes back to the menu.
+ * next value, or on/off), and so do left/right (back for left); the theme applies at once. The last two
+ * rows open the battle history and the replays, whose B comes back here. B goes back to the menu.
  */
 @Component({
   selector: 'app-settings-scene',
@@ -77,6 +88,8 @@ export class SettingsScene {
     const theme = THEMES.find((t) => t.id === settings.theme) ?? THEMES[0];
     const savedFor = this.saved.savedFor();
     const rememberedName = this.saved.name();
+    const login = this.login.state();
+    const registered = login.status === 'named' && login.registered;
     return [
       {
         id: 'theme',
@@ -129,6 +142,18 @@ export class SettingsScene {
         on: settings.allowSpectators,
       },
       {
+        id: 'saveReplays',
+        label: 'Save my replays',
+        detail: !settings.saveReplays
+          ? 'Your battles aren\'t saved: only the ones saved before show in your history.'
+          : settings.allowSpectators
+            ? 'Each battle you play is saved, public, on Showdown\'s replay server, for your history.'
+            : 'Saved as private while spectators are off: they won\'t show in your history.',
+        value: settings.saveReplays ? 'On' : 'Off',
+        kind: 'toggle',
+        on: settings.saveReplays,
+      },
+      {
         id: 'rememberName',
         label: 'Remember my name',
         detail: !settings.rememberName
@@ -154,6 +179,14 @@ export class SettingsScene {
         kind: 'toggle',
         on: settings.autoLogin,
         disabled: !this.saved.canSavePassword,
+      },
+      {
+        id: 'history',
+        label: 'Battle history',
+        detail: registered ? 'The battles you have played, with their replays.' : 'Log in with a registered name to see the battles you have played.',
+        value: 'Open',
+        kind: 'link',
+        disabled: !registered,
       },
       {
         id: 'replays',
@@ -209,8 +242,9 @@ export class SettingsScene {
 
   private activate(row: SettingRow): void {
     if (row.kind === 'link') {
+      if (row.disabled) return;
       returnRow = row.id;
-      this.leave('/replays');
+      this.leave(row.id === 'history' ? '/history?from=settings' : '/replays');
       return;
     }
     this.change(row, 1);
@@ -248,6 +282,9 @@ export class SettingsScene {
         break;
       case 'allowSpectators':
         this.appSettings.set('allowSpectators', !settings.allowSpectators);
+        break;
+      case 'saveReplays':
+        this.appSettings.set('saveReplays', !settings.saveReplays);
         break;
       case 'rememberName':
         this.saved.setRememberName(!settings.rememberName);

@@ -23,12 +23,13 @@ const PAGE_COUNT = Math.ceil(AVATAR_CHOICES.length / PER_PAGE);
 
 export const CARD_CLOSE_ID = 'card-close';
 export const CARD_AVATAR_ID = 'card-avatar';
+export const CARD_HISTORY_ID = 'card-history';
 
 /**
  * A Trainer Card, Gen 3 style: the player's own, or someone else's (a
  * challenger's, by name: their avatar from the server, and no picker). The avatar in a frame (our own:
  * A opens the avatar picker over the card), the name and totals across every ladder (battles, wins and
- * losses, win rate), and the best ladder ratings, loaded each time it's shown. B or Close closes it
+ * losses, win rate), and the best ladder ratings, loaded each time it's shown. Our own card has Battle history (the page that lists our battles, when the menu gives it). B or Close closes it
  * (L too, from the menu). The picker shows Showdown's avatars 10x4 a page: the d-pad turns the page
  * past its top or bottom row, L/R turn pages too, A picks, B goes back to the card.
  */
@@ -83,12 +84,12 @@ export class TrainerCardView {
   private readonly current = computed(() => AVATAR_ALIASES[this.login.state().avatar] ?? this.login.state().avatar);
 
   /** Showing someone's card (our own: null): their ratings (and details) loaded again, Close focused. */
-  open(player: string | null = null): void {
+  open(player: string | null = null, focusId = CARD_CLOSE_ID): void {
     this.player.set(player);
     this.picking.set(false);
     this.ladder.load(this.userId());
     if (!this.isSelf()) this.playerDetails.load(player ?? this.userId());
-    this.focus.focus(CARD_CLOSE_ID);
+    this.focus.focus(focusId);
   }
 
   /** L/R while picking: a page back or forward (the press is used at either end too). */
@@ -108,17 +109,19 @@ export class TrainerCardView {
     this.focus.focus(CARD_AVATAR_ID);
   }
 
-  draw(ctx: UiContext, close: () => void): void {
+  /** `history` opens the battle history (a button on our own card when given). */
+  draw(ctx: UiContext, close: () => void, history?: () => void): void {
     if (this.picking()) this.drawPicker(ctx);
-    else this.drawCard(ctx, close);
+    else this.drawCard(ctx, close, history);
   }
 
-  private drawCard(ctx: UiContext, close: () => void): void {
+  private drawCard(ctx: UiContext, close: () => void, history?: () => void): void {
     const p = ctx.palette;
     const x = INNER_X + 48;
     retroBox(ctx, BOX);
     label(ctx, 'Trainer Card', x, INNER_Y + 52, { size: 40, bold: true }, p.ink);
     button(ctx, CARD_CLOSE_ID, { x: INNER_X + 876, y: INNER_Y + 28, w: 158, h: 48 }, 'Close', { shortcut: 'B', size: 20, accept: close });
+    if (history && this.isSelf()) button(ctx, CARD_HISTORY_ID, { x: INNER_X + 646, y: INNER_Y + 28, w: 214, h: 48 }, 'Battle history', { size: 20, accept: history });
     ctx.renderer.rect(x, INNER_Y + 92, 986, 3, { fill: p.outline });
 
     this.details().forEach((row, i) => {
