@@ -61,6 +61,7 @@ allow-list must include:
 - `wss://sim3.psim.us`: the Showdown server
 - `https://play.pokemonshowdown.com`: login, sprites and data
 - `https://replay.pokemonshowdown.com`: replays
+- `https://pokepast.es`: importing teams from PokePaste
 
 ### Things to keep in mind on Brewser
 

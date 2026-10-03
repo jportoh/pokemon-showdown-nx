@@ -4,9 +4,9 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba } from '@core/gl/gl-renderer';
 import { TextStyle } from '@core/gl/gl-textures';
-import { ImagePriority } from '@core/gl/sprite-bitmaps';
+import { CARD, FaceSide, SLOTS, TOP, drawHalves, drawHero, drawIcon, heroFromRow, iconBox } from './face-off';
 import { INK, ScreenContext, write } from './screen-context';
 
 /** Battle info's Log tab, under its tabs. */
@@ -146,9 +146,10 @@ export function retroPalette(): Palette {
 }
 
 /**
- * A spectator's team preview, as BattleTeamsOverview: while the players pick theirs, both teams side
- * by side over the field (1280x676), each Pokémon with its item, ability and moves
- * from an open team sheet, else its types.
+ * A spectator's team preview, face to face like our own team select (face-off.ts) but without
+ * picks: while the players choose theirs, p1 on the left and p2 on the right, each side's six down
+ * its edge and the one in focus big over a card with its set (from an open team sheet, else its
+ * abilities and speed). ▲▼ go down a column, ◀▶ cross over; B leaves as anywhere else when watching.
  */
 export class TeamsOverviewView {
   private readonly store = inject(BattleStore);
@@ -157,40 +158,72 @@ export class TeamsOverviewView {
 
   readonly shown = computed(() => this.store.spectating() && this.store.teamPreview());
 
-  private readonly sides = computed(() => {
+  /** Where the focus starts. */
+  readonly firstId = 'watch-left-0';
+
+  private readonly teams = computed(() => {
     const { p1, p2 } = this.store.sides();
     const sheets = this.store.teamSheets();
-    return [
-      { left: 12, border: INK.sky300, rows: sheetRows(p1.preview, sheets.p1, this.dex, 3, 18) },
-      { left: 684, border: INK.red300, rows: sheetRows(p2.preview, sheets.p2, this.dex, 3, 18) },
-    ];
+    return {
+      left: sheetRows(p1.preview, sheets.p1, this.dex, 0, 0).slice(0, SLOTS).map(heroFromRow),
+      right: sheetRows(p2.preview, sheets.p2, this.dex, 0, 0).slice(0, SLOTS).map(heroFromRow),
+    };
   });
 
+  /** Each side's Pokémon shown big (the last one the focus was on), and since when, for its slide in. */
+  private readonly showing = { left: { index: 0, since: -1e4 }, right: { index: 0, since: -1e4 } };
+  private active: FaceSide = 'left';
+
+  /** Whether one of its icons has the focus (else the screen takes it, at its first). */
+  owns(id: string | null): boolean {
+    return !!id && id.startsWith('watch-');
+  }
+
   draw(ctx: ScreenContext): void {
-    const { renderer } = ctx;
     const p = this.palette;
-    renderer.rect(0, 44, 1280, 676, { fill: p.bg });
-    for (const side of this.sides()) {
-      side.rows.slice(0, 6).forEach((row, i) => {
-        const x = side.left;
-        const y = 44 + 16 + i * 108;
-        renderer.rect(x, y, 584, 78, { fill: p.panel, stroke: side.border, radius: 12, border: 2 });
-        const sprite = ctx.images.sprite(row.sprite, false, ImagePriority.Screen);
-        if (sprite) renderer.rect(x + 6, y + 1, 72, 72, { fill: INK.white, texture: sprite });
-        write(ctx, row.name, x + 84, y + 16, { size: 20, bold: true }, p.ink, 'left', 320);
-        if (row.sheet) {
-          ctx.images.drawItem(row.sheet.itemId, x + 82, y + 30, 24);
-          write(ctx, row.sheet.item, x + 110, y + 42, { size: 16 }, p.muted, 'left', 296);
-          write(ctx, row.sheet.ability, x + 84, y + 64, { size: 14 }, p.muted, 'left', 320);
-          for (const move of row.sheet.moves) {
-            renderer.rect(x + 420, y + move.top, 150, 16, { fill: rgba(move.color || '#4b5563'), radius: 2 });
-            write(ctx, move.name, x + 495, y + move.top + 8, { size: 12, bold: true }, INK.white, 'center', 146);
-          }
-        } else {
-          write(ctx, row.types, x + 84, y + 42, { size: 16 }, p.muted, 'left', 320);
-        }
+    this.followFocus(ctx);
+    drawHalves(ctx, p, true);
+    const { p1, p2 } = this.store.sides();
+    write(ctx, 'Team preview', 640, TOP + 24, { size: 20, bold: true }, p.ink, 'center', 400);
+    write(ctx, p1.name, CARD.left, TOP + 24, { size: 20, bold: true }, p.accentText, 'left', 300);
+    write(ctx, p2.name, CARD.right + CARD.w, TOP + 24, { size: 20, bold: true }, INK.red300, 'right', 300);
+
+    const teams = this.teams();
+    for (const side of ['left', 'right'] as const) {
+      const team = teams[side];
+      team.forEach((set, i) => {
+        const box = iconBox(side, i);
+        const focused = ctx.focus.control({ id: `watch-${side}-${i}`, ...box, move: (direction) => this.move(ctx, side, i, direction) });
+        drawIcon(ctx, p, box, set, side, i === this.showing[side].index, focused, null, false);
       });
+      const hero = team[this.showing[side].index];
+      if (hero) drawHero(ctx, p, hero, side, this.showing[side].since, this.active === side);
     }
-    write(ctx, 'VS', 640, 44 + 338, { size: 48, bold: true }, p.accentText, 'center');
+
+    const dots = '.'.repeat(1 + (Math.floor(ctx.now / 500) % 3));
+    write(ctx, `The players are picking their Pokémon${dots}`, 640, 640, { size: 20, bold: true }, p.teal, 'center', 760);
+    write(ctx, '▲▼ team · ◀▶ sides · ZR battle info · B leave', 640, 680, { size: 15 }, p.muted, 'center', 760);
+  }
+
+  /** The side and Pokémon shown follow the focus: a new one slides in. */
+  private followFocus(ctx: ScreenContext): void {
+    const match = /^watch-(left|right)-(\d+)$/.exec(ctx.focus.focused ?? '');
+    if (!match) return;
+    const side = match[1] as FaceSide;
+    const index = Number(match[2]);
+    if (this.showing[side].index !== index) this.showing[side] = { index, since: ctx.now };
+    this.active = side;
+  }
+
+  /** ▲▼ along a column, ◀▶ across to the other column's Pokémon in view. */
+  private move(ctx: ScreenContext, side: FaceSide, index: number, direction: 'up' | 'down' | 'left' | 'right'): boolean {
+    const count = this.teams()[side].length;
+    if (direction === 'up' && index > 0) ctx.focus.focus(`watch-${side}-${index - 1}`);
+    else if (direction === 'down' && index < count - 1) ctx.focus.focus(`watch-${side}-${index + 1}`);
+    else if ((direction === 'right' && side === 'left') || (direction === 'left' && side === 'right')) {
+      const other: FaceSide = side === 'left' ? 'right' : 'left';
+      if (this.teams()[other].length > 0) ctx.focus.focus(`watch-${other}-${this.showing[other].index}`);
+    }
+    return true;
   }
 }
