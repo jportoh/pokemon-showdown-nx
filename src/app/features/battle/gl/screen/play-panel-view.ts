@@ -4,7 +4,7 @@ import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
 import { Rgba, rgba } from '@core/gl/gl-renderer';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
-import { BAR_TOP } from '@features/battle/gl/field-layout';
+import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
@@ -14,13 +14,15 @@ import { INK, ScreenContext, button, hint, ring, write, writeLines } from './scr
 const X = 16;
 const RIGHT = 1264;
 const GAP = 12;
-/** The four moves in a row, Switch and Mega or Tera stacked on their right. */
+/** The four moves in a row, Switch on their right. */
 const MOVE_W = 252;
 const MOVE_H = 86;
 const MOVE_Y = BAR_TOP + 12;
 const SIDE_X = X + 4 * (MOVE_W + GAP);
 const SIDE_W = RIGHT - SIDE_X;
 const SIDE_H = 40;
+/** Mega's (or Tera's) button by the chooser's status box. */
+const MEGA_W = 176;
 /** Two rows of 40px in the bar: chips on top, the legend or a second line under. */
 const ROW_1 = BAR_TOP + 14;
 const ROW_2 = BAR_TOP + 62;
@@ -46,8 +48,8 @@ export interface PlayActions {
 /**
  * The command bar in our own battles, along the stage's foot, always the same size. While the turn
  * plays, its message; choosing, the four moves in a row on their types' colours (category, power, PP)
- * with Switch (the party screen) and Mega or Tera (L) on their right, and a tab over the bar with who's
- * choosing (its item and ability, and the first slot's order while the second chooses); picking a
+ * with Switch (the party screen) on their right, Mega or Tera (L) by the chooser's status box while it
+ * can, and a tab over the bar with who's choosing (its item and ability, and the first slot's order while the second chooses); picking a
  * target, the move and the targets as chips (the field marks the one pointed at); while the opponent
  * chooses, each order and Cancel; at the end, the result with Rematch and Back to Home. `draw` returns
  * the ids of the view's buttons in order, so a new view can focus its first.
@@ -219,17 +221,18 @@ export class PlayPanelView {
       if (focused) ring(ctx, box, 10);
     }
 
-    // Switch: the party screen.
+    // Switch, as tall as the moves: the party screen.
     const switches = this.choices.switchOptions().filter((option) => option.allowed).length;
-    const switchBox = { x: SIDE_X, y: MOVE_Y, w: SIDE_W, h: SIDE_H };
+    const switchBox = { x: SIDE_X, y: MOVE_Y, w: SIDE_W, h: MOVE_H };
     const switchFocused = ctx.focus.control({ id: 'switch', ...switchBox, accept: actions.openParty });
-    renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 8, border: 2 });
-    write(ctx, 'Switch', switchBox.x + 14, switchBox.y + SIDE_H / 2, { size: 20, bold: true }, switches > 0 ? INK.white : INK.gray400);
-    write(ctx, switches > 0 ? `${switches} ▶` : 'None', switchBox.x + SIDE_W - 14, switchBox.y + SIDE_H / 2, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'right');
-    if (switchFocused) ring(ctx, switchBox, 8);
+    renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 10, border: 2 });
+    write(ctx, 'Switch', switchBox.x + switchBox.w / 2, switchBox.y + 30, { size: 26, bold: true }, switches > 0 ? INK.white : INK.gray400, 'center');
+    write(ctx, switches > 0 ? `${switches} in reserve ▶` : 'None left', switchBox.x + switchBox.w / 2, switchBox.y + 62, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'center');
+    if (switchFocused) ring(ctx, switchBox, 10);
 
-    // L does this on the controller; the button is for clicks.
-    const megaBox = { x: SIDE_X, y: MOVE_Y + MOVE_H - SIDE_H, w: SIDE_W, h: SIDE_H };
+    // Mega or Tera, only while it can: by the chooser's status box, on the field. L does it on the
+    // controller; the button is for clicks.
+    const megaBox = this.megaBox();
     if (this.choices.canMega()) {
       const on = this.choices.mega();
       hint(ctx, 'mega', megaBox, 'L', on ? 'Mega Evolving' : 'Mega Evolve', false, () => this.choices.toggleMega(), on ? { fill: rgba('#6b2a73'), border: rgba('#f0abfc') } : { fill: INK.gray700, border: INK.gray400 });
@@ -240,6 +243,13 @@ export class PlayPanelView {
     }
     // The first move takes the focus; Switch after them.
     return [...picks, 'switch'];
+  }
+
+  /** Mega's (or Tera's) button: on the field, left of the chooser's status box (which stays put whatever the camera does). */
+  private megaBox(): { x: number; y: number; w: number; h: number } {
+    const layout = this.store.gameType() === 'singles' ? SINGLES : DOUBLES;
+    const stand = layout.stands[this.choices.slot() === 1 ? 'p1b' : 'p1a'] ?? layout.stands['p1a'];
+    return { x: stand.boxLeft - MEGA_W - 10, y: FIELD_TOP + stand.boxTop + (BOX_H - SIDE_H) / 2, w: MEGA_W, h: SIDE_H };
   }
 
   private drawTargets(ctx: ScreenContext): string[] {
