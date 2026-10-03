@@ -210,6 +210,8 @@ export class GlBattleScreen {
       const sheet = this.sheetButton();
       this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet(), held: this.sheetHold.progress } : null, () => this.focus.focus(DONE_ID));
     } else if (this.overview.shown()) {
+      // A spectator's team preview covers the watch panel, whose buttons must not take the d-pad.
+      this.focus.begin();
       this.overview.draw(ctx);
     }
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
@@ -281,6 +283,10 @@ export class GlBattleScreen {
       return;
     }
     this.teamSelectWasShown = false;
+    if (this.overview.shown()) {
+      if (!this.overview.owns(this.focus.focused)) this.focus.focus(this.overview.firstId);
+      return;
+    }
     if (this.store.watching()) {
       if (this.focus.focused === null || !this.focus.has(this.focus.focused)) {
         const first = this.store.replay() ? PANEL_IDS.play : PANEL_IDS.leaveLive;

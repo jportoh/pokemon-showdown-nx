@@ -4,6 +4,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
+import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, label } from '@core/gl/ui/retro-kit';
@@ -13,18 +14,21 @@ import { SetEditorView } from '@features/teambuilder/gl/set-editor-view';
 import { SpriteStage } from '@features/teambuilder/gl/sprite-stage';
 import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend } from '@features/teambuilder/gl/tb-draw';
 import { NEW_TEAM_ID, TeamGridView, newestFirst } from '@features/teambuilder/gl/team-grid-view';
-import { TEAM_FORMAT_ID, TEAM_RENAME_ID, TeamView, slotId } from '@features/teambuilder/gl/team-view';
+import { MAX_TEAM_NAME_LENGTH, TEAM_FORMAT_ID, TEAM_RENAME_ID, TeamView, slotId } from '@features/teambuilder/gl/team-view';
 import { VALIDATION_BACK_ID, ValidationView } from '@features/teambuilder/gl/validation-view';
+import { PokePasteImport, pasteId } from '@features/teambuilder/state/pokepaste-import';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 
 type View = 'teams' | 'team' | 'validate' | 'edit';
 const LEAVE_MS = 180;
+/** How long the grid's legend shows how an import went. */
+const IMPORT_NOTICE_MS = 8000;
 
 /**
  * The Teambuilder, drawn on the stage, in two pages: the teams as cards in a grid (New team first),
  * and a team, as the games' party screen (the focused Pokémon's card on the left, its six slots as
  * rows beside it; Rename and the format in its header, L/R go through the teams, Validate on ZL shows
- * the server's answer in a modal, Delete on ZR held down). One of its Pokémon being edited takes the
+ * the server's answer in a modal, Delete on ZR held down; on the grid ZR imports a PokePaste). One of its Pokémon being edited takes the
  * whole page (its card stays where the team had it, with its Details or its Stats beside it; L/R switch
  * them, or the filters of a list, ZL picks No item/No move, ZR removes it). B goes back a step:
  * from the editor or the validation to the team, from the team to the grid, from the grid to the menu.
@@ -42,6 +46,8 @@ export class TeambuilderScene {
   private readonly settings = inject(AppSettings);
   private readonly store = inject(TeamStore);
   private readonly dex = inject(ChampionsDex);
+  private readonly keyboard = inject(CanvasKeyboard);
+  private readonly pokePaste = inject(PokePasteImport);
 
   private readonly focus = new CanvasFocus();
   /** The sprite's stage, the team's card's and the editor's: opening a Pokémon keeps it standing. */
@@ -58,6 +64,8 @@ export class TeambuilderScene {
   /** Which game data the teambuilder uses, and how recent it is. */
   private readonly dataSummary = `Reg M-C data: ${this.dex.allSpecies.length} Pokémon · ${this.dex.generated}`;
   private leaving: { at: number } | null = null;
+  /** How the last PokePaste import went (on the grid's legend for a while); `at` is null while it's under way. */
+  private importNotice: { text: string; error: boolean; at: number | null } | null = null;
 
   constructor() {
     const hide = this.stage.show({
@@ -79,6 +87,7 @@ export class TeambuilderScene {
       }),
       this.navigation.registerButton('buttonZR', () => {
         if (this.leaving) return true;
+        if (this.view === 'teams') return this.askPaste();
         if (this.view === 'team') return this.pressDelete();
         return this.view === 'edit' && this.editor.pressRemove();
       }),
@@ -175,6 +184,46 @@ export class TeambuilderScene {
     this.editor.open(index);
   }
 
+  /** ZR on the grid: the keyboard, for a PokePaste's link or ID. */
+  private askPaste(): boolean {
+    if (this.importNotice?.at === null) return true;
+    this.keyboard.open({
+      label: 'PokePaste link or ID',
+      value: '',
+      maxLength: 64,
+      hint: (text) => {
+        const id = pasteId(text);
+        return id ? `PokePaste ${id}` : 'Type the link (pokepast.es/…) or just its ID';
+      },
+      done: (value) => {
+        if (value === null || !value.trim()) return;
+        const id = pasteId(value);
+        if (id) void this.importPaste(id);
+        else this.importNotice = { text: "That isn't a PokePaste link or ID.", error: true, at: performance.now() };
+      },
+    });
+    return true;
+  }
+
+  /** The PokePaste as a new team, in the format chosen in Settings; the grid focuses it. */
+  private async importPaste(id: string): Promise<void> {
+    this.importNotice = { text: 'Importing from pokepast.es…', error: false, at: null };
+    try {
+      const paste = await this.pokePaste.load(id);
+      const name = paste.title.slice(0, MAX_TEAM_NAME_LENGTH).trim() || this.store.nextUntitledName();
+      const teamId = this.store.create(name, this.settings.settings().teamFormat, paste.sets);
+      const notes = [
+        paste.skipped.length ? `left out ${paste.skipped.join(', ')}` : '',
+        paste.dropped ? `${paste.dropped} item/ability/move not in the format` : '',
+      ].filter(Boolean);
+      const text = `Imported ${name}: ${paste.sets.length} Pokémon${notes.length ? ` (${notes.join('; ')})` : ''}`;
+      this.importNotice = { text, error: false, at: performance.now() };
+      if (this.view === 'teams') this.grid.focusTeam(this.store.teams(), teamId);
+    } catch (error) {
+      this.importNotice = { text: error instanceof Error ? error.message : "The import didn't work.", error: true, at: performance.now() };
+    }
+  }
+
   /** ZL: checks the team against its format on the server; the modal shows the answer when it comes. */
   private validate(): boolean {
     const team = this.team();
@@ -265,9 +314,13 @@ export class TeambuilderScene {
       controlsLegend(ctx, [
         { keys: ['A'], text: focused === NEW_TEAM_ID ? 'New team' : 'Open' },
         { keys: ['B'], text: 'Menu' },
+        { keys: ['ZR'], text: 'Import PokePaste' },
       ]);
       const cy = STAGE_H - LEGEND_H / 2 + 1;
-      if (this.store.saveFailed()) label(ctx, "Your last change couldn't be saved on this device.", EDIT_RIGHT, cy, { size: 18, bold: true }, p.danger, { align: 'right' });
+      const notice = this.importNotice;
+      if (notice?.at != null && ctx.now - notice.at > IMPORT_NOTICE_MS) this.importNotice = null;
+      if (this.importNotice) label(ctx, this.importNotice.text, EDIT_RIGHT, cy, { size: 18, bold: true }, this.importNotice.error ? p.danger : p.accentText, { align: 'right', maxWidth: 720 });
+      else if (this.store.saveFailed()) label(ctx, "Your last change couldn't be saved on this device.", EDIT_RIGHT, cy, { size: 18, bold: true }, p.danger, { align: 'right' });
       else label(ctx, this.dataSummary, EDIT_RIGHT, cy, { size: 18 }, p.muted, { align: 'right' });
       return;
     }
