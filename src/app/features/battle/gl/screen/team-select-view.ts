@@ -3,6 +3,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
 import { speciesInfo } from '@core/dex/species';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { ACCEPT_FILL } from '@core/gl/ui/hold-action';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { MovePill, movePills, sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleRequest } from '@features/battle/models/battle';
@@ -167,7 +168,8 @@ export class TeamSelectView {
     this.store.choose(`team ${this.order().map((i) => i + 1).join('')}`);
   }
 
-  draw(ctx: ScreenContext, sheet: { button: SheetButton; press: () => void } | null, onAllPicked: () => void): void {
+  /** `sheet.held`: how full Accept is while ZL is held (accepting open team sheets), 0 to 1. */
+  draw(ctx: ScreenContext, sheet: { button: SheetButton; press: () => void; held: number } | null, onAllPicked: () => void): void {
     const { renderer } = ctx;
     const p = this.palette;
     this.followFocus(ctx);
@@ -224,7 +226,8 @@ export class TeamSelectView {
     if (focused) ring(ctx, DONE_BOX, 8);
     if (sheet) {
       const label = { sheet: 'Sheet', accept: 'Accept', waiting: 'Waiting' }[sheet.button];
-      hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline });
+      const held = sheet.button === 'accept' ? { progress: sheet.held, color: ACCEPT_FILL } : undefined;
+      hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline }, held);
     }
     const status = standing ? 'Team sent' : `${order.length}/${this.toBring()} chosen`;
     write(ctx, status, CARD.own, 640, { size: 18, bold: true }, ready || standing ? p.teal : p.ink, 'left', 290);
@@ -395,7 +398,7 @@ export class TeamSelectView {
   private hint(sheet: SheetButton | null): string {
     if (this.standingBy()) return sheet === 'sheet' ? 'ZL their full team sheet' : '';
     if (sheet === 'sheet') return 'A pick · ◀▶ sides · ZL their sheet';
-    if (sheet === 'accept') return 'A pick · ◀▶ sides · ZL accept sheets';
+    if (sheet === 'accept') return 'A pick · ◀▶ sides · hold ZL: accept sheets';
     if (sheet === 'waiting') return 'A pick · ◀▶ sides · waiting on sheets';
     return 'A pick · ◀▶ sides';
   }

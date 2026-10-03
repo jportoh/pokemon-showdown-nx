@@ -78,6 +78,8 @@ export class GlBattleScreen {
   private readonly overview = new TeamsOverviewView();
   private readonly teamSelect = new TeamSelectView();
   private readonly focus = new CanvasFocus();
+  /** Accepting open team sheets, filling in green while ZL is held. */
+  private readonly sheetHold = new HoldAction(this.navigation, 'buttonZL');
 
   /** Battle info's tab while it's open; null while it's closed. */
   private infoTab: InfoTab | null = null;
@@ -152,6 +154,7 @@ export class GlBattleScreen {
     const hold = this.forfeitHold();
     const canForfeit = !this.store.result() && !this.store.watching() && this.forfeitState() === 'idle';
     if (hold?.step(now, canForfeit)) this.forfeit.emit();
+    if (this.sheetHold.step(now, this.sheetButton() === 'accept')) this.store.acceptTeamSheets();
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
     const party = this.partyShown();
     const picking = !party && this.teamSelect.shown();
@@ -203,11 +206,12 @@ export class GlBattleScreen {
     } else if (picking) {
       this.focus.begin();
       const sheet = this.sheetButton();
-      this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet() } : null, () => this.focus.focus(DONE_ID));
+      this.teamSelect.draw(ctx, sheet ? { button: sheet, press: () => this.pressSheet(), held: this.sheetHold.progress } : null, () => this.focus.focus(DONE_ID));
     } else if (this.overview.shown()) {
       this.overview.draw(ctx);
     }
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
+    this.header.drawCountdown(ctx);
     if (this.joining()) {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
@@ -256,7 +260,7 @@ export class GlBattleScreen {
   /** What ZL does on the opponent's tab while open team sheets are being agreed. */
   private sheetHint(): string {
     const button = this.sheetButton();
-    return button === 'accept' ? 'ZL Accept open team sheets' : button === 'waiting' ? 'Waiting for their answer on team sheets' : '';
+    return button === 'accept' ? 'Hold ZL to accept open team sheets' : button === 'waiting' ? 'Waiting for their answer on team sheets' : '';
   }
 
   /** Where the focus goes as views change: a new set of buttons focuses its first. */
@@ -341,10 +345,13 @@ export class GlBattleScreen {
     return true;
   }
 
-  /** ZL: agrees to open team sheets while offered; otherwise the previous tab, or Battle info on the opponent's team. */
+  /**
+   * ZL: held down, agrees to open team sheets while offered (it can't be taken back); otherwise the
+   * previous tab, or Battle info on the opponent's team.
+   */
   private pressSheet(): boolean {
     if (this.sheetButton() === 'accept') {
-      this.store.acceptTeamSheets();
+      this.sheetHold.press();
       return true;
     }
     if (this.infoTab) this.stepTab(-1);

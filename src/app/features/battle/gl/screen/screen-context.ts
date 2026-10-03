@@ -111,10 +111,13 @@ export function hint(
     const width = (box.w - 2) * Math.min(1, held.progress);
     ctx.renderer.rect(box.x + 1, box.y + 1, width, box.h - 2, { fill: held.color, radius: Math.min(5, width / 2) });
   }
-  const keyWidth = ctx.text.measure(key, { size: 14, bold: true }) + 12;
+  // R3 (the right stick pressed) is a round chip with an R; the others, a square one with their name.
+  const stick = key === 'R3';
+  const keyWidth = stick ? 22 : ctx.text.measure(key, { size: 14, bold: true }) + 12;
   const labelWidth = ctx.text.measure(label, { size: 14, bold: true });
   const start = box.x + (box.w - keyWidth - 6 - labelWidth) / 2;
-  ctx.renderer.rect(start, box.y + box.h / 2 - 10, keyWidth, 20, { fill: INK.header, radius: 2 });
-  write(ctx, key, start + keyWidth / 2, box.y + box.h / 2, { size: 14, bold: true }, INK.white, 'center');
+  if (stick) ctx.renderer.rect(start, box.y + box.h / 2 - 11, 22, 22, { fill: INK.header, stroke: INK.gray400, radius: 11, border: 1.5 });
+  else ctx.renderer.rect(start, box.y + box.h / 2 - 10, keyWidth, 20, { fill: INK.header, radius: 2 });
+  write(ctx, stick ? 'R' : key, start + keyWidth / 2, box.y + box.h / 2, { size: 14, bold: true }, INK.white, 'center');
   write(ctx, label, start + keyWidth + 6, box.y + box.h / 2, { size: 14, bold: true }, INK.white);
 }

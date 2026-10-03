@@ -8,6 +8,8 @@ const DRAIN_MS = 250;
 
 /** The fill of a button being held: a deep red that keeps white text readable (5.6:1). */
 export const HOLD_FILL: Rgba = rgba('#c62828');
+/** The fill of a held button that agrees to something for good (accepting open team sheets): green (5.1:1 with white). */
+export const ACCEPT_FILL: Rgba = rgba('#2e7d32');
 
 /**
  * A button held down to confirm what can't be undone (deleting a team, removing a Pokémon,
