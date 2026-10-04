@@ -9,6 +9,7 @@
     "build:brewser:diag": "ng build && node scripts/build-brewser.mjs --diag",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "update:calc-sets": "node scripts/update-calc-sets.mjs",
     "update:champions": "node scripts/update-champions-data.mjs",
     "update:moves": "node scripts/update-moves.mjs",
     "update:names": "node scripts/update-names.mjs",
@@ -24,6 +25,7 @@
     "@angular/forms": "^22.2.0",
     "@angular/platform-browser": "^22.2.0",
     "@angular/router": "^22.2.0",
+    "@smogon/calc": "^0.12.0",
     "fflate": "^0.8.3",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"

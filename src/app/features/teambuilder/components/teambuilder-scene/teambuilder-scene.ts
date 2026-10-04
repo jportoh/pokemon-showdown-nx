@@ -12,7 +12,7 @@ import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigatio
 import { AppSettings } from '@core/settings/app-settings';
 import { SetEditorView } from '@features/teambuilder/gl/set-editor-view';
 import { SpriteStage } from '@features/teambuilder/gl/sprite-stage';
-import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend } from '@features/teambuilder/gl/tb-draw';
+import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend, keyPill } from '@features/teambuilder/gl/tb-draw';
 import { NEW_TEAM_ID, TeamGridView, newestFirst } from '@features/teambuilder/gl/team-grid-view';
 import { MAX_TEAM_NAME_LENGTH, TEAM_FORMAT_ID, TEAM_RENAME_ID, TeamView, slotId } from '@features/teambuilder/gl/team-view';
 import { VALIDATION_BACK_ID, ValidationView } from '@features/teambuilder/gl/validation-view';
@@ -58,7 +58,7 @@ export class TeambuilderScene {
 
   private readonly selectedId = signal<string | null>(null);
   private readonly team = computed(() => this.store.team(this.selectedId()));
-  private readonly editor = new SetEditorView(this.focus, this.team, () => this.showSlot(this.editor.index()), this.spriteStage);
+  private readonly editor = new SetEditorView(this.focus, this.team, () => this.closeEditor(), this.spriteStage);
   private view: View = 'teams';
 
   /** Which game data the teambuilder uses, and how recent it is. */
@@ -178,6 +178,12 @@ export class TeambuilderScene {
     this.focus.focus(slotId(Math.min(index, this.team()?.sets.length ?? 0)));
   }
 
+  /** Back from the editor to the team, on the slot edited; the card slides back up. */
+  private closeEditor(): void {
+    this.teamView.backFromEditor();
+    this.showSlot(this.editor.index());
+  }
+
   private editSlot(index: number): void {
     this.teamView.reset();
     this.view = 'edit';
@@ -276,7 +282,7 @@ export class TeambuilderScene {
     } else if (this.view === 'edit' && team) {
       this.editor.draw(ctx);
     } else if (team) {
-      this.teamView.draw(ctx, team, this.place(team.id), {
+      this.teamView.draw(ctx, team, {
         rename: () => this.teamView.rename(team, (name) => this.store.rename(team.id, name)),
         format: (format) => this.store.setFormat(team.id, format),
         validate: () => this.validate(),
@@ -284,7 +290,7 @@ export class TeambuilderScene {
         edit: (index) => this.editSlot(index),
       });
     }
-    this.bar.draw(ctx, { title: 'Teambuilder', icon: 'teambuilder', back: () => this.onAction('back') });
+    this.drawBar(ctx);
     if (this.view !== 'edit') this.drawLegend(ctx);
     if (this.view === 'validate' && team) this.validation.draw(ctx, team, () => this.showSlot(this.teamView.slot));
 
@@ -300,10 +306,37 @@ export class TeambuilderScene {
     renderer.end();
   }
 
-  /** "2 / 8": where the team is among them, in the grid's order. */
-  private place(id: string): string {
+  /**
+   * The bar: where the page is after the title (the team, the Pokémon, the list open; no Back, the
+   * legend has B), and on the right how many teams there are, which team this is (L/R go through
+   * them), or the team's slots while editing one.
+   */
+  private drawBar(ctx: UiContext): void {
+    const team = this.team();
+    const page = { title: 'Teambuilder', icon: 'teambuilder' as const, back: () => this.onAction('back') };
+    if (this.view === 'edit' && team) {
+      this.bar.draw(ctx, { ...page, crumbs: this.editor.crumbs(), trailing: (c, right, cy) => this.editor.drawSlots(c, right, cy) });
+    } else if (this.view !== 'teams' && team) {
+      this.bar.draw(ctx, { ...page, crumbs: [team.name], trailing: (c, right, cy) => this.drawPlace(c, team.id, right, cy) });
+    } else {
+      const count = this.store.teams().length;
+      const text = `${count} team${count === 1 ? '' : 's'}`;
+      this.bar.draw(ctx, { ...page, crumbs: [], trailing: (c, right, cy) => right - label(c, text, right, cy, { size: 20 }, c.palette.muted, { align: 'right' }) });
+    }
+  }
+
+  /** "L  Team 2 of 8  R": where the team is among them, in the grid's order; ends at `right`. */
+  private drawPlace(ctx: UiContext, id: string, right: number, cy: number): number {
     const teams = newestFirst(this.store.teams());
-    return `${teams.findIndex((team) => team.id === id) + 1} / ${teams.length}`;
+    const text = `Team ${teams.findIndex((team) => team.id === id) + 1} of ${teams.length}`;
+    if (teams.length < 2) return right - label(ctx, text, right, cy, { size: 20 }, ctx.palette.muted, { align: 'right' });
+    const rW = Math.max(34, ctx.text.measure('R', { size: 16, bold: true }) + 14);
+    let x = right - rW;
+    keyPill(ctx, 'R', x, cy);
+    x -= 12 + label(ctx, text, x - 12, cy, { size: 20 }, ctx.palette.ink, { align: 'right' });
+    x -= 12 + rW;
+    keyPill(ctx, 'L', x, cy);
+    return x;
   }
 
   /** The legend of the grid and the team (the editor draws its own); the grid's has the data on the right. */

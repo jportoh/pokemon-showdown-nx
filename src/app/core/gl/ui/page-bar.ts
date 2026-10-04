@@ -29,6 +29,13 @@ export interface PageBarInfo {
   icon: PixelIconName;
   /** B's way back (the bar's Back button does the same). */
   back: () => void;
+  /**
+   * Where the page is ("Rain Doubles", "Garchomp"), after the title; the last one stands out. Given
+   * (even empty), the bar has no Back button: the page's legend says what B does.
+   */
+  crumbs?: readonly string[];
+  /** Drawn on the right instead of the trainer's status, ending at `right`; returns where it starts. */
+  trailing?: (ctx: UiContext, right: number, cy: number) => number;
 }
 
 /**
@@ -76,21 +83,41 @@ export class PageBar {
     }
     // The icons are 24x24 pixel art, drawn at 2x (48px).
     renderer.image(icon, 24, 14, 2);
-    label(ctx, page.title, 88, 38, { size: 36, bold: true }, p.ink, { maxWidth: 260 });
+    const titleW = label(ctx, page.title, 88, 38, { size: 36, bold: true }, p.ink, { maxWidth: 260 });
 
-    const back = { x: 360, y: 20, w: 112, h: 36 };
-    const focused = ctx.focus.control({ id: 'bar-back', ...back, accept: page.back, skip: true });
-    renderer.rect(back.x, back.y, back.w, back.h, { fill: focused ? p.select : p.button, stroke: p.outline, radius: 6, border: 2 });
-    const width = pill(ctx, 'B', back.x + 8, back.y + back.h / 2);
-    label(ctx, 'Back', back.x + 8 + width + (back.w - 16 - width) / 2, back.y + back.h / 2, { size: 18, bold: true }, p.ink, { align: 'center' });
-    if (focused) focusRing(ctx, back);
+    // With crumbs the legend at the bottom already says what B does, so there's no Back button.
+    const crumbs = page.crumbs ?? null;
+    if (!crumbs) {
+      const back = { x: 360, y: 20, w: 112, h: 36 };
+      const focused = ctx.focus.control({ id: 'bar-back', ...back, accept: page.back, skip: true });
+      renderer.rect(back.x, back.y, back.w, back.h, { fill: focused ? p.select : p.button, stroke: p.outline, radius: 6, border: 2 });
+      const width = pill(ctx, 'B', back.x + 8, back.y + back.h / 2);
+      label(ctx, 'Back', back.x + 8 + width + (back.w - 16 - width) / 2, back.y + back.h / 2, { size: 18, bold: true }, p.ink, { align: 'center' });
+      if (focused) focusRing(ctx, back);
+    }
 
+    const right = page.trailing ? page.trailing(ctx, 1256, 38) : this.drawStatus(ctx, 1256, 38);
     const notice = page.icon === 'battle' ? null : this.challengeNotice();
     if (notice) {
-      renderer.rect(496, 20, 380, 36, { fill: p.accent, radius: 6 });
-      label(ctx, notice, 508, 38, { size: 16, bold: true }, [1, 1, 1, 1], { maxWidth: 356 });
+      const left = crumbs ? 360 : 496;
+      renderer.rect(left, 20, 380, 36, { fill: p.accent, radius: 6 });
+      label(ctx, notice, left + 12, 38, { size: 16, bold: true }, [1, 1, 1, 1], { maxWidth: 356 });
+    } else if (crumbs) {
+      this.drawCrumbs(ctx, crumbs, 88 + titleW + 16, right - 24);
     }
-    this.drawStatus(ctx, 1256, 38);
+  }
+
+  /** The crumbs from `left` (after the title), "▶" before each, cut to end before `right`. */
+  private drawCrumbs(ctx: UiContext, crumbs: readonly string[], left: number, right: number): void {
+    const p = ctx.palette;
+    let x = left;
+    crumbs.forEach((crumb, i) => {
+      const last = i === crumbs.length - 1;
+      x += label(ctx, '▶', x, 38, { size: 14 }, p.outline) + 12;
+      const room = right - x;
+      if (room < 40) return;
+      x += label(ctx, crumb, x, 38, { size: last ? 22 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: Math.min(room, last ? 300 : 220) }) + 12;
+    });
   }
 
   /** The trainer's line (our name, the dot, the connection), ending at `right`; returns where it starts. */

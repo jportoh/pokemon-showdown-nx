@@ -5,7 +5,7 @@ import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet } from '@features/teambuilder/models/team';
 import { SpriteStage } from './sprite-stage';
-import { EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, typePills } from './tb-draw';
+import { CardTop, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, TEAM_BODY_Y, typePills } from './tb-draw';
 
 export type Gender = '' | 'M' | 'F';
 
@@ -52,13 +52,16 @@ export class HeroView {
   private resizeFrom = HERO_W;
   private resizedAt = -Infinity;
   private compact = false;
+  /** The card comes down from where the team's page had it. */
+  private readonly top = new CardTop();
 
   constructor(private readonly stage: SpriteStage) {}
 
-  /** A slot opened: the card starts at its size. */
+  /** A slot opened from the team: the card starts at its size, sliding down from the team's card. */
   restart(compact: boolean): void {
     this.compact = compact;
     this.resizedAt = -Infinity;
+    this.top.slideFrom(TEAM_BODY_Y);
   }
 
   draw(ctx: UiContext, model: HeroModel): void {
@@ -70,7 +73,8 @@ export class HeroView {
     }
     const width = this.width(now);
     const target = this.compact ? HERO_COMPACT_W : HERO_W;
-    const box = { x: EDIT_X, y: EDIT_BODY_Y, w: width, h: EDIT_BODY_BOTTOM - EDIT_BODY_Y };
+    const top = this.top.at(now, EDIT_BODY_Y);
+    const box = { x: EDIT_X, y: top, w: width, h: EDIT_BODY_BOTTOM - top };
     const p = ctx.palette;
     ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: model.choosingSpecies ? p.accentText : p.outline, radius: 12, border: 2 });
 
@@ -87,6 +91,15 @@ export class HeroView {
     };
     this.stage.draw(ctx, stage, model.mega ?? model.species, model.set ? `${model.set.species}?` : 'Choose a species');
     if (Math.abs(width - target) > 0.5) return;
+    if (top !== EDIT_BODY_Y) {
+      // Coming down from the team's card: its name and types come along (the rest waits).
+      if (!this.compact) {
+        const form = model.mega ?? model.species;
+        drawHeroName(ctx, box, form, model.set?.species || 'New Pokémon');
+        drawHeroTypes(ctx, box, form, heroTypesTop(top));
+      }
+      return;
+    }
     if (this.compact) this.drawCompact(ctx, box, model);
     else this.drawFull(ctx, box, model);
   }
@@ -196,9 +209,23 @@ export function drawHeroName(ctx: UiContext, box: Box, form: DexSpecies | DexMeg
   if (form) label(ctx, `Lv. 50 · BST ${baseStatTotal(form)}`, box.x + box.w - 24, box.y + 36, { size: 18 }, p.muted, { align: 'right' });
 }
 
-/** The full card's types under the stage (the teambuilder's formats have no Tera Types to show). */
-export function drawHeroTypes(ctx: UiContext, box: Box, form: DexSpecies | DexMega | undefined): void {
-  typePills(ctx, form?.types ?? [], box.x + 24, box.y + 390, 112, 120, 32, 18);
+/** Where the full card's types go from its top: in the editor, room for the species' focus ring. */
+const EDITOR_TYPES_Y = 390;
+/** On the team's card, which has no focus ring, close under the stage. */
+export const TEAM_TYPES_Y = 372;
+
+/**
+ * Where the types go on a card whose top is at `top`: the team's place at the team's height, the
+ * editor's at the editor's, and in between while the card slides from one to the other.
+ */
+export function heroTypesTop(top: number): number {
+  const k = Math.max(0, Math.min(1, (top - TEAM_BODY_Y) / (EDIT_BODY_Y - TEAM_BODY_Y)));
+  return TEAM_TYPES_Y + (EDITOR_TYPES_Y - TEAM_TYPES_Y) * k;
+}
+
+/** The full card's types under the stage (the teambuilder's formats have no Tera Types to show), `top` from the card's top. */
+export function drawHeroTypes(ctx: UiContext, box: Box, form: DexSpecies | DexMega | undefined, top = EDITOR_TYPES_Y): void {
+  typePills(ctx, form?.types ?? [], box.x + 24, box.y + top, 112, 120, 32, 18);
 }
 
 /** A field of the card (nickname, gender): lit while focused, dimmed when it can't change. */
