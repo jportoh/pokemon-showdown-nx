@@ -146,7 +146,7 @@ export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]):
 /** A controller button's name in a box (A, ZL…), 28 high and centred on `cy`; returns its width. */
 export function keyPill(ctx: UiContext, key: string, x: number, cy: number): number {
   const p = ctx.palette;
-  const width = Math.max(34, ctx.text.measure(key, { size: 16, bold: true }) + 14);
+  const width = keyPillWidth(ctx, key);
   ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.button, stroke: p.outline, radius: 6, border: 2 });
   label(ctx, key, x + width / 2, cy, { size: 16, bold: true }, p.ink, { align: 'center' });
   return width;
@@ -188,6 +188,11 @@ export function tabStrip(ctx: UiContext, tabs: readonly TabSpec[], keys: boolean
   renderer.rect(EDIT_X, line, EDIT_RIGHT - EDIT_X, 3, { fill: p.outline });
   if (keys) x += 2 + keyPill(ctx, 'R', x + 2, cy);
   return x;
+}
+
+/** How wide keyPill draws a button's name. */
+export function keyPillWidth(ctx: UiContext, key: string): number {
+  return Math.max(34, ctx.text.measure(key, { size: 16, bold: true }) + 14);
 }
 
 /** How a card looks: the field whose list is open, or a plain one (lit while focused), or disabled. */

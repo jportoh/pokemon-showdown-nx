@@ -216,6 +216,7 @@ export class ChooserView {
           label(ctx, type, tx + 42, cy, { size: 16, bold: true }, WHITE, { align: 'center', maxWidth: 78 });
         });
         end = right - types.length * 92;
+        if (option.value) end -= 12 + label(ctx, option.value, end - 4, cy, { size: 16 }, p.muted, { align: 'right' });
         break;
       }
       case 'item':

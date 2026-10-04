@@ -7,6 +7,7 @@ import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { UiContext, label } from '@core/gl/ui/retro-kit';
 import { MAX_MOVES, MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
+import { CalcState } from '@features/teambuilder/calc/calc-state';
 import { typeRank } from '@shared/data/type-order';
 import { toId } from '@shared/utils/to-id';
 import { ChooserFilter, ChooserOption, ChooserSpec, ChooserView } from './chooser-view';
@@ -15,9 +16,12 @@ import { InfoPanel } from './info-panel';
 import { DetailsField, SetRowsView, cardId } from './set-rows-view';
 import { SpriteStage } from './sprite-stage';
 import { StatsView } from './stats-view';
-import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LegendEntry, TOP, WHITE, controlsLegend, shortcutButton, tabStrip, tag, typeRgba } from './tb-draw';
+import { CalcsView } from './calcs-view';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LegendEntry, TOP, WHITE, controlsLegend, keyPill, keyPillWidth, shortcutButton, tabStrip, tag, typeRgba } from './tb-draw';
 
-type Tab = 'details' | 'stats';
+type Tab = 'details' | 'stats' | 'calcs';
+/** The tabs in the order L/R go through them. */
+const TABS: readonly Tab[] = ['details', 'stats', 'calcs'];
 /** Fields picked from a list, in the order the chooser walks through them. */
 const CHOOSER_ORDER: readonly DetailsField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
 const MOVE_FIELDS: readonly DetailsField[] = ['move0', 'move1', 'move2', 'move3'];
@@ -38,12 +42,14 @@ const FIELD_NAMES: Record<DetailsField, string> = { species: 'Species', item: 'I
  */
 export class SetEditorView {
   private readonly store = inject(TeamStore);
+  private readonly calcState = inject(CalcState);
   private readonly dex = inject(ChampionsDex);
   private readonly chooser: ChooserView;
   private readonly hero: HeroView;
   private readonly rows = new SetRowsView();
   private readonly info = new InfoPanel();
   private readonly stats: StatsView;
+  private readonly calcs: CalcsView;
 
   /** The slot being edited; the team's length for a new Pokémon. */
   readonly index = signal(0);
@@ -220,6 +226,7 @@ export class SetEditorView {
     this.hero = new HeroView(stage);
     this.chooser = new ChooserView(focus);
     this.stats = new StatsView(focus);
+    this.calcs = new CalcsView(focus);
   }
 
   /** Opens a slot: a new Pokémon starts on the species list, one already there on its card. */
@@ -234,12 +241,13 @@ export class SetEditorView {
     this.hero.restart(this.field() !== null);
   }
 
-  /** B: closes the list, the stat panel or the natures, else goes back to the team. */
+  /** B: closes the list, the natures, the rival list or the field, else goes back to the team. */
   back(): void {
     if (this.tab() === 'stats' && this.stats.isOpen) {
       this.stats.back();
       return;
     }
+    if (this.tab() === 'calcs' && this.calcs.back()) return;
     const field = this.field();
     if (field) {
       // A new slot has nothing to go back to but the team.
@@ -251,18 +259,29 @@ export class SetEditorView {
     this.closed();
   }
 
-  /** L/R: the open list's filters, else the tabs. */
+  /** L/R: the open list's filters, else the tabs (round and round: Details, Stats, Calcs). */
   pressLR(by: 1 | -1): boolean {
     const spec = this.spec();
     if (spec) {
       this.chooser.stepFilter(spec, by);
       return true;
     }
-    return this.switchTab(by < 0 ? 'details' : 'stats');
+    if (this.tab() === 'calcs' && this.calcs.isOpen) {
+      this.calcs.pressLR(by);
+      return true;
+    }
+    if (!this.pokemon()) return false;
+    const index = TABS.indexOf(this.tab());
+    return this.switchTab(TABS[(index + by + TABS.length) % TABS.length]);
   }
 
-  /** ZL: the open list's "none" choice (No item, No move), when it has one; on Stats, undoes the points. */
+  /**
+   * ZL: the open list's "none" choice (No item, No move), when it has one; on Stats, undoes the
+   * points; on Calcs, the field (reset while it's open).
+   */
   pressClear(): boolean {
+    const team = this.team();
+    if (this.tab() === 'calcs' && this.pokemon() && team) return this.calcs.pressField(team.format);
     if (this.tab() === 'stats' && this.pokemon() && !this.stats.isOpen) return this.stats.undo();
     if (!this.clearLabel()) return false;
     this.pick('');
@@ -274,13 +293,14 @@ export class SetEditorView {
    * team (nothing in a new slot). Holding it is the confirmation, so nothing asks again.
    */
   pressRemove(): boolean {
+    if (this.tab() === 'calcs') return this.calcs.swap();
     if (!this.canRemove()) return false;
     this.remove.press();
     return true;
   }
 
   private canRemove(): boolean {
-    return !!this.team() && !!this.pokemon() && !this.stats.isOpen && !this.field();
+    return !!this.team() && !!this.pokemon() && this.tab() !== 'calcs' && !this.stats.isOpen && !this.field();
   }
 
   /** Steps Remove's hold; true once it filled up and the Pokémon is removed. */
@@ -295,6 +315,7 @@ export class SetEditorView {
   /** Home/End: the open list's ends, or the focused stat's none/max. */
   jump(to: 'first' | 'last'): boolean {
     if (this.tab() === 'stats') return this.stats.jump(to);
+    if (this.tab() === 'calcs') return this.calcs.jump(to);
     const spec = this.spec();
     if (!spec || !this.chooser.hasFocus()) return false;
     this.chooser.jump(spec, to);
@@ -308,12 +329,13 @@ export class SetEditorView {
     const spec = this.spec();
     const field = this.field();
     const stats = tab === 'stats' && !!pokemon;
+    const calcs = tab === 'calcs' && !!pokemon;
     this.drawHeader(ctx, spec);
     this.hero.draw(ctx, {
       set: pokemon,
       species: this.species(),
       mega: this.mega(),
-      compact: !!spec || stats,
+      compact: !!spec || stats || calcs,
       choosingSpecies: field === 'species',
       replacingMove: field ? MOVE_FIELDS.indexOf(field) : -1,
       openSpecies: () => this.openChooser('species'),
@@ -329,12 +351,14 @@ export class SetEditorView {
         points: (evs) => this.update({ evs }),
         nature: (nature) => this.update({ nature }),
       });
+    } else if (calcs) {
+      this.calcs.draw(ctx, { set: pokemon, format: this.team()?.format ?? '' });
     } else if (spec) {
       this.chooser.draw(ctx, spec, (id) => this.pick(id));
     } else {
       this.rows.draw(ctx, { set: pokemon, species: this.species(), mega: this.mega(), open: (f) => this.openChooser(f) });
     }
-    controlsLegend(ctx, this.legend(spec, stats));
+    controlsLegend(ctx, calcs ? this.calcsLegend() : this.legend(spec, stats));
   }
 
   /** Where the editor is, for the page bar: the team, the Pokémon, the list open. */
@@ -344,6 +368,7 @@ export class SetEditorView {
     const crumbs = [this.team()?.name ?? '', pokemon?.name || form?.name || pokemon?.species || 'New Pokémon'];
     const spec = this.spec();
     if (spec) crumbs.push(spec.title);
+    else if (this.tab() === 'calcs' && this.calcs.isPicking) crumbs.push('Rival');
     return crumbs;
   }
 
@@ -377,9 +402,14 @@ export class SetEditorView {
       [
         { id: 'editor-details', text: 'Details', on: tab === 'details', accept: () => this.switchTab('details') },
         { id: 'editor-stats', text: 'Stats', on: tab === 'stats', disabled: !pokemon, accept: () => this.switchTab('stats') },
+        { id: 'editor-calcs', text: 'Calcs', on: tab === 'calcs', disabled: !pokemon, accept: () => this.switchTab('calcs') },
       ],
-      !spec && !!pokemon,
+      !spec && !!pokemon && !(tab === 'calcs' && this.calcs.isOpen),
     );
+    if (tab === 'calcs' && pokemon) {
+      this.drawCalcsHeader(ctx);
+      return;
+    }
 
     if (spec) {
       const current = this.currentValue();
@@ -435,6 +465,54 @@ export class SetEditorView {
     return entries;
   }
 
+  /** On Calcs, the header's right: who attacks (ZR swaps) as two segments, and the field (ZL) summed up. */
+  private drawCalcsHeader(ctx: UiContext): void {
+    const p = ctx.palette;
+    const cy = HEADER_CY;
+    const attack = this.calcState.mode() === 'attack';
+    const style = { size: 16, bold: true };
+    // From the right: the field's summary, "Field", ZL; then the two segments and ZR.
+    const summary = this.calcs.fieldSummary(this.team()?.format ?? '');
+    const summaryW = Math.min(300, ctx.text.measure(summary, { size: 16 }));
+    let x = EDIT_RIGHT - summaryW;
+    label(ctx, summary, x, cy, { size: 16 }, p.muted, { maxWidth: summaryW });
+    x -= 8 + label(ctx, 'Field', x - 8, cy, style, p.ink, { align: 'right' });
+    x -= 8 + keyPillWidth(ctx, 'ZL');
+    keyPill(ctx, 'ZL', x, cy);
+    x -= 24;
+    const segments = ['You attack', 'They attack'];
+    const widths = segments.map((text) => ctx.text.measure(text, style) + 24);
+    const left = x - widths[0] - widths[1];
+    ctx.renderer.rect(left - 2, cy - 16, widths[0] + widths[1] + 4, 32, { fill: p.bg, stroke: p.outline, radius: 6, border: 2 });
+    let sx = left;
+    segments.forEach((text, i) => {
+      const on = (i === 0) === attack;
+      if (on) ctx.renderer.rect(sx, cy - 14, widths[i], 28, { fill: i === 0 ? p.accent : p.danger, radius: 4 });
+      label(ctx, text, sx + widths[i] / 2, cy, style, on ? (i === 0 ? WHITE : p.bar) : p.muted, { align: 'center' });
+      sx += widths[i];
+    });
+    keyPill(ctx, 'ZR', left - 10 - keyPillWidth(ctx, 'ZR'), cy);
+  }
+
+  /** What the buttons do on Calcs. */
+  private calcsLegend(): LegendEntry[] {
+    if (this.calcs.fieldOpen) {
+      return [{ keys: ['L', 'R'], text: 'Change' }, { keys: ['A'], text: 'Next' }, { keys: ['ZL'], text: 'Reset' }, { keys: ['B'], text: 'Done' }];
+    }
+    if (this.calcs.isPicking) {
+      return [{ keys: ['A'], text: 'Pick' }, { keys: ['B'], text: 'Keep the rival' }, { keys: ['L', 'R'], text: 'Filter' }];
+    }
+    const entries: LegendEntry[] = [];
+    if (this.calcs.onRival) entries.push({ keys: ['A'], text: 'Change rival' }, { keys: ['◀▶'], text: 'Its sets' });
+    entries.push(
+      { keys: ['ZR'], text: this.calcState.mode() === 'attack' ? 'They attack' : 'You attack' },
+      { keys: ['ZL'], text: 'Field' },
+      { keys: ['L', 'R'], text: 'Tabs' },
+      { keys: ['B'], text: 'Back to team' },
+    );
+    return entries;
+  }
+
   /** The open list's field as it is now ("Earthquake", "Choice Scarf"); '' when empty. */
   private currentValue(): string {
     const field = this.field();
@@ -462,10 +540,11 @@ export class SetEditorView {
 
   /** The other tab, with the focus on its first control (Stats needs a Pokémon). */
   private switchTab(tab: Tab): boolean {
-    if (this.tab() === tab || (tab === 'stats' && !this.pokemon())) return false;
+    if (this.tab() === tab || (tab !== 'details' && !this.pokemon())) return false;
     this.field.set(null);
     this.tab.set(tab);
     if (tab === 'stats') this.stats.focusFirst();
+    else if (tab === 'calcs') this.calcs.focusFirst();
     else this.focus.focus(SPECIES_ID);
     return true;
   }
