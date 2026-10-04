@@ -327,6 +327,11 @@ export class BattleStore {
   private readonly timerRequesters = new Set<string>();
   private nextLogId = 0;
   private nextEventId = 0;
+  /**
+   * Slots ("p1a") whose Pokémon used Baton Pass or Shed Tail this turn: the next one switched in there
+   * takes its stat stages and substitute (Shed Tail, only the substitute), as Showdown's client does.
+   */
+  private readonly passing = new Map<string, 'batonpass' | 'shedtail'>();
   /** The switch line whose withdrawal has just played, so applying it again brings the new Pokémon. */
   private withdrawn: string | null = null;
   /** Set while a request waits for the log that should follow it. */
@@ -400,6 +405,7 @@ export class BattleStore {
     this.formatSignal.set('');
     this.gameTypeSignal.set('doubles');
     this.withdrawn = null;
+    this.passing.clear();
     this.blinkedHits.clear();
     this.critSlots.clear();
     this.timerSignal.set(null);
@@ -806,6 +812,7 @@ export class BattleStore {
       case 'move':
         this.critSlots.clear();
         this.revealMove(args[0], args[1], tags);
+        this.notePass(args[0], args[1]);
         this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
         return this.say(`${this.label(args[0])} used ${args[1]}!`);
       case 'cant':
@@ -824,6 +831,7 @@ export class BattleStore {
           if (slot && this.blinkedHits.has(slot)) this.blinkedHits.delete(slot);
           else this.emit('hit', args[0]);
         }
+        if (command === '-damage' && effectName(tags['from']) === 'confusion') this.emit('confusion-hit', args[0]);
         const reason =
           command === '-damage'
             ? damageReason(args[0], tags, names)
@@ -891,8 +899,12 @@ export class BattleStore {
         return this.say(`It doesn't affect ${this.label(args[0], false)}...`);
       case '-miss':
         return this.say(`${this.label(args[1] ?? args[0])} avoided the attack!`);
-      case '-fail':
+      case '-fail': {
+        // A Baton Pass with no one to pass to (or a Shed Tail without the HP) switches no one in.
+        const slot = this.slotOf(args[0]);
+        if (slot) this.passing.delete(slot);
         return this.say('But it failed!');
+      }
       case '-notarget':
         return this.say('But there was no target...');
       case '-ohko':
@@ -916,9 +928,18 @@ export class BattleStore {
         // Protect (and the like) blocking a move shows its shield again.
         if (isSideGuard(args[1])) this.emit('side-guard', args[0]);
         else if (isProtection(args[1])) this.emit('protect', args[0]);
+        // Confused before its move: the stars circle its head again.
+        else if (effectName(args[1]) === 'confusion') this.emit('confused', args[0]);
+        // A hit taken by the substitute: the doll blinks.
+        else if (effectName(args[1]) === 'Substitute') this.emit('hit', args[0]);
         return this.sayIf(activateText(args[0], args[1], names));
       case '-start':
       case '-end':
+        if (effectName(args[1]) === 'confusion') this.emit(command === '-start' ? 'confused' : 'confusion-end', args[0]);
+        if (effectName(args[1]) === 'Substitute') {
+          this.updatePokemon(args[0], (p) => ({ ...p, substitute: command === '-start' }));
+          this.emit(command === '-start' ? 'substitute' : 'substitute-end', args[0]);
+        }
         return this.sayIf(volatileText(args[0], args[1], command === '-end', names, args[2]));
       case '-ability':
         return this.say(abilityText(args[0], args[1], tags, names), 'minor');
@@ -950,10 +971,11 @@ export class BattleStore {
         return 0;
       case 'faint':
         this.emit('faint', args[0]);
-        this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true }));
+        this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true, substitute: false }));
         return this.say(`${this.label(args[0])} fainted!`);
       case 'turn':
         this.afterUpkeep = false;
+        this.passing.clear();
         this.actionSignal.set(null);
         this.turnSignal.set(Number(args[0]));
         this.addEntry('turn', `Turn ${args[0]}`);
@@ -1286,12 +1308,16 @@ export class BattleStore {
       lostItem: '',
       ability: '',
     };
-    // Stat stages go with switching out.
+    // Stat stages and the substitute go with switching out, unless they're passed on.
+    const pass = this.passing.get(`${side}${'ab'[slot]}`);
+    this.passing.delete(`${side}${'ab'[slot]}`);
+    const leaving = pass ? this.sidesSignal()[side].active[slot] : null;
     const pokemon = {
       ...base,
       ...parseDetails(details, this.dex),
       ...parseCondition(condition, base.maxHp),
-      boosts: {},
+      boosts: leaving && pass === 'batonpass' ? { ...leaving.boosts } : {},
+      substitute: !!leaving?.substitute,
     };
     this.updateSide(side, (s) => ({
       ...s,
@@ -1301,6 +1327,14 @@ export class BattleStore {
         : [...s.pokemon, pokemon],
     }));
     return pokemon;
+  }
+
+  /** Baton Pass (or Shed Tail) used from a slot: the next Pokémon switched in there takes what it passes. */
+  private notePass(ident: string, move: string): void {
+    const id = toId(move);
+    const kind = id === 'batonpass' || id === 'zbatonpass' ? 'batonpass' : id === 'shedtail' ? 'shedtail' : null;
+    const slot = kind && this.slotOf(ident);
+    if (kind && slot) this.passing.set(slot, kind);
   }
 
   /**

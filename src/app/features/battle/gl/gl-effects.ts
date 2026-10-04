@@ -1,6 +1,9 @@
 import { GlRenderer, Rgba } from '@core/gl/gl-renderer';
 import { SlotKey } from '@features/battle/models/battle';
 import { FIELD_H, FIELD_W } from '@features/battle/gl/field-layout';
+import { maskOf } from '@core/gl/ui/masks';
+import { EffectShape, POW, SPARKLE, STAR } from '@features/battle/gl/effect-shapes';
+import { IMPACT_PIECES, Piece, typeEffect } from '@features/battle/gl/type-effects';
 
 /**
  * Bright type colours for the effects, as RGB triplets (the renderer takes an alpha with each).
@@ -87,6 +90,23 @@ const STAT_STREAK_MS = 620;
 const STAT_WAVE_GAP_MS = 200;
 const STAT_UP_COLOR: Rgba = [70 / 255, 210 / 255, 100 / 255, 1];
 const STAT_DOWN_COLOR: Rgba = [240 / 255, 70 / 255, 60 / 255, 1];
+const CONFUSION_MS = 1000;
+const CONFUSION_STARS = 3;
+const CONFUSION_TURNS = 2;
+const STAR_COLOR: Rgba = [1, 0.88, 0.29, 1];
+const POW_MS = 460;
+const POW_COLOR: Rgba = [1, 0.95, 0.62, 1];
+const FLASH_MS = 220;
+const BUBBLES = 6;
+const BUBBLE_MS = 620;
+const BLOT_MS = 520;
+const BLOT_COLOR: Rgba = [0.12, 0.06, 0.16, 1];
+const PUFFS = 14;
+const PUFF_MS = 520;
+const PUFF_COLORS: readonly Rgba[] = [
+  [0.95, 0.95, 0.95, 1],
+  [0.82, 0.82, 0.86, 1],
+];
 const WHITE: Rgba = [1, 1, 1, 1];
 const FIELD_WIDTH = FIELD_W;
 const FIELD_HEIGHT = FIELD_H;
@@ -115,6 +135,15 @@ interface Particle {
   color: Rgba;
   alpha: number;
   additive: boolean;
+  /** A pixel shape (`size` is then its height); a soft round light without one. */
+  shape?: EffectShape;
+  angle: number;
+  /** Radians/s. */
+  spin: number;
+  /** Side to side drift, px/s. */
+  sway: number;
+  /** Points the way it flies. */
+  aim: boolean;
 }
 
 /** Something drawn over a set time: `draw` gets the progress 0..1. */
@@ -168,8 +197,9 @@ export class GlEffects {
       const keep = Math.pow(p.drag, dt);
       p.vx *= keep;
       p.vy = p.vy * keep + p.gravity * dt;
-      p.x += p.vx * dt;
+      p.x += (p.vx + (p.sway ? Math.cos(p.age / 160) * p.sway : 0)) * dt;
       p.y += p.vy * dt;
+      p.angle += p.spin * dt;
       alive.push(p);
     }
     this.particles = alive;
@@ -192,7 +222,8 @@ export class GlEffects {
       const t = p.age / p.life;
       const size = p.size + (p.endSize - p.size) * t;
       const fade = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
-      glowDot(renderer, p.x, p.y, size, p.color, p.alpha * fade, p.additive);
+      if (!p.shape) glowDot(renderer, p.x, p.y, size, p.color, p.alpha * fade, p.additive);
+      else drawShape(renderer, p.shape, p.x, p.y, size, p.color, p.alpha * fade, p.aim ? Math.atan2(p.vy, p.vx) + Math.PI / 2 : p.angle, p.additive);
     }
     finished.forEach((tween) => tween.done?.());
   }
@@ -218,6 +249,10 @@ export class GlEffects {
       endSize: 0,
       alpha: 1,
       additive: true,
+      angle: 0,
+      spin: 0,
+      sway: 0,
+      aim: false,
       ...p,
       life: (p.life ?? 400) / this.speed,
     });
@@ -243,14 +278,110 @@ export class GlEffects {
     }
   }
 
-  /** Where a hit lands: a flash, a ring and sparks. */
+  /** Where a hit lands: a flash, a ring, and what its type throws (flames, drops, leaves…). */
   impact(at: EffectPoint, type: string, size: number, light = false): void {
+    this.hitAt(at, type, size / 240, light);
+  }
+
+  /** Pieces thrown out of a point: `count` of them, for a Pokémon of scale `k`. */
+  pieces(at: EffectPoint, piece: Piece, count: number, k: number): void {
+    for (let i = 0; i < count; i++) {
+      const angle = piece.direction === undefined ? Math.random() * Math.PI * 2 : piece.direction + (Math.random() * 2 - 1) * (piece.spread ?? Math.PI);
+      const v = piece.speed * k * (0.5 + Math.random() * 0.7) * this.speed;
+      const scatter = (piece.scatter ?? 0) * k;
+      const size = piece.size * k * (0.8 + Math.random() * 0.4);
+      this.particle({
+        x: at.x + (Math.random() - 0.5) * scatter,
+        y: at.y + (Math.random() - 0.5) * scatter,
+        vx: Math.cos(angle) * v,
+        vy: Math.sin(angle) * v,
+        gravity: (piece.gravity ?? 0) * k * this.speed * this.speed,
+        drag: piece.drag ?? 0.3,
+        size,
+        endSize: piece.endSize === undefined ? size : piece.endSize * k,
+        color: piece.colors[Math.floor(Math.random() * piece.colors.length)],
+        life: piece.life * (0.7 + Math.random() * 0.6),
+        shape: piece.shape,
+        angle: piece.spin ? Math.random() * Math.PI * 2 : 0,
+        spin: (piece.spin ?? 0) * (Math.random() * 2 - 1) * this.speed,
+        sway: (piece.sway ?? 0) * k * this.speed * (Math.random() < 0.5 ? -1 : 1),
+        aim: piece.aim ?? false,
+        additive: !!piece.glow,
+      });
+    }
+  }
+
+  /**
+   * Confusion: stars circle over the Pokémon's head (`head`, the top middle of its sprite), the ones
+   * behind it dimmer and smaller.
+   */
+  confusion(head: EffectPoint, size: number): void {
     const k = size / 240;
-    const color = effectColor(type);
-    const scale = light ? 0.7 : 1;
-    this.tween(IMPACT_MS * 0.6, (r, p) => glowDot(r, at.x, at.y, (16 + 40 * p) * k * scale, mix(WHITE, color, p), 1 - p, true));
-    this.tween(IMPACT_MS, (r, p) => ring(r, at.x, at.y, (12 + 70 * easeOut(p)) * k * scale, (5 - 3 * p) * k, color, 1 - p));
-    this.burst(at, color, light ? 8 : 16, 380 * k, 7 * k);
+    const rx = 76 * k;
+    const ry = 20 * k;
+    this.tween(CONFUSION_MS, (r, p) => {
+      const fade = Math.max(0, Math.min(1, p / 0.12, (1 - p) / 0.2));
+      for (let i = 0; i < CONFUSION_STARS; i++) {
+        const a = p * Math.PI * 2 * CONFUSION_TURNS + (i / CONFUSION_STARS) * Math.PI * 2;
+        const front = (Math.sin(a) + 1) / 2;
+        const x = head.x + Math.cos(a) * rx;
+        const y = head.y + Math.sin(a) * ry;
+        const height = (30 + 12 * front) * k;
+        glowDot(r, x, y, height * 0.8, STAR_COLOR, 0.4 * fade * (0.4 + 0.6 * front), true);
+        drawShape(r, STAR, x, y, height, STAR_COLOR, fade * (0.5 + 0.5 * front), Math.sin(p * 9 + i * 2) * 0.35, false);
+      }
+    });
+  }
+
+  /** A puff of smoke over a Pokémon, hiding it as it changes (its substitute coming or going). */
+  puff(at: EffectPoint, size: number): void {
+    const k = size / 240;
+    for (let i = 0; i < PUFFS; i++) {
+      const angle = (i / PUFFS) * Math.PI * 2 + Math.random() * 0.4;
+      const v = (90 + Math.random() * 90) * k * this.speed;
+      this.particle({
+        x: at.x + Math.cos(angle) * 30 * k,
+        y: at.y + Math.sin(angle) * 30 * k,
+        vx: Math.cos(angle) * v,
+        vy: Math.sin(angle) * v * 0.7 - 40 * k * this.speed,
+        drag: 0.15,
+        size: 34 * k,
+        endSize: 56 * k,
+        color: PUFF_COLORS[i % PUFF_COLORS.length],
+        alpha: 0.9,
+        additive: false,
+        life: PUFF_MS * (0.8 + Math.random() * 0.4),
+      });
+    }
+    this.tween(PUFF_MS * 0.5, (r, p) => {
+      const radius = (50 + 50 * p) * k;
+      r.rect(at.x - radius, at.y - radius, radius * 2, radius * 2, { fill: withAlpha(WHITE, 0.85 * (1 - p)), radius, softness: radius * 0.5 });
+    });
+  }
+
+  /** Confusion over: the stars fly off its head, with a glint. */
+  confusionEnd(head: EffectPoint, size: number): void {
+    const k = size / 240;
+    for (let i = 0; i < CONFUSION_STARS; i++) {
+      const a = (i / CONFUSION_STARS) * Math.PI * 2 - Math.PI / 2;
+      const v = 260 * k * this.speed;
+      this.particle({
+        x: head.x + Math.cos(a) * 76 * k,
+        y: head.y + Math.sin(a) * 20 * k,
+        vx: Math.cos(a) * v,
+        vy: -200 * k * this.speed,
+        gravity: 700 * k * this.speed * this.speed,
+        size: 36 * k,
+        endSize: 20 * k,
+        color: STAR_COLOR,
+        life: 700,
+        shape: STAR,
+        spin: (i - 1) * 6 * this.speed,
+        additive: false,
+      });
+    }
+    this.pieces(head, { shape: SPARKLE, colors: [WHITE, STAR_COLOR], size: 22, endSize: 4, speed: 200, drag: 0.1, life: 480, spin: 3 }, 6, k);
+    this.tween(FLASH_MS, (r, p) => glowDot(r, head.x, head.y, (30 + 60 * p) * k, WHITE, 0.7 * (1 - p), true));
   }
 
   /**
@@ -263,8 +394,8 @@ export class GlEffects {
     const color = effectColor(type);
     if (kind === 'erupt' || kind === 'psywave') {
       for (const target of targets) {
-        if (kind === 'erupt') this.pillars(target, color, k, () => arrived(target));
-        else this.closingRings(target, color, k, () => arrived(target));
+        if (kind === 'erupt') this.pillars(target, type, k, () => arrived(target));
+        else this.closingRings(target, type, k, () => arrived(target));
       }
       return;
     }
@@ -287,14 +418,16 @@ export class GlEffects {
     }
     this.later(CHARGE_MS * LAUNCH_AT, () => {
       for (const target of targets) {
-        if (kind === 'beam') this.beam(from, target, color, k, () => arrived(target));
-        else if (kind === 'wave') this.wave(from, target, color, k, () => arrived(target));
-        else this.orb(from, target, color, k, () => arrived(target));
+        if (kind === 'beam') this.beam(from, target, type, k, () => arrived(target));
+        else if (kind === 'wave') this.wave(from, target, type, k, () => arrived(target));
+        else this.orb(from, target, type, k, () => arrived(target));
       }
     });
   }
 
-  private orb(from: EffectPoint, target: EffectTarget, color: Rgba, k: number, arrived: () => void): void {
+  private orb(from: EffectPoint, target: EffectTarget, type: string, k: number, arrived: () => void): void {
+    const color = effectColor(type);
+    const trail = typeEffect(type)?.trail;
     const arc = 50 * k;
     this.tween(
       FLIGHT_MS,
@@ -302,19 +435,24 @@ export class GlEffects {
         const e = easeInOut(p);
         const x = from.x + (target.at.x - from.x) * e;
         const y = from.y + (target.at.y - from.y) * e - Math.sin(Math.PI * e) * arc;
+        // A solid core in its colour (light alone washes out on the bright field), lit from inside.
+        glowDot(r, x, y, 20 * k, color, 0.95, false);
         glowDot(r, x, y, 30 * k, color, 0.55, true);
-        glowDot(r, x, y, 13 * k, WHITE, 1, true);
-        this.particle({ x, y, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, size: 9 * k, endSize: 0, color, life: 260 });
+        glowDot(r, x, y, 11 * k, WHITE, 1, true);
+        // Its type's pieces trail behind it (flames, drops, leaves…); sparks for an unknown type.
+        if (trail) this.pieces({ x, y }, trail, Math.random() < 0.6 ? 1 : 2, k);
+        else this.particle({ x, y, vx: (Math.random() - 0.5) * 60, vy: (Math.random() - 0.5) * 60, size: 9 * k, endSize: 0, color, life: 260 });
       },
       () => {
-        if (target.hit) this.hitAt(target.at, color, k);
+        if (target.hit) this.hitAt(target.at, type, k);
         else this.tween(220, (r, p) => glowDot(r, target.at.x, target.at.y, 24 * k * (1 + p), color, 0.6 * (1 - p), true));
         arrived();
       },
     );
   }
 
-  private beam(from: EffectPoint, target: EffectTarget, color: Rgba, k: number, arrived: () => void): void {
+  private beam(from: EffectPoint, target: EffectTarget, type: string, k: number, arrived: () => void): void {
+    const color = effectColor(type);
     for (let i = 0; i < BEAM_ORBS; i++) {
       const last = i === BEAM_ORBS - 1;
       this.tween(
@@ -322,12 +460,13 @@ export class GlEffects {
         (r, p) => {
           const x = from.x + (target.at.x - from.x) * p;
           const y = from.y + (target.at.y - from.y) * p;
+          glowDot(r, x, y, 14 * k, color, 0.9, false);
           glowDot(r, x, y, 22 * k, color, 0.5, true);
-          glowDot(r, x, y, 9 * k, WHITE, 0.9, true);
+          glowDot(r, x, y, 8 * k, WHITE, 0.9, true);
         },
         last
           ? () => {
-              if (target.hit) this.hitAt(target.at, color, k);
+              if (target.hit) this.hitAt(target.at, type, k);
               arrived();
             }
           : undefined,
@@ -336,7 +475,8 @@ export class GlEffects {
     }
   }
 
-  private wave(from: EffectPoint, target: EffectTarget, color: Rgba, k: number, arrived: () => void): void {
+  private wave(from: EffectPoint, target: EffectTarget, type: string, k: number, arrived: () => void): void {
+    const color = effectColor(type);
     for (let i = 0; i < WAVE_RINGS; i++) {
       const last = i === WAVE_RINGS - 1;
       this.tween(
@@ -348,7 +488,7 @@ export class GlEffects {
         },
         last
           ? () => {
-              if (target.hit) this.impact(target.at, '', 240 * k, true);
+              if (target.hit) this.hitAt(target.at, type, k, true);
               arrived();
             }
           : undefined,
@@ -357,14 +497,84 @@ export class GlEffects {
     }
   }
 
-  private hitAt(at: EffectPoint, color: Rgba, k: number): void {
-    this.tween(IMPACT_MS * 0.6, (r, p) => glowDot(r, at.x, at.y, (18 + 44 * p) * k, mix(WHITE, color, p), 1 - p, true));
-    this.tween(IMPACT_MS, (r, p) => ring(r, at.x, at.y, (12 + 70 * easeOut(p)) * k, (5 - 3 * p) * k, color, 1 - p));
-    this.burst(at, color, 16, 380 * k, 7 * k);
+  /** A hit landing: a flash and a ring in the type's colour, its pieces and its flourish. */
+  private hitAt(at: EffectPoint, type: string, k: number, light = false): void {
+    const color = effectColor(type);
+    const scale = light ? 0.7 : 1;
+    this.tween(IMPACT_MS * 0.6, (r, p) => glowDot(r, at.x, at.y, (18 + 44 * p) * k * scale, mix(WHITE, color, p), 1 - p, true));
+    this.tween(IMPACT_MS, (r, p) => ring(r, at.x, at.y, (12 + 70 * easeOut(p)) * k * scale, (5 - 3 * p) * k, color, 1 - p));
+    const effect = typeEffect(type);
+    if (!effect) {
+      this.burst(at, color, light ? 8 : 16, 380 * k, 7 * k);
+      return;
+    }
+    const count = Math.round(IMPACT_PIECES * (light ? 0.5 : 1));
+    for (const piece of effect.impact) this.pieces(at, piece, count, k);
+    switch (effect.flourish) {
+      case 'pow':
+        this.pow(at, color, k * scale);
+        break;
+      case 'flash':
+        this.tween(FLASH_MS, (r, p) => glowDot(r, at.x, at.y, (70 + 50 * p) * k * scale, mix(WHITE, color, 0.3), 0.9 * (1 - p), true));
+        break;
+      case 'bubbles':
+        this.bubbles(at, color, k, light ? BUBBLES / 2 : BUBBLES);
+        break;
+      case 'blot':
+        this.tween(BLOT_MS, (r, p) => {
+          const radius = (30 + 70 * easeOut(p)) * k * scale;
+          r.rect(at.x - radius, at.y - radius, radius * 2, radius * 2, { fill: withAlpha(BLOT_COLOR, 0.6 * (1 - p)), radius, softness: radius * 0.6 });
+        });
+        break;
+      case 'rings':
+        for (let i = 0; i < 3; i++) {
+          this.tween(IMPACT_MS, (r, p) => ring(r, at.x, at.y, (20 + 90 * easeOut(p)) * k * scale, 4 * k, color, 1 - p), undefined, i * 90);
+        }
+        break;
+      case 'frost':
+        this.tween(IMPACT_MS, (r, p) => ring(r, at.x, at.y, (16 + 80 * easeOut(p)) * k * scale, (9 - 6 * p) * k, WHITE, 0.9 * (1 - p)));
+        break;
+      case 'dust':
+        this.dustAt({ x: at.x, y: at.y + 50 * k }, k, light ? 5 : 10);
+        break;
+    }
+  }
+
+  /** A blow's spiky "pow", popping out and fading. */
+  private pow(at: EffectPoint, color: Rgba, k: number): void {
+    const fill = mix(POW_COLOR, color, 0.25);
+    this.tween(POW_MS, (r, p) => {
+      const grow = p < 0.3 ? backOut(p / 0.3) : 1;
+      const fade = p < 0.55 ? 1 : 1 - (p - 0.55) / 0.45;
+      drawShape(r, POW, at.x, at.y, 84 * k * grow, fill, fade, 0, false);
+    });
+  }
+
+  /** Bubbles rising off a hit, wobbling. */
+  private bubbles(at: EffectPoint, color: Rgba, k: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      const x = at.x + (Math.random() - 0.5) * 120 * k;
+      const y = at.y + (Math.random() - 0.2) * 60 * k;
+      const radius = (7 + Math.random() * 8) * k;
+      const phase = Math.random() * Math.PI * 2;
+      this.tween(
+        BUBBLE_MS,
+        (r, p) => {
+          const bx = x + Math.sin(phase + p * 9) * 8 * k;
+          const by = y - 110 * k * easeOut(p);
+          const alpha = p < 0.85 ? 0.9 : (1 - p) / 0.15;
+          ring(r, bx, by, radius, 2.5 * k, mix(WHITE, color, 0.4), alpha);
+          glowDot(r, bx - radius * 0.35, by - radius * 0.35, radius * 0.3, WHITE, alpha, true);
+        },
+        undefined,
+        i * 60,
+      );
+    }
   }
 
   /** Pillars of the type's colour burst out of the ground under the target. */
-  private pillars(target: EffectTarget, color: Rgba, k: number, arrived: () => void): void {
+  private pillars(target: EffectTarget, type: string, k: number, arrived: () => void): void {
+    const color = effectColor(type);
     const feet = target.at.y + 90 * k;
     PILLAR_OFFSETS.forEach((offset, i) => {
       const x = target.at.x + offset * 240 * k;
@@ -380,7 +590,7 @@ export class GlEffects {
         },
         i === 1
           ? () => {
-              if (target.hit) this.hitAt(target.at, color, k);
+              if (target.hit) this.hitAt(target.at, type, k);
               arrived();
             }
           : undefined,
@@ -390,7 +600,8 @@ export class GlEffects {
   }
 
   /** Rings closing in on the target (Psychic). */
-  private closingRings(target: EffectTarget, color: Rgba, k: number, arrived: () => void): void {
+  private closingRings(target: EffectTarget, type: string, k: number, arrived: () => void): void {
+    const color = effectColor(type);
     for (let i = 0; i < PSY_RINGS; i++) {
       const last = i === PSY_RINGS - 1;
       this.tween(
@@ -398,7 +609,7 @@ export class GlEffects {
         (r, p) => ring(r, target.at.x, target.at.y, (110 - 90 * easeIn(p)) * k, (3 + 5 * p) * k, color, 0.3 + 0.7 * p),
         last
           ? () => {
-              if (target.hit) this.hitAt(target.at, color, k);
+              if (target.hit) this.hitAt(target.at, type, k);
               arrived();
             }
           : undefined,
@@ -586,7 +797,14 @@ export class GlEffects {
     for (let i = 0; i < 2; i++) {
       this.tween(AURA_RING_MS, (r, p) => ring(r, at.x, at.y, (24 + 90 * easeOut(p)) * k, 5 * k, color, 1 - p), undefined, i * AURA_RING_GAP_MS);
     }
+    const trail = typeEffect(type)?.trail;
     for (let i = 0; i < 10; i++) {
+      // Its type's pieces rise around it (flames, leaves, glints…), or plain sparks.
+      if (trail) {
+        const from = { x: at.x + (Math.random() - 0.5) * 140 * k, y: at.y + (Math.random() - 0.2) * 80 * k };
+        this.later(i * 40, () => this.pieces(from, { ...trail, speed: 140, direction: -Math.PI / 2, spread: 0.3, scatter: 0, life: AURA_SPARK_MS }, 1, k));
+        continue;
+      }
       this.later(i * 40, () =>
         this.particle({
           x: at.x + (Math.random() - 0.5) * 140 * k,
@@ -624,6 +842,22 @@ export class GlEffects {
   }
 }
 
+/**
+ * A pixel shape (effect-shapes) tinted `color`, about `height` px tall (whole screen pixels per
+ * shape pixel, so it stays crisp), centred on (x, y) and turned `angle` radians; its outline darker.
+ */
+export function drawShape(renderer: GlRenderer, shape: EffectShape, x: number, y: number, height: number, color: Rgba, alpha: number, angle = 0, additive = false): void {
+  if (height < 1 || alpha <= 0.01) return;
+  const px = Math.max(1, Math.round(height / shape.height));
+  const w = shape.width * px;
+  const h = shape.height * px;
+  renderer.rect(x - w / 2, y - h / 2, w, h, { fill: withAlpha(color, alpha), texture: maskOf(renderer, shape.fill), angle, additive });
+  if (shape.ink.length > 0) {
+    const ink: Rgba = [color[0] * 0.3, color[1] * 0.3, color[2] * 0.3, 1];
+    renderer.rect(x - w / 2, y - h / 2, w, h, { fill: withAlpha(ink, alpha), texture: maskOf(renderer, shape.ink), angle, additive });
+  }
+}
+
 /** A soft round light (or a plain disc without `additive`). */
 export function glowDot(renderer: GlRenderer, x: number, y: number, radius: number, color: Rgba, alpha: number, additive: boolean): void {
   if (radius <= 0.2 || alpha <= 0.01) return;
@@ -650,6 +884,12 @@ export function easeOut(t: number): number {
 /** Out and back: 0 → 1 at the middle → 0. */
 export function outAndBack(progress: number): number {
   return progress < 0.5 ? progress * 2 : (1 - progress) * 2;
+}
+
+/** Overshoots a little before settling (a pop). */
+function backOut(t: number): number {
+  const c = 1.7;
+  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 }
 
 function easeIn(t: number): number {

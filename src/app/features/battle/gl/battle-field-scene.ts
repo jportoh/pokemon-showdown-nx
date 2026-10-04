@@ -84,6 +84,16 @@ const IMAGE_WAIT_MS = 1500;
 /** How long a new Pokémon waits hidden for its send-out before it just appears. */
 const ENTRY_WAIT_MS = 250;
 const MEGA_MS = 900;
+/** Confused: it totters side to side (dipping at each end) while the stars circle. */
+const CONFUSED_MS = 1000;
+const CONFUSED_SWAYS = 2;
+const CONFUSED_SWAY_PX = 14;
+const CONFUSED_DIP_PX = 5;
+/** Behind a substitute, the Pokémon shows itself only while it uses a move: this long from the move's start. */
+const SUBSTITUTE_ACT_MS = 950;
+/** The substitute doll (Showdown's, bundled), drawn in its Pokémon's place. */
+const SUBSTITUTE_FRONT = 'sprites/substitute.png';
+const SUBSTITUTE_BACK = 'sprites/substitute-back.png';
 const POPUP_MS = 1400;
 /** Stat changes closer together than this sound once. */
 const STAT_SOUND_GAP_MS = 400;
@@ -247,6 +257,8 @@ export class BattleFieldScene {
   private readonly anims = new Map<SlotKey, SlotAnim>();
   private readonly shownIdents = new Map<SlotKey, string>();
   private readonly fainting = new Set<SlotKey>();
+  /** Pokémon behind a substitute using a move: shown themselves until then (performance.now()). */
+  private readonly acting = new Map<SlotKey, number>();
   /** Slots whose Pokémon went back to its ball: empty until the next one comes in. */
   private readonly withdrawn = new Set<SlotKey>();
   /**
@@ -337,6 +349,8 @@ export class BattleFieldScene {
     this.text = text;
     this.sprites = sprites;
     this.disc = disc;
+    sprites.prefetch(SUBSTITUTE_FRONT);
+    sprites.prefetch(SUBSTITUTE_BACK);
   }
 
   private preloadWithMegas(species: string, back: boolean): void {
@@ -393,6 +407,7 @@ export class BattleFieldScene {
       this.anims.delete(slot.key);
       this.fainting.delete(slot.key);
       this.withdrawn.delete(slot.key);
+      this.acting.delete(slot.key);
       if (ident) this.entering.set(slot.key, performance.now());
       else this.entering.delete(slot.key);
     }
@@ -503,6 +518,37 @@ export class BattleFieldScene {
         this.effects.wall(points, size);
         return;
       }
+      case 'confused': {
+        const head = this.headPoint(event.slot);
+        if (head) this.effects.confusion(head, size);
+        // It totters from side to side under the stars.
+        this.animate(event.slot, CONFUSED_MS, (v, p) => {
+          const sway = Math.sin(p * CONFUSED_SWAYS * 2 * Math.PI) * (1 - p * 0.6);
+          v.dx = sway * CONFUSED_SWAY_PX;
+          v.dy = Math.abs(sway) * CONFUSED_DIP_PX;
+        });
+        return;
+      }
+      case 'confusion-hit': {
+        // It hits itself: a blow lands on it and it shakes.
+        const at = this.effectPoint(event.slot);
+        if (at) this.effects.impact(at, 'normal', size);
+        this.blink(event.slot, true);
+        return;
+      }
+      case 'substitute':
+      case 'substitute-end': {
+        // The doll takes its place (or vanishes) in a puff of smoke.
+        this.acting.delete(event.slot);
+        const at = this.effectPoint(event.slot);
+        if (at) this.effects.puff(at, size);
+        return;
+      }
+      case 'confusion-end': {
+        const head = this.headPoint(event.slot);
+        if (head) this.effects.confusionEnd(head, size);
+        return;
+      }
     }
   }
 
@@ -515,6 +561,17 @@ export class BattleFieldScene {
     // Effects take the size of the Pokémon they're on: ours are drawn bigger than the opponent's.
     const size = this.sizeOf(action.attacker);
     const sizeAt = (slot: SlotKey) => this.sizeOf(slot);
+    // Behind a substitute, it comes out to use its move and hides again after.
+    if (this.slotData(action.attacker)?.pokemon?.substitute) {
+      const at = this.effectPoint(action.attacker);
+      if (at) {
+        effects.puff(at, size);
+        effects.later(SUBSTITUTE_ACT_MS, () => {
+          if (this.slotData(action.attacker)?.pokemon?.substitute) effects.puff(at, size);
+        });
+      }
+      this.acting.set(action.attacker, performance.now() + SUBSTITUTE_ACT_MS / this.store.speed());
+    }
     const pattern = movePattern(action.move);
     const aimed = pattern === 'beam' || pattern === 'wave' || pattern === 'erupt' || pattern === 'psywave' ? pattern : null;
     if (action.category === 'Special' || aimed) {
@@ -898,7 +955,7 @@ export class BattleFieldScene {
         Object.assign(visual, { dx: 0, dy: 0, alpha: 1, bright: 1 });
       }
     }
-    const texture = this.sprites?.get(pokemon.sprite, slot.own) ?? null;
+    const texture = this.spriteOf(slot, now);
     if (!texture || visual.alpha <= 0.01) return;
     const { glow, dim } = this.camera.look(slot.key);
     const x = slot.left + visual.dx;
@@ -916,6 +973,19 @@ export class BattleFieldScene {
       const extra = visual.bright - 1;
       renderer.rect(x, y, slot.size, slot.size, { fill: [extra, extra, extra, visual.alpha], texture, additive: true });
     }
+  }
+
+  /** Its sprite, or its substitute doll while it's behind one (not while it uses a move). */
+  private spriteOf(slot: Slot, now: number): Texture | null {
+    const pokemon = slot.pokemon;
+    if (!pokemon) return null;
+    const acting = this.acting.get(slot.key);
+    if (acting !== undefined && now >= acting) this.acting.delete(slot.key);
+    if (pokemon.substitute && !this.acting.has(slot.key)) {
+      const doll = this.sprites?.pixelArt(slot.own ? SUBSTITUTE_BACK : SUBSTITUTE_FRONT) ?? null;
+      if (doll) return doll;
+    }
+    return this.sprites?.get(pokemon.sprite, slot.own) ?? null;
   }
 
   /** Terrain motes floating up from the ground. */
@@ -1173,6 +1243,13 @@ export class BattleFieldScene {
     const data = this.slotData(slot);
     if (!data?.pokemon || data.pokemon.fainted) return null;
     return { x: Math.round(data.left + data.size / 2), y: Math.round(data.top + data.size * 0.55) };
+  }
+
+  /** Over a Pokémon's head (its sprite's top middle), where confusion's stars circle. */
+  private headPoint(slot: SlotKey): EffectPoint | null {
+    const data = this.slotData(slot);
+    if (!data?.pokemon || data.pokemon.fainted) return null;
+    return { x: Math.round(data.left + data.size / 2), y: Math.round(data.top + data.size * 0.24) };
   }
 
   /** Where a Pokémon on the field is drawn (field coordinates), for the screen's marks over it; null for an empty slot. */

@@ -85,8 +85,10 @@ export interface BattlePokemon {
   fainted: boolean;
   /** The type it has Terastallized into, if it has. */
   tera?: string;
-  /** Stat stages from -6 to +6 ('atk', 'spe', 'accuracy'…); only the changed ones. Reset on switching out. */
+  /** Stat stages from -6 to +6 ('atk', 'spe', 'accuracy'…); only the changed ones. Reset on switching out, unless Baton Passed. */
   boosts: Record<string, number>;
+  /** Behind a substitute (the doll is drawn in its place) until it breaks; Baton Pass and Shed Tail pass it on. */
+  substitute?: boolean;
   /** What the battle has revealed of it, as a spectator learns it: the moves it has used, in order. */
   moves: readonly string[];
   /** Its held item's name once revealed (Leftovers healing, Frisk, a Mega Stone…); '' while unknown or gone. */
@@ -200,11 +202,27 @@ export interface StatChange {
  * Something the field animates on a slot: a direct hit (the Pokémon blinks), a faint (it sinks out of
  * sight), a withdrawal (it leaves towards its trainer's side), a send-out (the new one comes in), a
  * Mega Evolution or Terastallization (it flashes), a protection (a shield pulses around it) or one
- * guarding its whole side, Wide Guard and the like (a barrier pulses across the side).
+ * guarding its whole side, Wide Guard and the like (a barrier pulses across the side); confusion
+ * starting or holding it before its move (stars circle its head as it wobbles), hurting it (it hits
+ * itself) or ending (the stars scatter); a substitute made (the doll takes its place in a puff of
+ * smoke) or broken (the doll vanishes and the Pokémon is back).
  */
 export interface FieldEvent {
   id: number;
-  kind: 'hit' | 'faint' | 'withdraw' | 'send-out' | 'mega' | 'tera' | 'protect' | 'side-guard';
+  kind:
+    | 'hit'
+    | 'faint'
+    | 'withdraw'
+    | 'send-out'
+    | 'mega'
+    | 'tera'
+    | 'protect'
+    | 'side-guard'
+    | 'confused'
+    | 'confusion-hit'
+    | 'confusion-end'
+    | 'substitute'
+    | 'substitute-end';
   slot: SlotKey;
 }
 
