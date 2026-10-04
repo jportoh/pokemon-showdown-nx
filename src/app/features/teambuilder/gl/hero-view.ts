@@ -32,6 +32,8 @@ export interface HeroModel {
   choosingSpecies: boolean;
   /** The move a move list would replace, lit in the compact card's moves; -1 for none. */
   replacingMove: number;
+  /** Draws what the compact card shows under its types instead of its moves and item (the Calcs tab's battle state). */
+  under?: (ctx: UiContext, box: Box) => void;
   openSpecies: () => void;
   gender: (gender: Gender) => void;
   nickname: (name: string) => void;
@@ -183,6 +185,10 @@ export class HeroView {
     const pillsW = types.length * 100 + Math.max(0, types.length - 1) * 8;
     typePills(ctx, types, cx - pillsW / 2, box.y + 264, 100, 108, 28, 16);
     if (!set) return;
+    if (model.under) {
+      model.under(ctx, box);
+      return;
+    }
 
     label(ctx, 'Moves', box.x + 20, box.y + 320, { size: 16 }, p.muted);
     for (let i = 0; i < MAX_MOVES; i++) {

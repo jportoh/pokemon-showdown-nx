@@ -6,7 +6,7 @@ import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { STAT_IDS, STAT_NAMES } from '@features/teambuilder/data/game-rules';
 import { CalcMode, CalcState, freshField } from '@features/teambuilder/calc/calc-state';
-import { CalcField, CalcOutcome, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
+import { CalcBoosts, CalcField, CalcOutcome, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
 import { RivalSet, RivalSets } from '@features/teambuilder/calc/rival-sets';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { toId } from '@shared/utils/to-id';
@@ -23,6 +23,17 @@ const ROW_H = 54;
 const ROW_GAP = 6;
 const ROWS_Y = EDIT_BODY_Y + CARD_H + 12;
 const DETAIL_Y = ROWS_Y + 4 * ROW_H + 3 * ROW_GAP + 12;
+/** A move row: the move's pill (its category inside), and the room the damage's numbers take after the bar. */
+const NAME_W = 250;
+const PERCENT_W = 156;
+/** Your card's stage chips, in the order they're drawn (three over two). */
+const STAGE_CHIPS: readonly (readonly [keyof CalcBoosts, string])[] = [
+  ['atk', 'Atk'],
+  ['spa', 'SpA'],
+  ['spe', 'Spe'],
+  ['def', 'Def'],
+  ['spd', 'SpD'],
+];
 /** The species the tab starts on: the format's most used Pokémon. */
 const FIRST_RIVAL = 'Incineroar';
 const HP_GREEN: Rgba = rgba('#4cd07d');
@@ -216,8 +227,13 @@ export class CalcsView {
     const left = box.x + 148;
     const role = mode === 'attack' ? 'RIVAL' : 'ATTACKER';
     const roleW = label(ctx, role, left, box.y + 30, { size: 14, bold: true }, mode === 'attack' ? p.muted : p.danger);
-    const nameW = label(ctx, form?.name ?? rival.species, left + roleW + 12, box.y + 30, { size: 26, bold: true }, p.ink, { maxWidth: 260 });
-    typePills(ctx, form?.types ?? [], left + roleW + nameW + 24, box.y + 18, 84, 90, 24, 14);
+    // Who moves first ends the line (on the right, before the HP); the name gives way to it.
+    const stateX = box.x + box.w - 256;
+    const verdictX = outcome ? this.drawVerdict(ctx, outcome, mode, stateX - 24, box.y + 30) : stateX - 24;
+    const types = form?.types ?? [];
+    const nameRoom = Math.min(260, verdictX - 16 - (types.length * 78 - 6) - 12 - (left + roleW + 12));
+    const nameW = label(ctx, form?.name ?? rival.species, left + roleW + 12, box.y + 30, { size: 26, bold: true }, p.ink, { maxWidth: nameRoom });
+    typePills(ctx, types, left + roleW + nameW + 24, box.y + 18, 72, 78, 24, 14);
 
     const sets = this.sets.setsFor(rival.species);
     const index = sets.findIndex((set) => set.id === rival.id);
@@ -230,40 +246,37 @@ export class CalcsView {
 
     const set = rival.set;
     const ability = this.dex.mega(set.species, set.item)?.ability ?? set.ability;
-    const line = [set.nature, set.item || 'No item', ability, spreadText(set)].filter(Boolean).join(' · ');
-    label(ctx, line, left, box.y + 106, { size: 17 }, p.muted, { maxWidth: box.x + box.w - 280 - left });
+    // "Careful · [icon] Sitrus Berry · Intimidate · HP 32 / Def 14 / SpD 20"
+    const lineRight = box.x + box.w - 280;
+    const natureW = set.nature ? label(ctx, `${set.nature} · `, left, box.y + 106, { size: 17 }, p.muted) : 0;
+    const item = set.item ? this.dex.item(set.item) : undefined;
+    if (item) ctx.images.drawItem(item.id, left + natureW, box.y + 96, 20);
+    const restX = left + natureW + (item ? 24 : 0);
+    const rest = [set.item || 'No item', ability, spreadText(set)].filter(Boolean).join(' · ');
+    label(ctx, rest, restX, box.y + 106, { size: 17 }, p.muted, { maxWidth: lineRight - restX });
 
-    // The target's HP and stat stages on the right (the rival's, or yours when it attacks).
-    const target = mode === 'attack' ? field.rival : field.yours;
-    const hpBox = { x: box.x + box.w - 256, y: box.y + 24, w: 236 };
-    const hpLabel = mode === 'attack' ? `HP ${outcome?.targetHp ?? ''}` : `Your HP ${outcome?.targetHp ?? ''}`;
-    label(ctx, hpLabel, hpBox.x, hpBox.y, { size: 16 }, p.muted);
-    label(ctx, `${target.hp}%`, hpBox.x + hpBox.w, hpBox.y, { size: 18, bold: true }, p.ink, { align: 'right' });
-    ctx.renderer.rect(hpBox.x, hpBox.y + 16, hpBox.w, 16, { fill: p.input, stroke: p.rim, radius: 4, border: 2 });
-    ctx.renderer.rect(hpBox.x + 3, hpBox.y + 19, ((hpBox.w - 6) * target.hp) / 100, 10, { fill: target.hp > 50 ? HP_GREEN : target.hp > 20 ? HP_YELLOW : HP_RED, radius: 2 });
-    // Its Def/SpD stages as it takes the hit (a Terrain Seed's included), and who moves first.
-    const boosts = outcome?.targetBoosts ?? target.boosts;
-    const seeded = boosts.def !== target.boosts.def || boosts.spd !== target.boosts.spd;
-    const stages = `Def ${stage(boosts.def)} · SpD ${stage(boosts.spd)}${seeded ? ' (Seed)' : ''}`;
-    label(ctx, stages, hpBox.x, hpBox.y + 54, { size: 15, bold: seeded }, seeded ? p.accentText : p.muted, { maxWidth: hpBox.w });
-    if (outcome) this.drawSpeed(ctx, outcome, mode, hpBox.x, hpBox.y + 80, hpBox.w);
+    // On the right, the rival as it battles here, like your card: HP, stages, its Speed.
+    drawBattleState(ctx, stateX, box.y + 22, 236, battleState(field, outcome, mode, 'rival'));
     if (focused) focusRing(ctx, box, 10);
   }
 
   /**
-   * "Spe 169 vs 155 · You first": both Speeds on this field (Choice Scarf, Swift Swim in rain,
-   * Tailwind…), yours first, and who moves first (the slower one under Trick Room).
+   * "You first" as a pill ending at `right`: the faster one on this field (Choice Scarf, Swift
+   * Swim in rain, Tailwind…), the slower one under Trick Room. Returns where the pill starts.
    */
-  private drawSpeed(ctx: UiContext, outcome: CalcOutcome, mode: CalcMode, x: number, cy: number, width: number): void {
+  private drawVerdict(ctx: UiContext, outcome: CalcOutcome, mode: CalcMode, right: number, cy: number): number {
     const p = ctx.palette;
     const yours = mode === 'attack' ? outcome.speed.attacker : outcome.speed.target;
     const its = mode === 'attack' ? outcome.speed.target : outcome.speed.attacker;
     const room = outcome.speed.trickRoom;
     const youFirst = room ? yours < its : yours > its;
-    const verdict = yours === its ? 'Speed tie' : youFirst ? 'You first' : 'It goes first';
+    const verdict = (yours === its ? 'Speed tie' : youFirst ? 'You first' : 'It first') + (room ? ' · TR' : '');
     const color = yours === its ? p.muted : youFirst ? p.accentText : p.danger;
-    const numbersW = label(ctx, `Spe ${yours} vs ${its}${room ? ' (TR)' : ''}`, x, cy, { size: 15 }, p.muted);
-    label(ctx, verdict, x + width, cy, { size: 15, bold: true }, color, { align: 'right', maxWidth: width - numbersW - 8 });
+    const style = { size: 15, bold: true };
+    const w = ctx.text.measure(verdict, style) + 20;
+    ctx.renderer.rect(right - w, cy - 13, w, 26, { fill: p.bg, stroke: color, radius: 13, border: 2 });
+    label(ctx, verdict, right - w / 2, cy, style, color, { align: 'center' });
+    return right - w;
   }
 
   /** Left/right on the rival's card: its previous or next set. */
@@ -274,6 +287,45 @@ export class CalcsView {
     const index = sets.findIndex((set) => set.id === rival.id);
     const next = sets[(index + by + sets.length) % sets.length];
     if (next) this.state.rival.set(next);
+  }
+
+  // ---------------------------------------------------------------- your Pokémon's card
+
+  /**
+   * Under the compact card's types, your Pokémon as it battles here (the moves are on the rows
+   * already): its HP left, its stat stages (a Terrain Seed's included), what its side has up, and
+   * its item. All of it but the item comes from the field (ZL).
+   */
+  drawYours(ctx: UiContext, box: Box, model: CalcsModel): void {
+    const p = ctx.palette;
+    const field = this.state.fieldFor(model.format);
+    const yours = field.yours;
+    const rival = this.picking ? null : this.rival();
+    const mode = this.state.mode();
+    const outcome = rival ? this.outcome(model.set, rival, mode, field) : null;
+    const x = box.x + 20;
+    const w = box.w - 40;
+    label(ctx, 'In battle', x, box.y + 312, { size: 16 }, p.muted);
+    label(ctx, 'ZL Field', x + w, box.y + 312, { size: 14 }, p.muted, { align: 'right' });
+
+    drawBattleState(ctx, x, box.y + 338, w, battleState(field, outcome, mode, 'yours'));
+
+    // What its side has up (the ones that count depend on who attacks, but all of them are shown).
+    const up = [
+      [yours.tailwind, 'Tailwind'],
+      [yours.helpingHand, 'Helping Hand'],
+      [yours.reflect, 'Reflect'],
+      [yours.lightScreen, 'Light Screen'],
+      [yours.auroraVeil, 'Aurora Veil'],
+      [yours.friendGuard, 'Friend Guard'],
+    ] as const;
+    const effects = up.filter(([on]) => on).map(([, name]) => name);
+    label(ctx, effects.length ? effects.join(' · ') : 'Nothing up on its side', x, box.y + 452, { size: 15, bold: effects.length > 0 }, effects.length ? p.accentText : p.muted, { maxWidth: w });
+
+    const item = model.set.item ? this.dex.item(model.set.item) : undefined;
+    label(ctx, 'Item', x, box.y + 482, { size: 16 }, p.muted);
+    if (item) ctx.images.drawItem(item.id, x + 44, box.y + 470, 24);
+    label(ctx, model.set.item || 'None', x + (item ? 74 : 44), box.y + 482, { size: 18 }, model.set.item ? p.ink : p.muted, { maxWidth: w - 74 });
   }
 
   // ---------------------------------------------------------------- the moves
@@ -305,12 +357,12 @@ export class CalcsView {
     const { renderer } = ctx;
     renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 8, border: 2 });
     const cy = box.y + box.h / 2;
-    // The move on its type's colour, then its category.
-    const nameW = 236;
-    renderer.rect(box.x + 2, box.y + 2, nameW, box.h - 4, { fill: typeRgba(move.type) ?? p.rim, radius: 6 });
-    label(ctx, move.move, box.x + 16, cy, { size: 20, bold: true }, WHITE, { maxWidth: nameW - 24 });
-    categoryBadge(ctx, move.category, box.x + nameW + 14, cy);
-    let x = box.x + nameW + 14 + CATEGORY_ICON_W + 14;
+    // The move on its type's colour, its category inside on the right (a long name gets an ellipsis).
+    const iconX = box.x + 2 + NAME_W - 8 - CATEGORY_ICON_W;
+    renderer.rect(box.x + 2, box.y + 2, NAME_W, box.h - 4, { fill: typeRgba(move.type) ?? p.rim, radius: 6 });
+    label(ctx, move.move, box.x + 14, cy, { size: 20, bold: true }, WHITE, { maxWidth: iconX - 8 - (box.x + 14) });
+    categoryBadge(ctx, move.category, iconX, cy);
+    let x = box.x + 2 + NAME_W + 14;
 
     const tag = moveTag(move);
     if (tag) {
@@ -318,7 +370,7 @@ export class CalcsView {
       renderer.rect(x, cy - 11, tagW, 22, { fill: [0, 0, 0, 0], stroke: p.teal, radius: 4, border: 1 });
       label(ctx, tag, x + tagW / 2, cy, { size: 13, bold: true }, p.teal, { align: 'center' });
     }
-    x += 84;
+    x += 80;
 
     const right = box.x + box.w - 12;
     const koW = 118;
@@ -332,8 +384,8 @@ export class CalcsView {
     }
 
     // The damage as a bar of the target's HP: up to the lowest roll solid, to the highest lighter.
-    const barW = textRight - 160 - x;
-    const bar = { x, y: cy - 11, w: barW, h: 22 };
+    const barW = textRight - PERCENT_W - x;
+    const bar = { x, y: cy - 13, w: barW, h: 26 };
     const fill = koFill(ctx, move);
     renderer.rect(bar.x, bar.y, bar.w, bar.h, { fill: p.input, stroke: p.rim, radius: 4, border: 2 });
     const inner = bar.w - 6;
@@ -451,6 +503,52 @@ function spreadText(set: PokemonSet): string {
   return STAT_IDS.filter((stat) => (set.evs[stat] ?? 0) > 0)
     .map((stat) => `${STAT_NAMES[stat]} ${set.evs[stat]}`)
     .join(' / ');
+}
+
+/** One Pokémon as it battles on this field: its HP left (of its full HP, 0 unknown), its stages and its Speed. */
+interface BattleState {
+  hp: number;
+  maxHp: number;
+  boosts: CalcBoosts;
+  /** Its Speed after everything (stage, item, ability, Tailwind…); 0 unknown. */
+  speed: number;
+}
+
+/** Your Pokémon's state or the rival's, whichever of the two attacks. */
+function battleState(field: CalcField, outcome: CalcOutcome | null, mode: CalcMode, whose: 'yours' | 'rival'): BattleState {
+  const side = field[whose];
+  const attacker = (mode === 'attack') === (whose === 'yours');
+  if (!outcome) return { hp: side.hp, maxHp: 0, boosts: side.boosts, speed: 0 };
+  return attacker
+    ? { hp: side.hp, maxHp: outcome.attackerHp, boosts: outcome.attackerBoosts, speed: outcome.speed.attacker }
+    : { hp: side.hp, maxHp: outcome.targetHp, boosts: outcome.targetBoosts, speed: outcome.speed.target };
+}
+
+/**
+ * A Pokémon's state in `w` from the HP line at `cy`: its HP over a bar, then its stages as chips
+ * (Atk, SpA, Spe over Def, SpD, lit when raised or lowered) and its Speed after everything in the
+ * sixth place.
+ */
+function drawBattleState(ctx: UiContext, x: number, cy: number, w: number, state: BattleState): void {
+  const p = ctx.palette;
+  const hpText = state.maxHp ? `HP ${Math.max(1, Math.floor((state.maxHp * state.hp) / 100))} / ${state.maxHp}` : 'HP';
+  label(ctx, hpText, x, cy, { size: 16 }, p.muted);
+  label(ctx, `${state.hp}%`, x + w, cy, { size: 18, bold: true }, p.ink, { align: 'right' });
+  ctx.renderer.rect(x, cy + 12, w, 14, { fill: p.input, stroke: p.rim, radius: 4, border: 2 });
+  ctx.renderer.rect(x + 3, cy + 15, ((w - 6) * state.hp) / 100, 8, { fill: state.hp > 50 ? HP_GREEN : state.hp > 20 ? HP_YELLOW : HP_RED, radius: 2 });
+
+  const chipW = (w - 12) / 3;
+  const chipAt = (i: number): Box => ({ x: x + (i % 3) * (chipW + 6), y: cy + 38 + Math.floor(i / 3) * 32, w: chipW, h: 26 });
+  STAGE_CHIPS.forEach(([stat, name], i) => {
+    const chip = chipAt(i);
+    const value = state.boosts[stat];
+    const ink = value > 0 ? p.accentText : value < 0 ? p.danger : p.muted;
+    ctx.renderer.rect(chip.x, chip.y, chip.w, chip.h, { fill: value ? p.select : p.bg, stroke: value ? ink : p.rim, radius: 5, border: value ? 2 : 1 });
+    label(ctx, `${name} ${stage(value)}`, chip.x + chip.w / 2, chip.y + chip.h / 2, { size: 15, bold: value !== 0 }, ink, { align: 'center', maxWidth: chip.w - 6 });
+  });
+  const speed = chipAt(STAGE_CHIPS.length);
+  ctx.renderer.rect(speed.x, speed.y, speed.w, speed.h, { fill: p.input, stroke: p.outline, radius: 5, border: 2 });
+  label(ctx, `Spe ${state.speed || '—'}`, speed.x + speed.w / 2, speed.y + speed.h / 2, { size: 15, bold: true }, p.ink, { align: 'center', maxWidth: speed.w - 6 });
 }
 
 /** "+1", "±0", "−2" */

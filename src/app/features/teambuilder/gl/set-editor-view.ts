@@ -338,6 +338,7 @@ export class SetEditorView {
       compact: !!spec || stats || calcs,
       choosingSpecies: field === 'species',
       replacingMove: field ? MOVE_FIELDS.indexOf(field) : -1,
+      under: calcs && pokemon ? (ctx, box) => this.calcs.drawYours(ctx, box, { set: pokemon, format: this.team()?.format ?? '' }) : undefined,
       openSpecies: () => this.openChooser('species'),
       gender: (gender: Gender) => this.update({ gender }),
       nickname: (name) => this.update({ name }),

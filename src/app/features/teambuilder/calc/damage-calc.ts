@@ -20,6 +20,7 @@ export interface CalcBoosts {
   spa: number;
   def: number;
   spd: number;
+  spe: number;
 }
 
 /** One side of the field: its screens, its partner's help, its Pokémon's stat stages and HP left. */
@@ -85,7 +86,8 @@ export interface FieldEffect<T> {
 export interface CalcOutcome {
   weather: FieldEffect<CalcWeather> | null;
   terrain: FieldEffect<CalcTerrain> | null;
-  /** The target's HP at full. */
+  /** The attacker's and the target's HP at full. */
+  attackerHp: number;
   targetHp: number;
   moves: MoveCalc[];
   /** The stat stages each one battles with: the field's, plus a Terrain Seed's on its terrain. */
@@ -144,6 +146,7 @@ export class DamageCalc {
     return {
       weather,
       terrain,
+      attackerHp: attackerMon.maxHP(),
       targetHp: targetMon.maxHP(),
       moves,
       attackerBoosts: withSeed(attackerConditions.boosts, attackerSeed),

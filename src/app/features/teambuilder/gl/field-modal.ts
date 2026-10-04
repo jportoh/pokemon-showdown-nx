@@ -8,9 +8,9 @@ import { WrapCache, keyPill, keyPillWidth } from './tb-draw';
 const WEATHERS: readonly WeatherChoice[] = ['auto', 'none', 'Sun', 'Rain', 'Sand', 'Snow'];
 const TERRAINS: readonly TerrainChoice[] = ['auto', 'none', 'Electric', 'Grassy', 'Psychic', 'Misty'];
 const HP_STEPS = [100, 90, 80, 75, 70, 60, 50, 40, 33, 30, 25, 20, 10, 5, 1];
-const ROW_H = 40;
-const ROW_STEP = 46;
-const SECTION_H = 28;
+const ROW_H = 36;
+const ROW_STEP = 41;
+const SECTION_H = 26;
 const COLUMN_W = 452;
 const FIRST_ROW = 'field-doubles';
 
@@ -37,9 +37,9 @@ interface FieldRow {
 /**
  * The field every calc of the tab uses, in a modal (ZL): the battle (Doubles or Singles, the weather
  * and terrain, Trick Room, a critical hit), the target's side (its screens, Friend Guard), the
- * attacker's (Helping Hand, Tailwind), both Pokémon's stat stages and the target's HP. The d-pad goes
- * from row to row; L/R (or A) change the focused one at once. ZL puts it all back as it starts (see
- * CalcsView); B closes it. Under the rows: what Auto set up, a Terrain Seed at work, and the moves
+ * attacker's (Helping Hand, Tailwind), both Pokémon's stat stages (Speed included, for who moves
+ * first) and the target's HP. The d-pad goes from row to row; L/R (or A) change the focused one at
+ * once. ZL puts it all back as it starts (see CalcsView); B closes it. Under the rows: what Auto set up, a Terrain Seed at work, and the moves
  * that always land a critical hit.
  */
 export class FieldModal {
@@ -141,6 +141,7 @@ export class FieldModal {
           toggle('field-attackertailwind', 'Tailwind', attacker.tailwind, () => side(attackerKey, { tailwind: !attacker.tailwind })),
           stageRow('field-atk', 'Attack stage', attackerKey, 'atk'),
           stageRow('field-spa', 'Sp. Atk stage', attackerKey, 'spa'),
+          stageRow('field-attackerspe', 'Speed stage', attackerKey, 'spe'),
         ],
       ],
       [
@@ -149,15 +150,16 @@ export class FieldModal {
           toggle('field-targettailwind', 'Tailwind', target.tailwind, () => side(targetKey, { tailwind: !target.tailwind })),
           stageRow('field-def', 'Defense stage', targetKey, 'def'),
           stageRow('field-spd', 'Sp. Def stage', targetKey, 'spd'),
+          stageRow('field-targetspe', 'Speed stage', targetKey, 'spe'),
           choice('field-hp', 'HP left', HP_STEPS, nearestHp(target.hp), (hp) => `${hp}%`, (hp) => side(targetKey, { hp })),
         ],
       ],
     ];
     this.rows = new Map([...left, ...right].flatMap(([, rows]) => rows.map((row) => [row.id, row] as const)));
     const top = box.y + 66;
-    this.drawColumn(ctx, box.x + 28, top, left);
-    const rightX = box.x + box.w - 28 - COLUMN_W;
-    const rightEnd = this.drawColumn(ctx, rightX, top, right);
+    const leftX = box.x + 28;
+    const leftEnd = this.drawColumn(ctx, leftX, top, left);
+    this.drawColumn(ctx, box.x + box.w - 28 - COLUMN_W, top, right);
 
     // What else is at work: Auto's weather and terrain, a Terrain Seed, moves that always crit.
     const notes = [
@@ -166,7 +168,7 @@ export class FieldModal {
       ...(outcome?.moves ?? []).filter((move) => move.alwaysCrit).map((move) => `${move.move} always lands a critical hit`),
     ];
     const text = notes.length ? notes.join(' · ') : 'Auto: the weather or terrain an ability sets up (Drizzle, Grassy Surge…). None here.';
-    this.wraps.draw(ctx, text, rightX + 4, rightEnd + 4, COLUMN_W - 4, 22, { size: 15 }, p.muted, Math.floor((box.y + box.h - 14 - rightEnd) / 22));
+    this.wraps.draw(ctx, text, leftX + 4, leftEnd + 4, COLUMN_W - 4, 22, { size: 15 }, p.muted, Math.floor((box.y + box.h - 14 - leftEnd) / 22));
   }
 
   /** A column's sections from `top`; returns where it ends. */
