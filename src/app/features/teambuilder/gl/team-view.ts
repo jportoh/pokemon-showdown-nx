@@ -4,22 +4,23 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
-import { Box, UiContext, button, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { MAX_MOVES, MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
-import { drawHeroName, drawHeroTypes, heroStage } from './hero-view';
+import { drawHeroName, drawHeroTypes, heroStage, heroTypesTop } from './hero-view';
 import { SpriteStage } from './sprite-stage';
 import { shortFormat } from './team-grid-view';
 import {
   BESIDE_HERO_X,
+  CardTop,
   EDIT_BODY_BOTTOM,
   EDIT_BODY_Y,
   EDIT_RIGHT,
   EDIT_X,
   HERO_W,
   RIGHT,
-  TOP,
+  TEAM_BODY_Y,
   WHITE,
   arrow,
   entrance,
@@ -33,12 +34,15 @@ export const MAX_TEAM_NAME_LENGTH = 30;
 export const TEAM_RENAME_ID = 'team-rename';
 export const TEAM_FORMAT_ID = 'team-format';
 
-/** The six rows beside the card: 80 high, 8 apart, filling the body. */
-const ROW_H = 80;
-const ROW_STEP = 88;
+/** The team's name and format over the rows, as chips (with Validate and Delete). */
+const CHIP_H = 46;
+/** The six rows beside the card, under the chips: 78 high, 8 apart, filling the body. */
+const ROWS_Y = TEAM_BODY_Y + CHIP_H + 10;
+const ROW_H = 78;
+const ROW_STEP = 86;
 const SPRITE = 72;
-/** The header's middle, under the bar (as the editor's). */
-const HEADER_CY = TOP + 30;
+/** The card's line (item, ability) between its types and its moves. */
+const CARD_LINES_Y = 434;
 /** The rows come in one after another, sliding this far. */
 const STAGGER_MS = 50;
 const SLIDE = 28;
@@ -58,11 +62,12 @@ export interface TeamActions {
 
 /**
  * A team (the teambuilder's second page), laid out as the games' party screen: the focused Pokémon on
- * the left as the editor's card shows it (the same place, size and sprite stage, so opening it is
- * seamless; its sprite drops in when it's focused), and its six slots beside it as rows (sprite, name,
- * item and ability, its moves' types as bars, its types). The header has the team's name, Rename, the
- * format (A moves to the next one), Validate (ZL) and Delete (ZR, held down). The rows come in
- * sliding, from the side of the team L/R came from.
+ * the left as the editor's card shows it (the same sprite stage, its sprite dropping in when it's
+ * focused; the card slides between this page's height and the editor's, so opening it is seamless),
+ * and its six slots beside it as rows (sprite, name, item and ability, its moves' types as bars, its
+ * types). Over the rows, the team's name (A renames it), its format (A moves to the next one),
+ * Validate (ZL) and Delete (ZR, held down). The rows come in sliding, from the side of the team L/R
+ * came from. The page bar says which team it is.
  */
 export class TeamView {
   private readonly dex = inject(ChampionsDex);
@@ -76,6 +81,8 @@ export class TeamView {
   /** When the rows came in (on the next frame after enter()) and from which side. */
   private enteredAt: number | null = null;
   private from: 1 | -1 = 1;
+  /** The card goes back up from where the editor had it. */
+  private readonly cardTop = new CardTop();
 
   constructor(
     private readonly focus: CanvasFocus,
@@ -91,6 +98,11 @@ export class TeamView {
   enter(from: 1 | -1 = 1): void {
     this.enteredAt = null;
     this.from = from;
+  }
+
+  /** Back from the editor: the card slides up from the editor's card, under its tabs. */
+  backFromEditor(): void {
+    this.cardTop.slideFrom(EDIT_BODY_Y);
   }
 
   /** The slot shown on the card (the focused one, or the last focused). */
@@ -124,18 +136,17 @@ export class TeamView {
     });
   }
 
-  /** `place`: "2 / 8", where the team is among them (L/R go through them). */
-  draw(ctx: UiContext, team: Team, place: string, actions: TeamActions): void {
+  draw(ctx: UiContext, team: Team, actions: TeamActions): void {
     const { now } = ctx;
     this.enteredAt ??= now;
     const focused = this.focus.focused ?? '';
     if (focused.startsWith('slot-')) this.shownSlot = Number(focused.slice(5));
     this.shownSlot = Math.min(this.shownSlot, team.sets.length, MAX_TEAM_SIZE - 1);
 
-    this.drawHeader(ctx, team, place, actions);
+    this.drawChips(ctx, team, actions);
     this.drawCard(ctx, team.sets[this.shownSlot]);
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
-      const box = { x: BESIDE_HERO_X, y: EDIT_BODY_Y + i * ROW_STEP, w: EDIT_RIGHT - BESIDE_HERO_X, h: ROW_H };
+      const box = { x: BESIDE_HERO_X, y: ROWS_Y + i * ROW_STEP, w: EDIT_RIGHT - BESIDE_HERO_X, h: ROW_H };
       const set = team.sets[i];
       // The slot after the last Pokémon adds one; the ones after it are only places.
       const reachable = !!set || i === team.sets.length;
@@ -148,44 +159,57 @@ export class TeamView {
     }
   }
 
-  /** Where it is ("Teams ▶ Rain Team  1 / 8"), then Rename, the format, Validate and Delete. */
-  private drawHeader(ctx: UiContext, team: Team, place: string, actions: TeamActions): void {
+  /**
+   * Over the rows: the team's name (A renames it) and format (A moves to the next one) as chips, then
+   * Validate (ZL) and Delete (ZR, held down; it fills up red) on the right.
+   */
+  private drawChips(ctx: UiContext, team: Team, actions: TeamActions): void {
     const p = ctx.palette;
-    let x = EDIT_X;
-    x += label(ctx, 'Teams', x, HEADER_CY, { size: 20 }, p.muted);
-    x += label(ctx, '▶', x + 10, HEADER_CY, { size: 14 }, p.outline) + 20;
-    x += label(ctx, team.name, x, HEADER_CY, { size: 24, bold: true }, p.ink, { maxWidth: 290 });
-    label(ctx, place, x + 14, HEADER_CY, { size: 18 }, p.muted);
+    const y = TEAM_BODY_Y;
+    const buttonW = 116;
+    const deleteX = EDIT_RIGHT - buttonW;
+    const validateX = deleteX - 10 - buttonW;
+    const formatBox = { x: validateX - 12 - 220, y, w: 220, h: CHIP_H };
+    const nameBox = { x: BESIDE_HERO_X, y, w: formatBox.x - 12 - BESIDE_HERO_X, h: CHIP_H };
+    this.chip(ctx, TEAM_RENAME_ID, nameBox, 'Name', team.name, actions.rename);
 
-    const y = TOP + 10;
-    const deleteX = EDIT_RIGHT - 150;
-    const validateX = deleteX - 12 - 150;
-    const formatBox = { x: validateX - 12 - 280, y, w: 280, h: 40 };
-    button(ctx, TEAM_RENAME_ID, { x: formatBox.x - 12 - 110, y, w: 110, h: 40 }, 'Rename', { size: 18, accept: actions.rename });
-
-    // A button that moves to the next format (a list of two isn't worth a picker).
+    // A chip that moves to the next format (a list of two isn't worth a picker).
     const next = () => {
       const current = TEAM_FORMATS.findIndex((format) => format.id === team.format);
       actions.format(TEAM_FORMATS[(current + 1) % TEAM_FORMATS.length].id);
     };
-    const formatFocused = ctx.focus.control({ id: TEAM_FORMAT_ID, ...formatBox, accept: next });
-    ctx.renderer.rect(formatBox.x, formatBox.y, formatBox.w, formatBox.h, { fill: formatFocused ? p.select : p.button, stroke: p.outline, radius: 6, border: 2 });
-    label(ctx, shortFormat(team.format), formatBox.x + 14, formatBox.y + 20, { size: 18, bold: true }, p.ink, { maxWidth: formatBox.w - 48 });
-    arrow(ctx, RIGHT, formatBox.x + formatBox.w - 22, formatBox.y + 13, 2, p.muted);
-    if (formatFocused) focusRing(ctx, formatBox);
+    this.chip(ctx, TEAM_FORMAT_ID, formatBox, '', shortFormat(team.format), next, true);
 
-    shortcutButton(ctx, 'team-validate', { x: validateX, y, w: 150, h: 40 }, 'ZL', 'Validate', { size: 18, accept: actions.validate });
-    shortcutButton(ctx, 'team-delete', { x: deleteX, y, w: 150, h: 40 }, 'ZR', 'Delete', {
-      size: 18,
+    const buttonY = y + 4;
+    shortcutButton(ctx, 'team-validate', { x: validateX, y: buttonY, w: buttonW, h: CHIP_H - 8 }, 'ZL', 'Validate', { size: 17, accept: actions.validate });
+    shortcutButton(ctx, 'team-delete', { x: deleteX, y: buttonY, w: buttonW, h: CHIP_H - 8 }, 'ZR', 'Delete', {
+      size: 17,
       accept: actions.delete,
       held: { progress: this.deleteHold.progress, color: HOLD_FILL },
     });
   }
 
-  /** The focused slot's Pokémon, as the editor's card has it: its stage, types, and its moves under them. */
+  /** A chip: what it is (muted, if it says), its value (bold), and a ▶ when A steps it to the next value. */
+  private chip(ctx: UiContext, id: string, box: Box, name: string, value: string, accept: () => void, steps = false): void {
+    const p = ctx.palette;
+    const focused = ctx.focus.control({ id, ...box, accept });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 8, border: 2 });
+    const cy = box.y + box.h / 2;
+    const valueX = box.x + 14 + (name ? label(ctx, name, box.x + 14, cy, { size: 17 }, p.muted) + 10 : 0);
+    const right = box.x + box.w - (steps ? 30 : 14);
+    label(ctx, value, valueX, cy, { size: 18, bold: true }, p.ink, { maxWidth: right - valueX });
+    if (steps) arrow(ctx, RIGHT, box.x + box.w - 20, cy - 7, 2, p.muted);
+    if (focused) focusRing(ctx, box, 8);
+  }
+
+  /**
+   * The focused slot's Pokémon, as the editor's card has it (its stage, its types), then its item and
+   * ability and its moves at the bottom. It's as tall as the page, from under the bar.
+   */
   private drawCard(ctx: UiContext, set: PokemonSet | undefined): void {
     const p = ctx.palette;
-    const box = { x: EDIT_X, y: EDIT_BODY_Y, w: HERO_W, h: EDIT_BODY_BOTTOM - EDIT_BODY_Y };
+    const top = this.cardTop.at(ctx.now, TEAM_BODY_Y);
+    const box = { x: EDIT_X, y: top, w: HERO_W, h: EDIT_BODY_BOTTOM - top };
     ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: p.outline, radius: 12, border: 2 });
     const form = this.form(set);
     this.stage.draw(ctx, heroStage(box, false), form, set ? `${set.species}?` : 'A: choose its species');
@@ -194,12 +218,20 @@ export class TeamView {
       return;
     }
     drawHeroName(ctx, box, form, set.species);
-    drawHeroTypes(ctx, box, form);
+    drawHeroTypes(ctx, box, form, heroTypesTop(top));
 
+    // The item and ability over the moves' two columns. Sliding back up from the editor's shorter
+    // card, there's no room for them yet.
     const moveW = (box.w - 48 - 12) / 2;
+    if (top === TEAM_BODY_Y) {
+      const item = set.item ? this.dex.item(set.item) : undefined;
+      this.cardLine(ctx, box.x + 24, box.y + CARD_LINES_Y, moveW, 'Item', set.item || 'None', item?.id);
+      this.cardLine(ctx, box.x + 24 + moveW + 12, box.y + CARD_LINES_Y, moveW, 'Ability', set.ability || 'None');
+    }
+
     for (let i = 0; i < MAX_MOVES; i++) {
       const mx = box.x + 24 + (i % 2) * (moveW + 12);
-      const my = box.y + 436 + Math.floor(i / 2) * 36;
+      const my = box.y + box.h - 16 - 66 + Math.floor(i / 2) * 36;
       const name = set.moves[i] ?? '';
       const color = name ? typeRgba(this.dex.move(name)?.type ?? '') : null;
       if (!name) {
@@ -210,6 +242,17 @@ export class TeamView {
       ctx.renderer.rect(mx, my, moveW, 30, { fill: color ?? p.rim, radius: 6 });
       label(ctx, name, mx + 12, my + 15, { size: 18, bold: true }, WHITE, { maxWidth: moveW - 24 });
     }
+  }
+
+  /** "Item  Sitrus Berry" on the card, `width` wide and centred on `cy`, with the item's icon when it has one. */
+  private cardLine(ctx: UiContext, x: number, cy: number, width: number, name: string, value: string, icon?: string): void {
+    const p = ctx.palette;
+    let valueX = x + label(ctx, name, x, cy, { size: 17 }, p.muted) + 10;
+    if (icon) {
+      ctx.images.drawItem(icon, valueX, cy - 12, 24);
+      valueX += 28;
+    }
+    label(ctx, value, valueX, cy, { size: 19, bold: true }, p.ink, { maxWidth: x + width - valueX });
   }
 
   /** A Pokémon's row: the ▶ while focused, its sprite (hopping then), name, item and ability, its moves' types, its types. */

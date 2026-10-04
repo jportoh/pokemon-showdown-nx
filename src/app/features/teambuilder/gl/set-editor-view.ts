@@ -3,8 +3,9 @@ import { ChampionsDex, DexMega, DexMove, DexSpecies } from '@core/dex/champions-
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
-import { MAX_MOVES, PokemonSet, Team } from '@features/teambuilder/models/team';
+import { ImagePriority } from '@core/gl/sprite-bitmaps';
+import { UiContext, label } from '@core/gl/ui/retro-kit';
+import { MAX_MOVES, MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { typeRank } from '@shared/data/type-order';
 import { toId } from '@shared/utils/to-id';
@@ -14,14 +15,17 @@ import { InfoPanel } from './info-panel';
 import { DetailsField, SetRowsView, cardId } from './set-rows-view';
 import { SpriteStage } from './sprite-stage';
 import { StatsView } from './stats-view';
-import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, EDIT_X, LegendEntry, TOP, controlsLegend, shortcutButton, tag, typeRgba } from './tb-draw';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LegendEntry, TOP, WHITE, controlsLegend, shortcutButton, tabStrip, tag, typeRgba } from './tb-draw';
 
 type Tab = 'details' | 'stats';
 /** Fields picked from a list, in the order the chooser walks through them. */
 const CHOOSER_ORDER: readonly DetailsField[] = ['species', 'item', 'ability', 'move0', 'move1', 'move2', 'move3'];
 const MOVE_FIELDS: readonly DetailsField[] = ['move0', 'move1', 'move2', 'move3'];
 /** The header's middle, under the bar. */
-const HEADER_CY = TOP + 30;
+const HEADER_CY = TOP + 26;
+/** The team's slots in the page bar. */
+const SLOT = 40;
+const SLOT_GAP = 6;
 const FIELD_NAMES: Record<DetailsField, string> = { species: 'Species', item: 'Item', ability: 'Ability', move0: 'Move 1', move1: 'Move 2', move2: 'Move 3', move3: 'Move 4' };
 
 /**
@@ -333,22 +337,49 @@ export class SetEditorView {
     controlsLegend(ctx, this.legend(spec, stats));
   }
 
+  /** Where the editor is, for the page bar: the team, the Pokémon, the list open. */
+  crumbs(): string[] {
+    const pokemon = this.pokemon();
+    const form = this.mega() ?? this.species();
+    const crumbs = [this.team()?.name ?? '', pokemon?.name || form?.name || pokemon?.species || 'New Pokémon'];
+    const spec = this.spec();
+    if (spec) crumbs.push(spec.title);
+    return crumbs;
+  }
+
+  /** The team's six slots for the page bar, their sprites small, the one edited lit; ends at `right`. */
+  drawSlots(ctx: UiContext, right: number, cy: number): number {
+    const p = ctx.palette;
+    const sets = this.team()?.sets ?? [];
+    const left = right - MAX_TEAM_SIZE * (SLOT + SLOT_GAP) + SLOT_GAP;
+    for (let i = 0; i < MAX_TEAM_SIZE; i++) {
+      const box = { x: left + i * (SLOT + SLOT_GAP), y: cy - SLOT / 2, w: SLOT, h: SLOT };
+      const set = sets[i];
+      const edited = i === this.index();
+      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: edited ? p.select : set ? p.button : [0, 0, 0, 0], stroke: edited ? p.accentText : p.rim, radius: 6, border: 2 });
+      const form = set ? (this.dex.mega(set.species, set.item) ?? this.dex.species(set.species)) : undefined;
+      const sprite = form ? ctx.images.sprite(form.sprite, false, ImagePriority.Screen) : null;
+      if (sprite) ctx.renderer.rect(box.x + 2, box.y + 2, SLOT - 4, SLOT - 4, { fill: WHITE, texture: sprite });
+    }
+    return left;
+  }
+
   /**
-   * The header: where it is (the team, the Pokémon, the list open), and on the right the tabs (L/R)
-   * and Remove (ZR), or, while a list is open, what picking from it replaces.
+   * The header: the tabs as folder tabs (L/R), and on the right Remove (ZR), or, while a list is
+   * open, what picking from it replaces (L/R are the list's filters then).
    */
   private drawHeader(ctx: UiContext, spec: ChooserSpec | null): void {
     const p = ctx.palette;
     const pokemon = this.pokemon();
-    const form = this.mega() ?? this.species();
-    const crumbs = [this.team()?.name ?? '', pokemon?.name || form?.name || pokemon?.species || 'New Pokémon'];
-    if (spec) crumbs.push(spec.title);
-    let x = EDIT_X;
-    crumbs.forEach((crumb, i) => {
-      const last = i === crumbs.length - 1;
-      if (i > 0) x += label(ctx, '▶', x + 10, HEADER_CY, { size: 14 }, p.outline) + 20;
-      x += label(ctx, crumb, x, HEADER_CY, { size: last ? 24 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: last ? 320 : 240 });
-    });
+    const tab = this.tab();
+    tabStrip(
+      ctx,
+      [
+        { id: 'editor-details', text: 'Details', on: tab === 'details', accept: () => this.switchTab('details') },
+        { id: 'editor-stats', text: 'Stats', on: tab === 'stats', disabled: !pokemon, accept: () => this.switchTab('stats') },
+      ],
+      !spec && !!pokemon,
+    );
 
     if (spec) {
       const current = this.currentValue();
@@ -362,14 +393,9 @@ export class SetEditorView {
       label(ctx, 'Replacing', right - 10, HEADER_CY, { size: 18 }, p.muted, { align: 'right' });
       return;
     }
-    const tab = this.tab();
-    const removeW = 150;
-    const tabW = 136;
-    const removeX = EDIT_RIGHT - removeW;
-    this.tabButton(ctx, 'editor-details', { x: removeX - 24 - 2 * tabW - 8, y: TOP + 10, w: tabW, h: 40 }, 'L', 'Details', tab === 'details', false, () => this.switchTab('details'));
-    this.tabButton(ctx, 'editor-stats', { x: removeX - 24 - tabW, y: TOP + 10, w: tabW, h: 40 }, 'R', 'Stats', tab === 'stats', !pokemon, () => this.switchTab('stats'));
     if (pokemon) {
-      shortcutButton(ctx, 'editor-remove', { x: removeX, y: TOP + 10, w: removeW, h: 40 }, 'ZR', 'Remove', {
+      const removeW = 150;
+      shortcutButton(ctx, 'editor-remove', { x: EDIT_RIGHT - removeW, y: TOP + 7, w: removeW, h: 38 }, 'ZR', 'Remove', {
         size: 18,
         accept: () => this.pressRemove(),
         held: { progress: this.remove.progress, color: HOLD_FILL },
@@ -425,12 +451,6 @@ export class SetEditorView {
     const field = this.field();
     if (this.tab() !== 'details' || !field || !this.currentValue()) return '';
     return field === 'item' ? 'No item' : field.startsWith('move') ? 'No move' : '';
-  }
-
-  /** A tab of the header: the controller's button in a pill (clicks only; L/R are the controller's). */
-  private tabButton(ctx: UiContext, id: string, box: Box, key: string, text: string, on: boolean, disabled: boolean, accept: () => void): void {
-    shortcutButton(ctx, id, box, key, text, { disabled, size: 18, accept });
-    if (on) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, radius: 6, border: 2 });
   }
 
   private openChooser(field: DetailsField): void {

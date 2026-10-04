@@ -19,8 +19,37 @@ export const LEGEND_H = 52;
  */
 export const EDIT_X = 24;
 export const EDIT_RIGHT = STAGE_W - 24;
-export const EDIT_BODY_Y = TOP + 60;
+export const EDIT_BODY_Y = TOP + 66;
 export const EDIT_BODY_BOTTOM = STAGE_H - LEGEND_H - 12;
+/** The team's page has no tabs: its card and rows start right under the bar. */
+export const TEAM_BODY_Y = TOP + 16;
+
+/** How long the card takes to slide between the team's height and the editor's. */
+const CARD_SLIDE_MS = 220;
+
+/**
+ * The top of the Pokémon's card, which is higher on the team's page than in the editor (under its
+ * tabs): going from one to the other it slides from where the other had it, easing out.
+ */
+export class CardTop {
+  private from: number | null = null;
+  private since: number | null = null;
+
+  /** The next frames start the card at `top` and slide it to where it belongs. */
+  slideFrom(top: number): void {
+    this.from = top;
+    this.since = null;
+  }
+
+  /** Where the card's top is now, on its way to `target`. */
+  at(now: number, target: number): number {
+    if (this.from === null) return target;
+    this.since ??= now;
+    const t = Math.min(1, (now - this.since) / CARD_SLIDE_MS);
+    if (t >= 1) this.from = null;
+    return this.from === null ? target : this.from + (target - this.from) * (1 - (1 - t) * (1 - t));
+  }
+}
 export const HERO_W = 500;
 export const HERO_COMPACT_W = 260;
 /** Where what's beside the card starts, beside the full card or the compact one. */
@@ -121,6 +150,44 @@ export function keyPill(ctx: UiContext, key: string, x: number, cy: number): num
   ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.button, stroke: p.outline, radius: 6, border: 2 });
   label(ctx, key, x + width / 2, cy, { size: 16, bold: true }, p.ink, { align: 'center' });
   return width;
+}
+
+export interface TabSpec {
+  id: string;
+  text: string;
+  on: boolean;
+  disabled?: boolean;
+  accept: () => void;
+}
+
+const TAB_W = 150;
+const TAB_H = 44;
+
+/**
+ * The folder tabs under the bar, from EDIT_X: L's pill, the tabs (clicks only, the controller has
+ * L/R), R's pill, over a line in the outline's colour as wide as the page; the pills only when
+ * `keys`. Returns where the tabs end.
+ */
+export function tabStrip(ctx: UiContext, tabs: readonly TabSpec[], keys: boolean): number {
+  const p = ctx.palette;
+  const { renderer } = ctx;
+  const y = TOP + 4;
+  const line = y + TAB_H;
+  const cy = y + TAB_H / 2;
+  let x = EDIT_X;
+  if (keys) x += keyPill(ctx, 'L', x, cy) + 10;
+  for (const tab of tabs) {
+    const box = { x, y, w: TAB_W, h: TAB_H };
+    const focused = !tab.disabled && ctx.focus.control({ id: tab.id, ...box, accept: tab.accept, skip: true });
+    // Taller than shown, so the bottom's rounded corners hide under the line.
+    renderer.rect(x, y, TAB_W, TAB_H + 8, { fill: tab.on ? p.select : focused ? p.button : p.panel, stroke: tab.on ? p.outline : p.rim, radius: 8, border: 3 });
+    label(ctx, tab.text, x + TAB_W / 2, cy + 1, { size: 20, bold: true }, tab.on ? p.ink : tab.disabled ? p.rim : p.muted, { align: 'center', maxWidth: TAB_W - 16 });
+    x += TAB_W + 8;
+  }
+  renderer.rect(0, line, STAGE_W, 8, { fill: p.bg });
+  renderer.rect(EDIT_X, line, EDIT_RIGHT - EDIT_X, 3, { fill: p.outline });
+  if (keys) x += 2 + keyPill(ctx, 'R', x + 2, cy);
+  return x;
 }
 
 /** How a card looks: the field whose list is open, or a plain one (lit while focused), or disabled. */
