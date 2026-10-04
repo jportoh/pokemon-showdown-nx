@@ -6,7 +6,7 @@ import { RivalSet } from './rival-sets';
 export type CalcMode = 'attack' | 'defend';
 
 export function freshSide(): CalcSide {
-  return { reflect: false, lightScreen: false, auroraVeil: false, friendGuard: false, helpingHand: false, tailwind: false, boosts: { atk: 0, spa: 0, def: 0, spd: 0 }, hp: 100 };
+  return { reflect: false, lightScreen: false, auroraVeil: false, friendGuard: false, helpingHand: false, tailwind: false, boosts: { atk: 0, spa: 0, def: 0, spd: 0, spe: 0 }, hp: 100 };
 }
 
 /** Doubles for VGC, Singles for Battle Stadium Singles. */
