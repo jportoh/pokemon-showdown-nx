@@ -46,10 +46,11 @@ export class InfoView {
   private readonly teams = computed<Record<SideId, TeamCard[]>>(() => {
     const teams = this.inspection.teams();
     const own = this.store.team();
+    const gen = this.store.gen();
     return {
-      p2: teams.p2.map((member) => seenCard(member, this.dex)),
+      p2: teams.p2.map((member) => seenCard(member, this.dex, gen)),
       // Ours exactly, in our own battles.
-      p1: own.length > 0 && !this.store.watching() ? own.map((pokemon) => ownCard(pokemon, this.dex)) : teams.p1.map((member) => seenCard(member, this.dex)),
+      p1: own.length > 0 && !this.store.watching() ? own.map((pokemon) => ownCard(pokemon, this.dex, '', gen)) : teams.p1.map((member) => seenCard(member, this.dex, gen)),
     };
   });
 
@@ -91,7 +92,7 @@ export class InfoView {
   /** `sheetHint`: what ZL does on the opponent's tab (accepting open team sheets), when anything. */
   draw(ctx: ScreenContext, tab: InfoTab, sheetHint: string): void {
     const { renderer } = ctx;
-    renderer.rect(0, TOP, 1280, 720 - TOP, { fill: [0.04, 0.06, 0.11, 0.95] });
+    renderer.rect(0, TOP, 1280, 720 - TOP, { fill: [0.04, 0.06, 0.11, 1] });
     INFO_TABS.forEach((t, i) => {
       const x = GRID_X + i * (TAB_W + 8);
       const on = t === tab;

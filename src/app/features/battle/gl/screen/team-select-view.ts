@@ -84,7 +84,7 @@ export class TeamSelectView {
         set: {
           item: itemName(pokemon.item) || 'No item',
           itemId: pokemon.item,
-          ability: abilityName(pokemon.ability ?? ''),
+          ability: abilityName(pokemon.ability ?? pokemon.baseAbility ?? ''),
           moves: movePills(pokemon.moves.slice(0, 4).map((move) => this.dex.move(move)?.name ?? move), 0, 0),
         },
         abilities: '',

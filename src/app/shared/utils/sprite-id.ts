@@ -22,6 +22,14 @@ const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
  * Brewser submission). Some sprites have no back view (the Megas new in Champions): those fall back to
  * the front one where they're drawn.
  */
-export function spriteUrl(sprite: string, back = false): string {
-  return `${SPRITES_URL}/${back ? 'gen5-back' : 'gen5'}/${sprite}.png`;
+export function spriteUrl(sprite: string, back = false, set: SpriteSet = 'gen5'): string {
+  return `${SPRITES_URL}/${back ? `${set}-back` : set}/${sprite}.png`;
+}
+
+/** Showdown's sprite sets: the Black/White ones (every species) or Ruby/Sapphire's (Gen 3 species only). */
+export type SpriteSet = 'gen5' | 'gen3';
+
+/** The sprites a generation's battles show: Gen 3's own, Black/White's for the rest. */
+export function spriteSetOf(gen: number): SpriteSet {
+  return gen === 3 ? 'gen3' : 'gen5';
 }

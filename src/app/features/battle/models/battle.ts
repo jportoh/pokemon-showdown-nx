@@ -39,8 +39,10 @@ export interface RequestPokemon {
   moves: string[];
   /** Its item's ID ("leftovers"); '' once it's used up or lost. */
   item: string;
-  /** Its ability's ID ("owntempo"), as it is now. */
+  /** Its ability's ID ("owntempo"), as it is now. Gen 7 on: older gens only send `baseAbility`. */
   ability?: string;
+  /** The ability it was brought with ("owntempo"). */
+  baseAbility?: string;
   /** Its stats as they are (HP is in the condition). */
   stats?: Record<'atk' | 'def' | 'spa' | 'spd' | 'spe', number>;
   /** Its Tera type (Gen 9), and whether it has Terastallized. */

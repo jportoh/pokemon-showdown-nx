@@ -358,7 +358,7 @@ export class BattleFieldScene {
     const sprites = [sprite, ...this.dex.allMegas.filter((m) => m.base === toId(species)).map((m) => m.sprite)];
     for (const s of sprites) {
       for (const b of back ? [false, true] : [false]) {
-        const url = spriteSource(s, b);
+        const url = spriteSource(s, b, this.store.spriteSet());
         if (this.preloaded.has(url)) continue;
         this.preloaded.add(url);
         // The team tiles show each species' front sprite straight away; backs and Megas may come later.
@@ -473,7 +473,7 @@ export class BattleFieldScene {
             }
             if (!leaving) v.bright = 1 + 1.5 * (1 - p);
           },
-          leaving ? { done: () => this.withdrawn.add(event.slot) } : { waitFor: () => !this.sprites?.pending(sprite, own) },
+          leaving ? { done: () => this.withdrawn.add(event.slot) } : { waitFor: () => !this.sprites?.pending(sprite, own, this.store.spriteSet()) },
         );
         return;
       }
@@ -500,7 +500,7 @@ export class BattleFieldScene {
             const glow = (1 - p) * (0.5 + 0.5 * Math.cos(p * 4 * Math.PI));
             v.bright = 1 + 3 * glow;
           },
-          { waitFor: () => !this.sprites?.pending(sprite, own) },
+          { waitFor: () => !this.sprites?.pending(sprite, own, this.store.spriteSet()) },
         );
         return;
       }
@@ -985,7 +985,7 @@ export class BattleFieldScene {
       const doll = this.sprites?.pixelArt(slot.own ? SUBSTITUTE_BACK : SUBSTITUTE_FRONT) ?? null;
       if (doll) return doll;
     }
-    return this.sprites?.get(pokemon.sprite, slot.own) ?? null;
+    return this.sprites?.get(pokemon.sprite, slot.own, this.store.spriteSet()) ?? null;
   }
 
   /** Terrain motes floating up from the ground. */

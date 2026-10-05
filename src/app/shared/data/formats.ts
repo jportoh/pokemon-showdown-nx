@@ -113,6 +113,15 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     detail: 'Doubles · random Champions teams',
     rules: 'Random Champions sets',
   },
+  {
+    id: 'gen3randombattle',
+    name: '[Gen 3] Random Battle',
+    label: 'Gen 3 Random Battle',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Ruby/Sapphire teams',
+    rules: 'Random Gen 3 sets',
+  },
 ];
 
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */

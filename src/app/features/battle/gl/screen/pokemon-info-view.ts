@@ -52,12 +52,12 @@ function stageText(stage: number): string {
  * revealed them (until then the abilities it may have), and the moves it has used so far. With an open
  * team sheet (Open Team Sheets formats) all of those, and its nature, are known from the start.
  */
-export function pokemonInfoView(inspected: InspectedMember | null, owner: string) {
+export function pokemonInfoView(inspected: InspectedMember | null, owner: string, gen = 9) {
   if (!inspected) return { ...EMPTY_VIEW, label: 'Pokémon details: point at a Pokémon on the right' };
   const { side, member, sheet } = inspected;
   const seen = member.seen;
   const species = seen?.species ?? member.species;
-  const info = speciesInfo(species);
+  const info = speciesInfo(species, gen);
   const name = seen?.name ?? member.species;
 
   const gender = seen?.gender || sheet?.gender;
@@ -117,7 +117,7 @@ export function pokemonInfoView(inspected: InspectedMember | null, owner: string
     const move = sheet ? sheet.moves[i] : seen?.moves[i];
     const top = MOVE_TOP + i * MOVE_ROW;
     if (!move) return { name: sheet ? '—' : 'Move not revealed', known: false, top, color: '#111827' };
-    const data = moveInfo(move);
+    const data = moveInfo(move, gen);
     return { name: data?.name ?? move, known: true, top, color: typeColor(data?.type ?? '') || '#4b5563' };
   });
 
