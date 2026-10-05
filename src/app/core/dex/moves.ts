@@ -1,8 +1,10 @@
 import { toId } from '@shared/utils/to-id';
+import gen3 from './gen3.json';
 import data from './moves.json';
 
 // What the battle screen shows of every move, generated from Showdown's data by `npm run update:moves`:
-// moves of any format (Random Battle uses many the Champions data doesn't have).
+// moves of any format (Random Battle uses many the Champions data doesn't have). What differs in Gen 3
+// (power, accuracy, type, and the category, which went by type then) comes from `npm run update:gen3`.
 
 export interface MoveInfo {
   name: string;
@@ -13,19 +15,29 @@ export interface MoveInfo {
   accuracy: number;
 }
 
+type Category = 'P' | 'S' | 'T';
+
 const CATEGORIES = { P: 'Physical', S: 'Special', T: 'Status' } as const;
 
-const MOVES = data as unknown as Readonly<Record<string, readonly [string, string, keyof typeof CATEGORIES, number, number]>>;
+const MOVES = data as unknown as Readonly<Record<string, readonly [string, string, Category, number, number]>>;
+const GEN3_MOVES = gen3.moves as unknown as Readonly<Record<string, readonly [string, Category, number, number]>>;
 
-/** A move's name, type, category, power and accuracy by its name or ID; undefined when unknown. */
-export function moveInfo(move: string): MoveInfo | undefined {
-  const entry = MOVES[toId(move)];
+/**
+ * A move's name, type, category, power and accuracy by its name or ID, as in the generation played;
+ * undefined when unknown. Hidden Power by its name in a request ("Hidden Power Fire 70", before Gen 6)
+ * gets that type and power.
+ */
+export function moveInfo(move: string, gen = 9): MoveInfo | undefined {
+  const hiddenPower = /^(hiddenpower[a-z]+)(\d+)$/.exec(toId(move));
+  const id = hiddenPower ? hiddenPower[1] : toId(move);
+  const entry = MOVES[id];
   if (!entry) return undefined;
-  const [name, type, category, basePower, accuracy] = entry;
-  return { name, type, category: CATEGORIES[category], basePower, accuracy };
+  const [name, currentType, currentCategory, currentPower, currentAccuracy] = entry;
+  const [type, category, basePower, accuracy] = (gen === 3 && GEN3_MOVES[id]) || [currentType, currentCategory, currentPower, currentAccuracy];
+  return { name, type, category: CATEGORIES[category], basePower: hiddenPower ? Number(hiddenPower[2]) : basePower, accuracy };
 }
 
-/** A move's type by its name or ID ("Flamethrower" → "Fire"); '' when unknown. */
-export function moveType(move: string): string {
-  return MOVES[toId(move)]?.[1] ?? '';
+/** A move's type by its name or ID ("Flamethrower" → "Fire") in the generation played; '' when unknown. */
+export function moveType(move: string, gen = 9): string {
+  return moveInfo(move, gen)?.type ?? '';
 }

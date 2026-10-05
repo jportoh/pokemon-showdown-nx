@@ -24,7 +24,7 @@ import {
   RequestPokemon,
   SideId,
 } from '@features/battle/models/battle';
-import { spriteId } from '@shared/utils/sprite-id';
+import { spriteId, spriteSetOf } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
 import { ReadyState, SeriesInfo, SeriesScore, parseReadyPrompt, parseSeriesScore, parseSeriesTitle } from './battle-series';
@@ -199,6 +199,7 @@ export class BattleStore {
   private readonly startedSignal = signal(false);
   private readonly formatSignal = signal('');
   private readonly gameTypeSignal = signal<GameType>('doubles');
+  private readonly genSignal = signal(9);
   private readonly timerSignal = signal<BattleTimer | null>(null);
   private readonly canUndoSignal = signal(false);
   private readonly canToggleTimerSignal = signal(false);
@@ -271,6 +272,10 @@ export class BattleStore {
   );
   /** The format's name, from the `|tier|` line ("[Gen 9] Champions VGC 2026 Reg M-C"); '' until then. */
   readonly format = this.formatSignal.asReadonly();
+  /** The generation played, from the `|gen|` line (9 until then). */
+  readonly gen = this.genSignal.asReadonly();
+  /** Gen 3 battles show Ruby/Sapphire's sprites; the rest Black/White's. */
+  readonly spriteSet = computed(() => spriteSetOf(this.genSignal()));
   /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */
   readonly gameType = this.gameTypeSignal.asReadonly();
   /** Our battle timer while it's on; null while it's off. */
@@ -404,6 +409,7 @@ export class BattleStore {
     this.startedSignal.set(false);
     this.formatSignal.set('');
     this.gameTypeSignal.set('doubles');
+    this.genSignal.set(9);
     this.withdrawn = null;
     this.passing.clear();
     this.blinkedHits.clear();
@@ -745,6 +751,9 @@ export class BattleStore {
         if ((side === 'p1' || side === 'p2') && name) this.updateSide(side, (s) => ({ ...s, name }));
         return 0;
       }
+      case 'gen':
+        this.genSignal.set(Number(args[0]) || 9);
+        return 0;
       case 'gametype':
         this.gameTypeSignal.set(args[0] === 'singles' ? 'singles' : 'doubles');
         return 0;
@@ -809,12 +818,14 @@ export class BattleStore {
         this.updatePokemon(args[0], (p) => ({ ...p, tera: args[1] }));
         this.emit('tera', args[0]);
         return this.say(`${this.label(args[0])} has Terastallized into the ${args[1]}-type!`);
-      case 'move':
+      case 'move': {
         this.critSlots.clear();
-        this.revealMove(args[0], args[1], tags);
-        this.notePass(args[0], args[1]);
-        this.actionSignal.set(this.moveAction(args[0], args[1], args[2], tags));
-        return this.say(`${this.label(args[0])} used ${args[1]}!`);
+        const move = this.typedMove(args[0], args[1]);
+        this.revealMove(args[0], move, tags);
+        this.notePass(args[0], move);
+        this.actionSignal.set(this.moveAction(args[0], move, args[2], tags));
+        return this.say(`${this.label(args[0])} used ${move}!`);
+      }
       case 'cant':
         this.actionSignal.set(null);
         return this.say(cantText(args[0], args[1], args[2], names));
@@ -1044,9 +1055,11 @@ export class BattleStore {
     if (tags['spread']) targets = tags['spread'].split(',').filter((slot) => /^p[12][ab]$/.test(slot));
     else if ('notarget' in tags || !target) targets = [];
     else targets = [this.slotOf(target)].filter((slot): slot is string => !!slot);
-    const dexMove = this.dex.move(move);
-    const type = fieldMoveType(move, this.fieldSignal()) ?? dexMove?.type ?? moveType(move);
-    const category = dexMove?.category ?? moveInfo(move)?.category ?? '';
+    // The Champions data is Gen 9's: older generations' moves come from their own data.
+    const gen = this.genSignal();
+    const dexMove = gen === 9 ? this.dex.move(move) : undefined;
+    const type = fieldMoveType(move, this.fieldSignal()) ?? dexMove?.type ?? moveType(move, gen);
+    const category = dexMove?.category ?? moveInfo(move, gen)?.category ?? '';
     const hits = this.upcomingHits().filter((slot) => slot !== from);
     hits.forEach((slot) => this.blinkedHits.add(slot));
     return { id: this.nextEventId++, attacker: from, targets, hits, move, type, category, effectiveness: this.upcomingEffectiveness() };
@@ -1269,6 +1282,19 @@ export class BattleStore {
     if (!slot || !stat || amount === 0) return;
     const change = { id: this.nextEventId++, slot, stat, amount };
     this.statChangesSignal.update((changes) => [...changes, change].slice(-MAX_POPUPS));
+  }
+
+  /**
+   * Hidden Power as its type's ("Hidden Power Dark") when it's one of ours: the log names it plainly,
+   * our request has its type. The opponents' stays plain (the battle never says theirs).
+   */
+  private typedMove(ident: string, move: string): string {
+    if (move !== 'Hidden Power' || this.watching()) return move;
+    const { side, name } = parseIdent(ident);
+    if (side !== 'p1') return move;
+    const own = this.teamSignal().find((p) => p.ident.slice(p.ident.indexOf(': ') + 2) === name);
+    const id = own?.moves.find((m) => m.startsWith('hiddenpower') && m !== 'hiddenpower');
+    return (id && moveInfo(id, this.genSignal())?.name) || move;
   }
 
   private findPokemon(ident: string): BattlePokemon | undefined {

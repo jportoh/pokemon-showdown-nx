@@ -1,6 +1,6 @@
 import { ITEM_ICON_SIZE, ITEM_SHEET_URL, itemIconCell } from '@core/dex/names';
 import { GlRenderer, Rgba, Texture } from '@core/gl/gl-renderer';
-import { spriteUrl } from '@shared/utils/sprite-id';
+import { SpriteSet, spriteUrl } from '@shared/utils/sprite-id';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 import { SheetSprite, sheetSprite } from './sprite-sheets';
 
@@ -50,19 +50,24 @@ export class GlSprites {
   }
 
   /** A sprite on the field: first in line. Null until it's there. */
-  get(sprite: string, back: boolean): Texture | null {
-    return this.sprite(sprite, back, ImagePriority.Field);
+  get(sprite: string, back: boolean, set: SpriteSet = 'gen5'): Texture | null {
+    return this.sprite(sprite, back, ImagePriority.Field, set);
   }
 
-  /** A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. */
-  sprite(sprite: string, back: boolean, priority: ImagePriority): Texture | null {
+  /**
+   * A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. Gen 3's sprites
+   * come from Showdown alone (the sheets are Black/White's), falling back to the gen5 one when the
+   * species has none.
+   */
+  sprite(sprite: string, back: boolean, priority: ImagePriority, set: SpriteSet = 'gen5'): Texture | null {
     if (!sprite) return null;
-    const sheet = sheetSprite(sprite, back);
+    const sheet = set === 'gen5' ? sheetSprite(sprite, back) : null;
     // A sheet that can't be loaded leaves its sprites to Showdown.
     if (sheet && !this.bitmaps.failed(sheet.url)) return this.inSheet(`${back ? 'back' : 'front'}:${sprite}`, sheet, priority);
-    const url = spriteUrl(sprite, back);
+    const url = spriteUrl(sprite, back, set);
     const texture = this.textures.get(url);
     if (texture) return texture;
+    if (set !== 'gen5' && this.bitmaps.failed(url)) return this.sprite(sprite, back, priority);
     if (back && this.bitmaps.failed(url)) return this.sprite(sprite, false, priority);
     return this.upload(url, priority, false);
   }
@@ -99,12 +104,13 @@ export class GlSprites {
   }
 
   /** Still to come (a send-out waits for it, up to a point). */
-  pending(sprite: string, back: boolean): boolean {
+  pending(sprite: string, back: boolean, set: SpriteSet = 'gen5'): boolean {
     if (!sprite) return false;
-    const sheet = sheetSprite(sprite, back);
+    const sheet = set === 'gen5' ? sheetSprite(sprite, back) : null;
     if (sheet && !this.bitmaps.failed(sheet.url)) return !this.textures.has(sheet.url);
-    const url = spriteUrl(sprite, back);
+    const url = spriteUrl(sprite, back, set);
     if (this.textures.has(url)) return false;
+    if (set !== 'gen5' && this.bitmaps.failed(url)) return this.pending(sprite, back);
     if (back && this.bitmaps.failed(url)) return this.pending(sprite, false);
     return !this.bitmaps.failed(url);
   }

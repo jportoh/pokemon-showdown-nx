@@ -37,7 +37,7 @@ export class PartyView {
           index: i + 1,
           allowed: !!option?.allowed,
           blocked: option?.blocked ?? '',
-          card: ownCard(pokemon, this.dex, coming ? 'Coming in' : ''),
+          card: ownCard(pokemon, this.dex, coming ? 'Coming in' : '', this.store.gen()),
           x: GRID_X + (i % 2) * (CARD_W + GAP_X),
           y: GRID_Y + Math.floor(i / 2) * (CARD_H + GAP_Y),
         };

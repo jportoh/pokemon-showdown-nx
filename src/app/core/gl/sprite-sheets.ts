@@ -1,4 +1,4 @@
-import { spriteUrl } from '@shared/utils/sprite-id';
+import { SpriteSet, spriteUrl } from '@shared/utils/sprite-id';
 import data from '@core/dex/sprite-sheets.json';
 
 /** Where a sprite is in its sheet: sheet index, left, top, width, height. */
@@ -37,6 +37,7 @@ export function sheetSprite(sprite: string, back: boolean): SheetSprite | null {
 }
 
 /** The image to download for a sprite: its sheet, or Showdown's own file. */
-export function spriteSource(sprite: string, back: boolean): string {
+export function spriteSource(sprite: string, back: boolean, set: SpriteSet = 'gen5'): string {
+  if (set !== 'gen5') return spriteUrl(sprite, back, set);
   return sheetSprite(sprite, back)?.url ?? spriteUrl(sprite, back);
 }

@@ -1,7 +1,7 @@
 import { Service, computed, inject, linkedSignal } from '@angular/core';
 import { BattlePokemon, RequestMove, RequestPokemon, SlotChoice } from '@features/battle/models/battle';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { moveType } from '@core/dex/moves';
+import { moveInfo, moveType } from '@core/dex/moves';
 import { BattleStore, parseCondition } from './battle-store';
 
 /** How the moves that hit fixed Pokémon read in the turn summary. */
@@ -145,12 +145,19 @@ export class BattleChoices {
   /** Whether there's an earlier step to go back to. */
   readonly canGoBack = computed(() => this.pendingMove() !== null || this.choices().some((choice) => choice.kind !== 'pass'));
 
+  /** The Pokémon being chosen for can't switch out (Shadow Tag, Arena Trap, Mean Look…). */
+  readonly trapped = computed(() => {
+    const request = this.request();
+    const slot = this.slot();
+    return !!request && !request.forceSwitch && slot !== null && !!request.active?.[slot]?.trapped;
+  });
+
   readonly switchOptions = computed<readonly SwitchOption[]>(() => {
     const request = this.request();
     if (!request) return [];
     const taken = this.choices().flatMap((choice) => (choice.kind === 'switch' ? [choice.slot] : []));
     const slot = this.slot();
-    const trapped = !request.forceSwitch && slot !== null && !!request.active?.[slot]?.trapped;
+    const trapped = this.trapped();
     const current = slot === null ? '' : nameOf(request.side.pokemon[slot] ?? null);
     return request.side.pokemon.map((pokemon, i) => {
       const { fainted } = parseCondition(pokemon.condition, 100);
@@ -255,12 +262,14 @@ export class BattleChoices {
       }
       case 'move': {
         const move = request.active?.[slot]?.moves[choice.move - 1];
-        const type = this.dex.move(move?.id ?? '')?.type ?? moveType(move?.id ?? '');
+        const gen = this.store.gen();
+        const type = (gen === 9 ? this.dex.move(move?.id ?? '')?.type : undefined) ?? moveType(move?.id === 'hiddenpower' ? move.move : (move?.id ?? ''), gen);
         const target = choice.target === undefined ? TARGET_LABELS[move?.target ?? ''] ?? '' : `→ ${this.targetName(choice.target)}`;
         const teraType = request.active?.[slot]?.canTerastallize;
         const special = choice.mega ? 'Mega Evolving' : choice.tera ? `Terastallizing into ${teraType}` : '';
         const detail = [type, target, special].filter(Boolean).join(' · ');
-        return { slot, name, action: move?.move ?? 'Move', detail, type };
+        const action = move?.id === 'hiddenpower' ? (moveInfo(move.move, gen)?.name ?? move.move) : (move?.move ?? 'Move');
+        return { slot, name, action, detail, type };
       }
       case 'pass':
         return undefined;

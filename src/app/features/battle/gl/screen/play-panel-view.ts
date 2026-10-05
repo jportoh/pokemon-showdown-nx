@@ -78,11 +78,14 @@ export class PlayPanelView {
 
   private readonly moves = computed(() =>
     this.choices.moves().map((move, i) => {
-      const info = this.dex.move(move.id) ?? moveInfo(move.id);
+      const gen = this.store.gen();
+      // The Champions data is Gen 9's; Hidden Power's type (and power, before Gen 6) is in its name.
+      const info = (gen === 9 ? this.dex.move(move.id) : undefined) ?? moveInfo(move.id === 'hiddenpower' ? move.move : move.id, gen);
       const type = info?.type ?? '';
       return {
         index: i,
-        name: move.move,
+        // "Hidden Power Dark", without the power the request adds before Gen 6 (it has its own column).
+        name: move.id === 'hiddenpower' && info ? info.name : move.move,
         disabled: !!move.disabled || move.pp <= 0,
         type,
         color: rgba(typeColor(type) || '#4b5563'),
@@ -101,7 +104,7 @@ export class PlayPanelView {
     return {
       itemId: pokemon.item,
       item: itemName(pokemon.item) || 'No item',
-      ability: abilityName(pokemon.ability ?? ''),
+      ability: abilityName(pokemon.ability ?? pokemon.baseAbility ?? ''),
     };
   });
 
@@ -198,10 +201,10 @@ export class PlayPanelView {
   private drawMoves(ctx: ScreenContext, actions: PlayActions): string[] {
     const { renderer } = ctx;
     const picks: string[] = [];
-    // The second slot shows the first one's order.
+    // The second slot shows the first one's order (no ✓: the console's font has none).
     const slot = this.choices.slot() ?? 0;
     const before = slot > 0 ? this.choices.planned().find((plan) => plan.slot === slot - 1) : undefined;
-    this.drawTab(ctx, before ? { text: `✓ ${before.name} · ${before.action}`, color: rgba(typeColor(before.type) || '#374151') } : undefined);
+    this.drawTab(ctx, before ? { text: `${before.name} · ${before.action}`, color: rgba(typeColor(before.type) || '#374151') } : undefined);
 
     for (const move of this.moves()) {
       const box = { x: move.x, y: MOVE_Y, w: MOVE_W, h: MOVE_H };
@@ -216,7 +219,11 @@ export class PlayPanelView {
       let x = box.x + 14;
       if (move.type) {
         renderer.rect(x, rowY - 11, 66, 22, { fill: [0, 0, 0, 0.3], stroke: [1, 1, 1, 0.35], radius: 4, border: 1 });
-        write(ctx, move.type.toUpperCase(), x + 33, rowY, { size: 13, bold: true }, ink, 'center', 62);
+        // "FIGHTING", "ELECTRIC"… a size smaller rather than cut.
+        const type = move.type.toUpperCase();
+        const style = { size: 13, bold: true };
+        if (ctx.text.measure(type, style) > 60) style.size = 11;
+        write(ctx, type, x + 33, rowY, style, ink, 'center', 62);
         x += 72;
       }
       const icon = categoryIcon(renderer, move.category);
@@ -235,7 +242,9 @@ export class PlayPanelView {
     const switchFocused = ctx.focus.control({ id: 'switch', ...switchBox, accept: actions.openParty });
     renderer.rect(switchBox.x, switchBox.y, switchBox.w, switchBox.h, { fill: switches > 0 ? rgba('#1e3a5f') : INK.gray700, stroke: switches > 0 ? INK.sky300 : INK.gray600, radius: 10, border: 2 });
     write(ctx, 'Switch', switchBox.x + switchBox.w / 2, switchBox.y + 30, { size: 26, bold: true }, switches > 0 ? INK.white : INK.gray400, 'center');
-    write(ctx, switches > 0 ? `${switches} in reserve ▶` : 'None left', switchBox.x + switchBox.w / 2, switchBox.y + 62, { size: 16 }, switches > 0 ? INK.gray200 : INK.gray400, 'center');
+    const trapped = this.choices.trapped();
+    const reserve = switches > 0 ? `${switches} in reserve ▶` : trapped ? 'Trapped!' : 'None left';
+    write(ctx, reserve, switchBox.x + switchBox.w / 2, switchBox.y + 62, { size: 16, bold: trapped }, switches > 0 ? INK.gray200 : trapped ? INK.red300 : INK.gray400, 'center');
     if (switchFocused) ring(ctx, switchBox, 10);
 
     // Mega or Tera, only while it can: by the chooser's status box, on the field. L does it on the
