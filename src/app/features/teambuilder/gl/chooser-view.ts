@@ -4,7 +4,7 @@ import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, ListView, UiContext, focusRing, label, textField } from '@core/gl/ui/retro-kit';
 import { toId } from '@shared/utils/to-id';
 import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
-import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, typeRgba } from './tb-draw';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, keyPillWidth, typeRgba } from './tb-draw';
 
 export interface ChooserOption {
   id: string;
@@ -108,6 +108,13 @@ export class ChooserView {
     return true;
   }
 
+  /** R3: the search box's keyboard, from anywhere in the list; false for a list without one. */
+  openSearch(spec: ChooserSpec): boolean {
+    if (!spec.searchable || spec.unavailable) return false;
+    this.search(spec, this.focus.focused ?? SEARCH_ID);
+    return true;
+  }
+
   /** Home/End: the list's first or last option. */
   jump(spec: ChooserSpec, to: 'first' | 'last'): void {
     this.list(spec).jump(to, this.results(spec).length, this.focus);
@@ -124,11 +131,11 @@ export class ChooserView {
     if (spec.searchable) {
       const field = { x, y: top, w: LIST_W, h: 44 };
       textField(ctx, SEARCH_ID, field, this.query, { placeholder: `Search ${spec.noun}`, edit: () => this.search(spec) });
-      label(ctx, list.range(results.length) || 'None', field.x + field.w - 14, field.y + 22, { size: 16 }, p.muted, { align: 'right' });
+      searchKey(ctx, field, list.range(results.length) || 'None');
       top += 52;
     }
     if (spec.filters.length > 1) {
-      this.drawFilters(ctx, { x, y: top, w: LIST_W, h: 36 }, spec);
+      filterChips(ctx, { x, y: top, w: LIST_W, h: 36 }, spec.filters.map((filter) => filter.name), this.filter);
       top += 44;
     } else if (!spec.searchable) {
       label(ctx, `${results.length} ${spec.noun}`, x + 4, top + 14, { size: 18 }, p.muted);
@@ -155,33 +162,7 @@ export class ChooserView {
     const focusedIndex = this.focusedIndex(list);
     const shown = focusedIndex !== null ? results[focusedIndex] : spec.options.find((option) => option.id === spec.selectedId);
     if (shown && !spec.unavailable) spec.describe(ctx, panel, shown.id);
-    else this.wraps.draw(ctx, `Pick from the list, or press up to search ${spec.noun}.`, panel.x + 24, panel.y + 24, panel.w - 48, 28, { size: 20 }, p.muted, 4);
-  }
-
-  /** The filters as chips between L and R, the one on lit; as many as fit, around it. */
-  private drawFilters(ctx: UiContext, box: Box, spec: ChooserSpec): void {
-    const p = ctx.palette;
-    const cy = box.y + box.h / 2;
-    const style = { size: 18, bold: true };
-    const widths = spec.filters.map((filter) => ctx.text.measure(filter.name, style) + 28);
-    const keyW = 34;
-    const room = box.w - 2 * (keyW + 8);
-    // From the filter on, add the next ones while they fit, then the ones before it.
-    let first = this.filter;
-    let last = this.filter;
-    let used = widths[this.filter];
-    while (last + 1 < widths.length && used + 6 + widths[last + 1] <= room) used += 6 + widths[++last];
-    while (first > 0 && used + 6 + widths[first - 1] <= room) used += 6 + widths[--first];
-
-    keyPill(ctx, 'L', box.x, cy);
-    let x = box.x + keyW + 8;
-    for (let i = first; i <= last; i++) {
-      const on = i === this.filter;
-      ctx.renderer.rect(x, box.y, widths[i], box.h, { fill: on ? p.accent : p.button, radius: box.h / 2 });
-      label(ctx, spec.filters[i].name, x + widths[i] / 2, cy, style, on ? WHITE : p.muted, { align: 'center' });
-      x += widths[i] + 6;
-    }
-    keyPill(ctx, 'R', x + 2, cy);
+    else this.wraps.draw(ctx, `Pick from the list, or press R3 to search ${spec.noun}.`, panel.x + 24, panel.y + 24, panel.w - 48, 28, { size: 20 }, p.muted, 4);
   }
 
   private drawRow(ctx: UiContext, spec: ChooserSpec, option: ChooserOption, box: Box, focused: boolean): void {
@@ -233,8 +214,11 @@ export class ChooserView {
     if (focused) focusRing(ctx, box, 8);
   }
 
-  /** The search box: the canvas keyboard, which lists the matches as they're typed; OK focuses the first. */
-  private search(spec: ChooserSpec): void {
+  /**
+   * The search box: the canvas keyboard, which lists the matches as they're typed; OK focuses the
+   * first, cancelling goes back to `from` (where R3 was pressed).
+   */
+  private search(spec: ChooserSpec, from = SEARCH_ID): void {
     this.keyboard.open({
       label: `Search ${spec.noun}`,
       value: this.query,
@@ -248,10 +232,14 @@ export class ChooserView {
         return `${found.length} ${found.length === 1 ? 'match' : 'matches'}: ${names}${found.length > HINT_NAMES ? '…' : ''}`;
       },
       done: (value) => {
-        if (value !== null) this.query = value;
+        if (value === null) {
+          this.focus.focus(from);
+          return;
+        }
+        this.query = value;
         const list = this.list(spec);
         list.start = 0;
-        this.focus.focus(value !== null && this.results(spec).length > 0 ? `${list.id}-0` : SEARCH_ID);
+        this.focus.focus(this.results(spec).length > 0 ? `${list.id}-0` : SEARCH_ID);
       },
     });
   }
@@ -300,8 +288,42 @@ export class ChooserView {
   }
 }
 
+/** Filters as chips between L and R, the one `on` lit; as many as fit in `box`, around it. */
+export function filterChips(ctx: UiContext, box: Box, names: readonly string[], on: number): void {
+  const p = ctx.palette;
+  const cy = box.y + box.h / 2;
+  const style = { size: 18, bold: true };
+  const widths = names.map((name) => ctx.text.measure(name, style) + 28);
+  const keyW = 34;
+  const room = box.w - 2 * (keyW + 8);
+  // From the filter on, add the next ones while they fit, then the ones before it.
+  let first = on;
+  let last = on;
+  let used = widths[on];
+  while (last + 1 < widths.length && used + 6 + widths[last + 1] <= room) used += 6 + widths[++last];
+  while (first > 0 && used + 6 + widths[first - 1] <= room) used += 6 + widths[--first];
+
+  keyPill(ctx, 'L', box.x, cy);
+  let x = box.x + keyW + 8;
+  for (let i = first; i <= last; i++) {
+    const lit = i === on;
+    ctx.renderer.rect(x, box.y, widths[i], box.h, { fill: lit ? p.accent : p.button, radius: box.h / 2 });
+    label(ctx, names[i], x + widths[i] / 2, cy, style, lit ? WHITE : p.muted, { align: 'center' });
+    x += widths[i] + 6;
+  }
+  keyPill(ctx, 'R', x + 2, cy);
+}
+
+/** Inside a search box's right end: R3's chip (it opens the keyboard from the list), after `range`. */
+export function searchKey(ctx: UiContext, field: Box, range: string): void {
+  const cy = field.y + field.h / 2;
+  const keyX = field.x + field.w - 10 - keyPillWidth(ctx, 'R3');
+  keyPill(ctx, 'R3', keyX, cy);
+  label(ctx, range, keyX - 10, cy, { size: 16 }, ctx.palette.muted, { align: 'right' });
+}
+
 /** A query's words, as IDs (letters and digits only). */
-function searchWords(query: string): string[] {
+export function searchWords(query: string): string[] {
   return query.toLowerCase().split(/\s+/).map(toId).filter(Boolean);
 }
 
@@ -312,7 +334,7 @@ const MIN_KEYWORD_QUERY = 3;
  * The options whose name has every word, names starting with the first word first; then the ones
  * with a keyword starting with the whole query (a species' ability or move: "fake out").
  */
-function matching(options: readonly ChooserOption[], words: readonly string[]): readonly ChooserOption[] {
+export function matching(options: readonly ChooserOption[], words: readonly string[]): readonly ChooserOption[] {
   if (words.length === 0) return options;
   const found = options.filter((option) => {
     const name = toId(option.name);

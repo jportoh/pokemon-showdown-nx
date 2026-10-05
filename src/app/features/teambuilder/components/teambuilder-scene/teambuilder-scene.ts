@@ -78,7 +78,7 @@ export class TeambuilderScene {
     this.grid.focusTeam(this.store.teams(), this.store.teams().at(-1)?.id ?? null);
     // On a team L/R go through the teams, ZL validates and ZR deletes it; in the editor L/R switch
     // Details/Stats (or a list's filters), ZL picks No item/No move (on Stats it undoes the points)
-    // and ZR removes the Pokémon.
+    // and ZR removes the Pokémon; R3 searches an open list.
     const release = [
       this.navigation.registerButton('buttonZL', () => {
         if (this.leaving) return true;
@@ -93,6 +93,8 @@ export class TeambuilderScene {
       }),
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
       this.navigation.registerButton('buttonR', () => this.pressLR(1)),
+      // R3: an open list's search, without walking up to its box first.
+      this.navigation.registerButton('buttonR3', () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),
     ];
     inject(DestroyRef).onDestroy(() => {
       hide();

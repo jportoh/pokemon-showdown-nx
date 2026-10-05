@@ -4,14 +4,12 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
-import { STAT_IDS, STAT_NAMES } from '@features/teambuilder/data/game-rules';
 import { CalcMode, CalcState, freshField } from '@features/teambuilder/calc/calc-state';
 import { CalcBoosts, CalcField, CalcOutcome, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
-import { RivalSet, RivalSets } from '@features/teambuilder/calc/rival-sets';
+import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
 import { PokemonSet } from '@features/teambuilder/models/team';
-import { toId } from '@shared/utils/to-id';
-import { ChooserOption, ChooserSpec, ChooserView } from './chooser-view';
 import { FieldModal } from './field-modal';
+import { RivalPicker } from './rival-picker';
 import { BAR_FULL, BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LEFT, RIGHT, WHITE, WrapCache, arrow, categoryBadge, typePills, typeRgba } from './tb-draw';
 import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
 
@@ -58,31 +56,30 @@ export class CalcsView {
   private readonly state = inject(CalcState);
   private readonly calc = inject(DamageCalc);
   private readonly sets = inject(RivalSets);
-  private readonly chooser: ChooserView;
+  private readonly picker: RivalPicker;
   private readonly field: FieldModal;
   private readonly wraps = new WrapCache();
 
-  private picking = false;
   /** The last outcome and what it was worked out from (frames are many, changes few). */
   private memo: { set: PokemonSet; rival: RivalSet; mode: CalcMode; field: CalcField; outcome: CalcOutcome } | null = null;
 
-  /** The rival list: species with common sets, in your teams, or all of them. */
-  private readonly options: readonly ChooserOption[] = this.dex.allSpecies
-    .map((species) => ({ id: species.id, name: species.name, types: species.types, value: this.setCount(species.name) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
   constructor(private readonly focus: CanvasFocus) {
-    this.chooser = new ChooserView(focus);
+    this.picker = new RivalPicker(focus);
     this.field = new FieldModal(focus);
   }
 
   /** The rival list or the field is open (they keep the d-pad, A and B). */
   get isOpen(): boolean {
-    return this.picking || this.field.isOpen;
+    return this.picker.isOpen || this.field.isOpen;
   }
 
   get isPicking(): boolean {
-    return this.picking;
+    return this.picker.isOpen;
+  }
+
+  /** What A does in the rival picker. */
+  get pickerAction(): string {
+    return this.picker.action;
   }
 
   get fieldOpen(): boolean {
@@ -106,8 +103,8 @@ export class CalcsView {
       this.focus.focus(RIVAL_ID);
       return true;
     }
-    if (this.picking) {
-      this.picking = false;
+    if (this.picker.isOpen) {
+      this.picker.close();
       this.focus.focus(RIVAL_ID);
       return true;
     }
@@ -123,7 +120,7 @@ export class CalcsView {
 
   /** ZL: the field (or, while it's open, the field as it starts). */
   pressField(format: string): boolean {
-    if (this.picking) return false;
+    if (this.picker.isOpen) return false;
     if (this.field.isOpen) {
       this.state.field.set(freshField(format));
       return true;
@@ -139,13 +136,22 @@ export class CalcsView {
       this.field.step(by);
       return true;
     }
-    return this.picking && this.chooser.stepFilter(this.spec(), by);
+    if (!this.picker.isOpen) return false;
+    this.picker.stepFilter(by);
+    return true;
+  }
+
+  /** R3 in the rival list: its search box's keyboard. */
+  pressSearch(): boolean {
+    if (!this.picker.isOpen) return false;
+    this.picker.openSearch();
+    return true;
   }
 
   /** Home/End in the rival list. */
   jump(to: 'first' | 'last'): boolean {
-    if (!this.picking || !this.chooser.hasFocus()) return false;
-    this.chooser.jump(this.spec(), to);
+    if (!this.picker.isOpen) return false;
+    this.picker.jump(to);
     return true;
   }
 
@@ -170,16 +176,13 @@ export class CalcsView {
   draw(ctx: UiContext, model: CalcsModel): void {
     const field = this.state.fieldFor(model.format);
     const rival = this.rival();
-    if (this.picking) {
-      this.chooser.draw(ctx, this.spec(), (id) => this.pick(id));
-      return;
-    }
     const mode = this.state.mode();
     const outcome = rival ? this.outcome(model.set, rival, mode, field) : null;
     this.drawRival(ctx, rival, mode, field, outcome);
     this.drawMoves(ctx, rival, mode, outcome);
     this.drawDetail(ctx, rival, mode, outcome);
     if (this.field.isOpen) this.field.draw(ctx, { field, mode, yours: model.set, rival: rival?.set ?? null, outcome, change: (f) => this.state.update(f) });
+    if (this.picker.isOpen) this.picker.draw(ctx, rival, (set) => this.pick(set));
   }
 
   /** The rival, the format's most used Pokémon to start with. */
@@ -300,7 +303,7 @@ export class CalcsView {
     const p = ctx.palette;
     const field = this.state.fieldFor(model.format);
     const yours = field.yours;
-    const rival = this.picking ? null : this.rival();
+    const rival = this.rival();
     const mode = this.state.mode();
     const outcome = rival ? this.outcome(model.set, rival, mode, field) : null;
     const x = box.x + 20;
@@ -434,75 +437,21 @@ export class CalcsView {
     label(ctx, `A: another Pokémon · ◀▶: its other sets${source}`, x, box.y + 72, { size: 15 }, p.muted, { maxWidth: width });
   }
 
-  // ---------------------------------------------------------------- the rival list
+  // ---------------------------------------------------------------- the rival picker
 
   private openPicker(): void {
-    this.picking = true;
-    this.chooser.open(this.spec());
+    this.picker.open(this.state.rival());
   }
 
-  private pick(id: string): void {
-    const species = this.dex.species(id);
-    const first = species ? this.sets.firstSet(species.name) : undefined;
-    if (first) this.state.rival.set(first);
-    this.picking = false;
+  private pick(set: RivalSet): void {
+    this.state.rival.set(set);
+    this.picker.close();
     this.focus.focus(RIVAL_ID);
-  }
-
-  private spec(): ChooserSpec {
-    return {
-      noun: 'Pokémon',
-      title: 'Rival',
-      options: this.options,
-      selectedId: toId(this.state.rival()?.species ?? ''),
-      rows: 'species',
-      searchable: true,
-      filters: [
-        { name: 'Common sets', test: (option) => this.sets.hasCommon(option.name) },
-        { name: 'Your teams', test: (option) => this.sets.inTeams(option.name) },
-        { name: 'All', test: () => true },
-      ],
-      unavailable: '',
-      describe: (ctx, box, id) => this.describe(ctx, box, id),
-    };
-  }
-
-  /** The focused species in the list: its types and the sets it has. */
-  private describe(ctx: UiContext, box: Box, id: string): void {
-    const p = ctx.palette;
-    const species = this.dex.species(id);
-    if (!species) return;
-    const x = box.x + 24;
-    label(ctx, species.name, x, box.y + 36, { size: 28, bold: true }, p.ink, { maxWidth: box.w - 48 });
-    typePills(ctx, species.types, x, box.y + 62, 100, 108, 28, 16);
-    label(ctx, 'Sets (◀▶ on the rival’s card)', x, box.y + 122, { size: 16 }, p.muted);
-    const sets = this.sets.setsFor(species.name).filter((set) => set.source !== 'preset');
-    sets.slice(0, 6).forEach((set, i) => {
-      const y = box.y + 156 + i * 52;
-      label(ctx, set.title, x, y, { size: 19, bold: true }, p.ink, { maxWidth: box.w - 48 });
-      label(ctx, [set.set.nature, set.set.item || 'No item', spreadText(set.set)].join(' · '), x, y + 22, { size: 15 }, p.muted, { maxWidth: box.w - 48 });
-    });
-    const more = sets.length > 6 ? `and ${sets.length - 6} more, ` : '';
-    const presets = sets.length ? `${more}plus generic spreads` : 'No common sets: generic spreads (bulky, offensive)';
-    label(ctx, presets, x, box.y + 156 + Math.min(6, sets.length) * 52, { size: 16 }, p.muted, { maxWidth: box.w - 48 });
-  }
-
-  /** "3 sets", for the list's rows. */
-  private setCount(species: string): string {
-    const count = this.sets.setsFor(species).filter((set) => set.source === 'common').length;
-    return count ? `${count} set${count === 1 ? '' : 's'}` : '';
   }
 
   private form(set: PokemonSet): DexSpecies | DexMega | undefined {
     return this.dex.mega(set.species, set.item) ?? this.dex.species(set.species);
   }
-}
-
-/** "HP 32 / Def 14 / SpD 20", the points it has; '' for none. */
-function spreadText(set: PokemonSet): string {
-  return STAT_IDS.filter((stat) => (set.evs[stat] ?? 0) > 0)
-    .map((stat) => `${STAT_NAMES[stat]} ${set.evs[stat]}`)
-    .join(' / ');
 }
 
 /** One Pokémon as it battles on this field: its HP left (of its full HP, 0 unknown), its stages and its Speed. */

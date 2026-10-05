@@ -312,6 +312,13 @@ export class SetEditorView {
     return true;
   }
 
+  /** R3: the open list's (or the rival list's) search, wherever the focus is in it. */
+  pressSearch(): boolean {
+    const spec = this.spec();
+    if (spec) return this.chooser.openSearch(spec);
+    return this.tab() === 'calcs' && this.calcs.pressSearch();
+  }
+
   /** Home/End: the open list's ends, or the focused stat's none/max. */
   jump(to: 'first' | 'last'): boolean {
     if (this.tab() === 'stats') return this.stats.jump(to);
@@ -443,6 +450,7 @@ export class SetEditorView {
         { keys: ['A'], text: 'Pick' },
         { keys: ['B'], text: !this.pokemon() ? 'Back to team' : current ? `Keep ${current}` : 'Close' },
       ];
+      if (spec.searchable && !spec.unavailable) entries.push({ keys: ['R3'], text: 'Search' });
       if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
       const clear = this.clearLabel();
       if (clear) entries.push({ keys: ['ZL'], text: clear });
@@ -501,7 +509,7 @@ export class SetEditorView {
       return [{ keys: ['L', 'R'], text: 'Change' }, { keys: ['A'], text: 'Next' }, { keys: ['ZL'], text: 'Reset' }, { keys: ['B'], text: 'Done' }];
     }
     if (this.calcs.isPicking) {
-      return [{ keys: ['A'], text: 'Pick' }, { keys: ['B'], text: 'Keep the rival' }, { keys: ['L', 'R'], text: 'Filter' }];
+      return [{ keys: ['A'], text: this.calcs.pickerAction }, { keys: ['B'], text: 'Keep the rival' }, { keys: ['R3'], text: 'Search' }, { keys: ['L', 'R'], text: 'Filter' }];
     }
     const entries: LegendEntry[] = [];
     if (this.calcs.onRival) entries.push({ keys: ['A'], text: 'Change rival' }, { keys: ['◀▶'], text: 'Its sets' });
