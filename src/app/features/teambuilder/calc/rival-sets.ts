@@ -1,5 +1,6 @@
 import { Service, computed, inject } from '@angular/core';
 import { ChampionsDex, DexSpecies } from '@core/dex/champions-dex';
+import { STAT_IDS, STAT_NAMES } from '@features/teambuilder/data/game-rules';
 import { PokemonSet, StatSpread } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { toId } from '@shared/utils/to-id';
@@ -124,4 +125,11 @@ export class RivalSets {
       set: { name: '', species: species.name, item: '', ability, gender: '', shiny: false, evs, nature, moves: [] },
     }));
   }
+}
+
+/** "HP 32 / Def 14 / SpD 20", the points it has; '' for none. */
+export function spreadText(set: PokemonSet): string {
+  return STAT_IDS.filter((stat) => (set.evs[stat] ?? 0) > 0)
+    .map((stat) => `${STAT_NAMES[stat]} ${set.evs[stat]}`)
+    .join(' / ');
 }

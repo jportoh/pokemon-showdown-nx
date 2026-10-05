@@ -212,7 +212,17 @@ export class ListView {
     return `${this.start + 1}–${Math.min(count, this.start + this.visible)} of ${count}`;
   }
 
-  draw(ctx: UiContext, x: number, y: number, width: number, count: number, drawRow: (row: ListRow) => void, accept: (index: number) => void): void {
+  /** `move` gets the d-pad on a row first (left/right to another column), as a control's own `move`. */
+  draw(
+    ctx: UiContext,
+    x: number,
+    y: number,
+    width: number,
+    count: number,
+    drawRow: (row: ListRow) => void,
+    accept: (index: number) => void,
+    move?: (index: number, direction: 'up' | 'down' | 'left' | 'right') => boolean,
+  ): void {
     this.start = Math.max(0, Math.min(this.start, Math.max(0, count - this.visible)));
     const end = Math.min(count, this.start + this.visible);
     for (let index = this.start; index < end; index++) {
@@ -222,6 +232,7 @@ export class ListView {
         ...box,
         accept: () => accept(index),
         move: (direction) => {
+          if (move?.(index, direction)) return true;
           // Past the rows shown: the window moves on to the next row.
           if (direction === 'down' && index === end - 1 && index < count - 1) {
             this.start++;
