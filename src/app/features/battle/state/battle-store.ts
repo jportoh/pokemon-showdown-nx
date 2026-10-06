@@ -186,6 +186,7 @@ export class BattleStore {
   private readonly replaySignal = signal<Replay | null>(null);
   private readonly spectatingSignal = signal(false);
   private readonly spectateErrorSignal = signal<string | null>(null);
+  private readonly lostSignal = signal<string | null>(null);
   private readonly pausedSignal = signal(false);
   private readonly speedSignal = signal(1);
   private readonly fieldSignal = signal<BattleFieldState>(emptyField());
@@ -236,6 +237,11 @@ export class BattleStore {
   readonly spectating = this.spectatingSignal.asReadonly();
   /** Why the battle to watch couldn't be joined (it has ended, or never existed). */
   readonly spectateError = this.spectateErrorSignal.asReadonly();
+  /**
+   * Our own battle can't go on from here (its room is gone after a reconnection, or we came back
+   * with another name): why. It ends the battle as far as the screen goes.
+   */
+  readonly lost = this.lostSignal.asReadonly();
   /** Watched rather than played (a replay or a live battle): no "you", both players by name. */
   readonly watching = computed(() => this.replaySignal() !== null || this.spectatingSignal());
   /** Replays only: the playback is paused. */
@@ -325,6 +331,10 @@ export class BattleStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Watching live: the first frame (the battle so far) is still to come, and is applied at once. */
   private catchingUp = false;
+  /** Cancel was pressed and the request shown again; the turn's log may still prove it too late. */
+  private undone = false;
+  /** The room's `|init|battle` has come: another one means we're back in it after a reconnection. */
+  private initialized = false;
   /**
    * User IDs of the players who want the battle timer on: it stays on while anyone does. Only the
    * server's notices tell who they are, and whether `/timer off` from us actually turns it off.
@@ -387,6 +397,28 @@ export class BattleStore {
 
   private reset(): void {
     this.stop();
+    this.clearBattle();
+  }
+
+  /**
+   * The room sent the battle from its start again (`|init|battle`): we're back in it after the
+   * connection dropped. What was shown is dropped (keeping the connection, the music and the timer
+   * button) and the log is caught up at once, as a new battle, so the screen's leftovers go too.
+   */
+  private restartForRejoin(): void {
+    const canToggleTimer = this.canToggleTimerSignal();
+    // The request may have come just before the log (as Showdown sends them): it's the present one.
+    const request = this.pendingRequest;
+    this.halt();
+    this.clearBattle();
+    this.pendingRequest = request;
+    this.canToggleTimerSignal.set(canToggleTimer);
+    this.battleIdSignal.update((id) => id + 1);
+    this.catchingUp = true;
+  }
+
+  /** Everything shown of the battle, back to nothing. */
+  private clearBattle(): void {
     this.sidesSignal.set({ p1: emptySide('p1'), p2: emptySide('p2') });
     this.logSignal.set([]);
     this.turnSignal.set(0);
@@ -416,7 +448,10 @@ export class BattleStore {
     this.critSlots.clear();
     this.timerSignal.set(null);
     this.spectateErrorSignal.set(null);
+    this.lostSignal.set(null);
     this.catchingUp = false;
+    this.initialized = false;
+    this.undone = false;
     this.timerRequesters.clear();
     this.timerCooldownUntilSignal.set(null);
     this.canUndoSignal.set(false);
@@ -445,6 +480,7 @@ export class BattleStore {
     if (!this.canUndoSignal() || !this.lastRequest) return;
     this.canUndoSignal.set(false);
     this.connection?.undo?.();
+    this.undone = true;
     this.showRequestAgain();
     this.timerSignal.update((timer) => (timer?.turnSeconds != null ? { ...timer, since: Date.now() } : timer));
     this.renderScheduler.request();
@@ -452,6 +488,17 @@ export class BattleStore {
 
   forfeit(): void {
     this.connection?.forfeit();
+  }
+
+  /** Our battle can't go on from here (see `lost`): nothing more to choose, only to leave. */
+  markLost(reason: string): void {
+    if (this.resultSignal() || this.lostSignal()) return;
+    this.lostSignal.set(reason);
+    this.requestSignal.set(null);
+    this.pendingRequest = null;
+    this.canUndoSignal.set(false);
+    this.timerSignal.set(null);
+    this.renderScheduler.request();
   }
 
   /**
@@ -521,6 +568,11 @@ export class BattleStore {
   private stop(): void {
     this.connection?.stop();
     this.connection = null;
+    this.halt();
+  }
+
+  /** Stops the playback and drops what's waiting to play. */
+  private halt(): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.stopWaitingForLog();
@@ -532,6 +584,11 @@ export class BattleStore {
   private receive(frame: string): void {
     let hasLog = false;
     let hasRequest = false;
+    if (frame.split('\n').includes('|init|battle')) {
+      if (this.initialized) this.restartForRejoin();
+      this.initialized = true;
+      this.lostSignal.set(null);
+    }
     for (const line of frame.split('\n')) {
       // A room frame starts with ">battle-…"; this screen shows a single battle. Chat commands' notices
       // come as bare text: the opponent turning down the open team sheets is one.
@@ -555,9 +612,12 @@ export class BattleStore {
         continue;
       }
       if (this.takeRoomNotice(line)) continue;
-      // `|noinit|nonexistent|The room "battle-…" does not exist.`: the battle to watch is gone.
+      // `|noinit|nonexistent|The room "battle-…" does not exist.`: the battle to watch is gone, or
+      // ours, joined again after a reconnection, has ended and closed meanwhile.
       if (line.startsWith('|noinit|')) {
-        this.spectateErrorSignal.set(line.split('|')[3] || 'This battle has ended.');
+        const reason = line.split('|')[3] || 'This battle has ended.';
+        if (this.spectatingSignal()) this.spectateErrorSignal.set(reason);
+        else if (!this.resultSignal()) this.markLost(`Couldn't get back into the battle: ${reason}`);
         continue;
       }
       this.queue.push(line);
@@ -566,6 +626,7 @@ export class BattleStore {
     // The opponent has chosen (the turn's log is here) or there's something new to choose. Chat and
     // players joining don't count.
     if (hasRequest || frame.split('\n').some(isBattleLine)) this.canUndoSignal.set(false);
+    if (this.undone) this.dropUndoneIfTooLate(frame);
     if ((this.catchingUp || isRejoin(frame)) && hasLog) {
       this.catchUp();
       return;
@@ -696,6 +757,25 @@ export class BattleStore {
     this.renderScheduler.request();
   }
 
+  /**
+   * After Cancel, the request is shown again at once, but the opponent may have chosen before our
+   * `/undo` reached the server: the turn then goes on with the choices first sent, and its log (or the
+   * next request) comes instead of any answer. The request shown again goes, so nothing can be chosen
+   * for a turn that's already being played.
+   */
+  private dropUndoneIfTooLate(frame: string): void {
+    const shown = this.lastRequest?.rqid;
+    const turnMoved =
+      frame.split('\n').some((line) => isBattleLine(line) && !line.startsWith('|request|')) ||
+      (this.pendingRequest !== null && this.pendingRequest.rqid !== shown);
+    if (!turnMoved) return;
+    this.undone = false;
+    if (this.requestSignal()?.rqid !== shown) return;
+    this.requestSignal.set(null);
+    this.stopTimer();
+    this.addEntry('message', 'Too late to cancel: the turn goes on with the choices you sent.');
+  }
+
   /** The last request again, as a new object so the choices for it start over. */
   private showRequestAgain(): void {
     if (this.lastRequest) this.requestSignal.set({ ...this.lastRequest });
@@ -727,6 +807,7 @@ export class BattleStore {
     if (this.pendingRequest && this.logWait === null && !this.resultSignal()) {
       this.requestSignal.set(this.pendingRequest);
       this.lastRequest = this.pendingRequest;
+      this.undone = false;
       this.teamSignal.set(this.pendingRequest.side.pokemon);
       this.pendingRequest = null;
     }

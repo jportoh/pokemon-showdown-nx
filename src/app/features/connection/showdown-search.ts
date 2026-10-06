@@ -8,6 +8,8 @@ import { LOBBY_ROOM_ID, spectatorsCommand, splitLine } from './showdown-protocol
 
 /** How long a popup after searching is taken as the server's answer to it (a refusal). */
 const ANSWER_WINDOW_MS = 5000;
+/** How long a cancellation waits for the server's word before it's taken as done. */
+const CANCEL_WAIT_MS = 8000;
 
 /**
  * Searching Showdown's ladder for an opponent: `/utm <packed team>` (or `/utm null` in a random
@@ -25,11 +27,15 @@ export class ShowdownSearch {
   private readonly settings = inject(AppSettings);
   private readonly searchingSignal = signal<string | null>(null);
   private readonly errorSignal = signal<string | null>(null);
+  private readonly cancellingSignal = signal(false);
   /** When we last searched: a popup soon after is the server's refusal. */
   private searchedAt = 0;
+  private cancelTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** The format being searched, until a match is found or the search is cancelled. */
+  /** The format being searched, until a match is found or the server confirms the search is cancelled. */
   readonly searching = this.searchingSignal.asReadonly();
+  /** Cancelling the search was asked for, and the server hasn't confirmed it yet. */
+  readonly cancelling = this.cancellingSignal.asReadonly();
   /** Why the last search was refused, until the next one. */
   readonly error = this.errorSignal.asReadonly();
 
@@ -59,10 +65,20 @@ export class ShowdownSearch {
     this.set(format, null);
   }
 
+  /**
+   * Asks the server to stop searching. The search goes on (`cancelling`) until the server says it
+   * has stopped: it may have found an opponent meanwhile, and then that battle opens as any other.
+   */
   cancel(): void {
-    if (!this.searchingSignal()) return;
+    if (!this.searchingSignal() || this.cancellingSignal()) return;
     this.connection.send('', '/cancelsearch');
-    this.set(null, null);
+    this.cancellingSignal.set(true);
+    this.render.request();
+    // No answer at all (the connection is in trouble): taken as stopped after a while.
+    this.cancelTimer = setTimeout(() => {
+      this.cancelTimer = null;
+      if (this.cancellingSignal()) this.set(null, null);
+    }, CANCEL_WAIT_MS);
   }
 
   /** `{"searching":["gen9randombattle"],"games":{…}}`: what's being searched now (nothing once matched). */
@@ -84,6 +100,11 @@ export class ShowdownSearch {
   }
 
   private set(searching: string | null, error: string | null): void {
+    if (!searching) {
+      this.cancellingSignal.set(false);
+      if (this.cancelTimer !== null) clearTimeout(this.cancelTimer);
+      this.cancelTimer = null;
+    }
     this.searchingSignal.set(searching);
     this.errorSignal.set(error);
     this.render.request();

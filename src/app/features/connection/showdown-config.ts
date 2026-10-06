@@ -4,9 +4,28 @@
  */
 export const SHOWDOWN_WEBSOCKET_URL = 'wss://sim3.psim.us/showdown/websocket';
 
-/** Reconnection backoff: 1 s, 2 s, 4 s… capped at 30 s. */
+/**
+ * Reconnection backoff: 1 s, 2 s, 4 s… capped at 15 s, short enough to be back in a battle within the
+ * minute Showdown gives a player who dropped (with the timer on) before they lose.
+ */
 export const RECONNECT_BASE_DELAY_MS = 1000;
-export const RECONNECT_MAX_DELAY_MS = 30_000;
+export const RECONNECT_MAX_DELAY_MS = 15_000;
+
+/** A connection that hasn't opened by then is given up on (and retried): without a network it may never fail by itself. */
+export const CONNECT_TIMEOUT_MS = 10_000;
+
+/**
+ * A dropped network doesn't always close the socket (nothing more comes, but nothing says it's gone),
+ * so after this long without a message the server is asked something small (HEARTBEAT_COMMAND)…
+ */
+export const HEARTBEAT_IDLE_MS = 25_000;
+/** …and a connection that hasn't answered by then is taken as lost: closed, and reconnected. */
+export const HEARTBEAT_TIMEOUT_MS = 10_000;
+/** A query any connection may send, answered with one short line (`|queryresponse|userdetails|…`). */
+export const HEARTBEAT_COMMAND = '/cmd userdetails brewserheartbeat';
+
+/** Attempts in a row that never opened before Showdown counts as unreachable (see ConnectionState.trouble). */
+export const UNREACHABLE_AFTER_ATTEMPTS = 2;
 
 /**
  * Showdown's login server: gives the assertion that claims a name on the server (see ShowdownLogin).

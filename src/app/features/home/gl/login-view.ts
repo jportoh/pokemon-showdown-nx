@@ -4,6 +4,8 @@ import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, UiContext, button, label, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { SavedLogin } from '@features/connection/saved-login';
+import { connectionNotice } from '@features/connection/connection-notice';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
 /** The boxes over the menu: most of the stage under the bar (a retro box, 1088x568 at 96,116). */
@@ -22,6 +24,7 @@ export const INNER_Y = BOX.y + 6;
  */
 export class LoginView {
   private readonly login = inject(ShowdownLogin);
+  private readonly connection = inject(ShowdownConnection);
   private readonly keyboard = inject(CanvasKeyboard);
 
   readonly firstId = 'login-guest';
@@ -38,7 +41,13 @@ export class LoginView {
     return state.mode === 'guest' && (state.status === 'connecting' || state.status === 'naming');
   });
 
-  private readonly canConnectAsGuest = computed(() => !this.guestConnecting() && !this.login.state().loggingIn);
+  /** Attempts to connect keep failing (no network, Showdown out of reach): the first button tries again at once. */
+  private readonly canRetry = computed(() => {
+    const connection = this.connection.state();
+    return connection.trouble !== null && connection.status !== 'connected' && connection.status !== 'offline';
+  });
+
+  private readonly canConnectAsGuest =computed(() => !this.guestConnecting() && !this.login.state().loggingIn);
 
   /** Only an error from something asked for here: a login's, or a guest's that found no name. */
   private readonly error = computed(() => {
@@ -58,6 +67,8 @@ export class LoginView {
     const error = this.error();
     if (error) return error;
     const state = this.login.state();
+    // Attempts that keep failing: why, rather than "Connecting…" for ever.
+    if (this.canRetry()) return connectionNotice(this.connection.state(), state) ?? '';
     if (this.guestConnecting()) return 'Connecting as a guest…';
     if (state.loggingIn) return 'Logging in…';
     if (state.status === 'connecting' || state.status === 'offline') return 'Connecting to Showdown…';
@@ -84,9 +95,15 @@ export class LoginView {
     label(ctx, 'Connect to Showdown', INNER_X + 48, INNER_Y + 56, { size: 40, bold: true }, p.ink);
     const x = INNER_X + 48;
     const y = INNER_Y + 112;
-    button(ctx, 'login-guest', { x, y, w: 980, h: 80 }, this.guestConnecting() ? 'Connecting…' : 'Connect as guest', {
+    const retry = this.canRetry();
+    button(ctx, 'login-guest', { x, y, w: 980, h: 80 }, retry ? 'Try again now' : this.guestConnecting() ? 'Connecting…' : 'Connect as guest', {
       size: 30,
       accept: () => {
+        // While attempts keep failing, it tries again at once rather than waiting for the next try.
+        if (this.canRetry()) {
+          this.connection.retryNow();
+          return;
+        }
         if (!this.canConnectAsGuest()) return;
         this.submitted.set(false);
         this.login.connectAsGuest();

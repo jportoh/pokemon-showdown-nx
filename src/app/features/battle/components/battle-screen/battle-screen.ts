@@ -72,7 +72,7 @@ export class BattleScreen {
    */
   protected readonly rematchView = computed(() => {
     const room = this.liveRoom();
-    if (!room) return { can: false, label: '', note: '' };
+    if (!room || this.store.lost()) return { can: false, label: '', note: '' };
     // The next battle is on its way: it takes this one's place once it has something to show.
     if (this.nextJoining()) return { can: true, label: 'Joining battle…', note: '' };
     // A game of a best-of set: its place goes to getting ready for the next game, until the set is over.
@@ -117,7 +117,8 @@ export class BattleScreen {
       !this.store.intro() &&
       !this.store.started() &&
       !this.store.request() &&
-      !this.store.result(),
+      !this.store.result() &&
+      !this.store.lost(),
   );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
@@ -136,7 +137,14 @@ export class BattleScreen {
     // A rematch accepted (theirs or ours), or the next game of a best-of set, opens its room while this
     // battle is still on screen (App only opens battles when none is): it takes this one's place.
     const rematches = this.rooms.started.subscribe((roomId) => {
-      if (this.liveRoom() && this.store.result()) this.startLive(roomId);
+      if (this.liveRoom() && (this.store.result() || this.store.lost())) this.startLive(roomId);
+    });
+    // Back after a reconnection with another name (ours couldn't be had back): the server won't let
+    // that one play our side, so the battle can't go on from here.
+    const renamed = this.login.named.subscribe(() => {
+      const player = this.store.sides().p1.name;
+      if (!this.liveRoom() || this.store.result() || !player || toId(player) === this.login.userId()) return;
+      this.store.markLost(`You're back as ${this.login.state().name}, not ${player}, so this battle can't be played from here.`);
     });
 
     const unregister = [
@@ -147,6 +155,7 @@ export class BattleScreen {
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
       rematches.unsubscribe();
+      renamed.unsubscribe();
       this.cancelForfeit();
     });
   }
@@ -204,14 +213,14 @@ export class BattleScreen {
 
   /** R: starts filling Forfeit; further presses do nothing while the server ends the battle. */
   private pressForfeit(): boolean {
-    if (this.store.result() || this.store.watching()) return false;
+    if (this.store.result() || this.store.lost() || this.store.watching()) return false;
     if (this.forfeitState() === 'idle') this.forfeitHold.press();
     return true;
   }
 
   /** Forfeit filled up (R held to the end): the server ends the battle. */
   protected forfeit(): void {
-    if (this.store.result() || this.store.watching() || this.forfeitState() !== 'idle') return;
+    if (this.store.result() || this.store.lost() || this.store.watching() || this.forfeitState() !== 'idle') return;
     this.forfeitState.set('forfeiting');
     this.store.forfeit();
   }
@@ -223,7 +232,7 @@ export class BattleScreen {
 
   /** R3 or the header's timer button: asks the server for the battle timer on or off (real battles only). */
   protected toggleTimer(): boolean {
-    if (!this.store.canToggleTimer() || this.store.result()) return false;
+    if (!this.store.canToggleTimer() || this.store.result() || this.store.lost()) return false;
     this.store.toggleTimer();
     return true;
   }
