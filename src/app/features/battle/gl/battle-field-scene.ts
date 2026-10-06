@@ -2,7 +2,9 @@ import { DestroyRef, computed, effect, inject, untracked } from '@angular/core';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleCries } from '@features/battle/audio/battle-cries';
-import { movePattern } from '@features/battle/gl/move-patterns';
+import { drains, isContactMark, movePattern } from '@features/battle/gl/move-patterns';
+import { LungeStyle, MoveStage, StageActor, StageTarget, Visual } from '@features/battle/gl/move-stage';
+import { contactMark, drainLights, signatureMove } from '@features/battle/gl/signature-moves';
 import { BattleCamera, CameraFocus, REST_FOCUS, depthOf } from '@features/battle/gl/battle-camera';
 import { CAMERA_DEPTHS, CAMERA_TUNING } from '@features/battle/gl/camera-tuning';
 import {
@@ -67,6 +69,13 @@ const RUSH_MS = 400;
 const LUNGE_SHARE = 0.25;
 const LUNGE_MIN_PX = 72;
 const LUNGE_MAX_PX = 180;
+/** A slam throws the whole body: further, a little slower, and the field shakes as it lands. */
+const SLAM_MS = 700;
+const SLAM_SHARE = 0.5;
+const SLAM_MIN_PX = 120;
+const SLAM_MAX_PX = 300;
+const SLAM_SHAKE_MS = 320;
+const SLAM_HIT = 1.3;
 const HOP_PX = 24;
 const GLOW_MS = 420;
 const BLINK_MS = 540;
@@ -166,15 +175,6 @@ interface Slot extends Occupant {
 /** The one choosing (or the target) is lifted, with a ring on its platform; the target, a light behind it too. */
 const CHOOSER_LIFT_PX = 10;
 const CHOOSER_LIGHT: Rgba = rgba('#fde047');
-
-/** How a sprite is drawn this frame: moved, faded, brightened. */
-interface Visual {
-  dx: number;
-  dy: number;
-  alpha: number;
-  /** 1 is its own colours; more adds its light again (a glow, Mega Evolution's flash). */
-  bright: number;
-}
 
 interface SlotAnim {
   /** When it started; null while it waits for its sprite to download. */
@@ -572,7 +572,19 @@ export class BattleFieldScene {
       }
       this.acting.set(action.attacker, performance.now() + SUBSTITUTE_ACT_MS / this.store.speed());
     }
+    // The most used moves have an animation of their own.
+    const signature = signatureMove(action.move);
+    const stage = signature ? this.moveStage(action) : null;
+    if (signature && stage) {
+      signature(stage);
+      return;
+    }
     const pattern = movePattern(action.move);
+    const drainTo = drains(action.move) ? this.effectPoint(action.attacker) : null;
+    // A draining move's lights fly back from each target it hits to its user, which glows as they arrive.
+    const drain = (slot: SlotKey, at: EffectPoint): void => {
+      if (drainTo) drainLights(effects, at, drainTo, sizeAt(slot), () => this.glow(action.attacker));
+    };
     const aimed = pattern === 'beam' || pattern === 'wave' || pattern === 'erupt' || pattern === 'psywave' ? pattern : null;
     if (action.category === 'Special' || aimed) {
       this.glow(action.attacker);
@@ -584,7 +596,9 @@ export class BattleFieldScene {
       });
       if (from) {
         effects.projectiles(from, targets, action.type, size, (target) => {
-          if (target.hit) this.blink(target.slot, pattern === 'psywave');
+          if (!target.hit) return;
+          this.blink(target.slot, pattern === 'psywave');
+          drain(target.slot, target.at);
         }, aimed ?? 'orb');
       } else {
         action.hits.forEach((slot) => this.blink(slot));
@@ -610,7 +624,7 @@ export class BattleFieldScene {
           }
         }
         if (pattern === 'quake') {
-          this.shake = { start: performance.now(), duration: QUAKE_MS / this.store.speed() };
+          this.shakeField(QUAKE_MS);
           const shaken = [...new Set([...action.targets, ...action.hits])].filter((slot) => slot !== action.attacker);
           effects.dust(shaken.map((slot) => this.effectPoint(slot)).filter((p): p is EffectPoint => !!p), size);
           for (const slot of action.hits) {
@@ -635,17 +649,68 @@ export class BattleFieldScene {
           else if (pattern === 'flurry') effects.flurry(at, action.type, sizeAt(slot), () => this.blink(slot));
           else if (pattern === 'clap') effects.clap(at, action.type, sizeAt(slot), () => this.blink(slot, true));
           else {
-            this.blink(slot);
-            effects.impact(at, action.type, sizeAt(slot));
+            this.blink(slot, pattern === 'slam');
+            effects.impact(at, action.type, sizeAt(slot) * (pattern === 'slam' ? SLAM_HIT : 1));
+            if (isContactMark(pattern)) contactMark(effects, pattern, at, sizeAt(slot), action.type);
           }
+          if (at) drain(slot, at);
         }
+        if (pattern === 'slam' && action.hits.length > 0) this.shakeField(SLAM_SHAKE_MS);
       },
-      pattern === 'rush',
-      pattern === 'quake',
+      pattern === 'rush' ? 'rush' : pattern === 'quake' ? 'hop' : pattern === 'slam' ? 'slam' : 'lunge',
     );
   }
 
-  private lunge(action: MoveAction, contact: () => void, rush: boolean, hop: boolean): void {
+  /** What a move's own animation sees of the field: who is where, and the field's reactions. */
+  private moveStage(action: MoveAction): MoveStage | null {
+    const user = this.actor(action.attacker);
+    if (!user) return null;
+    const side = action.attacker.slice(0, 2);
+    const actors = this.slots()
+      .map((s) => this.actor(s.key))
+      .filter((a): a is StageActor => !!a);
+    const targets = [...new Set([...action.targets.filter((t) => t !== action.attacker), ...action.hits])]
+      .map((slot) => this.actor(slot))
+      .filter((a): a is StageActor => !!a)
+      .map((a): StageTarget => ({ ...a, hit: action.hits.includes(a.slot) }));
+    return {
+      fx: this.effects,
+      move: action.move,
+      type: action.type,
+      user,
+      targets,
+      allies: actors.filter((a) => a.slot.startsWith(side)),
+      foes: actors.filter((a) => !a.slot.startsWith(side)),
+      hit: (target, shake = false) => {
+        if (target.hit) this.blink(target.slot, shake);
+      },
+      animate: (slot, ms, frame) => this.animate(slot, ms, frame),
+      lunge: (contact, style = 'lunge') => this.lunge(action, contact, style),
+      glow: (slot) => this.glow(slot),
+      shake: (ms) => this.shakeField(ms),
+    };
+  }
+
+  private actor(slot: SlotKey): StageActor | null {
+    const data = this.slotData(slot);
+    if (!data?.pokemon || data.pokemon.fainted) return null;
+    const x = Math.round(data.left + data.size / 2);
+    return {
+      slot,
+      at: { x, y: Math.round(data.top + data.size * 0.55) },
+      head: { x, y: Math.round(data.top + data.size * 0.24) },
+      feet: { x, y: Math.round(data.top + data.size * 0.92) },
+      size: data.size,
+      k: data.size / 240,
+    };
+  }
+
+  /** The whole field shakes from side to side for `ms` (at normal speed). */
+  private shakeField(ms: number): void {
+    this.shake = { start: performance.now(), duration: ms / this.store.speed() };
+  }
+
+  private lunge(action: MoveAction, contact: () => void, style: LungeStyle): void {
     const from = this.slotData(action.attacker);
     if (!from) return;
     const targets = action.targets
@@ -654,16 +719,19 @@ export class BattleFieldScene {
       .filter((t): t is Slot => !!t);
     let dx = 0;
     let dy = -HOP_PX;
-    if (targets.length > 0 && !hop) {
+    const slam = style === 'slam';
+    if (targets.length > 0 && style !== 'hop') {
       const x = targets.reduce((sum, t) => sum + t.left, 0) / targets.length - from.left;
       const y = targets.reduce((sum, t) => sum + t.top, 0) / targets.length - from.top;
       const length = Math.hypot(x, y) || 1;
-      const distance = Math.max(LUNGE_MIN_PX, Math.min(LUNGE_MAX_PX, length * LUNGE_SHARE));
+      const distance = slam
+        ? Math.max(SLAM_MIN_PX, Math.min(SLAM_MAX_PX, length * SLAM_SHARE))
+        : Math.max(LUNGE_MIN_PX, Math.min(LUNGE_MAX_PX, length * LUNGE_SHARE));
       dx = (x / length) * distance;
       dy = (y / length) * distance;
     }
-    const ms = rush ? RUSH_MS : LUNGE_MS;
-    if (rush) {
+    const ms = style === 'rush' ? RUSH_MS : slam ? SLAM_MS : LUNGE_MS;
+    if (style === 'rush') {
       const at = this.effectPoint(action.attacker);
       if (at) this.effects.trail((p) => ({ x: at.x + dx * outAndBack(p), y: at.y + dy * outAndBack(p) }), action.type, from.size, ms);
     }

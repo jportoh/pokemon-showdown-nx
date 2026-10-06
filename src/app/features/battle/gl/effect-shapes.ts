@@ -175,3 +175,152 @@ export const POW = shape([
   '.......oxo.......',
   '........o........',
 ]);
+
+/** A fist seen from the front, knuckles up (punches). */
+export const FIST = shape([
+  '.ooooooooooo.',
+  'oxxoxxoxxoxxo',
+  'oxxoxxoxxoxxo',
+  'oxxoxxoxxoxxo',
+  'ooooooooxxxxo',
+  'oxxxxxxxoxxxo',
+  'oxxxxxxxoxxxo',
+  '.oooooooxxxo.',
+  '..oxxxxxxxo..',
+  '..oxxxxxxxo..',
+  '..ooooooooo..',
+]);
+
+/** A foot's sole, toes up (kicks and stomps). */
+export const FOOT = shape([
+  '.o.o.o.o.',
+  'oxoxoxoxo',
+  '.ooooooo.',
+  'oxxxxxxxo',
+  'oxxxxxxxo',
+  'oxxxxxxxo',
+  '.oxxxxxo.',
+  '..oxxxo..',
+  '..oxxxo..',
+  '.oxxxxxo.',
+  '.oxxxxxo.',
+  '..ooooo..',
+]);
+
+/** An upper jaw's teeth, pointing down (bites: turned over, the lower jaw). */
+export const FANGS = shape([
+  'oooooooooooooooooooo',
+  'oxxxxxxxxxxxxxxxxxxo',
+  'oxxxooxxxooxxxooxxxo',
+  '.oxo..oxo..oxo..oxo.',
+  '..o....o....o....o..',
+]);
+
+/** A sword, point up (Swords Dance). */
+export const SWORD = shape([
+  '...o...',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  '..oxo..',
+  'ooooooo',
+  'oxxxxxo',
+  'ooooooo',
+  '..oxo..',
+  '..oxo..',
+  '..ooo..',
+]);
+
+/** An open hand, fingers up (Helping Hand, Knock Off's slap). */
+export const HAND = shape([
+  '.o.o.o.o....',
+  'oxoxoxoxo...',
+  'oxoxoxoxo...',
+  'oxoxoxoxo...',
+  'oxxxxxxxo.o.',
+  'oxxxxxxxooxo',
+  'oxxxxxxxxxxo',
+  'oxxxxxxxxxo.',
+  '.oxxxxxxxo..',
+  '..oxxxxxo...',
+  '..oxxxxxo...',
+  '..ooooooo...',
+]);
+
+/** A musical note (Encore). */
+export const NOTE = shape([
+  '...ooo..',
+  '...oxxo.',
+  '...oxoxo',
+  '...oxo.o',
+  '...oxo..',
+  '...oxo..',
+  '.oooxo..',
+  'oxxxxo..',
+  'oxxxxo..',
+  '.oooo...',
+]);
+
+/** The cross-popping vein of anger (Taunt). */
+export const ANGER = shape([
+  '.ooo...ooo.',
+  'oxxxo.oxxxo',
+  'oxxo...oxxo',
+  'oxo.....oxo',
+  '.o.......o.',
+  '...........',
+  '.o.......o.',
+  'oxo.....oxo',
+  'oxxo...oxxo',
+  'oxxxo.oxxxo',
+  '.ooo...ooo.',
+]);
+
+/** A sleepy "Z" (Yawn). */
+export const SLEEPY_Z = shape([
+  'oooooooo',
+  'oxxxxxxo',
+  'ooooxxo.',
+  '...oxo..',
+  '..oxo...',
+  '.oxxoooo',
+  'oxxxxxxo',
+  'oooooooo',
+]);
+
+/** Fire Blast's five-pointed blaze, the 大 of the games. */
+export const BLAZE = shape([
+  '......o......',
+  '.....oxo.....',
+  '.....oxo.....',
+  'ooooooxoooooo',
+  'oxxxxxxxxxxxo',
+  'ooooooxoooooo',
+  '.....oxo.....',
+  '....oxxxo....',
+  '...oxo.oxo...',
+  '..oxo...oxo..',
+  '.oxo.....oxo.',
+  'oxo.......oxo',
+  'oo.........oo',
+]);
+
+/** A flickering flame with two tongues (ghostly and magic fire: a plain flame in blue reads as a drop). */
+export const WISP = shape([
+  '...o.....',
+  '...oo..o.',
+  '..oxo.oxo',
+  '..oxxooxo',
+  '.oxxxxxxo',
+  '.oxxxxxo.',
+  'oxxxxxxxo',
+  'oxxxxxxxo',
+  'oxxxxxxxo',
+  '.oxxxxxo.',
+  '..ooooo..',
+]);

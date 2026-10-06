@@ -864,16 +864,18 @@ export function glowDot(renderer: GlRenderer, x: number, y: number, radius: numb
   renderer.rect(x - radius, y - radius, radius * 2, radius * 2, { fill: withAlpha(color, alpha), radius, softness: additive ? radius * 0.9 : 1, additive });
 }
 
-function ring(renderer: GlRenderer, x: number, y: number, radius: number, width: number, color: Rgba, alpha: number): void {
+/** A circle's outline, `width` thick: light by default, or solid (`additive` false) where light would wash out. */
+export function ring(renderer: GlRenderer, x: number, y: number, radius: number, width: number, color: Rgba, alpha: number, additive = true): void {
   if (radius <= 0.5 || alpha <= 0.01) return;
-  renderer.rect(x - radius, y - radius, radius * 2, radius * 2, { fill: [0, 0, 0, 0], stroke: withAlpha(color, alpha), radius, border: Math.max(1, width), additive: true });
+  renderer.rect(x - radius, y - radius, radius * 2, radius * 2, { fill: [0, 0, 0, 0], stroke: withAlpha(color, alpha), radius, border: Math.max(1, width), additive });
 }
 
-function withAlpha(color: Rgba, alpha: number): Rgba {
+/** The colour at `alpha` times its own, clamped to 0..1. */
+export function withAlpha(color: Rgba, alpha: number): Rgba {
   return [color[0], color[1], color[2], color[3] * Math.max(0, Math.min(1, alpha))];
 }
 
-function mix(a: Rgba, b: Rgba, t: number): Rgba {
+export function mix(a: Rgba, b: Rgba, t: number): Rgba {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t];
 }
 
@@ -887,15 +889,15 @@ export function outAndBack(progress: number): number {
 }
 
 /** Overshoots a little before settling (a pop). */
-function backOut(t: number): number {
+export function backOut(t: number): number {
   const c = 1.7;
   return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 }
 
-function easeIn(t: number): number {
+export function easeIn(t: number): number {
   return t * t * t;
 }
 
-function easeInOut(t: number): number {
+export function easeInOut(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
