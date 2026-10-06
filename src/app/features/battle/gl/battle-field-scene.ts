@@ -237,6 +237,9 @@ export class BattleFieldScene {
 
   private readonly camera = new BattleCamera();
   private cameraFocus: CameraFocus = REST_FOCUS;
+  /** Counts the camera's updates (one a frame): `slots` is worked out again after each. */
+  private cameraMoves = 0;
+  private slotCache: { occupants: Occupant[]; cameraMoves: number; slots: Slot[] } | null = null;
   /** Where the ground meets the sky this frame. */
   private groundY = GROUND_Y;
 
@@ -281,6 +284,9 @@ export class BattleFieldScene {
   private terrain: string | null = null;
   private motes: Mote[] = [];
   private readonly preloaded = new Set<string>();
+
+  /** Time spent on each part of the field (ms, added up until the diagnostics read and clear it). */
+  readonly timings: Record<FieldPart, number> = { scenery: 0, pokemon: 0, effects: 0, weather: 0, boxes: 0 };
 
   /** Sparks alive, for the diagnostics. */
   get particleCount(): number {
@@ -766,12 +772,22 @@ export class BattleFieldScene {
 
   // ---------------------------------------------------------------- drawing
 
-  /** Draws the field in field coordinates (0..1280, 0..676); the host has started the frame, placed and clipped it. */
-  draw(renderer: GlRenderer, now: number, dt: number): void {
+  /**
+   * Draws the field in field coordinates (0..1280, 0..676); the host has started the frame, placed and
+   * clipped it. `covered` (a screen over all of it: Battle info, the party, team preview) draws nothing
+   * but keeps the clock going: animations and effects still end, and what waits on them goes on.
+   */
+  draw(renderer: GlRenderer, now: number, dt: number, covered = false): void {
     this.camera.aim(this.cameraFocus, this.layout().stands, now);
     this.camera.update(now);
+    this.cameraMoves++;
     this.effects.update(now, dt);
     this.syncIdents();
+    if (covered) {
+      for (const slot of this.slots()) this.step(slot, now);
+      this.effects.draw(renderer, true);
+      return;
+    }
 
     const { weather, terrain, rooms } = this.store.field();
     const ground = (terrain && TERRAIN_COLORS[terrain.id]) || DEFAULT_GROUND;
@@ -786,17 +802,24 @@ export class BattleFieldScene {
     }
     renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: sky });
     renderer.originX = baseX + shakeX;
+    const timings = this.timings;
+    let mark = performance.now();
     this.drawScenery(renderer, now, ground, rooms.some((room) => room.id === 'Trick Room'));
     this.drawMotes(renderer, dt, terrain?.id ?? null, now);
+    mark = lap(timings, 'scenery', mark);
     for (const slot of this.slots()) this.drawPokemon(renderer, slot, now);
+    mark = lap(timings, 'pokemon', mark);
     this.effects.draw(renderer);
+    mark = lap(timings, 'effects', mark);
     renderer.originX = baseX;
     this.drawWeather(renderer, dt, weather ? (WEATHER_KIND[weather.id] ?? null) : null, now);
     if (rooms.some((room) => room.id === 'Trick Room')) {
       const pulse = 0.75 + 0.25 * Math.sin(now / 300);
       renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: [0, 0, 0, 0], stroke: withAlpha(TRICK_ROOM, pulse), border: 6 });
     }
+    mark = lap(timings, 'weather', mark);
     for (const slot of this.slots()) this.drawHpBox(renderer, slot, now);
+    lap(timings, 'boxes', mark);
   }
 
   /**
@@ -832,17 +855,22 @@ export class BattleFieldScene {
 
     renderer.rect(x + 2, y + 4, BOX_W, BOX_H, { fill: [0, 0, 0, 0.22], radius: 12, softness: 3 });
     renderer.rect(x, y, BOX_W, BOX_H, { fill: BOX_FILL, stroke: BOX_BORDER[this.emphasis()[slot.key] ?? (this.isPicked(slot.key) ? 'attacker' : 'none')], radius: 12, border: 3 });
-    this.write(renderer, p.name, x + 14, y + 19, { size: 22, bold: true }, BOX_INK, 'left', p.tera && !mega ? 146 : 220);
+    const corner = showLevel ? `Lv${p.level}` : percent;
+    const cornerStyle = { size: 20, bold: true };
+    // MEGA or TERA end just before the level or percentage, whatever its width ("100%" is wider than "Lv50").
+    const badgesEnd = Math.min(290, BOX_W - 14 - (this.text?.measure(corner, cornerStyle) ?? 0) - 6);
+    const badgesStart = mega ? badgesEnd - 50 : p.tera ? badgesEnd - 124 : BOX_W - 14;
+    this.write(renderer, p.name, x + 14, y + 19, { size: 22, bold: true }, BOX_INK, 'left', badgesStart - 14 - 6);
     if (mega) {
-      renderer.rect(x + 240, y + 9, 50, 20, { fill: rgba('#6b2a73'), radius: 2 });
-      this.write(renderer, 'MEGA', x + 265, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center');
+      renderer.rect(x + badgesStart, y + 9, 50, 20, { fill: rgba('#6b2a73'), radius: 2 });
+      this.write(renderer, 'MEGA', x + badgesStart + 25, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center');
     } else if (p.tera) {
-      renderer.rect(x + 164, y + 9, 48, 20, { fill: rgba('#1e293b'), radius: 2 });
-      this.write(renderer, 'TERA', x + 188, y + 19, { size: 13, bold: true }, rgba('#a5f3fc'), 'center');
-      renderer.rect(x + 216, y + 9, 72, 20, { fill: rgba(typeColor(p.tera) || '#374151'), radius: 10 });
-      this.write(renderer, p.tera, x + 252, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center', 68);
+      renderer.rect(x + badgesStart, y + 9, 48, 20, { fill: rgba('#1e293b'), radius: 2 });
+      this.write(renderer, 'TERA', x + badgesStart + 24, y + 19, { size: 13, bold: true }, rgba('#a5f3fc'), 'center');
+      renderer.rect(x + badgesStart + 52, y + 9, 72, 20, { fill: rgba(typeColor(p.tera) || '#374151'), radius: 10 });
+      this.write(renderer, p.tera, x + badgesStart + 88, y + 19, { size: 13, bold: true }, [1, 1, 1, 1], 'center', 68);
     }
-    this.write(renderer, showLevel ? `Lv${p.level}` : percent, x + BOX_W - 14, y + 19, { size: 20, bold: true }, BOX_INK, 'right');
+    this.write(renderer, corner, x + BOX_W - 14, y + 19, cornerStyle, BOX_INK, 'right');
     renderer.rect(x + 14, y + 38, 34, 18, { fill: rgba('#e8a020'), radius: 2 });
     this.write(renderer, 'HP', x + 31, y + 47, { size: 13, bold: true }, BOX_INK, 'center');
     renderer.rect(x + 54, y + 40, BAR_WIDTH + 4, 14, { fill: rgba('#506858'), radius: 2 });
@@ -1001,13 +1029,14 @@ export class BattleFieldScene {
     }
   }
 
-  private drawPokemon(renderer: GlRenderer, slot: Slot, now: number): void {
+  /** Moves a slot's animation on (ending it when due): how its Pokémon looks now, or null when it isn't shown. */
+  private step(slot: Slot, now: number): Visual | null {
     const pokemon = slot.pokemon;
-    if (!pokemon || (pokemon.fainted && !this.fainting.has(slot.key)) || this.withdrawn.has(slot.key)) return;
+    if (!pokemon || (pokemon.fainted && !this.fainting.has(slot.key)) || this.withdrawn.has(slot.key)) return null;
     const entering = this.entering.get(slot.key);
     if (entering !== undefined) {
       // No send-out coming (a spectator catching up, Illusion's reveal): it just appears.
-      if (now - entering < ENTRY_WAIT_MS) return;
+      if (now - entering < ENTRY_WAIT_MS) return null;
       this.entering.delete(slot.key);
     }
     const visual: Visual = { dx: 0, dy: 0, alpha: 1, bright: 1 };
@@ -1019,10 +1048,16 @@ export class BattleFieldScene {
       if (p >= 1) {
         this.anims.delete(slot.key);
         anim.done?.();
-        if (pokemon.fainted && !this.fainting.has(slot.key)) return;
+        if (pokemon.fainted && !this.fainting.has(slot.key)) return null;
         Object.assign(visual, { dx: 0, dy: 0, alpha: 1, bright: 1 });
       }
     }
+    return visual;
+  }
+
+  private drawPokemon(renderer: GlRenderer, slot: Slot, now: number): void {
+    const visual = this.step(slot, now);
+    if (!visual) return;
     const texture = this.spriteOf(slot, now);
     if (!texture || visual.alpha <= 0.01) return;
     const { glow, dim } = this.camera.look(slot.key);
@@ -1060,7 +1095,7 @@ export class BattleFieldScene {
   private drawMotes(renderer: GlRenderer, dt: number, terrain: string | null, now: number): void {
     if (terrain !== this.terrain) {
       this.terrain = terrain;
-      this.motes = terrain && TERRAIN_MOTES[terrain] ? Array.from({ length: 56 }, () => this.newMote(true)) : [];
+      this.motes = terrain && TERRAIN_MOTES[terrain] ? Array.from({ length: 36 }, () => this.newMote(true)) : [];
     }
     const color = terrain ? TERRAIN_MOTES[terrain] : null;
     if (!color) return;
@@ -1087,7 +1122,8 @@ export class BattleFieldScene {
   private drawWeather(renderer: GlRenderer, dt: number, kind: WeatherKind, now: number): void {
     if (kind !== this.weatherKind) {
       this.weatherKind = kind;
-      const count = kind === 'rain' ? 260 : kind === 'snow' ? 210 : kind === 'sand' ? 290 : kind === 'wind' ? 22 : 0;
+      // About half what the field first had: each quad costs ~30 µs on the console (test-v1: rain took 8 ms a frame).
+      const count = kind === 'rain' ? 130 : kind === 'snow' ? 110 : kind === 'sand' ? 150 : kind === 'wind' ? 22 : 0;
       this.weather = Array.from({ length: count }, () => ({
         x: Math.random() * FIELD_W,
         y: Math.random() * FIELD_H,
@@ -1279,14 +1315,22 @@ export class BattleFieldScene {
     this.cameraFocus = focus;
   }
 
-  /** Every stand where the camera shows it now. */
+  /**
+   * Every stand where the camera shows it now: worked out once per frame (the camera moves only in
+   * `draw`), however many labels and effects ask where a Pokémon is.
+   */
   private slots(): Slot[] {
+    const occupants = this.occupants();
+    const cached = this.slotCache;
+    if (cached && cached.occupants === occupants && cached.cameraMoves === this.cameraMoves) return cached.slots;
     const { scale } = this.layout();
-    return this.occupants().map((occupant) => {
+    const slots = occupants.map((occupant) => {
       const at = this.camera.project(occupant.stand.x, occupant.stand.y, depthOf(occupant.key));
       const size = Math.round(96 * at.k * scale);
       return { ...occupant, size, feetX: at.x, feetY: at.y, left: Math.round(at.x - size / 2), top: Math.round(at.y + feetGap(size) - size) };
     });
+    this.slotCache = { occupants, cameraMoves: this.cameraMoves, slots };
+    return slots;
   }
 
   /** The target being picked: its status box lights up too. */
@@ -1362,4 +1406,15 @@ function backOut(t: number): number {
 function line(renderer: GlRenderer, x1: number, y1: number, x2: number, y2: number, width: number, color: Rgba): void {
   const length = Math.hypot(x2 - x1, y2 - y1);
   renderer.rect((x1 + x2) / 2 - length / 2, (y1 + y2) / 2 - width / 2, length, width, { fill: color, angle: Math.atan2(y2 - y1, x2 - x1) });
+}
+
+/** The parts of the field the diagnostics time. */
+export const FIELD_PARTS = ['scenery', 'pokemon', 'effects', 'weather', 'boxes'] as const;
+export type FieldPart = (typeof FIELD_PARTS)[number];
+
+/** Adds the time since `since` to `part`; returns now. */
+function lap(timings: Record<FieldPart, number>, part: FieldPart, since: number): number {
+  const now = performance.now();
+  timings[part] += now - since;
+  return now;
 }
