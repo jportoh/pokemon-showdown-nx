@@ -1,14 +1,13 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
 import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from '@core/gl/gl-diagnostics';
-import { GlRenderer, rgba } from '@core/gl/gl-renderer';
+import { rgba } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { TextTextures } from '@core/gl/gl-textures';
 import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
-import { BattleFieldScene } from '@features/battle/gl/battle-field-scene';
+import { BattleFieldScene, FIELD_PARTS } from '@features/battle/gl/battle-field-scene';
 import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
 import { INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
@@ -23,6 +22,9 @@ import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 
 const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
+/** The parts of a frame the diagnostics time: field, top bar and labels, command panel, screens over it, GL flush. */
+const SECTIONS = ['field', 'chrome', 'panel', 'overlays', 'flush'] as const;
+type Section = (typeof SECTIONS)[number];
 
 /**
  * The battle screen, drawn as a scene on the app's one canvas (GlStage), all 1280x720 of it: the top
@@ -140,7 +142,8 @@ export class GlBattleScreen {
     });
   }
 
-  private draw({ renderer, overlayText: hudText, now, dt }: StageFrame): void {
+  private draw(frame: StageFrame): void {
+    const { renderer, now, dt } = frame;
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.now = now;
@@ -160,12 +163,16 @@ export class GlBattleScreen {
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
     const party = this.partyShown();
     const picking = !party && this.teamSelect.shown();
+    // Battle info and team preview (ours or a spectator's) cover the whole field: it only keeps its clock going.
+    const covered = this.infoTab !== null || picking || (!party && this.overview.shown());
     this.field.focusOn(this.cameraFocus(party || picking));
+    let mark = performance.now();
     renderer.setView(1, FIELD.x, FIELD.y);
     renderer.clip(FIELD);
-    this.field.draw(renderer, now, dt);
+    this.field.draw(renderer, now, dt, covered);
     renderer.clip(null);
     renderer.setView(1, 0, 0);
+    mark = this.timeSection('field', mark);
     this.header.draw(ctx, {
       infoOpen: this.infoTab !== null,
       toggleInfo: () => this.pressInfo(),
@@ -174,13 +181,16 @@ export class GlBattleScreen {
       forfeit: () => hold?.press(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
-    this.strips.draw(ctx);
-    // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
-    renderer.setView(1, FIELD.x, FIELD.y);
-    renderer.clip(FIELD);
-    this.field.drawOver(renderer, now);
-    renderer.clip(null);
-    renderer.setView(1, 0, 0);
+    if (!covered) {
+      this.strips.draw(ctx);
+      // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
+      renderer.setView(1, FIELD.x, FIELD.y);
+      renderer.clip(FIELD);
+      this.field.drawOver(renderer, now);
+      renderer.clip(null);
+      renderer.setView(1, 0, 0);
+    }
+    mark = this.timeSection('chrome', mark);
 
     if (this.store.watching()) {
       this.panelPicks = [];
@@ -200,6 +210,7 @@ export class GlBattleScreen {
       });
       this.drawTargetMark(ctx);
     }
+    mark = this.timeSection('panel', mark);
 
     if (party) {
       // A fresh frame of controls: the party screen covers the rest, whose controls must not take the d-pad.
@@ -220,11 +231,22 @@ export class GlBattleScreen {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
     }
-    if (this.diagnosticsShown) this.drawDiagnostics(renderer, hudText, now);
+    mark = this.timeSection('overlays', mark);
+    if (this.diagnosticsShown) this.drawDiagnostics(frame);
 
     this.focus.end();
     this.settleFocus(picking, party);
+    mark = performance.now();
     renderer.end();
+    this.timeSection('flush', mark);
+    this.timedFrames++;
+  }
+
+  /** Adds the time since `since` to a part of the frame (the diagnostics' breakdown); returns now. */
+  private timeSection(section: Section, since: number): number {
+    const now = performance.now();
+    this.sectionTotals[section] += now - since;
+    return now;
   }
 
   /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */
@@ -379,10 +401,12 @@ export class GlBattleScreen {
   }
 
   private hudLines: string[] = [];
+  private readonly sectionTotals: Record<Section, number> = { field: 0, chrome: 0, panel: 0, overlays: 0, flush: 0 };
+  private timedFrames = 0;
   private hudUpdated = 0;
 
   /** R3: frame rate, stutters and what came before them (Angular renders, uploads, images arriving). */
-  private drawDiagnostics(renderer: GlRenderer, text: TextTextures, now: number): void {
+  private drawDiagnostics({ renderer, overlayText: text, text: texts, images, now }: StageFrame): void {
     if (now - this.hudUpdated > 500) {
       this.hudUpdated = now;
       const frames = this.diagnostics.frameSummary();
@@ -392,11 +416,23 @@ export class GlBattleScreen {
       const recent = this.diagnostics.frames.slice(-60);
       const average = recent.reduce((sum, f) => sum + f.interval, 0) / Math.max(1, recent.length);
       const fps = average > 0 ? Math.round(1000 / average) : 0;
+      const sprites = images.stats;
+      const words = texts.stats;
+      const waiting = this.bitmaps.unclaimed;
+      const timed = Math.max(1, this.timedFrames);
+      const breakdown = SECTIONS.map((section) => `${section} ${(this.sectionTotals[section] / timed).toFixed(1)}`).join(' · ');
+      SECTIONS.forEach((section) => (this.sectionTotals[section] = 0));
+      const fieldBreakdown = FIELD_PARTS.map((part) => `${part} ${(this.field.timings[part] / timed).toFixed(1)}`).join(' · ');
+      FIELD_PARTS.forEach((part) => (this.field.timings[part] = 0));
+      this.timedFrames = 0;
       this.hudLines = [
         `Full canvas · ${fps} fps · ${frames.long} stutters (> ${LONG_FRAME_MS} ms) · worst ${Math.round(frames.worst)} ms`,
         `Angular renders: ${render.count}/s · longest ${render.max.toFixed(1)} ms`,
         `Text uploads: ${uploads.count}/s · longest ${uploads.max.toFixed(1)} ms`,
         `Images: ${this.bitmaps.queued} to load · ${arrivals.count}/s · our frame ${frames.ownAvg.toFixed(1)} ms (max ${frames.ownMax.toFixed(1)})`,
+        `Memory: ${sprites.count} images ${megabytes(sprites.bytes)} · ${words.count} texts ${megabytes(words.bytes)} · ${waiting.count} decoded ${megabytes(waiting.bytes)}`,
+        `${renderer.lastDrawCalls} draw calls · ms/frame: ${breakdown}`,
+        `field: ${fieldBreakdown}`,
         `${this.field.particleCount} sparks · R3 hides this`,
       ];
     }
@@ -421,4 +457,8 @@ export class GlBattleScreen {
       if (f.arrival) renderer.rect(x + 8 + i * 2, base + 8, 2, 3, { fill: GRAPH_COLORS.arrival });
     });
   }
+}
+
+function megabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

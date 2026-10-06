@@ -8,6 +8,8 @@ import { ReplayGame, parseReplayGame } from '@features/replays/data/replay-game'
  * allow-list.
  */
 export const REPLAY_SERVER = 'https://replay.pokemonshowdown.com';
+/** Games kept at once: a few pages of replays. */
+const MAX_GAMES = 200;
 
 @Service()
 export class ReplayApi {
@@ -36,6 +38,8 @@ export class ReplayApi {
     if (!game) {
       game = this.load(id).then((replay) => parseReplayGame(replay.log));
       game.catch(() => this.games.delete(id));
+      // The oldest looked up go first: a long session browsing replays doesn't keep them all.
+      if (this.games.size >= MAX_GAMES) this.games.delete(this.games.keys().next().value!);
       this.games.set(id, game);
     }
     return game;

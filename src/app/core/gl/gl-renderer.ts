@@ -120,10 +120,23 @@ export interface QuadStyle {
   uv?: readonly [number, number, number, number];
 }
 
-/** '#rrggbb' to [r, g, b, a] in 0..1. */
+/** Opaque colours already parsed: screens ask for the same few dozen every frame. */
+const OPAQUE = new Map<string, Rgba>();
+const MAX_OPAQUE = 512;
+
+/** '#rrggbb' to [r, g, b, a] in 0..1 (opaque ones parsed once and shared: an Rgba is never changed). */
 export function rgba(hex: string, alpha = 1): Rgba {
+  if (alpha === 1) {
+    const known = OPAQUE.get(hex);
+    if (known) return known;
+  }
   const value = parseInt(hex.replace('#', '').slice(0, 6), 16);
-  return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, alpha];
+  const color: Rgba = [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, alpha];
+  if (alpha === 1) {
+    if (OPAQUE.size >= MAX_OPAQUE) OPAQUE.clear();
+    OPAQUE.set(hex, color);
+  }
+  return color;
 }
 
 export function mixRgba(a: Rgba, b: Rgba, t: number): Rgba {
@@ -141,8 +154,10 @@ export class GlRenderer {
   readonly version: 1 | 2;
   readonly width: number;
   readonly height: number;
-  /** Draw calls in the last frame, for the HUD. */
+  /** Draw calls so far in this frame. */
   drawCalls = 0;
+  /** Draw calls in the whole last frame, for the HUD. */
+  lastDrawCalls = 0;
   /** Added to every position drawn: shakes the whole scene. */
   originX = 0;
   originY = 0;
@@ -154,7 +169,18 @@ export class GlRenderer {
   private readonly backdropBuffer: WebGLBuffer;
   private readonly data = new Float32Array(MAX_QUADS * 4 * FLOATS_PER_VERTEX);
   private readonly whiteTexture: Texture;
+  /**
+   * Quads written this frame, and how many of them are drawn already. Each batch goes after the last
+   * in the vertex buffer instead of over it: the GPU may still be reading the earlier ones, and writing
+   * over them would make the driver wait for it.
+   */
   private quads = 0;
+  private flushed = 0;
+  /** The shape program, its buffers and attributes are set up (the backdrop's drawing undoes it). */
+  private shapeReady = false;
+  /** The view changed since it was last given to the shader. */
+  private viewDirty = true;
+  /** The texture of the batch being written; quads without a texture go in any batch. */
   private texture: Texture;
   private readonly attributes: { location: number; size: number; offset: number }[] = [];
   private readonly shapeResolution: WebGLUniformLocation | null;
@@ -241,6 +267,29 @@ export class GlRenderer {
     return { handle, width, height };
   }
 
+  /** A texture of `width` x `height` pixels, all clear, to fill in parts (an atlas page); again on an existing one clears it. */
+  emptyTexture(width: number, height: number, smooth: boolean, reuse?: WebGLTexture): Texture {
+    const gl = this.gl;
+    const handle = reuse ?? gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, handle);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    setSampling(gl, smooth);
+    return { handle, width, height };
+  }
+
+  /** Copies a canvas into part of a texture, at (x, y) pixels; premultiplied on upload. */
+  drawInto(texture: Texture, x: number, y: number, source: TexImageSource): void {
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, texture.handle);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, source);
+  }
+
+  /** The biggest texture side this GPU takes. */
+  get maxTextureSize(): number {
+    return this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) as number;
+  }
+
   deleteTexture(texture: Texture): void {
     this.gl.deleteTexture(texture.handle);
   }
@@ -262,27 +311,28 @@ export class GlRenderer {
 
   /** Draws everything after this `scale` times bigger, moved by (x, y) canvas pixels (stage units). */
   setView(scale: number, x: number, y: number): void {
+    const view = this.view;
+    if (view[0] === scale && view[1] === x && view[2] === y) return;
     this.flush();
     this.view = [scale, x, y];
+    this.viewDirty = true;
   }
 
   /** Starts a frame on a plain colour, no backdrop. */
   beginPlain(color: Rgba): void {
     const gl = this.gl;
-    gl.disable(gl.SCISSOR_TEST);
-    this.drawCalls = 0;
+    this.startFrame();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(color[0], color[1], color[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    this.quads = 0;
-    this.texture = this.whiteTexture;
   }
 
   /** Starts a frame: the backdrop over the whole canvas. */
   begin(time: number, base: Rgba, band: Rgba): void {
     const gl = this.gl;
-    gl.disable(gl.SCISSOR_TEST);
-    this.drawCalls = 0;
+    this.startFrame();
+    // The backdrop's program and attributes replace the shapes' until the next flush sets them again.
+    this.shapeReady = false;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.useProgram(this.backdropProgram);
     gl.uniform1f(this.backdropUniforms.time, time);
@@ -296,19 +346,33 @@ export class GlRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disableVertexAttribArray(this.backdropPosition);
     this.drawCalls++;
+  }
+
+  /** What every frame starts with: last frame's count kept, the batch emptied, the vertex buffer from its start. */
+  private startFrame(): void {
+    this.gl.disable(this.gl.SCISSOR_TEST);
+    this.lastDrawCalls = this.drawCalls;
+    this.drawCalls = 0;
     this.quads = 0;
+    this.flushed = 0;
     this.texture = this.whiteTexture;
   }
 
   /** A rectangle from its top-left corner, rounded and bordered as the style says. */
   rect(x: number, y: number, width: number, height: number, style: QuadStyle): void {
-    const texture = style.texture ?? this.whiteTexture;
-    // Sprites of one sheet share its handle: drawn one after another, they stay in one batch.
+    // Quads without a texture never sample it (the shader's textured flag): they join whatever batch is open.
+    // Sprites of one sheet, and texts of one atlas page, share a handle: drawn one after another, they stay in one batch.
+    const texture = style.texture ?? this.texture;
     if (texture.handle !== this.texture.handle) {
       this.flush();
       this.texture = texture;
     }
-    if (this.quads >= MAX_QUADS) this.flush();
+    if (this.quads >= MAX_QUADS) {
+      // The buffer is full: draw what's there and start over from its beginning.
+      this.flush();
+      this.quads = 0;
+      this.flushed = 0;
+    }
     const halfW = width / 2;
     const halfH = height / 2;
     const radius = Math.min(style.radius ?? 0, halfW, halfH);
@@ -366,25 +430,36 @@ export class GlRenderer {
 
   /** Draws what's batched. */
   flush(): void {
-    if (this.quads === 0) return;
+    const count = this.quads - this.flushed;
+    if (count <= 0) return;
     const gl = this.gl;
-    gl.useProgram(this.shapeProgram);
-    gl.uniform2f(this.shapeResolution, this.width, this.height);
-    gl.uniform3f(this.shapeView, this.view[0], this.view[1], this.view[2]);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data.subarray(0, this.quads * 4 * FLOATS_PER_VERTEX));
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
-    const stride = FLOATS_PER_VERTEX * 4;
-    for (const { location, size, offset } of this.attributes) {
-      if (location < 0) continue;
-      gl.enableVertexAttribArray(location);
-      gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * 4);
+    if (!this.shapeReady) {
+      // Once a frame (again after the backdrop): the program, its buffers and where each attribute reads.
+      gl.useProgram(this.shapeProgram);
+      gl.uniform2f(this.shapeResolution, this.width, this.height);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+      const stride = FLOATS_PER_VERTEX * 4;
+      for (const { location, size, offset } of this.attributes) {
+        if (location < 0) continue;
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * 4);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      this.shapeReady = true;
+      this.viewDirty = true;
     }
-    gl.activeTexture(gl.TEXTURE0);
+    if (this.viewDirty) {
+      gl.uniform3f(this.shapeView, this.view[0], this.view[1], this.view[2]);
+      this.viewDirty = false;
+    }
+    const floatsPerQuad = 4 * FLOATS_PER_VERTEX;
+    gl.bufferSubData(gl.ARRAY_BUFFER, this.flushed * floatsPerQuad * 4, this.data.subarray(this.flushed * floatsPerQuad, this.quads * floatsPerQuad));
     gl.bindTexture(gl.TEXTURE_2D, this.texture.handle);
-    gl.drawElements(gl.TRIANGLES, this.quads * 6, gl.UNSIGNED_SHORT, 0);
+    // The index buffer counts quads from the buffer's start: these begin `flushed` quads in (6 two-byte indices each).
+    gl.drawElements(gl.TRIANGLES, count * 6, gl.UNSIGNED_SHORT, this.flushed * 12);
     this.drawCalls++;
-    this.quads = 0;
+    this.flushed = this.quads;
   }
 
   end(): void {

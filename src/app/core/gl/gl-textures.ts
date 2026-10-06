@@ -2,12 +2,14 @@ import { COLORS, ICONS, PixelIconName, greyed } from '@core/gl/ui/pixel-icons';
 import { GlRenderer, Texture } from './gl-renderer';
 import type { GlyphAtlas } from './glyph-atlas';
 
-/** Texts kept at once: a whole battle screen shows a few hundred (names, chips, the log's lines). */
-const MAX_TEXTS = 600;
 /** Widths measured, kept for fitting and wrapping. */
 const MAX_WIDTHS = 2000;
 /** Space either side of the text inside its texture. */
 export const TEXT_PAD = 2;
+/** Clear pixels between texts on an atlas page, so smoothing doesn't bleed one into the next. */
+const PAGE_GAP = 2;
+/** Texts too big for a page get a texture of their own; this many at most. */
+const MAX_LOOSE = 48;
 
 /** Text is drawn white and tinted when drawn, so one texture serves every colour. */
 export interface TextStyle {
@@ -16,12 +18,46 @@ export interface TextStyle {
   font?: string;
 }
 
+/** How big the atlas gets: its pages' height (pixels; they're as wide as the GPU allows, up to 2048) and how many. */
+export interface TextPages {
+  height: number;
+  count: number;
+}
+
+/** The scenes' texts: four 2048x1024 pages (32 MB), about 1200 texts on a battle screen and its Battle info. */
+export const SCENE_PAGES: TextPages = { height: 1024, count: 4 };
+
+/** One texture full of texts, laid out in rows (shelves) of one height each. */
+interface Page {
+  texture: Texture;
+  shelves: { y: number; height: number; x: number }[];
+  /** Where the next shelf starts. */
+  nextY: number;
+  /** The frame it was last drawn from. */
+  lastUsed: number;
+  keys: string[];
+}
+
+interface Entry {
+  texture: Texture;
+  /** Its atlas page; null for a text with a texture of its own (too big for a page). */
+  page: Page | null;
+}
+
 /**
- * Text drawn once with the 2D canvas into a texture, kept by text and style. The canvas is
- * `scale` times denser than the stage (the WebGL canvas's devicePixelRatio), so it stays sharp.
+ * Text drawn once with the 2D canvas, kept by text and style. The canvas is `scale` times denser
+ * than the stage (the WebGL canvas's devicePixelRatio), so it stays sharp. Texts share a few big
+ * textures (atlas pages): everything drawn from one page goes to the GPU in one draw call, where a
+ * texture per text cost a draw call per text (test-v2: Battle info's team cards took 22 ms a frame on
+ * the console). When the pages are full, the one drawn from longest ago is cleared for the new texts.
  */
 export class TextTextures {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new Map<string, Entry>();
+  private readonly pages: Page[] = [];
+  private readonly pageWidth: number;
+  /** Texts with a texture of their own, oldest first. */
+  private readonly loose: string[] = [];
+  private frame = 0;
   private readonly widths = new Map<string, number>();
   private readonly canvas = document.createElement('canvas');
   private readonly context: CanvasRenderingContext2D | null = this.canvas.getContext('2d');
@@ -34,30 +70,30 @@ export class TextTextures {
     private readonly renderer: GlRenderer,
     private readonly scale: number,
     private readonly family: string,
-  ) {}
+    private readonly layout: TextPages = SCENE_PAGES,
+  ) {
+    this.pageWidth = Math.min(2048, renderer.maxTextureSize);
+  }
 
   get available(): boolean {
     return this.context !== null;
+  }
+
+  /** Each frame, before drawing: a page drawn from in this frame is never cleared during it. */
+  startFrame(): void {
+    this.frame++;
   }
 
   /** The texture for `text`, sized in stage pixels (its pixels are `scale` times as many). */
   get(text: string, style: TextStyle): Texture | null {
     const context = this.context;
     if (!context || !text) return null;
-    const key = `${style.size}|${style.bold ? 1 : 0}|${text}`;
+    const key = this.key(text, style);
     const cached = this.cache.get(key);
     if (cached) {
-      // Most recently used last, so the oldest go first when the cache is full.
-      this.cache.delete(key);
-      this.cache.set(key, cached);
-      return cached;
+      if (cached.page) cached.page.lastUsed = this.frame;
+      return cached.texture;
     }
-    if (this.cache.size >= MAX_TEXTS) {
-      const [oldestKey, oldest] = this.cache.entries().next().value!;
-      this.renderer.deleteTexture(oldest);
-      this.cache.delete(oldestKey);
-    }
-
     const started = performance.now();
     const font = this.font(style);
     context.font = font;
@@ -71,17 +107,17 @@ export class TextTextures {
     context.fillStyle = '#ffffff';
     context.clearRect(0, 0, width, height);
     context.fillText(text, TEXT_PAD * this.scale, height / 2);
-    const texture = this.renderer.textureFromSource(this.canvas, width / this.scale, height / this.scale, true);
-    this.cache.set(key, texture);
+    const entry = this.place(key, width, height) ?? this.alone(key, width, height);
+    this.cache.set(key, entry);
     this.onUpload?.(performance.now() - started);
-    return texture;
+    return entry.texture;
   }
 
   /** How wide `text` is, in stage pixels, without drawing it. */
   measure(text: string, style: TextStyle): number {
     const context = this.context;
     if (!context || !text) return 0;
-    const key = `${style.size}|${style.bold ? 1 : 0}|${text}`;
+    const key = this.key(text, style);
     const known = this.widths.get(key);
     if (known !== undefined) return known;
     context.font = this.font(style);
@@ -90,7 +126,6 @@ export class TextTextures {
     this.widths.set(key, width);
     return width;
   }
-
   /** `text`, cut with an ellipsis to fit `maxWidth` stage pixels. */
   fit(text: string, style: TextStyle, maxWidth: number): string {
     if (this.measure(text, style) <= maxWidth) return text;
@@ -128,9 +163,96 @@ export class TextTextures {
     return lines;
   }
 
+  /** What the cache holds now (the diagnostics): texts, and the pixels of their textures in bytes. */
+  get stats(): { count: number; bytes: number } {
+    let bytes = this.pages.length * this.pageWidth * this.layout.height * 4;
+    for (const key of this.loose) {
+      const texture = this.cache.get(key)?.texture;
+      if (texture) bytes += Math.round(texture.width * this.scale) * Math.round(texture.height * this.scale) * 4;
+    }
+    return { count: this.cache.size, bytes };
+  }
+
   dispose(): void {
-    for (const texture of this.cache.values()) this.renderer.deleteTexture(texture);
+    for (const page of this.pages) this.renderer.deleteTexture(page.texture);
+    for (const key of this.loose) {
+      const texture = this.cache.get(key)?.texture;
+      if (texture) this.renderer.deleteTexture(texture);
+    }
+    this.pages.length = 0;
+    this.loose.length = 0;
     this.cache.clear();
+  }
+
+  /** The canvas's text on an atlas page: in a shelf of its height with room left, a new shelf, or a page cleared for it. */
+  private place(key: string, width: number, height: number): Entry | null {
+    const pageWidth = this.pageWidth;
+    const pageHeight = this.layout.height;
+    if (width + PAGE_GAP > pageWidth || height + PAGE_GAP > pageHeight) return null;
+    let spot: { page: Page; x: number; y: number } | null = null;
+    for (const page of this.pages) {
+      spot = this.spotOn(page, width, height);
+      if (spot) break;
+    }
+    if (!spot && this.pages.length < this.layout.count) {
+      const page: Page = { texture: this.renderer.emptyTexture(pageWidth, pageHeight, true), shelves: [], nextY: 0, lastUsed: this.frame, keys: [] };
+      this.pages.push(page);
+      spot = this.spotOn(page, width, height);
+    }
+    if (!spot) {
+      // Every page is full: the one drawn from longest ago is cleared, unless it's in use in this very frame.
+      const oldest = this.pages.reduce((a, b) => (b.lastUsed < a.lastUsed ? b : a));
+      if (oldest.lastUsed === this.frame) return null;
+      for (const old of oldest.keys) this.cache.delete(old);
+      oldest.keys = [];
+      oldest.shelves = [];
+      oldest.nextY = 0;
+      this.renderer.emptyTexture(pageWidth, pageHeight, true, oldest.texture.handle);
+      spot = this.spotOn(oldest, width, height);
+    }
+    if (!spot) return null;
+    const { page, x, y } = spot;
+    this.renderer.drawInto(page.texture, x, y, this.canvas);
+    page.lastUsed = this.frame;
+    page.keys.push(key);
+    const texture: Texture = {
+      handle: page.texture.handle,
+      width: width / this.scale,
+      height: height / this.scale,
+      uv: [x / pageWidth, y / pageHeight, (x + width) / pageWidth, (y + height) / pageHeight],
+    };
+    return { texture, page };
+  }
+
+  /** Room for a `width` x `height` text on `page` (taken once returned), or null. */
+  private spotOn(page: Page, width: number, height: number): { page: Page; x: number; y: number } | null {
+    for (const shelf of page.shelves) {
+      if (shelf.height !== height || shelf.x + width > this.pageWidth) continue;
+      const x = shelf.x;
+      shelf.x += width + PAGE_GAP;
+      return { page, x, y: shelf.y };
+    }
+    if (page.nextY + height > this.layout.height) return null;
+    const shelf = { y: page.nextY, height, x: width + PAGE_GAP };
+    page.shelves.push(shelf);
+    page.nextY += height + PAGE_GAP;
+    return { page, x: 0, y: shelf.y };
+  }
+
+  /** A text too big for a page (or with every page busy this frame): a texture of its own, the oldest such going first. */
+  private alone(key: string, width: number, height: number): Entry {
+    if (this.loose.length >= MAX_LOOSE) {
+      const oldest = this.loose.shift()!;
+      const texture = this.cache.get(oldest)?.texture;
+      if (texture) this.renderer.deleteTexture(texture);
+      this.cache.delete(oldest);
+    }
+    this.loose.push(key);
+    return { texture: this.renderer.textureFromSource(this.canvas, width / this.scale, height / this.scale, true), page: null };
+  }
+
+  private key(text: string, style: TextStyle): string {
+    return `${style.size}|${style.bold ? 1 : 0}|${style.font ?? ''}|${text}`;
   }
 
   private font(style: TextStyle): string {
