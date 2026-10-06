@@ -1,9 +1,6 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
-import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from '@core/gl/gl-diagnostics';
-import { rgba } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
@@ -36,7 +33,7 @@ type Section = (typeof SECTIONS)[number];
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
  * the page buttons (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's
- * under it. R3 shows the frame-time diagnostics while it has no timer to toggle.
+ * under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
   selector: 'app-gl-battle-screen',
@@ -66,8 +63,6 @@ export class GlBattleScreen {
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
   private readonly navigation = inject(KeyboardNavigation);
-  private readonly bitmaps = inject(SpriteBitmaps);
-  private readonly diagnostics = inject(GlDiagnostics);
   private readonly stage = inject(GlStage);
 
   private readonly field = new BattleFieldScene();
@@ -89,7 +84,6 @@ export class GlBattleScreen {
   private lastTab: InfoTab = 'p2';
   /** The slot Switch was pressed for: the party screen is open while it chooses (a forced switch opens it by itself). */
   private partyOpen: number | null = null;
-  private diagnosticsShown = false;
   private ctx: ScreenContext | null = null;
   /** The panel's view last drawn, and its buttons, so a new view focuses its first. */
   private lastViewKey = '';
@@ -116,12 +110,6 @@ export class GlBattleScreen {
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       // L sends team preview's picks (Done); while choosing moves it's BattleScreen's (Mega, Tera).
       this.navigation.registerButton('buttonL', () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
-      // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
-      this.navigation.registerButton('buttonR3', () => {
-        if (this.store.canToggleTimer() && !this.store.result()) return false;
-        this.diagnosticsShown = !this.diagnosticsShown;
-        return true;
-      }),
     ];
 
     this.stage.whenReady((resources) => {
@@ -134,6 +122,7 @@ export class GlBattleScreen {
       // Browsers: the mouse points and clicks (the console has only the controller).
       click: (x, y) => this.focus.click(x, y),
       hover: (x, y) => this.focus.hover(x, y),
+      diagnostics: () => this.diagnosticLines(),
     });
 
     inject(DestroyRef).onDestroy(() => {
@@ -232,7 +221,6 @@ export class GlBattleScreen {
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
     }
     mark = this.timeSection('overlays', mark);
-    if (this.diagnosticsShown) this.drawDiagnostics(frame);
 
     this.focus.end();
     this.settleFocus(picking, party);
@@ -400,65 +388,16 @@ export class GlBattleScreen {
     this.openInfo(INFO_TABS[(index + step + INFO_TABS.length) % INFO_TABS.length]);
   }
 
-  private hudLines: string[] = [];
   private readonly sectionTotals: Record<Section, number> = { field: 0, chrome: 0, panel: 0, overlays: 0, flush: 0 };
   private timedFrames = 0;
-  private hudUpdated = 0;
-
-  /** R3: frame rate, stutters and what came before them (Angular renders, uploads, images arriving). */
-  private drawDiagnostics({ renderer, overlayText: text, text: texts, images, now }: StageFrame): void {
-    if (now - this.hudUpdated > 500) {
-      this.hudUpdated = now;
-      const frames = this.diagnostics.frameSummary();
-      const render = this.diagnostics.summary('render');
-      const uploads = this.diagnostics.summary('text');
-      const arrivals = this.diagnostics.summary('arrival');
-      const recent = this.diagnostics.frames.slice(-60);
-      const average = recent.reduce((sum, f) => sum + f.interval, 0) / Math.max(1, recent.length);
-      const fps = average > 0 ? Math.round(1000 / average) : 0;
-      const sprites = images.stats;
-      const words = texts.stats;
-      const waiting = this.bitmaps.unclaimed;
-      const timed = Math.max(1, this.timedFrames);
-      const breakdown = SECTIONS.map((section) => `${section} ${(this.sectionTotals[section] / timed).toFixed(1)}`).join(' · ');
-      SECTIONS.forEach((section) => (this.sectionTotals[section] = 0));
-      const fieldBreakdown = FIELD_PARTS.map((part) => `${part} ${(this.field.timings[part] / timed).toFixed(1)}`).join(' · ');
-      FIELD_PARTS.forEach((part) => (this.field.timings[part] = 0));
-      this.timedFrames = 0;
-      this.hudLines = [
-        `Full canvas · ${fps} fps · ${frames.long} stutters (> ${LONG_FRAME_MS} ms) · worst ${Math.round(frames.worst)} ms`,
-        `Angular renders: ${render.count}/s · longest ${render.max.toFixed(1)} ms`,
-        `Text uploads: ${uploads.count}/s · longest ${uploads.max.toFixed(1)} ms`,
-        `Images: ${this.bitmaps.queued} to load · ${arrivals.count}/s · our frame ${frames.ownAvg.toFixed(1)} ms (max ${frames.ownMax.toFixed(1)})`,
-        `Memory: ${sprites.count} images ${megabytes(sprites.bytes)} · ${words.count} texts ${megabytes(words.bytes)} · ${waiting.count} decoded ${megabytes(waiting.bytes)}`,
-        `${renderer.lastDrawCalls} draw calls · ms/frame: ${breakdown}`,
-        `field: ${fieldBreakdown}`,
-        `${this.field.particleCount} sparks · R3 hides this`,
-      ];
-    }
-    const width = 380;
-    const x = STAGE_W - width - 8;
-    const y = 54;
-    const graphTop = y + 6 + this.hudLines.length * 17;
-    renderer.rect(x, y, width, graphTop - y + 80, { fill: [0, 0, 0, 0.7], radius: 8 });
-    this.hudLines.forEach((line, i) => {
-      const texture = text.get(line, { size: 12, bold: i === 0 });
-      if (texture) renderer.image(texture, x + 8, y + 6 + i * 17, Math.min(1, (width - 16) / texture.width), i === 0 ? rgba('#a7f3d0') : INK.white);
-    });
-    const base = graphTop + 64;
-    renderer.rect(x + 8, base - 16.7, 300, 1, { fill: [1, 1, 1, 0.3] });
-    renderer.rect(x + 8, base - 33.3, 300, 1, { fill: [1, 0.4, 0.4, 0.4] });
-    this.diagnostics.frames.forEach((f, i) => {
-      const h = Math.min(60, f.interval);
-      const color = f.interval <= 20 ? GRAPH_COLORS.good : f.interval <= LONG_FRAME_MS ? GRAPH_COLORS.slow : GRAPH_COLORS.long;
-      renderer.rect(x + 8 + i * 2, base - h, 2, h, { fill: color });
-      if (f.render) renderer.rect(x + 8 + i * 2, base + 2, 2, 3, { fill: GRAPH_COLORS.render });
-      if (f.upload) renderer.rect(x + 8 + i * 2, base + 5, 2, 3, { fill: GRAPH_COLORS.upload });
-      if (f.arrival) renderer.rect(x + 8 + i * 2, base + 8, 2, 3, { fill: GRAPH_COLORS.arrival });
-    });
+  /** The diagnostics' own lines (L3): where the frame's time goes, on average since the last time. */
+  private diagnosticLines(): string[] {
+    const timed = Math.max(1, this.timedFrames);
+    const breakdown = SECTIONS.map((section) => `${section} ${(this.sectionTotals[section] / timed).toFixed(1)}`).join(' · ');
+    SECTIONS.forEach((section) => (this.sectionTotals[section] = 0));
+    const fieldBreakdown = FIELD_PARTS.map((part) => `${part} ${(this.field.timings[part] / timed).toFixed(1)}`).join(' · ');
+    FIELD_PARTS.forEach((part) => (this.field.timings[part] = 0));
+    this.timedFrames = 0;
+    return [`ms/frame: ${breakdown}`, `field: ${fieldBreakdown}`, `${this.field.particleCount} sparks`];
   }
-}
-
-function megabytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -10,6 +10,7 @@ const CHARSET = [
   ...Array.from({ length: 96 }, (_, i) => String.fromCharCode(160 + i)),
   ...'…→–—‘’“”•♂♀×★▲▼▶',
 ];
+const CHARSET_SET = new Set(CHARSET);
 const ATLAS_WIDTH = 1024;
 /** Space around each glyph in the atlas, so smoothing doesn't bleed neighbours in. */
 const GLYPH_PAD = 2;
@@ -22,20 +23,31 @@ interface Glyph {
 
 interface Face {
   texture: Texture;
+  font: string;
   glyphs: Map<string, Glyph>;
+  /** The glyphs' row height in texture pixels, and where the next glyph goes. */
+  cell: number;
+  x: number;
+  y: number;
   /** The glyphs' quad height and padding, in stage pixels. */
   height: number;
   pad: number;
 }
 
 /**
- * Text drawn glyph by glyph from one texture per font style, made once: for text that changes all the
- * time (chats, lists, counters), where TextTextures would draw and upload a new texture for every
- * new string. A whole line costs no upload, and every glyph of a style batches into one draw call.
+ * Text drawn glyph by glyph from one texture per font style: for text that changes all the time
+ * (chats, lists, counters), where TextTextures would draw and upload a new texture for every new
+ * string. A whole line costs no upload, and every glyph of a style batches into one draw call. Each
+ * glyph is drawn into its style's texture the first time it's used: making a style's whole charset
+ * at once took 10+ ms on a desktop (80 ms for the Calcs tab's styles, far more on the console).
  * No kerning, so it's a hair wider than the browser's own text.
  */
 export class GlyphAtlas {
   private readonly faces = new Map<string, Face>();
+  private readonly canvas = document.createElement('canvas');
+  private readonly context = this.canvas.getContext('2d')!;
+  /** Told how long each new glyph took (the stage counts it in the frame's budget for new text). */
+  onMake: ((ms: number) => void) | null = null;
 
   constructor(
     private readonly renderer: GlRenderer,
@@ -49,11 +61,19 @@ export class GlyphAtlas {
     return true;
   }
 
+  /** Whether every glyph of `text` is made already in this style (drawing it costs nothing new). */
+  has(text: string, style: TextStyle): boolean {
+    const face = this.faces.get(faceKey(style));
+    if (!face) return false;
+    for (const char of text) if (!face.glyphs.has(char)) return false;
+    return true;
+  }
+
   /** The width of `text` in stage pixels (its glyphs' advances). */
   measure(text: string, style: TextStyle): number {
     const face = this.face(style);
     let width = 0;
-    for (const char of text) width += face.glyphs.get(char)?.advance ?? 0;
+    for (const char of text) width += this.glyph(face, char)?.advance ?? 0;
     return width;
   }
 
@@ -61,12 +81,12 @@ export class GlyphAtlas {
   fit(text: string, style: TextStyle, maxWidth: number): string {
     if (this.measure(text, style) <= maxWidth) return text;
     const face = this.face(style);
-    const ellipsis = face.glyphs.get('…')?.advance ?? 0;
+    const ellipsis = this.glyph(face, '…')?.advance ?? 0;
     let width = 0;
     let end = 0;
     const chars = [...text];
     while (end < chars.length) {
-      const advance = face.glyphs.get(chars[end])?.advance ?? 0;
+      const advance = this.glyph(face, chars[end])?.advance ?? 0;
       if (width + advance + ellipsis > maxWidth) break;
       width += advance;
       end++;
@@ -80,7 +100,7 @@ export class GlyphAtlas {
     let pen = x;
     const top = cy - face.height / 2;
     for (const char of text) {
-      const glyph = face.glyphs.get(char);
+      const glyph = this.glyph(face, char);
       if (!glyph) continue;
       if (char !== ' ') {
         this.renderer.rect(pen - face.pad, top, glyph.advance + face.pad * 2, face.height, { fill: color, texture: face.texture, uv: glyph.uv });
@@ -95,49 +115,66 @@ export class GlyphAtlas {
     this.faces.clear();
   }
 
-  /** The style's glyphs, drawn into an atlas the first time it's used. */
+  /** The style's texture, empty at first, with room for the whole charset. */
   private face(style: TextStyle): Face {
-    const key = `${style.size}|${style.bold ? 1 : 0}|${style.font ?? ''}`;
+    const key = faceKey(style);
     let face = this.faces.get(key);
     if (face) return face;
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
-    const font = `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`;
-    context.font = font;
-    const pad = GLYPH_PAD * this.scale;
     const cell = Math.ceil(style.size * 1.4 * this.scale);
-    // Lay the glyphs out in rows, then draw them all at once.
-    const placed: { char: string; x: number; y: number; width: number }[] = [];
-    let x = 0;
-    let y = 0;
-    for (const char of CHARSET) {
-      const width = context.measureText(char).width;
-      const box = Math.ceil(width + pad * 2);
-      if (x + box > ATLAS_WIDTH) {
-        x = 0;
-        y += cell;
-      }
-      placed.push({ char, x, y, width });
-      x += box;
-    }
-    canvas.width = ATLAS_WIDTH;
-    canvas.height = y + cell;
-    context.font = font;
-    context.textBaseline = 'middle';
-    context.fillStyle = '#ffffff';
-    for (const { char, x: gx, y: gy } of placed) context.fillText(char, gx + pad, gy + cell / 2);
-    const texture = this.renderer.textureFromSource(canvas, canvas.width / this.scale, canvas.height / this.scale, true);
-    const glyphs = new Map<string, Glyph>();
-    for (const { char, x: gx, y: gy, width } of placed) {
-      glyphs.set(char, {
-        uv: [gx / canvas.width, gy / canvas.height, (gx + width + pad * 2) / canvas.width, (gy + cell) / canvas.height],
-        advance: width / this.scale,
-      });
-    }
-    face = { texture, glyphs, height: cell / this.scale, pad: GLYPH_PAD };
+    // The widest glyphs (W, —, …) are about one em: rows for every glyph at that width, plus one.
+    const box = Math.ceil(style.size * 1.1 * this.scale + GLYPH_PAD * 2 * this.scale);
+    const rows = Math.ceil(CHARSET.length / Math.floor(ATLAS_WIDTH / box)) + 1;
+    face = {
+      texture: this.renderer.emptyTexture(ATLAS_WIDTH, rows * cell, true),
+      font: `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`,
+      glyphs: new Map(),
+      cell,
+      x: 0,
+      y: 0,
+      height: cell / this.scale,
+      pad: GLYPH_PAD,
+    };
     this.faces.set(key, face);
     return face;
   }
+
+  /** The glyph of `char`, drawn into its face's texture the first time; undefined outside the charset. */
+  private glyph(face: Face, char: string): Glyph | undefined {
+    const known = face.glyphs.get(char);
+    if (known || !CHARSET_SET.has(char)) return known;
+    const started = performance.now();
+    const context = this.context;
+    const pad = GLYPH_PAD * this.scale;
+    context.font = face.font;
+    const width = context.measureText(char).width;
+    const box = Math.ceil(width + pad * 2);
+    if (face.x + box > ATLAS_WIDTH) {
+      face.x = 0;
+      face.y += face.cell;
+    }
+    const { x, y } = face;
+    const size = face.texture.height;
+    let uv: Glyph['uv'] = [0, 0, 0, 0];
+    if (y + face.cell <= size && char !== ' ') {
+      this.canvas.width = box;
+      this.canvas.height = face.cell;
+      // Resizing resets the context's state.
+      context.font = face.font;
+      context.textBaseline = 'middle';
+      context.fillStyle = '#ffffff';
+      context.clearRect(0, 0, box, face.cell);
+      context.fillText(char, pad, face.cell / 2);
+      this.renderer.drawInto(face.texture, x, y, this.canvas);
+      uv = [x / ATLAS_WIDTH, y / size, (x + box) / ATLAS_WIDTH, (y + face.cell) / size];
+      face.x += box;
+    }
+    const glyph: Glyph = { uv, advance: width / this.scale };
+    face.glyphs.set(char, glyph);
+    this.onMake?.(performance.now() - started);
+    return glyph;
+  }
 }
 
-const CHARSET_SET = new Set(CHARSET);
+function faceKey(style: TextStyle): string {
+  return `${style.size}|${style.bold ? 1 : 0}|${style.font ?? ''}`;
+}

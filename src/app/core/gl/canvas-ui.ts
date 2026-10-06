@@ -1,6 +1,7 @@
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { GlRenderer, Rgba, rgba } from './gl-renderer';
 import { TEXT_PAD, TextStyle, TextTextures } from './gl-textures';
+import type { GlyphAtlas } from './glyph-atlas';
 
 export type Align = 'left' | 'center' | 'right';
 
@@ -20,23 +21,34 @@ export function drawText(
   options: { align?: Align; maxWidth?: number; fast?: boolean } = {},
 ): number {
   if (!value) return 0;
-  // Text that changes all the time: glyph by glyph from the atlas, no texture of its own.
-  const glyphs = options.fast ? text.glyphs : null;
-  if (glyphs?.covers(value)) {
-    const shown = options.maxWidth !== undefined ? glyphs.fit(value, style, options.maxWidth) : value;
-    const width = glyphs.measure(shown, style);
-    const align = options.align ?? 'left';
-    const left = align === 'left' ? x : align === 'center' ? x - width / 2 : x - width;
-    return glyphs.draw(shown, left, cy, style, color);
-  }
-  const shown = options.maxWidth !== undefined ? text.fit(value, style, options.maxWidth) : value;
-  const texture = text.get(shown, style);
-  if (!texture) return 0;
-  const width = texture.width - TEXT_PAD * 2;
   const align = options.align ?? 'left';
+  const glyphs = text.glyphs;
+  // Text that changes all the time: glyph by glyph from the atlas, no texture of its own (new glyphs while the frame's budget lasts).
+  if (options.fast && glyphs?.covers(value)) {
+    if (text.withinBudget || glyphs.has(value, style)) return drawGlyphs(glyphs, value, x, cy, style, color, align, options.maxWidth);
+    text.deferred++;
+    return 0;
+  }
+  // Fitting a new text measures it: that waits for a frame with budget left too.
+  const fitLater = options.maxWidth !== undefined && !text.withinBudget && !text.measured(value, style);
+  const shown = fitLater ? '' : options.maxWidth !== undefined ? text.fit(value, style, options.maxWidth) : value;
+  const texture = shown ? text.get(shown, style, true) : null;
+  if (fitLater) text.deferred++;
+  if (!texture) {
+    // The frame's budget for new text is spent: from glyphs already made meanwhile, its own texture in a frame or two.
+    return glyphs?.covers(value) && glyphs.has(value, style) ? drawGlyphs(glyphs, value, x, cy, style, color, align, options.maxWidth) : 0;
+  }
+  const width = texture.width - TEXT_PAD * 2;
   const left = align === 'left' ? x : align === 'center' ? x - width / 2 : x - width;
   renderer.image(texture, left - TEXT_PAD, cy - texture.height / 2, 1, color);
   return width;
+}
+
+function drawGlyphs(glyphs: GlyphAtlas, value: string, x: number, cy: number, style: TextStyle, color: Rgba, align: Align, maxWidth?: number): number {
+  const shown = maxWidth !== undefined ? glyphs.fit(value, style, maxWidth) : value;
+  const width = glyphs.measure(shown, style);
+  const left = align === 'left' ? x : align === 'center' ? x - width / 2 : x - width;
+  return glyphs.draw(shown, left, cy, style, color);
 }
 
 /** A control a canvas screen draws: where it is and what A does on it. */

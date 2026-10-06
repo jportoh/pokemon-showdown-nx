@@ -158,6 +158,9 @@ export class GlRenderer {
   drawCalls = 0;
   /** Draw calls in the whole last frame, for the HUD. */
   lastDrawCalls = 0;
+  /** Time in flush() so far in this frame, and in the whole last frame (the HUD). */
+  private flushMs = 0;
+  lastFlushMs = 0;
   /** Added to every position drawn: shakes the whole scene. */
   originX = 0;
   originY = 0;
@@ -353,6 +356,8 @@ export class GlRenderer {
     this.gl.disable(this.gl.SCISSOR_TEST);
     this.lastDrawCalls = this.drawCalls;
     this.drawCalls = 0;
+    this.lastFlushMs = this.flushMs;
+    this.flushMs = 0;
     this.quads = 0;
     this.flushed = 0;
     this.texture = this.whiteTexture;
@@ -428,8 +433,14 @@ export class GlRenderer {
     this.rect(x, y, texture.width * scale, texture.height * scale, { fill: tint, texture });
   }
 
-  /** Draws what's batched. */
+  /** Draws what's batched, timed (the diagnostics: a GPU busy taking in textures stalls these calls). */
   flush(): void {
+    const started = performance.now();
+    this.drawBatch();
+    this.flushMs += performance.now() - started;
+  }
+
+  private drawBatch(): void {
     const count = this.quads - this.flushed;
     if (count <= 0) return;
     const gl = this.gl;

@@ -52,8 +52,11 @@ export interface MoveCalc {
   move: string;
   type: string;
   category: string;
-  /** 'status': no damage to calc; 'immune': it doesn't affect the target; 'unknown': not in the calc's data. */
-  kind: 'damage' | 'status' | 'immune' | 'unknown';
+  /**
+   * 'status': no damage to calc; 'immune': it doesn't affect the target; 'unknown': not in the calc's
+   * data; 'pending': not worked out yet (CalcRun.step does one a frame).
+   */
+  kind: 'damage' | 'status' | 'immune' | 'unknown' | 'pending';
   min: number;
   max: number;
   /** Of the target's maximum HP. */
@@ -64,10 +67,11 @@ export interface MoveCalc {
   chance: number;
   /** "guaranteed 2HKO after Sitrus Berry recovery" */
   koText: string;
-  /** Showdown's line: "32 Atk Life Orb Garchomp Earthquake vs. 32 HP / 14 Def Incineroar: 159-190 (78.7 - 94%) -- guaranteed 2HKO" */
-  desc: string;
-  /** What else matters: a spread move's cut, recoil, the target's Intimidate. */
-  notes: string[];
+  /**
+   * Showdown's line and what else matters, worked out when first asked: only the focused move's are
+   * shown, and each costs the KO chance again (the line's, and Intimidate's calc).
+   */
+  detail: () => MoveDetail;
   /** Its priority on this field (Grassy Glide goes first on Grassy Terrain). */
   priority: number;
   /** It hits both foes in Doubles (for 0.75 of the damage). */
@@ -75,6 +79,22 @@ export interface MoveCalc {
   /** It always lands a critical hit (Flower Trick, Frost Breath…), whatever the field says. */
   alwaysCrit: boolean;
 }
+
+export interface MoveDetail {
+  /** Showdown's line: "32 Atk Life Orb Garchomp Earthquake vs. 32 HP / 14 Def Incineroar: 159-190 (78.7 - 94%) -- guaranteed 2HKO" */
+  desc: string;
+  /** What else matters: a spread move's cut, recoil, the target's Intimidate. */
+  notes: string[];
+}
+
+/** A calc under way: its outcome, whose moves are 'pending' until step() works them out, one per call. */
+export interface CalcRun {
+  outcome: CalcOutcome;
+  /** Works out the next pending move; false once there's none left. */
+  step(): boolean;
+}
+
+const NO_DETAIL: MoveDetail = { desc: '', notes: [] };
 
 /** Weather or terrain on the field, and the ability that set it (none when chosen by hand). */
 export interface FieldEffect<T> {
@@ -125,6 +145,16 @@ export class DamageCalc {
 
   /** Each of the attacker's moves against the target, on `field`; `attackerSide` is whose side attacks. */
   calculate(attacker: PokemonSet, target: PokemonSet, attackerSide: 'yours' | 'rival', field: CalcField): CalcOutcome {
+    const run = this.begin(attacker, target, attackerSide, field);
+    while (run.step());
+    return run.outcome;
+  }
+
+  /**
+   * calculate() a move at a time: a move's calc and KO chance took up to 20 ms on the console, so the
+   * Calcs tab works one out per frame instead of stalling a frame for all four.
+   */
+  begin(attacker: PokemonSet, target: PokemonSet, attackerSide: 'yours' | 'rival', field: CalcField): CalcRun {
     const attackerConditions = attackerSide === 'yours' ? field.yours : field.rival;
     const targetConditions = attackerSide === 'yours' ? field.rival : field.yours;
     const attackerMon = this.pokemon(attacker, 'attacker', attackerConditions);
@@ -138,12 +168,13 @@ export class DamageCalc {
       attackerSide: sideOf(attackerConditions, true),
       defenderSide: sideOf(targetConditions, false),
     });
-    const moves = attacker.moves.map((name) => this.move(name, attackerMon, targetMon, calcField, field.crit));
+    const moves = attacker.moves.map((name): MoveCalc => ({ ...this.base(name), kind: 'pending' }));
+    let next = 0;
     // The library raises a stat for a Terrain Seed inside each calc (and uses the seed up): the same
     // here, so the tab can say so.
     const attackerSeed = seedBoost(attackerMon, terrain?.value);
     const targetSeed = seedBoost(targetMon, terrain?.value);
-    return {
+    const outcome: CalcOutcome = {
       weather,
       terrain,
       attackerHp: attackerMon.maxHP(),
@@ -158,6 +189,13 @@ export class DamageCalc {
         trickRoom: field.trickRoom,
       },
     };
+    const step = (): boolean => {
+      if (next >= moves.length) return false;
+      moves[next] = this.move(attacker.moves[next], attackerMon, targetMon, calcField, field.crit);
+      next++;
+      return next < moves.length;
+    };
+    return { outcome, step };
   }
 
   /** The species a set battles as, for a Pokémon on the field (its Mega, Aegislash's forme). */
@@ -199,9 +237,10 @@ export class DamageCalc {
     return last ? { value: abilities[toId(last.ability ?? '')], source: `${last.name}'s ${last.ability}` } : null;
   }
 
-  private move(name: string, attacker: Pokemon, target: Pokemon, field: Field, crit: boolean): MoveCalc {
+  /** What the dex says of a move, before any calc. */
+  private base(name: string): MoveCalc {
     const dexMove = this.dex.move(name);
-    const base: MoveCalc = {
+    return {
       move: dexMove?.name ?? name,
       type: dexMove?.type ?? '',
       category: dexMove?.category ?? '',
@@ -213,12 +252,15 @@ export class DamageCalc {
       hits: 0,
       chance: 0,
       koText: '',
-      desc: '',
-      notes: [],
+      detail: () => NO_DETAIL,
       priority: dexMove?.priority ?? 0,
       spread: false,
       alwaysCrit: false,
     };
+  }
+
+  private move(name: string, attacker: Pokemon, target: Pokemon, field: Field, crit: boolean): MoveCalc {
+    const base = this.base(name);
     if (!GEN.moves.get(toID(name))) return base;
     const move = new Move(GEN, name, { isCrit: crit });
     if (toId(name) === 'grassyglide' && field.hasTerrain('Grassy')) base.priority = 1;
@@ -243,8 +285,7 @@ export class DamageCalc {
       hits: ko.n,
       chance: ko.chance ?? 0,
       koText: ko.text,
-      desc: safeDesc(result),
-      notes: this.notes(move, attacker, target, field, crit),
+      detail: once(() => ({ desc: safeDesc(result), notes: this.notes(move, attacker, target, field, crit) })),
     };
   }
 
@@ -299,6 +340,12 @@ function safeKoChance(result: Result): { n: number; chance: number | undefined; 
   } catch {
     return { n: 0, chance: 0, text: '' };
   }
+}
+
+/** `make`, run the first time only. */
+function once<T>(make: () => T): () => T {
+  let value: T | undefined;
+  return () => (value ??= make());
 }
 
 function safeDesc(result: Result): string {

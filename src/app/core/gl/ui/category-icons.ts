@@ -14,7 +14,16 @@ const CY = CATEGORY_ICON_H / 2;
 /** Samples per pixel along each axis, for smooth edges. */
 const SAMPLES = 4;
 
-const hex = (value: string): Rgb => [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16)];
+const COLOURS = new Map<string, Rgb>();
+/** A colour, parsed once: the shaders ask for one per sample (16 a pixel), which made the Physical icon take ~60 ms on a slow CPU. */
+const hex = (value: string): Rgb => {
+  let colour = COLOURS.get(value);
+  if (!colour) {
+    colour = [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16)];
+    COLOURS.set(value, colour);
+  }
+  return colour;
+};
 
 /** Inside the rounded box the icon fills. */
 function inBox(x: number, y: number): boolean {

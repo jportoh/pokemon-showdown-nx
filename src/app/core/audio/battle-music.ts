@@ -20,7 +20,7 @@ const TRACKS: readonly BattleTrack[] = [
 
 /**
  * The music of battles (played, watched live or replayed). The tracks' mp3 files (2–3 MB each) are
- * downloaded once, in the background after the loading screen (prefetch), and kept as they come; only
+ * downloaded once, the next battle's when its search or challenge starts (prepareNext), and kept; only
  * the battle's own is decoded (~1.2 s on the console, probe S1), as decoded it takes ~45 MB, and it's
  * let go when the battle closes. The music before it is ready stays (the menu theme, or team
  * preview's). Team preview has a theme of its own, and every battle ends on the victory or the defeat
@@ -40,10 +40,18 @@ export class BattleMusic {
   /** Where the battle is: its track plays only during the battle itself, once decoded. */
   private phase: 'preview' | 'battle' | 'over' = 'battle';
   private track: MusicTrack | null = null;
+  /** The next battle's track, picked (and downloading) since its search or challenge. */
+  private next: BattleTrack | null = null;
 
-  /** Starts downloading every track (once). */
-  prefetch(): void {
-    for (const track of TRACKS) this.download(track);
+  /**
+   * Picks the next battle's track and downloads it (once): when a search starts or a challenge is
+   * sent or accepted, while the player waits. A download stalls the console's frames for as long as
+   * it lasts (test-w6: 14 stutters a second on an idle menu), so only the one track that will play is
+   * downloaded, and never behind the menu.
+   */
+  prepareNext(): void {
+    this.next ??= TRACKS[Math.floor(Math.random() * TRACKS.length)];
+    void this.download(this.next);
   }
 
   /** A battle opened: its track is decoded, to play once the battle itself is on. */
@@ -51,7 +59,9 @@ export class BattleMusic {
     const battle = ++this.battle;
     this.phase = 'battle';
     this.track = null;
-    const track = TRACKS[Math.floor(Math.random() * TRACKS.length)];
+    // The track prepared for it (or one now: a battle that came without a search, rejoined after a drop).
+    const track = this.next ?? TRACKS[Math.floor(Math.random() * TRACKS.length)];
+    this.next = null;
     const bytes = await this.download(track);
     // decodeAudioData takes the bytes over: a copy keeps the download for the next battle.
     const buffer = bytes && battle === this.battle ? await this.audio.decode(bytes.slice(0)) : null;

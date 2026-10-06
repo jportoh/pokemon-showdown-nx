@@ -83,6 +83,18 @@ export class GlSprites {
     return this.upload(url, ImagePriority.Screen, smooth) !== null;
   }
 
+  /**
+   * Draws `url`'s texture once, invisibly (a clear 1px quad): many GPU drivers only send a texture
+   * over when it's first drawn with, so the loading screen's sheets (27 MB) did it on the menu's
+   * first frames, which stalled (test-w4: 7 fps, 48 ms of our own frame). The loading screen calls
+   * it for what it made. True once drawn (or when there's no texture to draw).
+   */
+  prime(url: string): boolean {
+    const texture = this.textures.get(url);
+    if (texture) this.renderer.rect(0, 0, 1, 1, { fill: [0, 0, 0, 0], texture });
+    return true;
+  }
+
   /** A sprite on the field: first in line. Null until it's there. */
   get(sprite: string, back: boolean, set: SpriteSet = 'gen5'): Texture | null {
     return this.sprite(sprite, back, ImagePriority.Field, set);

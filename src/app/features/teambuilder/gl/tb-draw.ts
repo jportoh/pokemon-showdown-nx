@@ -220,6 +220,11 @@ export class WrapCache {
   get(ctx: UiContext, text: string, style: TextStyle, maxWidth: number, maxLines: number): string[] {
     const key = `${style.size}|${style.bold ? 1 : 0}|${maxWidth}|${maxLines}|${text}`;
     let lines = this.lines.get(key);
+    // Wrapping measures every word: past the frame's budget for new text, it waits for the next frame.
+    if (!lines && !ctx.text.withinBudget) {
+      ctx.text.deferred++;
+      return [];
+    }
     if (!lines) {
       const all = ctx.text.wrap(text, style, maxWidth);
       lines = all.slice(0, maxLines);

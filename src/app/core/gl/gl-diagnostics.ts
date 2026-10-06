@@ -1,7 +1,7 @@
 import { ApplicationRef, Service, inject } from '@angular/core';
 
 /** What can take the main thread away from a frame. */
-export type DiagnosticKind = 'render' | 'text' | 'sprite' | 'arrival';
+export type DiagnosticKind = 'render' | 'text' | 'sprite' | 'arrival' | 'calc' | 'socket' | 'audio';
 
 interface Sample {
   at: number;
@@ -73,7 +73,7 @@ export class GlDiagnostics {
     this.samples.push({ at: now, kind, ms });
     if (kind === 'render') this.pendingRender = true;
     else if (kind === 'arrival') this.pendingArrival = true;
-    else this.pendingUpload = true;
+    else if (kind === 'text' || kind === 'sprite') this.pendingUpload = true;
     if (this.samples.length > 400) this.samples = this.samples.filter((s) => now - s.at < WINDOW_MS);
   }
 
@@ -93,13 +93,17 @@ export class GlDiagnostics {
   }
 
   /** The graph's frames: long ones, and the longest interval and own time among them. */
-  frameSummary(): { long: number; worst: number; ownAvg: number; ownMax: number } {
+  frameSummary(): { long: number; worst: number; ownAvg: number; ownMax: number; outsideAvg: number } {
     const recent = this.frames.slice(-60);
+    const ownAvg = recent.reduce((sum, f) => sum + f.own, 0) / Math.max(1, recent.length);
+    const intervalAvg = recent.reduce((sum, f) => sum + f.interval, 0) / Math.max(1, recent.length);
     return {
       long: recent.filter((f) => f.interval > LONG_FRAME_MS).length,
       worst: Math.max(0, ...recent.map((f) => f.interval)),
-      ownAvg: recent.reduce((sum, f) => sum + f.own, 0) / Math.max(1, recent.length),
+      ownAvg,
       ownMax: Math.max(0, ...recent.map((f) => f.own)),
+      // Each frame's time outside our drawing: waiting for the screen (~9 ms at 60 fps) plus anything else running.
+      outsideAvg: intervalAvg - ownAvg,
     };
   }
 

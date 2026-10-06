@@ -20,18 +20,19 @@ export type InputAction =
   | 'buttonL'
   | 'buttonR'
   | 'buttonR3'
+  | 'buttonL3'
   | 'first'
   | 'last';
 
 /**
- * The shoulder buttons and R3 (the right stick pressed), whose meaning depends on the screen (see
+ * The shoulder buttons, R3 and L3 (the sticks pressed), whose meaning depends on the screen (see
  * KeyboardNavigation.registerButton).
  */
-export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3';
+export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3';
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
- * 12–15, the standard mapping's positions for those labels). L=4, R=5 and R3=11 (the right stick
+ * 12–15, the standard mapping's positions for those labels). L=4, R=5, L3=10 and R3=11 (the sticks
  * pressed) are the standard mapping's too.
  */
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
@@ -41,6 +42,7 @@ export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [7, 'nextTab'],
   [4, 'buttonL'],
   [5, 'buttonR'],
+  [10, 'buttonL3'],
   [11, 'buttonR3'],
   [12, 'up'],
   [13, 'down'],
@@ -60,6 +62,7 @@ const BY_KEY: Record<string, InputAction> = {
   q: 'buttonL',
   e: 'buttonR',
   r: 'buttonR3',
+  f: 'buttonL3',
   z: 'prevTab',
   c: 'nextTab',
   ArrowUp: 'up',
@@ -88,6 +91,7 @@ const BY_CODE: Record<string, InputAction> = {
   KeyQ: 'buttonL',
   KeyE: 'buttonR',
   KeyR: 'buttonR3',
+  KeyF: 'buttonL3',
   KeyZ: 'prevTab',
   KeyC: 'nextTab',
 };
@@ -102,6 +106,7 @@ const BY_KEY_CODE: Record<number, InputAction> = {
   81: 'buttonL',
   69: 'buttonR',
   82: 'buttonR3',
+  70: 'buttonL3',
   90: 'prevTab',
   67: 'nextTab',
   38: 'up',

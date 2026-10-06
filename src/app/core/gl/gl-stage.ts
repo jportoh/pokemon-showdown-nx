@@ -3,8 +3,9 @@ import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigatio
 import { GlDiagnostics } from './gl-diagnostics';
 import { GlRenderer, Texture } from './gl-renderer';
 import { GlSprites } from './gl-sprites';
-import { TextPages, TextTextures, discTexture } from './gl-textures';
+import { TEXT_BUDGET_MS, TextPages, TextTextures, discTexture } from './gl-textures';
 import { GlyphAtlas } from './glyph-atlas';
+import { PerfHud } from './perf-hud';
 import { SpriteBitmaps } from './sprite-bitmaps';
 
 export const STAGE_W = 1280;
@@ -43,6 +44,8 @@ export interface GlScene {
   input?(action: CanvasAction): boolean;
   click?(x: number, y: number): void;
   hover?(x: number, y: number): void;
+  /** The scene's own lines in the diagnostics (L3), worked out every half second. */
+  diagnostics?(): string[];
 }
 
 /**
@@ -71,6 +74,13 @@ export class GlStage {
   private frame = 0;
   private last = 0;
   private releaseInput: (() => void) | null = null;
+  /** L3, on any screen: the frame-time diagnostics, with the shown scene's own lines. */
+  private readonly hud = new PerfHud(() => this.top()?.diagnostics?.() ?? []);
+
+  constructor() {
+    // The stage lasts as long as the app: L3 is never let go.
+    this.navigation.registerButton('buttonL3', () => this.hud.toggle());
+  }
 
   /** The canvas's device pixel ratio (text is drawn this much denser). */
   readonly scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -87,6 +97,8 @@ export class GlStage {
     const family = getComputedStyle(document.body).fontFamily || 'Roboto, sans-serif';
     const text = new TextTextures(renderer, this.scale, family);
     text.glyphs = new GlyphAtlas(renderer, this.scale, family);
+    text.budgetMs = TEXT_BUDGET_MS;
+    text.glyphs.onMake = (ms) => text.spend(ms);
     const images = new GlSprites(renderer, this.bitmaps);
     text.onUpload = (ms) => this.diagnostics.record('text', ms);
     images.onUpload = (ms) => this.diagnostics.record('sprite', ms);
@@ -166,6 +178,10 @@ export class GlStage {
       scene.draw(frame);
       // The overlay draws over the finished scene (end() only flushes, nothing is cleared) and ends its own drawing.
       this.overlay?.draw(frame);
+      if (this.hud.shown) {
+        this.hud.draw(frame, STAGE_W);
+        resources.renderer.end();
+      }
       this.diagnostics.frame(interval, performance.now() - started);
     };
     this.frame = requestAnimationFrame(loop);
