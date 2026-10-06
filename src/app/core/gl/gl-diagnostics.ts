@@ -47,6 +47,8 @@ export class GlDiagnostics {
   private pendingUpload = false;
   private pendingArrival = false;
   readonly frames: FrameSample[] = [];
+  /** How the launch's loading screen went (LoadingScene), once it's done: shown on L3. */
+  loading: string[] = [];
 
   constructor() {
     const appRef = inject(ApplicationRef) as unknown as Record<string, unknown>;
