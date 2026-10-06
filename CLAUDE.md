@@ -21,7 +21,7 @@ The app targets the Brewser console (a custom engine at 1280x720, driven by a co
 
 - Each route is a scene component with an empty template that calls `GlStage.show(scene)` and draws every frame. Angular is the skeleton only: DI, services, signals, the router.
 - Do NOT add DOM templates, HTML controls or CSS for UI. Build screens from the canvas kit: `core/gl/canvas-ui.ts` (CanvasFocus, drawText), `core/gl/ui/retro-kit.ts` (boxes, buttons, steppers, tabs, text fields, modals, ListView), `PageBar`, `OptionPickerView`, `FormatListScreen`, `CanvasKeyboard` (the only way to type text) and `GlTheme` (the themes' palettes).
-- Input: the d-pad, A, B and the jumps reach the top scene through `KeyboardNavigation.captureInput` (GlStage registers it); L, R, ZL, ZR and R3 through `KeyboardNavigation.registerButton`. Focus lives inside the canvas (`CanvasFocus`).
+- Input: the d-pad, A, B and the jumps reach the top scene through `KeyboardNavigation.captureInput` (GlStage registers it); L, R, ZL, ZR, R3 and L3 (the stage's diagnostics) through `KeyboardNavigation.registerButton`. Focus lives inside the canvas (`CanvasFocus`).
 - `src/styles.css` is plain CSS that only lays out the stage. No Tailwind.
 
 ## Accessibility

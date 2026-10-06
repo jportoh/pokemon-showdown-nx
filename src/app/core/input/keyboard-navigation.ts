@@ -53,7 +53,7 @@ function isCanvasAction(action: InputAction): action is CanvasAction {
 /**
  * Makes the whole app work with the controller (and the keys that stand for its buttons, see
  * console-keys): the d-pad, A, B and the jumps go to the screen drawn on the stage (captureInput),
- * which moves its own focus inside the canvas; L, R, ZL, ZR and R3 go to the handlers the screen
+ * which moves its own focus inside the canvas; L, R, ZL, ZR, R3 and L3 go to the handlers the screen
  * registered for them. A press a screen uses makes its sound (AudioEngine).
  *
  * Findings from the console (test K1) shape it: A, B, ZL and ZR only reach the page through the

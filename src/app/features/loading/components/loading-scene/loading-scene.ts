@@ -1,19 +1,21 @@
 import { Component, DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AudioEngine } from '@core/audio/audio-engine';
-import { BattleMusic } from '@core/audio/battle-music';
 import { AssetPreload } from '@core/gl/asset-preload';
 import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { TEXT_PAD, TextStyle, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
+import { categoryIcon } from '@core/gl/ui/category-icons';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { BALL } from '@features/home/gl/logo-ball';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
 const LOADING_UPLOADS = 8;
+/** Textures drawn with for the first time per frame (each may be a sheet the GPU takes in then). */
+const PRIMES_PER_FRAME = 2;
 /** Time per frame for synthesizing the sounds and the menu theme (AudioEngine.prepare). */
 const AUDIO_BUDGET_MS = 12;
 const LOGO_YELLOW = rgba('#f2c14e');
@@ -46,11 +48,12 @@ export class LoadingScene {
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly preload = inject(AssetPreload);
   private readonly audio = inject(AudioEngine);
-  private readonly battleMusic = inject(BattleMusic);
 
   private readonly assets: readonly PreloadAsset[] = preloadList();
   /** Not a texture yet (nor failed). */
   private waiting: PreloadAsset[] = [...this.assets];
+  /** Made into textures, not drawn with yet. */
+  private readonly priming: PreloadAsset[] = [];
   /** The bar's fill, easing towards the share loaded (it moves in a few big steps). */
   private shown = 0;
   /** When the logo began its flight to the header. */
@@ -63,6 +66,9 @@ export class LoadingScene {
       void this.router.navigateByUrl('/', { replaceUrl: true });
       return;
     }
+    // The teambuilder's code (and @smogon/calc's data tables) set up now rather than on its first
+    // visit, where it stalled the first frame (test-w2).
+    void import('@features/teambuilder/components/teambuilder-scene/teambuilder-scene');
     this.bitmaps.rush = true;
     for (const asset of this.assets) this.bitmaps.request(asset.url, ImagePriority.Screen);
     // The controller does nothing here: the menu comes by itself.
@@ -70,6 +76,8 @@ export class LoadingScene {
     this.stage.whenReady(({ renderer, images }) => {
       this.ball = pixelTexture(renderer, BALL);
       images.uploadsPerFrame = LOADING_UPLOADS;
+      // The move categories' icons are painted pixel by pixel: here, not on the teambuilder's first frames.
+      for (const category of ['Physical', 'Special', 'Status']) categoryIcon(renderer, category);
     });
     inject(DestroyRef).onDestroy(() => {
       hide();
@@ -88,23 +96,23 @@ export class LoadingScene {
     const p = this.theme.palette();
     const { renderer, now, dt } = frame;
     if (this.waiting.length > 0) this.load(frame);
-    // The sounds count as one more asset.
+    // The sounds count as one more asset; an image is loaded once it's been drawn (primed).
     const soundsReady = this.audio.prepare(AUDIO_BUDGET_MS);
-    const loaded = (this.assets.length - this.waiting.length + (soundsReady ? 1 : 0)) / (this.assets.length + 1);
+    const pending = this.waiting.length + this.priming.length;
+    const loaded = (this.assets.length - pending + (soundsReady ? 1 : 0)) / (this.assets.length + 1);
     this.shown += (loaded - this.shown) * (1 - Math.exp(-dt * 10));
-    if (!this.outroAt && this.waiting.length === 0 && soundsReady && this.shown > 0.98) {
+    if (!this.outroAt && pending === 0 && soundsReady && this.shown > 0.98) {
       this.outroAt = now;
       this.restore();
       this.preload.finished.set(true);
       this.audio.playMenuTheme();
-      // The battle music downloads in the background from now on.
-      this.battleMusic.prefetch();
     }
     const t = this.outroAt ? Math.min(1, (now - this.outroAt) / OUTRO_MS) : 0;
     const fly = easeInOut(t);
     const fade = 1 - Math.min(1, t / 0.4);
 
     renderer.begin(now / 1000, p.bg, p.rim);
+    this.prime(frame);
     if (fly > 0) renderer.rect(0, 0, STAGE_W, HEADER.height, { fill: withAlpha(p.bar, fly) });
 
     // The ball bobs and rocks while loading, and settles as it flies.
@@ -161,7 +169,16 @@ export class LoadingScene {
 
   /** Makes the textures this frame has room for. */
   private load({ images }: StageFrame): void {
-    this.waiting = this.waiting.filter((asset) => !images.canUpload || !images.warm(asset.url, asset.smooth));
+    this.waiting = this.waiting.filter((asset) => {
+      if (!images.canUpload || !images.warm(asset.url, asset.smooth)) return true;
+      this.priming.push(asset);
+      return false;
+    });
+  }
+
+  /** Draws the textures made a frame or more ago, a few a frame (see GlSprites.prime). */
+  private prime({ images }: StageFrame): void {
+    this.priming.splice(0, PRIMES_PER_FRAME).forEach((asset) => images.prime(asset.url));
   }
 }
 

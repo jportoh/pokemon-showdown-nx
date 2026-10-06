@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { BattleMusic } from '@core/audio/battle-music';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
 import { PickerOption } from '@core/gl/ui/option-picker';
@@ -130,6 +131,8 @@ export class HistoryScene {
   });
 
   constructor() {
+    // The battle opened from here plays its music sooner: its download starts while the list shows.
+    inject(BattleMusic).prepareNext();
     inject(DestroyRef).onDestroy(() => this.games.stop());
     void this.refresh();
   }

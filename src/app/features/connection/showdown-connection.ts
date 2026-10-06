@@ -1,4 +1,5 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
+import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { Observable, Subject } from 'rxjs';
 import { ConnectionState } from './connection.model';
@@ -17,6 +18,7 @@ export class ShowdownConnection {
   private readonly openedSubject = new Subject<void>();
   private readonly endedSubject = new Subject<void>();
   private readonly render = inject(RenderScheduler);
+  private readonly diagnostics = inject(GlDiagnostics);
   private socket: WebSocket | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,6 +82,7 @@ export class ShowdownConnection {
   }
 
   private handleMessage(data: string): void {
+    const started = performance.now();
     const frame = parseFrame(data);
     for (const line of frame.lines) {
       if (line.startsWith('|challstr|')) {
@@ -87,6 +90,8 @@ export class ShowdownConnection {
       }
     }
     this.framesSubject.next(frame);
+    // With what every store did with it (the L3 diagnostics).
+    this.diagnostics.record('socket', performance.now() - started);
   }
 
   private scheduleReconnect(): void {

@@ -37,8 +37,21 @@ export function noteFreq(name: string): number {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
+/** Samples noteSteps writes between yields (~10 ms of sound at 48 kHz). */
+const NOTE_CHUNK = 512;
+
 /** Adds one note into `out` (mixing with what's there), at `rate` samples a second. */
 export function renderNote(out: Float32Array, rate: number, note: Note, seed = 1): void {
+  const steps = noteSteps(out, rate, note, seed);
+  while (!steps.next().done);
+}
+
+/**
+ * renderNote a slice at a time, yielding every NOTE_CHUNK samples: what's synthesized behind the
+ * menu can stop when the frame's slice is up. A whole long note at once took far longer than the
+ * slice on the console, and the home screen stuttered for seconds after loading (test-w3).
+ */
+export function* noteSteps(out: Float32Array, rate: number, note: Note, seed = 1): Generator<void, void, void> {
   const start = Math.max(0, Math.round(note.at * rate));
   const length = Math.round(note.dur * rate);
   const end = Math.min(out.length, start + length);
@@ -77,6 +90,7 @@ export function renderNote(out: Float32Array, rate: number, note: Note, seed = 1
     if (fromStart < attack) envelope *= fromStart / attack;
     if (toEnd < release) envelope *= toEnd / release;
     out[i] += sample * note.gain * envelope;
+    if (fromStart % NOTE_CHUNK === NOTE_CHUNK - 1) yield;
   }
 }
 

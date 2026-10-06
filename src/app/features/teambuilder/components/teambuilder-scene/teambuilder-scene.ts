@@ -2,6 +2,7 @@ import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
+import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
@@ -60,6 +61,16 @@ export class TeambuilderScene {
   private readonly team = computed(() => this.store.team(this.selectedId()));
   private readonly editor = new SetEditorView(this.focus, this.team, () => this.closeEditor(), this.spriteStage);
   private view: View = 'teams';
+  private readonly diagnostics = inject(GlDiagnostics);
+  /** The diagnostics' own lines (L3): the damage calcs' time and the sprites' uploads. */
+  private diagnosticLines(): string[] {
+    const calcs = this.diagnostics.summary('calc');
+    const sprites = this.diagnostics.summary('sprite');
+    return [
+      `Damage calc: ${calcs.count}/s · longest ${calcs.max.toFixed(1)} ms`,
+      `Sprite uploads: ${sprites.count}/s · longest ${sprites.max.toFixed(1)} ms`,
+    ];
+  }
 
   /** Which game data the teambuilder uses, and how recent it is. */
   private readonly dataSummary = `Reg M-C data: ${this.dex.allSpecies.length} Pokémon · ${this.dex.generated}`;
@@ -73,6 +84,7 @@ export class TeambuilderScene {
       input: (action) => this.onAction(action),
       click: (x, y) => !this.leaving && this.focus.click(x, y),
       hover: (x, y) => this.focus.hover(x, y),
+      diagnostics: () => this.diagnosticLines(),
     });
     // The grid opens on the most recently created team (teams are stored in creation order), or New.
     this.grid.focusTeam(this.store.teams(), this.store.teams().at(-1)?.id ?? null);

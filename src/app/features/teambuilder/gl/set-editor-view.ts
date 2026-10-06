@@ -86,11 +86,18 @@ export class SetEditorView {
 
   // The species and item lists, built once: the data only has what the format allows. Megas are
   // listed as species too: picking one picks its base species holding the Mega Stone. A search finds
-  // them by their abilities and the moves they learn too ("fake out", "intimidate").
-  private readonly speciesOptions: readonly ChooserOption[] = [
-    ...this.dex.allSpecies.map((species) => ({ id: species.id, name: species.name, types: species.types, keywords: speciesKeywords(species.abilities, species.moves) })),
-    ...this.dex.allMegas.map((mega) => ({ id: mega.id, name: mega.name, types: mega.types, keywords: speciesKeywords([mega.ability], this.dex.species(mega.base)?.moves ?? []) })),
-  ].sort((a, b) => a.name.localeCompare(b.name));
+  // them by their abilities and the moves they learn too ("fake out", "intimidate"). The species list
+  // is made the first time it opens and its keywords on the first search: made with the editor, they
+  // stalled the teambuilder's first frame (test-w2).
+  private speciesList: readonly ChooserOption[] | null = null;
+  private get speciesOptions(): readonly ChooserOption[] {
+    return (this.speciesList ??= [
+      ...this.dex.allSpecies.map((species) => speciesOption(species.id, species.name, species.types, () => speciesKeywords(species.abilities, species.moves))),
+      ...this.dex.allMegas.map((mega) =>
+        speciesOption(mega.id, mega.name, mega.types, () => speciesKeywords([mega.ability], this.dex.species(mega.base)?.moves ?? [])),
+      ),
+    ].sort((a, b) => a.name.localeCompare(b.name)));
+  }
   private readonly megaStoneIds = new Set(this.dex.allMegas.map((mega) => mega.item));
   private readonly itemOptions: readonly ChooserOption[] = this.dex.allItems.map((item) => ({
     id: item.id,
@@ -617,6 +624,19 @@ function newPokemon(): PokemonSet {
 }
 
 /** What a species search also looks through: its abilities' and moves' IDs. */
+/** A species in the list, its search keywords made when first asked for. */
+function speciesOption(id: string, name: string, types: readonly string[], keywords: () => readonly string[]): ChooserOption {
+  let made: readonly string[] | undefined;
+  return {
+    id,
+    name,
+    types,
+    get keywords() {
+      return (made ??= keywords());
+    },
+  };
+}
+
 function speciesKeywords(abilities: readonly string[], moves: readonly DexMove[]): readonly string[] {
   return [...abilities.map(toId), ...moves.map((move) => move.id)];
 }

@@ -3,7 +3,7 @@ import { GlRenderer, Texture } from './gl-renderer';
 import type { GlyphAtlas } from './glyph-atlas';
 
 /** Widths measured, kept for fitting and wrapping. */
-const MAX_WIDTHS = 2000;
+const MAX_WIDTHS = 8000;
 /** Space either side of the text inside its texture. */
 export const TEXT_PAD = 2;
 /** Clear pixels between texts on an atlas page, so smoothing doesn't bleed one into the next. */
@@ -24,8 +24,13 @@ export interface TextPages {
   count: number;
 }
 
-/** The scenes' texts: four 2048x1024 pages (32 MB), about 1200 texts on a battle screen and its Battle info. */
-export const SCENE_PAGES: TextPages = { height: 1024, count: 4 };
+/**
+ * The scenes' texts: six 2048x1024 pages (48 MB), about 1800 texts: a battle screen and its Battle
+ * info, or the teambuilder's team grid (many teams) and its tabs without one clearing the other's.
+ */
+export const SCENE_PAGES: TextPages = { height: 1024, count: 6 };
+/** Time a frame spends making new texts at most (drawText); the rest wait for the next frames. */
+export const TEXT_BUDGET_MS = 4;
 
 /** One texture full of texts, laid out in rows (shelves) of one height each. */
 interface Page {
@@ -59,12 +64,19 @@ export class TextTextures {
   private readonly loose: string[] = [];
   private frame = 0;
   private readonly widths = new Map<string, number>();
+  /** fit()'s cuts, by width and text. */
+  private readonly fits = new Map<string, string>();
   private readonly canvas = document.createElement('canvas');
   private readonly context: CanvasRenderingContext2D | null = this.canvas.getContext('2d');
   /** Told how long each new text took to draw and upload (diagnostics). */
   onUpload: ((ms: number) => void) | null = null;
   /** Glyphs for text that changes all the time (drawText's `fast`); the stage sets it. */
   glyphs: GlyphAtlas | null = null;
+  /** Time a frame may spend on new texts asked for with `defer` (the stage sets it for the scenes' texts). */
+  budgetMs = Infinity;
+  private spentMs = 0;
+  /** New texts turned away for the frame's budget so far (diagnostics). */
+  deferred = 0;
 
   constructor(
     private readonly renderer: GlRenderer,
@@ -82,10 +94,30 @@ export class TextTextures {
   /** Each frame, before drawing: a page drawn from in this frame is never cleared during it. */
   startFrame(): void {
     this.frame++;
+    this.spentMs = 0;
   }
 
-  /** The texture for `text`, sized in stage pixels (its pixels are `scale` times as many). */
-  get(text: string, style: TextStyle): Texture | null {
+  /** Whether this frame can still make new text (textures or glyphs). */
+  get withinBudget(): boolean {
+    return this.spentMs < this.budgetMs;
+  }
+
+  /** Whether `text`'s width is known already (fitting it costs no new measure). */
+  measured(text: string, style: TextStyle): boolean {
+    return this.widths.has(this.key(text, style));
+  }
+
+  /** Counts time spent on new text elsewhere (the glyph atlas) in the frame's budget. */
+  spend(ms: number): void {
+    this.spentMs += ms;
+  }
+
+  /**
+   * The texture for `text`, sized in stage pixels (its pixels are `scale` times as many). With `defer`,
+   * a new text is only made while the frame's budget lasts, else null: a screen drawn from scratch
+   * spreads its texts over a few frames instead of stalling one.
+   */
+  get(text: string, style: TextStyle, defer = false): Texture | null {
     const context = this.context;
     if (!context || !text) return null;
     const key = this.key(text, style);
@@ -94,10 +126,14 @@ export class TextTextures {
       if (cached.page) cached.page.lastUsed = this.frame;
       return cached.texture;
     }
-    const started = performance.now();
+    if (defer && this.spentMs >= this.budgetMs) {
+      this.deferred++;
+      return null;
+    }
     const font = this.font(style);
-    context.font = font;
-    const width = Math.max(1, Math.ceil(context.measureText(text).width) + TEXT_PAD * 2 * this.scale);
+    // Its width is often measured already (fit, measure): measureText is slow on the console.
+    const width = Math.max(1, Math.ceil(this.measure(text, style) * this.scale) + TEXT_PAD * 2 * this.scale);
+    const started = performance.now();
     const height = Math.ceil(style.size * 1.4 * this.scale);
     this.canvas.width = width;
     this.canvas.height = height;
@@ -109,7 +145,9 @@ export class TextTextures {
     context.fillText(text, TEXT_PAD * this.scale, height / 2);
     const entry = this.place(key, width, height) ?? this.alone(key, width, height);
     this.cache.set(key, entry);
-    this.onUpload?.(performance.now() - started);
+    const took = performance.now() - started;
+    this.spentMs += took;
+    this.onUpload?.(took);
     return entry.texture;
   }
 
@@ -120,33 +158,53 @@ export class TextTextures {
     const key = this.key(text, style);
     const known = this.widths.get(key);
     if (known !== undefined) return known;
+    const started = performance.now();
     context.font = this.font(style);
     const width = context.measureText(text).width / this.scale;
     if (this.widths.size >= MAX_WIDTHS) this.widths.clear();
     this.widths.set(key, width);
+    // New measures count in the frame's budget too (fitting a long text takes a few).
+    this.spentMs += performance.now() - started;
     return width;
   }
-  /** `text`, cut with an ellipsis to fit `maxWidth` stage pixels. */
+
+  /**
+   * `text`, cut with an ellipsis to fit `maxWidth` stage pixels. The cut starts where the average
+   * character width puts it and steps to the longest that fits: two or three measures where a binary
+   * search took eight (measureText is slow on the console: test-w2's first Calcs frame spent most of
+   * its time there). Kept, as every frame asks again.
+   */
   fit(text: string, style: TextStyle, maxWidth: number): string {
-    if (this.measure(text, style) <= maxWidth) return text;
-    let low = 0;
-    let high = text.length;
-    while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
-      if (this.measure(`${text.slice(0, mid).trimEnd()}…`, style) <= maxWidth) low = mid;
-      else high = mid - 1;
-    }
-    return `${text.slice(0, low).trimEnd()}…`;
+    const full = this.measure(text, style);
+    if (full <= maxWidth) return text;
+    const key = `${maxWidth}|${this.key(text, style)}`;
+    const known = this.fits.get(key);
+    if (known !== undefined) return known;
+    const cut = (n: number) => `${text.slice(0, n).trimEnd()}…`;
+    let n = Math.max(0, Math.min(text.length - 1, Math.floor((text.length * maxWidth) / full)));
+    while (n > 0 && this.measure(cut(n), style) > maxWidth) n--;
+    while (n + 1 < text.length && this.measure(cut(n + 1), style) <= maxWidth) n++;
+    if (this.fits.size >= MAX_WIDTHS) this.fits.clear();
+    this.fits.set(key, cut(n));
+    return cut(n);
   }
 
-  /** `text` broken into lines that fit `maxWidth`, at spaces (and inside words too long for a line). */
+  /**
+   * `text` broken into lines that fit `maxWidth`, at spaces (and inside words too long for a line).
+   * A line's width is its words' plus the spaces': words come back in other texts (kept measures),
+   * each candidate line is new.
+   */
   wrap(text: string, style: TextStyle, maxWidth: number): string[] {
     const lines: string[] = [];
+    const space = this.measure(' ', style);
     let line = '';
+    let lineWidth = 0;
     for (const word of text.split(' ')) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (this.measure(candidate, style) <= maxWidth) {
-        line = candidate;
+      const wordWidth = this.measure(word, style);
+      const candidateWidth = line ? lineWidth + space + wordWidth : wordWidth;
+      if (candidateWidth <= maxWidth) {
+        line = line ? `${line} ${word}` : word;
+        lineWidth = candidateWidth;
         continue;
       }
       if (line) lines.push(line);
@@ -158,6 +216,7 @@ export class TextTextures {
         lines.push(line.slice(0, cut));
         line = line.slice(cut);
       }
+      lineWidth = this.measure(line, style);
     }
     if (line) lines.push(line);
     return lines;

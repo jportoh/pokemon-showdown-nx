@@ -67,10 +67,16 @@ export class RivalPicker {
     { name: 'All Pokémon', test: () => true },
   ];
 
-  /** Every species, with how many common sets it has. */
-  private readonly options: readonly ChooserOption[] = this.dex.allSpecies
-    .map((species) => ({ id: species.id, name: species.name, types: species.types, value: this.setCount(species.name) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  /**
+   * Every species, with how many common sets it has: made the first time the picker opens (made with
+   * the teambuilder, it stalled its first frame, test-w2).
+   */
+  private optionList: readonly ChooserOption[] | null = null;
+  private get options(): readonly ChooserOption[] {
+    return (this.optionList ??= this.dex.allSpecies
+      .map((species) => ({ id: species.id, name: species.name, types: species.types, value: this.setCount(species.name) }))
+      .sort((a, b) => a.name.localeCompare(b.name)));
+  }
 
   constructor(private readonly focus: CanvasFocus) {}
 
