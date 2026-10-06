@@ -15,6 +15,7 @@
     "update:names": "node scripts/update-names.mjs",
     "update:species": "node scripts/update-species.mjs",
     "update:gen3": "node scripts/update-gen3.mjs",
+    "update:battle-music": "node scripts/update-battle-music.mjs",
     "update:sprites": "node scripts/update-sprite-sheets.mjs"
   },
   "private": true,

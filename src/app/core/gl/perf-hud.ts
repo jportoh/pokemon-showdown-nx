@@ -72,6 +72,7 @@ export class PerfHud {
         `Audio synthesis: ${audio.total.toFixed(1)} ms/s · longest ${audio.max.toFixed(1)} ms`,
         `Images: ${this.bitmaps.queued} to load · ${arrivals.count}/s arrived`,
         `Memory: ${sprites.count} images ${megabytes(sprites.bytes)} · ${words.count} texts ${megabytes(words.bytes)} · ${waiting.count} decoded ${megabytes(waiting.bytes)}`,
+        ...this.diagnostics.loading,
         ...this.extra(),
         'L3 hides this',
       ];

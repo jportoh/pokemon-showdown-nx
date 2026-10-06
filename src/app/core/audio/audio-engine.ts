@@ -248,6 +248,36 @@ export class AudioEngine {
     });
   }
 
+  /**
+   * A copy of `buffer` in mono, at its rate divided down to about `rate`, and only its first `seconds`:
+   * long music kept decoded takes a quarter of the memory or less. Mono at its own rate where the
+   * engine refuses the lower one; the buffer itself where there's no Web Audio.
+   */
+  reduce(buffer: AudioBuffer, rate: number, seconds = buffer.duration): AudioBuffer {
+    const context = this.context;
+    if (!context) return buffer;
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
+    const kept = Math.min(buffer.length, Math.ceil(seconds * buffer.sampleRate));
+    for (const step of new Set([Math.max(1, Math.round(buffer.sampleRate / rate)), 1])) {
+      let reduced: AudioBuffer;
+      try {
+        reduced = context.createBuffer(1, Math.floor(kept / step), buffer.sampleRate / step);
+      } catch {
+        continue;
+      }
+      // Each sample, the average of the `step` samples of every channel it stands for.
+      const out = reduced.getChannelData(0);
+      const scale = 1 / (step * channels.length);
+      for (let i = 0; i < out.length; i++) {
+        let sum = 0;
+        for (const channel of channels) for (let j = i * step; j < (i + 1) * step; j++) sum += channel[j];
+        out[i] = sum * scale;
+      }
+      return reduced;
+    }
+    return buffer;
+  }
+
   /** The synthesis a step at a time (a sound, or a slice of a note): the sounds first, then the menu theme straight into its buffer. */
   private *synthesize(context: AudioContext): Iterator<'ready' | void> {
     const rate = context.sampleRate;
