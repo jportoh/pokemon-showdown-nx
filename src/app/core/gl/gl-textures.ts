@@ -88,11 +88,19 @@ export class TextTextures {
 
   constructor(
     private readonly renderer: GlRenderer,
-    private readonly scale: number,
+    private scale: number,
     private readonly family: string,
     private readonly layout: TextPages = SCENE_PAGES,
   ) {
     this.pageWidth = Math.min(2048, renderer.maxTextureSize);
+  }
+
+  /** Draws text `scale` times denser from now on (the canvas changed size): the cached texts go. */
+  setScale(scale: number): void {
+    if (scale === this.scale) return;
+    this.scale = scale;
+    this.dispose();
+    this.widths.clear();
   }
 
   get available(): boolean {

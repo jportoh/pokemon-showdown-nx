@@ -90,8 +90,21 @@ export class GlStage {
     this.navigation.registerButton('buttonL3', () => this.hud.toggle());
   }
 
-  /** The canvas's device pixel ratio (text is drawn this much denser). */
-  readonly scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  /**
+   * How many canvas pixels a stage pixel takes (text is drawn this much denser): the host sets it
+   * from the screen's size and device pixel ratio (1.5 at 1920x1080).
+   */
+  private scale = 1;
+
+  /** The canvas changed size (the host's `layout`): text is redrawn `scale` times denser. */
+  setScale(scale: number): void {
+    this.scale = scale;
+    const resources = this.resources;
+    if (!resources) return;
+    resources.text.setScale(scale);
+    resources.text.glyphs?.setScale(scale);
+    resources.overlayText.setScale(scale);
+  }
 
   /** Called once by the host with its canvas. */
   attach(canvas: HTMLCanvasElement): void {
