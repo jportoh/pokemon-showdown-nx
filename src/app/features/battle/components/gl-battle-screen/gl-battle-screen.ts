@@ -1,14 +1,10 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
-import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from '@core/gl/gl-diagnostics';
-import { GlRenderer, rgba } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { TextTextures } from '@core/gl/gl-textures';
-import { SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
-import { BattleFieldScene } from '@features/battle/gl/battle-field-scene';
+import { BattleFieldScene, FIELD_PARTS } from '@features/battle/gl/battle-field-scene';
 import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
 import { INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
@@ -26,6 +22,9 @@ import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
 const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
+/** The parts of a frame the diagnostics time: field, top bar and labels, command panel, screens over it, GL flush. */
+const SECTIONS = ['field', 'chrome', 'panel', 'overlays', 'flush'] as const;
+type Section = (typeof SECTIONS)[number];
 
 /**
  * The battle screen, drawn as a scene on the app's one canvas (GlStage), all 1280x720 of it: the top
@@ -37,7 +36,7 @@ const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
  * the page buttons (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's
- * under it. R3 shows the frame-time diagnostics while it has no timer to toggle.
+ * under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
   selector: 'app-gl-battle-screen',
@@ -67,8 +66,6 @@ export class GlBattleScreen {
   private readonly store = inject(BattleStore);
   private readonly choices = inject(BattleChoices);
   private readonly navigation = inject(KeyboardNavigation);
-  private readonly bitmaps = inject(SpriteBitmaps);
-  private readonly diagnostics = inject(GlDiagnostics);
   private readonly stage = inject(GlStage);
   private readonly connection = inject(ShowdownConnection);
   private readonly login = inject(ShowdownLogin);
@@ -92,7 +89,6 @@ export class GlBattleScreen {
   private lastTab: InfoTab = 'p2';
   /** The slot Switch was pressed for: the party screen is open while it chooses (a forced switch opens it by itself). */
   private partyOpen: number | null = null;
-  private diagnosticsShown = false;
   private ctx: ScreenContext | null = null;
   /** The panel's view last drawn, and its buttons, so a new view focuses its first. */
   private lastViewKey = '';
@@ -119,12 +115,6 @@ export class GlBattleScreen {
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
       // L sends team preview's picks (Done); while choosing moves it's BattleScreen's (Mega, Tera).
       this.navigation.registerButton('buttonL', () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
-      // R3 turns the battle timer on or off where there is one (BattleScreen's); otherwise, the diagnostics.
-      this.navigation.registerButton('buttonR3', () => {
-        if (this.store.canToggleTimer() && !this.store.result()) return false;
-        this.diagnosticsShown = !this.diagnosticsShown;
-        return true;
-      }),
     ];
 
     this.stage.whenReady((resources) => {
@@ -137,6 +127,7 @@ export class GlBattleScreen {
       // Browsers: the mouse points and clicks (the console has only the controller).
       click: (x, y) => this.focus.click(x, y),
       hover: (x, y) => this.focus.hover(x, y),
+      diagnostics: () => this.diagnosticLines(),
     });
 
     inject(DestroyRef).onDestroy(() => {
@@ -145,7 +136,8 @@ export class GlBattleScreen {
     });
   }
 
-  private draw({ renderer, overlayText: hudText, now, dt }: StageFrame): void {
+  private draw(frame: StageFrame): void {
+    const { renderer, now, dt } = frame;
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.now = now;
@@ -165,12 +157,16 @@ export class GlBattleScreen {
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
     const party = this.partyShown();
     const picking = !party && this.teamSelect.shown();
+    // Battle info and team preview (ours or a spectator's) cover the whole field: it only keeps its clock going.
+    const covered = this.infoTab !== null || picking || (!party && this.overview.shown());
     this.field.focusOn(this.cameraFocus(party || picking));
+    let mark = performance.now();
     renderer.setView(1, FIELD.x, FIELD.y);
     renderer.clip(FIELD);
-    this.field.draw(renderer, now, dt);
+    this.field.draw(renderer, now, dt, covered);
     renderer.clip(null);
     renderer.setView(1, 0, 0);
+    mark = this.timeSection('field', mark);
     this.header.draw(ctx, {
       infoOpen: this.infoTab !== null,
       toggleInfo: () => this.pressInfo(),
@@ -179,13 +175,16 @@ export class GlBattleScreen {
       forfeit: () => hold?.press(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
-    this.strips.draw(ctx);
-    // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
-    renderer.setView(1, FIELD.x, FIELD.y);
-    renderer.clip(FIELD);
-    this.field.drawOver(renderer, now);
-    renderer.clip(null);
-    renderer.setView(1, 0, 0);
+    if (!covered) {
+      this.strips.draw(ctx);
+      // The labels over the strips: a move's label by our left Pokémon sits where the opponent's are.
+      renderer.setView(1, FIELD.x, FIELD.y);
+      renderer.clip(FIELD);
+      this.field.drawOver(renderer, now);
+      renderer.clip(null);
+      renderer.setView(1, 0, 0);
+    }
+    mark = this.timeSection('chrome', mark);
 
     if (this.store.watching()) {
       this.panelPicks = [];
@@ -205,6 +204,7 @@ export class GlBattleScreen {
       });
       this.drawTargetMark(ctx);
     }
+    mark = this.timeSection('panel', mark);
 
     if (party) {
       // A fresh frame of controls: the party screen covers the rest, whose controls must not take the d-pad.
@@ -227,12 +227,22 @@ export class GlBattleScreen {
     }
     // Live battles (ours or watched): the connection being got back, over everything.
     const notice = this.store.replay() ? null : connectionNotice(this.connection.state(), this.login.state(), Date.now());
-    if (notice) this.drawConnectionNotice({ ...ctx, text: hudText }, notice);
-    if (this.diagnosticsShown) this.drawDiagnostics(renderer, hudText, now);
+    if (notice) this.drawConnectionNotice({ ...ctx, text: frame.overlayText }, notice);
+    mark = this.timeSection('overlays', mark);
 
     this.focus.end();
     this.settleFocus(picking, party);
+    mark = performance.now();
     renderer.end();
+    this.timeSection('flush', mark);
+    this.timedFrames++;
+  }
+
+  /** Adds the time since `since` to a part of the frame (the diagnostics' breakdown); returns now. */
+  private timeSection(section: Section, since: number): number {
+    const now = performance.now();
+    this.sectionTotals[section] += now - since;
+    return now;
   }
 
   /**
@@ -398,47 +408,16 @@ export class GlBattleScreen {
     this.openInfo(INFO_TABS[(index + step + INFO_TABS.length) % INFO_TABS.length]);
   }
 
-  private hudLines: string[] = [];
-  private hudUpdated = 0;
-
-  /** R3: frame rate, stutters and what came before them (Angular renders, uploads, images arriving). */
-  private drawDiagnostics(renderer: GlRenderer, text: TextTextures, now: number): void {
-    if (now - this.hudUpdated > 500) {
-      this.hudUpdated = now;
-      const frames = this.diagnostics.frameSummary();
-      const render = this.diagnostics.summary('render');
-      const uploads = this.diagnostics.summary('text');
-      const arrivals = this.diagnostics.summary('arrival');
-      const recent = this.diagnostics.frames.slice(-60);
-      const average = recent.reduce((sum, f) => sum + f.interval, 0) / Math.max(1, recent.length);
-      const fps = average > 0 ? Math.round(1000 / average) : 0;
-      this.hudLines = [
-        `Full canvas · ${fps} fps · ${frames.long} stutters (> ${LONG_FRAME_MS} ms) · worst ${Math.round(frames.worst)} ms`,
-        `Angular renders: ${render.count}/s · longest ${render.max.toFixed(1)} ms`,
-        `Text uploads: ${uploads.count}/s · longest ${uploads.max.toFixed(1)} ms`,
-        `Images: ${this.bitmaps.queued} to load · ${arrivals.count}/s · our frame ${frames.ownAvg.toFixed(1)} ms (max ${frames.ownMax.toFixed(1)})`,
-        `${this.field.particleCount} sparks · R3 hides this`,
-      ];
-    }
-    const width = 380;
-    const x = STAGE_W - width - 8;
-    const y = 54;
-    const graphTop = y + 6 + this.hudLines.length * 17;
-    renderer.rect(x, y, width, graphTop - y + 80, { fill: [0, 0, 0, 0.7], radius: 8 });
-    this.hudLines.forEach((line, i) => {
-      const texture = text.get(line, { size: 12, bold: i === 0 });
-      if (texture) renderer.image(texture, x + 8, y + 6 + i * 17, Math.min(1, (width - 16) / texture.width), i === 0 ? rgba('#a7f3d0') : INK.white);
-    });
-    const base = graphTop + 64;
-    renderer.rect(x + 8, base - 16.7, 300, 1, { fill: [1, 1, 1, 0.3] });
-    renderer.rect(x + 8, base - 33.3, 300, 1, { fill: [1, 0.4, 0.4, 0.4] });
-    this.diagnostics.frames.forEach((f, i) => {
-      const h = Math.min(60, f.interval);
-      const color = f.interval <= 20 ? GRAPH_COLORS.good : f.interval <= LONG_FRAME_MS ? GRAPH_COLORS.slow : GRAPH_COLORS.long;
-      renderer.rect(x + 8 + i * 2, base - h, 2, h, { fill: color });
-      if (f.render) renderer.rect(x + 8 + i * 2, base + 2, 2, 3, { fill: GRAPH_COLORS.render });
-      if (f.upload) renderer.rect(x + 8 + i * 2, base + 5, 2, 3, { fill: GRAPH_COLORS.upload });
-      if (f.arrival) renderer.rect(x + 8 + i * 2, base + 8, 2, 3, { fill: GRAPH_COLORS.arrival });
-    });
+  private readonly sectionTotals: Record<Section, number> = { field: 0, chrome: 0, panel: 0, overlays: 0, flush: 0 };
+  private timedFrames = 0;
+  /** The diagnostics' own lines (L3): where the frame's time goes, on average since the last time. */
+  private diagnosticLines(): string[] {
+    const timed = Math.max(1, this.timedFrames);
+    const breakdown = SECTIONS.map((section) => `${section} ${(this.sectionTotals[section] / timed).toFixed(1)}`).join(' · ');
+    SECTIONS.forEach((section) => (this.sectionTotals[section] = 0));
+    const fieldBreakdown = FIELD_PARTS.map((part) => `${part} ${(this.field.timings[part] / timed).toFixed(1)}`).join(' · ');
+    FIELD_PARTS.forEach((part) => (this.field.timings[part] = 0));
+    this.timedFrames = 0;
+    return [`ms/frame: ${breakdown}`, `field: ${fieldBreakdown}`, `${this.field.particleCount} sparks`];
   }
 }

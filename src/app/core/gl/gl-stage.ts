@@ -3,12 +3,15 @@ import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigatio
 import { GlDiagnostics } from './gl-diagnostics';
 import { GlRenderer, Texture } from './gl-renderer';
 import { GlSprites } from './gl-sprites';
-import { TextTextures, discTexture } from './gl-textures';
+import { TEXT_BUDGET_MS, TextPages, TextTextures, discTexture } from './gl-textures';
 import { GlyphAtlas } from './glyph-atlas';
+import { PerfHud } from './perf-hud';
 import { SpriteBitmaps } from './sprite-bitmaps';
 
 export const STAGE_W = 1280;
 export const STAGE_H = 720;
+/** The diagnostics' few lines of text (new ones every half second): two small pages, one cleared while the other shows. */
+const OVERLAY_PAGES: TextPages = { height: 256, count: 2 };
 
 /** What the stage's canvas draws with: the same for every scene, for as long as the app runs. */
 export interface StageResources {
@@ -41,6 +44,8 @@ export interface GlScene {
   input?(action: CanvasAction): boolean;
   click?(x: number, y: number): void;
   hover?(x: number, y: number): void;
+  /** The scene's own lines in the diagnostics (L3), worked out every half second. */
+  diagnostics?(): string[];
 }
 
 /**
@@ -69,6 +74,13 @@ export class GlStage {
   private frame = 0;
   private last = 0;
   private releaseInput: (() => void) | null = null;
+  /** L3, on any screen: the frame-time diagnostics, with the shown scene's own lines. */
+  private readonly hud = new PerfHud(() => this.top()?.diagnostics?.() ?? []);
+
+  constructor() {
+    // The stage lasts as long as the app: L3 is never let go.
+    this.navigation.registerButton('buttonL3', () => this.hud.toggle());
+  }
 
   /** The canvas's device pixel ratio (text is drawn this much denser). */
   readonly scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
@@ -85,11 +97,13 @@ export class GlStage {
     const family = getComputedStyle(document.body).fontFamily || 'Roboto, sans-serif';
     const text = new TextTextures(renderer, this.scale, family);
     text.glyphs = new GlyphAtlas(renderer, this.scale, family);
+    text.budgetMs = TEXT_BUDGET_MS;
+    text.glyphs.onMake = (ms) => text.spend(ms);
     const images = new GlSprites(renderer, this.bitmaps);
     text.onUpload = (ms) => this.diagnostics.record('text', ms);
     images.onUpload = (ms) => this.diagnostics.record('sprite', ms);
     this.bitmaps.onArrival = () => this.diagnostics.record('arrival', 0);
-    this.resources = { renderer, text, overlayText: new TextTextures(renderer, this.scale, family), images, disc: discTexture(renderer) };
+    this.resources = { renderer, text, overlayText: new TextTextures(renderer, this.scale, family, OVERLAY_PAGES), images, disc: discTexture(renderer) };
     this.waiting.splice(0).forEach((ready) => ready(this.resources!));
     if (this.scenes.length > 0) this.start();
   }
@@ -144,6 +158,8 @@ export class GlStage {
     this.diagnostics.clearFrames();
     this.last = performance.now();
     const resources = this.resources;
+    // One frame object for the whole loop: nothing new to collect every frame.
+    const frame: StageFrame = { ...resources, now: 0, dt: 0 };
     const loop = (now: number) => {
       const scene = this.top();
       if (!scene) {
@@ -154,11 +170,18 @@ export class GlStage {
       const started = performance.now();
       const interval = now - this.last;
       this.last = now;
-      resources.images.startFrame();
-      const frame = { ...resources, now, dt: Math.min(0.1, interval / 1000) };
+      resources.images.startFrame(now);
+      resources.text.startFrame();
+      resources.overlayText.startFrame();
+      frame.now = now;
+      frame.dt = Math.min(0.1, interval / 1000);
       scene.draw(frame);
       // The overlay draws over the finished scene (end() only flushes, nothing is cleared) and ends its own drawing.
       this.overlay?.draw(frame);
+      if (this.hud.shown) {
+        this.hud.draw(frame, STAGE_W);
+        resources.renderer.end();
+      }
       this.diagnostics.frame(interval, performance.now() - started);
     };
     this.frame = requestAnimationFrame(loop);

@@ -449,8 +449,10 @@ export class HomeScene {
   /** Text drawn `scale` times bigger (a growing tile's), cut to `maxWidth` at its own size. */
   private scaled(ctx: UiContext, value: string, x: number, cy: number, style: TextStyle, color: Rgba, scale: number, align: 'left' | 'center', maxWidth?: number): void {
     if (!value) return;
+    // New text within the frame's budget, as drawText's: the menu's first frame made all its tiles' at once.
+    if (maxWidth && !ctx.text.withinBudget && !ctx.text.measured(value, style)) return;
     const shown = maxWidth ? ctx.text.fit(value, style, maxWidth) : value;
-    const texture = ctx.text.get(shown, style);
+    const texture = ctx.text.get(shown, style, true);
     if (!texture) return;
     const width = texture.width * scale;
     ctx.renderer.image(texture, align === 'left' ? x - 2 * scale : x - width / 2, cy - (texture.height * scale) / 2, scale, color);

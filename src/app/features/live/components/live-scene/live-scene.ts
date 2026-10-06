@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { BattleMusic } from '@core/audio/battle-music';
 import { Router } from '@angular/router';
 import { AppSettings } from '@core/settings/app-settings';
 import { FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
@@ -79,6 +80,8 @@ export class LiveScene {
   });
 
   constructor() {
+    // The battle opened from here plays its music sooner: its download starts while the list shows.
+    inject(BattleMusic).prepareNext();
     // The shown format's list, whenever connected (on opening the page, or once the connection is back).
     effect(() => {
       const format = this.shownFormat();

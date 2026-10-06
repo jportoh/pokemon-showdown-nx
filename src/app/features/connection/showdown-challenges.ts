@@ -1,4 +1,5 @@
 import { Service, inject, signal } from '@angular/core';
+import { BattleMusic } from '@core/audio/battle-music';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { AppSettings } from '@core/settings/app-settings';
@@ -45,6 +46,8 @@ const ANSWER_WINDOW_MS = 5000;
 @Service()
 export class ShowdownChallenges {
   private readonly connection = inject(ShowdownConnection);
+  /** The next battle's music downloads while the player waits for it. */
+  private readonly music = inject(BattleMusic);
   private readonly login = inject(ShowdownLogin);
   private readonly render = inject(RenderScheduler);
   private readonly rooms = inject(BattleRooms);
@@ -98,6 +101,7 @@ export class ShowdownChallenges {
     this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/challenge ${id}, ${format}`);
+    this.music.prepareNext();
     this.setOutgoing({ to, toId: id, format });
     // Silence isn't an answer either: said, so it shows (the challenge may still go out).
     this.confirmTimer = setTimeout(() => {
@@ -122,6 +126,7 @@ export class ShowdownChallenges {
     this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/accept ${challenge.fromId}`);
+    this.music.prepareNext();
     this.setAccepted(challenge);
     // No battle room by then, and no refusal either: it isn't coming.
     this.acceptTimer = setTimeout(() => {

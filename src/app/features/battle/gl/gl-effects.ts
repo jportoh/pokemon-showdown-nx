@@ -205,7 +205,8 @@ export class GlEffects {
     this.particles = alive;
   }
 
-  draw(renderer: GlRenderer): void {
+  /** Draws the tweens and particles; `hidden` (something covers the field) only ends the tweens that are due. */
+  draw(renderer: GlRenderer, hidden = false): void {
     const live: Tween[] = [];
     const finished: Tween[] = [];
     for (const tween of this.tweens) {
@@ -214,10 +215,14 @@ export class GlEffects {
         live.push(tween);
         continue;
       }
-      tween.draw(renderer, progress);
+      if (!hidden) tween.draw(renderer, progress);
       (progress >= 1 ? finished : live).push(tween);
     }
     this.tweens = live;
+    if (hidden) {
+      finished.forEach((tween) => tween.done?.());
+      return;
+    }
     for (const p of this.particles) {
       const t = p.age / p.life;
       const size = p.size + (p.endSize - p.size) * t;

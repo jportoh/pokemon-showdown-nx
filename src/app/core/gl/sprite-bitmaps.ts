@@ -22,7 +22,7 @@ type Entry =
   | { state: 'downloading'; priority: number }
   | { state: 'downloaded'; priority: number; bytes: Uint8Array }
   | { state: 'decoding' }
-  | { state: 'ready'; image: DecodedImage; width: number; height: number }
+  | { state: 'ready'; image: DecodedImage; width: number; height: number; at: number }
   | { state: 'failed' }
   /** Made into a texture: the decoded image is gone (GlSprites keeps the texture). */
   | { state: 'released' };
@@ -99,6 +99,37 @@ export class SpriteBitmaps {
     if (entry?.state !== 'ready') return;
     if ('close' in entry.image) entry.image.close();
     this.entries.set(url, { state: 'released' });
+  }
+
+  /** Forgets an image whose texture was let go (GlSprites): asked for again, it downloads and decodes again. */
+  forget(url: string): void {
+    const entry = this.entries.get(url);
+    if (entry?.state === 'released') this.entries.delete(url);
+  }
+
+  /**
+   * Lets go of images decoded more than `idleMs` ago that nothing has made into a texture (a team
+   * preview's Megas that never came out, avatars fetched ahead): asked for again, they load again.
+   */
+  dropUnclaimed(idleMs: number): void {
+    const before = performance.now() - idleMs;
+    for (const [url, entry] of this.entries) {
+      if (entry.state !== 'ready' || entry.at > before || this.listeners.has(url)) continue;
+      if ('close' in entry.image) entry.image.close();
+      this.entries.delete(url);
+    }
+  }
+
+  /** Decoded images waiting to become textures, and their pixels in bytes (the diagnostics). */
+  get unclaimed(): { count: number; bytes: number } {
+    let count = 0;
+    let bytes = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.state !== 'ready') continue;
+      count++;
+      bytes += entry.width * entry.height * 4;
+    }
+    return { count, bytes };
   }
 
   /**
@@ -241,7 +272,7 @@ export class SpriteBitmaps {
   }
 
   private finish(url: string, image: DecodedImage | null, width = 0, height = 0): void {
-    this.entries.set(url, image ? { state: 'ready', image, width, height } : { state: 'failed' });
+    this.entries.set(url, image ? { state: 'ready', image, width, height, at: performance.now() } : { state: 'failed' });
     const listeners = this.listeners.get(url);
     this.listeners.delete(url);
     listeners?.forEach((listener) => listener(image));

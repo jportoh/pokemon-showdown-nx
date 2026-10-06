@@ -1,11 +1,12 @@
 import { inject } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
+import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { CalcMode, CalcState, freshField } from '@features/teambuilder/calc/calc-state';
-import { CalcBoosts, CalcField, CalcOutcome, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
+import { CalcBoosts, CalcField, CalcOutcome, CalcRun, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
 import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { FieldModal } from './field-modal';
@@ -56,12 +57,13 @@ export class CalcsView {
   private readonly state = inject(CalcState);
   private readonly calc = inject(DamageCalc);
   private readonly sets = inject(RivalSets);
+  private readonly diagnostics = inject(GlDiagnostics);
   private readonly picker: RivalPicker;
   private readonly field: FieldModal;
   private readonly wraps = new WrapCache();
 
   /** The last outcome and what it was worked out from (frames are many, changes few). */
-  private memo: { set: PokemonSet; rival: RivalSet; mode: CalcMode; field: CalcField; outcome: CalcOutcome } | null = null;
+  private memo: { set: PokemonSet; rival: RivalSet; mode: CalcMode; field: CalcField; run: CalcRun; done: boolean; stepped: number } | null = null;
 
   constructor(private readonly focus: CanvasFocus) {
     this.picker = new RivalPicker(focus);
@@ -158,7 +160,7 @@ export class CalcsView {
   /** "Doubles · Rain (Drizzle) · Reflect": the field as the header sums it up. */
   fieldSummary(format: string): string {
     const field = this.state.fieldFor(format);
-    const outcome = this.memo?.outcome;
+    const outcome = this.memo?.run.outcome;
     const target = this.state.mode() === 'attack' ? field.rival : field.yours;
     const parts = [field.doubles ? 'Doubles' : 'Singles'];
     const weather = outcome?.weather;
@@ -177,7 +179,7 @@ export class CalcsView {
     const field = this.state.fieldFor(model.format);
     const rival = this.rival();
     const mode = this.state.mode();
-    const outcome = rival ? this.outcome(model.set, rival, mode, field) : null;
+    const outcome = rival ? this.outcome(model.set, rival, mode, field, ctx.now) : null;
     this.drawRival(ctx, rival, mode, field, outcome);
     this.drawMoves(ctx, rival, mode, outcome);
     this.drawDetail(ctx, rival, mode, outcome);
@@ -195,12 +197,29 @@ export class CalcsView {
     return rival;
   }
 
-  private outcome(set: PokemonSet, rival: RivalSet, mode: CalcMode, field: CalcField): CalcOutcome {
-    const memo = this.memo;
-    if (memo && memo.set === set && memo.rival === rival && memo.mode === mode && memo.field === field) return memo.outcome;
-    const outcome = mode === 'attack' ? this.calc.calculate(set, rival.set, 'yours', field) : this.calc.calculate(rival.set, set, 'rival', field);
-    this.memo = { set, rival, mode, field, outcome };
-    return outcome;
+  /**
+   * The outcome, its next pending move worked out once a frame (`now`: both cards ask for it): a frame
+   * for all four took up to 77 ms on the console.
+   */
+  private outcome(set: PokemonSet, rival: RivalSet, mode: CalcMode, field: CalcField, now: number): CalcOutcome {
+    const started = performance.now();
+    let memo = this.memo;
+    if (!memo || memo.set !== set || memo.rival !== rival || memo.mode !== mode || memo.field !== field) {
+      const run = mode === 'attack' ? this.calc.begin(set, rival.set, 'yours', field) : this.calc.begin(rival.set, set, 'rival', field);
+      // Until a move is worked out again, the last numbers for it stay (a stage or the field changed): no rows blinking.
+      const before = memo?.run.outcome.moves ?? [];
+      run.outcome.moves.forEach((move, i) => {
+        if (before[i]?.move === move.move && before[i].kind !== 'pending') run.outcome.moves[i] = before[i];
+      });
+      // Setting it up is a frame's share already: its first move in the next one.
+      memo = this.memo = { set, rival, mode, field, run, done: false, stepped: now };
+      this.diagnostics.record('calc', performance.now() - started);
+    } else if (!memo.done && memo.stepped !== now) {
+      memo.stepped = now;
+      memo.done = !memo.run.step();
+      this.diagnostics.record('calc', performance.now() - started);
+    }
+    return memo.run.outcome;
   }
 
   // ---------------------------------------------------------------- the rival's card
@@ -245,7 +264,7 @@ export class CalcsView {
     const titleW = label(ctx, rival.title, left + 20, setY, { size: 20, bold: true }, p.ink, { maxWidth: 340 });
     arrow(ctx, RIGHT, left + 28 + titleW, setY - 7, 2, p.accentText);
     const where = rival.source === 'common' ? 'common set' : rival.source === 'team' ? 'your team' : 'generic spread';
-    label(ctx, `${where} · ${index + 1} / ${sets.length}`, left + 50 + titleW, setY, { size: 15 }, p.muted);
+    label(ctx, `${where} · ${index + 1} / ${sets.length}`, left + 50 + titleW, setY, { size: 15 }, p.muted, { fast: true });
 
     const set = rival.set;
     const ability = this.dex.mega(set.species, set.item)?.ability ?? set.ability;
@@ -305,7 +324,7 @@ export class CalcsView {
     const yours = field.yours;
     const rival = this.rival();
     const mode = this.state.mode();
-    const outcome = rival ? this.outcome(model.set, rival, mode, field) : null;
+    const outcome = rival ? this.outcome(model.set, rival, mode, field, ctx.now) : null;
     const x = box.x + 20;
     const w = box.w - 40;
     label(ctx, 'In battle', x, box.y + 312, { size: 16 }, p.muted);
@@ -380,7 +399,8 @@ export class CalcsView {
     const koX = right - koW;
     const textRight = koX - 14;
     if (move.kind !== 'damage') {
-      const text = move.kind === 'status' ? 'No damage' : move.kind === 'immune' ? "It doesn't affect the target" : 'Not in the calc';
+      const text =
+        move.kind === 'pending' ? '…' : move.kind === 'status' ? 'No damage' : move.kind === 'immune' ? "It doesn't affect the target" : 'Not in the calc';
       label(ctx, text, x, cy, { size: 18 }, p.muted);
       if (focused) focusRing(ctx, box, 8);
       return;
@@ -398,8 +418,8 @@ export class CalcsView {
     if (minW > 0) renderer.rect(bar.x + 3, bar.y + 3, minW, bar.h - 6, { fill, radius: 2 });
     renderer.rect(bar.x + 3 + inner / 2 - 1, bar.y - 3, 2, bar.h + 6, { fill: p.outline });
 
-    label(ctx, `${percent(move.minPercent)} – ${percent(move.maxPercent)}%`, textRight, cy - 9, { size: 20, bold: true }, p.ink, { align: 'right' });
-    label(ctx, `${move.min}–${move.max} HP`, textRight, cy + 14, { size: 14 }, p.muted, { align: 'right' });
+    label(ctx, `${percent(move.minPercent)} – ${percent(move.maxPercent)}%`, textRight, cy - 9, { size: 20, bold: true }, p.ink, { align: 'right', fast: true });
+    label(ctx, `${move.min}–${move.max} HP`, textRight, cy + 14, { size: 14 }, p.muted, { align: 'right', fast: true });
 
     const ko = koBadge(move);
     const koBox = { x: koX, y: cy - 20, w: koW, h: 40 };
@@ -421,10 +441,12 @@ export class CalcsView {
     const x = box.x + 18;
     const width = box.w - 36;
     if (move?.kind === 'damage') {
-      this.wraps.draw(ctx, move.desc.replace(' -- ', ' — '), x, box.y + 10, width, 24, { size: 17 }, p.ink, 2);
-      if (move.notes.length) this.wraps.draw(ctx, move.notes.join(' · '), x, box.y + 60, width, 22, { size: 15 }, p.muted, 2);
+      const { desc, notes } = move.detail();
+      this.wraps.draw(ctx, desc.replace(' -- ', ' — '), x, box.y + 10, width, 24, { size: 17 }, p.ink, 2);
+      if (notes.length) this.wraps.draw(ctx, notes.join(' · '), x, box.y + 60, width, 22, { size: 15 }, p.muted, 2);
       return;
     }
+    if (move?.kind === 'pending') return;
     if (move) {
       this.wraps.draw(ctx, move.kind === 'immune' ? `${move.move} has no effect on the target (its type or ability).` : `${move.move} doesn't deal damage.`, x, box.y + 10, width, 24, { size: 17 }, p.muted, 2);
       return;
@@ -482,7 +504,7 @@ function drawBattleState(ctx: UiContext, x: number, cy: number, w: number, state
   const p = ctx.palette;
   const hpText = state.maxHp ? `HP ${Math.max(1, Math.floor((state.maxHp * state.hp) / 100))} / ${state.maxHp}` : 'HP';
   label(ctx, hpText, x, cy, { size: 16 }, p.muted);
-  label(ctx, `${state.hp}%`, x + w, cy, { size: 18, bold: true }, p.ink, { align: 'right' });
+  label(ctx, `${state.hp}%`, x + w, cy, { size: 18, bold: true }, p.ink, { align: 'right', fast: true });
   ctx.renderer.rect(x, cy + 12, w, 14, { fill: p.input, stroke: p.rim, radius: 4, border: 2 });
   ctx.renderer.rect(x + 3, cy + 15, ((w - 6) * state.hp) / 100, 8, { fill: state.hp > 50 ? HP_GREEN : state.hp > 20 ? HP_YELLOW : HP_RED, radius: 2 });
 
@@ -493,11 +515,11 @@ function drawBattleState(ctx: UiContext, x: number, cy: number, w: number, state
     const value = state.boosts[stat];
     const ink = value > 0 ? p.accentText : value < 0 ? p.danger : p.muted;
     ctx.renderer.rect(chip.x, chip.y, chip.w, chip.h, { fill: value ? p.select : p.bg, stroke: value ? ink : p.rim, radius: 5, border: value ? 2 : 1 });
-    label(ctx, `${name} ${stage(value)}`, chip.x + chip.w / 2, chip.y + chip.h / 2, { size: 15, bold: value !== 0 }, ink, { align: 'center', maxWidth: chip.w - 6 });
+    label(ctx, `${name} ${stage(value)}`, chip.x + chip.w / 2, chip.y + chip.h / 2, { size: 15, bold: value !== 0 }, ink, { align: 'center', maxWidth: chip.w - 6, fast: true });
   });
   const speed = chipAt(STAGE_CHIPS.length);
   ctx.renderer.rect(speed.x, speed.y, speed.w, speed.h, { fill: p.input, stroke: p.outline, radius: 5, border: 2 });
-  label(ctx, `Spe ${state.speed || '—'}`, speed.x + speed.w / 2, speed.y + speed.h / 2, { size: 15, bold: true }, p.ink, { align: 'center', maxWidth: speed.w - 6 });
+  label(ctx, `Spe ${state.speed || '—'}`, speed.x + speed.w / 2, speed.y + speed.h / 2, { size: 15, bold: true }, p.ink, { align: 'center', maxWidth: speed.w - 6, fast: true });
 }
 
 /** "+1", "±0", "−2" */

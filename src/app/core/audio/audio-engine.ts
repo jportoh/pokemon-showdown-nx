@@ -1,12 +1,13 @@
 import { Service, effect, inject, signal } from '@angular/core';
-import { Note, notesLength, renderNote } from '@core/audio/chip-synth';
+import { GlDiagnostics } from '@core/gl/gl-diagnostics';
+import { Note, noteSteps, notesLength, renderNote } from '@core/audio/chip-synth';
 import { MENU_THEME_SECONDS, menuThemeNotes } from '@core/audio/menu-theme';
 import { BattleTheme, battleThemeNotes, battleThemeSeconds } from '@core/audio/battle-themes';
 import { DUCKING_SOUNDS, SOUND_FILES, SOUNDS, SoundId } from '@core/audio/sfx';
 import { AppSettings } from '@core/settings/app-settings';
 
-/** Time per frame for what's synthesized after the loading screen. */
-const BACKGROUND_SLICE_MS = 4;
+/** Time per frame for what's synthesized after the loading screen (4 ms left the idle menu at the edge of its frame on the console, test-w6). */
+const BACKGROUND_SLICE_MS = 2;
 /** How long music takes to fade in or out when it changes. */
 const FADE_S = 0.8;
 /** A hit lowers the music to this (gain) at once, holds it up to DUCK_HOLD_S, then brings it back over DUCK_RELEASE_S. */
@@ -44,6 +45,7 @@ type AudioContextClass = typeof AudioContext;
 @Service()
 export class AudioEngine {
   private readonly settings = inject(AppSettings);
+  private readonly diagnostics = inject(GlDiagnostics);
 
   private readonly context: AudioContext | null = createContext();
   private readonly musicBus: GainNode | null = null;
@@ -114,13 +116,16 @@ export class AudioEngine {
   private finishInBackground(): void {
     const job = this.job;
     if (!job) return;
-    const until = performance.now() + BACKGROUND_SLICE_MS;
+    const started = performance.now();
+    const until = started + BACKGROUND_SLICE_MS;
     while (performance.now() < until) {
       if (job.next().done) {
         this.job = null;
-        return;
+        break;
       }
     }
+    this.diagnostics.record('audio', performance.now() - started);
+    if (!this.job) return;
     nextFrame(() => this.finishInBackground());
   }
 
@@ -243,7 +248,7 @@ export class AudioEngine {
     });
   }
 
-  /** The synthesis, one note per step: the sounds first, then the menu theme straight into its buffer. */
+  /** The synthesis a step at a time (a sound, or a slice of a note): the sounds first, then the menu theme straight into its buffer. */
   private *synthesize(context: AudioContext): Iterator<'ready' | void> {
     const rate = context.sampleRate;
     for (const [id, notes] of Object.entries(SOUNDS) as [SoundId, readonly Note[]][]) {
@@ -257,7 +262,7 @@ export class AudioEngine {
     const samples = theme.getChannelData(0);
     let seed = 1;
     for (const note of menuThemeNotes()) {
-      renderNote(samples, rate, note, seed++);
+      yield* noteSteps(samples, rate, note, seed++);
       yield;
     }
     this.menuTheme = { id: 'menu', buffer: theme };
@@ -266,7 +271,7 @@ export class AudioEngine {
       const buffer = context.createBuffer(1, Math.ceil(battleThemeSeconds(id) * rate), rate);
       const channel = buffer.getChannelData(0);
       for (const note of battleThemeNotes(id)) {
-        renderNote(channel, rate, note, seed++);
+        yield* noteSteps(channel, rate, note, seed++);
         yield;
       }
       const track = { id, buffer };
