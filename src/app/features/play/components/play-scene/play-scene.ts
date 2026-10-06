@@ -13,6 +13,7 @@ import { Box, UiContext, button, focusRing, label, modal, paragraph } from '@cor
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
+import { connectionNotice } from '@features/connection/connection-notice';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -161,6 +162,7 @@ export class PlayScene {
   private readonly battleLine = computed(() => {
     if (this.session.active()) return 'Back to your battle';
     if (this.rooms.joining()) return 'Joining battle…';
+    if (this.search.cancelling()) return 'Cancelling the search…';
     if (this.searching()) return 'Searching for an opponent…';
     if (!this.hasTeam()) return 'Build a team for this format first';
     const status = this.login.state().status;
@@ -179,6 +181,9 @@ export class PlayScene {
     const login = this.login.state();
     if (login.status === 'offline') return 'Offline';
     if (login.status === 'unavailable') return 'Online battles unavailable';
+    // The connection dropped (or keeps failing): why, and that it's being got back.
+    const notice = connectionNotice(this.connection.state(), login);
+    if (notice) return notice;
     if (this.connection.state().status !== 'connected') return 'Connecting to Showdown…';
     return 'Getting a name on Showdown…';
   });
@@ -459,7 +464,7 @@ export class PlayScene {
         joining || searched
           ? {
               since: this.searchSince,
-              title: joining ? 'Opponent found!' : `Searching… ${clock(ctx.now - this.searchSince)}`,
+              title: joining ? 'Opponent found!' : this.search.cancelling() ? 'Cancelling…' : `Searching… ${clock(ctx.now - this.searchSince)}`,
               line: joining ? 'Joining battle…' : `Ladder · ${searchedLabel}`,
             }
           : null,

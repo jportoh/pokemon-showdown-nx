@@ -141,6 +141,7 @@ export class HomeScene {
 
   private readonly randomStatus = computed((): MenuLine => {
     const error = this.search.error();
+    if (this.search.cancelling()) return { text: 'Cancelling the search…', tone: 'alert' };
     if (this.search.searching()) return { text: 'Searching for an opponent… A to cancel', tone: 'alert' };
     if (error) return { text: error, tone: 'error' };
     if (this.offline()) return { text: 'Log in first (ZR)', tone: 'faded' };

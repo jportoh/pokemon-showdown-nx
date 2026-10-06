@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { Observable, Subject } from 'rxjs';
 import { toId } from '@shared/utils/to-id';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { SavedLogin } from './saved-login';
@@ -35,6 +36,8 @@ export interface LoginState {
   registering: boolean;
   /** Why the last `register` failed, until the next one. */
   registerError: string | null;
+  /** The connection dropped while we had a name: it's being claimed again on the new one. */
+  reclaiming: boolean;
 }
 
 /** A name the player chose, and its password for a registered one (empty otherwise). */
@@ -54,16 +57,26 @@ const GUEST_AVATAR = '';
 const MAX_NAME_TRIES = 3;
 
 /**
+ * Getting our name back after the connection dropped: the server may still hold it for the old
+ * connection ("Someone is already using the name…") until it notices that one is gone, and the login
+ * server may not answer while the network comes back. Tried again every 5 s for a minute, as long as
+ * Showdown waits for a player who dropped out of a battle.
+ */
+const RECLAIM_TRIES = 12;
+const RECLAIM_DELAY_MS = 5000;
+
+/**
  * Connects the player to Showdown and gives them a name, only when they ask: `connectAsGuest()` or
  * `startLogin()` then `logIn()`; `disconnect()` ends it. Other connections (the team validation's)
  * get no name. As a guest: guests can't battle, but any unregistered
  * name can be claimed with the login server's assertion (`userid` + the server's `challstr`) and
- * `/trn name,0,assertion`. A new random name each time the connection (re)opens: a name kept from
- * before may still be held by an older connection the server hasn't dropped ("Someone is already
- * using the name…"), and then another one is tried. `newName()` asks for another one by hand.
+ * `/trn name,0,assertion`. A new random name each time the player connects; a taken one ("Someone is
+ * already using the name…") moves on to another. `newName()` asks for another one by hand.
  * `logIn()` claims the player's own name instead: with its password when it's registered (the login
  * server's `login` gives the assertion then). It's kept in memory to log in again when the connection
- * is replaced; `disconnect()` forgets it. Settings may also keep the name and, to log in when the app
+ * is replaced; `disconnect()` forgets it. When the connection drops, the name we had (a guest's too)
+ * is claimed again on the new one (`reclaiming`), retried for a minute while the server still holds it
+ * for the old connection: the server puts a player back in their battles by the name. Settings may also keep the name and, to log in when the app
  * starts (`logInSaved()`), a registered name's password (see SavedLogin).
  * The login server only allows CORS from Showdown's own site, so a regular browser can't read its
  * answer; the Brewser console doesn't enforce CORS (test P1, 2026-09-26), so there it works.
@@ -85,9 +98,18 @@ export class ShowdownLogin {
     avatar: '',
     registering: false,
     registerError: null,
+    reclaiming: false,
   });
+  private readonly namedSubject = new Subject<void>();
   /** The server's latest challenge: a login for an older one would be refused. */
   private challstr: string | null = null;
+  /**
+   * The name we had when the connection dropped (a guest's random one too, with no password),
+   * claimed again on the new connection; null once it's back, or given up on.
+   */
+  private held: Credentials | null = null;
+  private reclaimTries = 0;
+  private reclaimTimer: ReturnType<typeof setTimeout> | null = null;
   /** Names tried for the current claim, so a taken one moves on to another. */
   private tries = 0;
   /** The player's own name, once asked for: claimed again on each new connection. */
@@ -98,6 +120,11 @@ export class ShowdownLogin {
   private avatarAppliedFor: string | null = null;
 
   readonly state = this.stateSignal.asReadonly();
+  /**
+   * Emits each time the server calls us by a chosen name, a reclaimed one after a reconnection
+   * included: what our battles' rooms wait for to be joined again (see BattleRooms).
+   */
+  readonly named: Observable<void> = this.namedSubject.asObservable();
 
   constructor() {
     this.connection.frames.subscribe((frame) => {
@@ -114,7 +141,15 @@ export class ShowdownLogin {
     this.connection.opened.subscribe(() => {
       // A new connection has a new random avatar.
       this.avatarAppliedFor = null;
-      if (this.stateSignal().mode) this.setState({ status: 'connecting', error: null });
+      const state = this.stateSignal();
+      if (!state.mode) return;
+      // Back after a drop: the name we had is claimed again (a drop while reclaiming keeps trying the same one).
+      if (state.status === 'named') {
+        this.held = { name: state.name, password: state.ownName ? (this.credentials?.password ?? '') : '' };
+        this.reclaimTries = 0;
+      }
+      this.clearReclaimTimer();
+      this.setState({ status: 'connecting', error: null, reclaiming: this.held !== null });
     });
     // Closed by something else (it doesn't happen while the player is connected, but just in case).
     this.connection.ended.subscribe(() => {
@@ -260,13 +295,76 @@ export class ShowdownLogin {
   private onChallenge(): void {
     const mode = this.stateSignal().mode;
     if (!mode) return;
-    if (this.credentials) void this.claimOwnName(this.credentials);
+    if (this.held) void this.reclaimName(this.held);
+    else if (this.credentials) void this.claimOwnName(this.credentials);
     else if (mode === 'login') this.setState({ status: 'ready', error: null });
     else void this.claimName();
   }
 
+  /**
+   * Claims the name we had before the connection dropped, as it was had: a registered one with its
+   * password, a free one (ours or a guest's) with none. The server's `updateuser` confirms it; a name
+   * still held by the old connection, or a login server out of reach, is tried again (retryReclaim).
+   */
+  private async reclaimName(held: Credentials): Promise<void> {
+    const challstr = this.challstr;
+    if (!challstr) return;
+    this.setState({ reclaiming: true });
+    let assertion: string;
+    try {
+      assertion = held.password ? await fetchLoginAssertion(held.name, held.password, challstr) : await fetchAssertion(held.name, challstr);
+    } catch {
+      if (this.challstr === challstr && this.held === held) this.retryReclaim();
+      return;
+    }
+    if (this.challstr !== challstr || this.held !== held) return;
+    // Registered by someone else meanwhile, or its password changed: it can't be had back.
+    if (assertion.startsWith(';')) {
+      this.giveUpReclaim();
+      return;
+    }
+    this.connection.send('', `/trn ${held.name},0,${assertion}`);
+  }
+
+  private retryReclaim(): void {
+    this.reclaimTries++;
+    if (this.reclaimTries >= RECLAIM_TRIES) {
+      this.giveUpReclaim();
+      return;
+    }
+    this.clearReclaimTimer();
+    this.reclaimTimer = setTimeout(() => {
+      this.reclaimTimer = null;
+      // Dropped again meanwhile: the next connection's challenge tries again.
+      if (this.held && this.challstr && this.connection.state().status === 'connected') void this.reclaimName(this.held);
+    }, RECLAIM_DELAY_MS);
+  }
+
+  /** The old name can't be had back: as on a fresh connection, a guest gets a new random name, a login waits for the player. */
+  private giveUpReclaim(): void {
+    const held = this.held;
+    this.held = null;
+    this.clearReclaimTimer();
+    this.setState({ reclaiming: false });
+    if (!held) return;
+    if (this.stateSignal().mode === 'guest') {
+      this.tries = 0;
+      void this.claimName();
+      return;
+    }
+    this.credentials = null;
+    this.setState({ status: 'ready', loginError: `Couldn't get the name ${held.name} back after reconnecting. Log in again.` });
+  }
+
+  private clearReclaimTimer(): void {
+    if (this.reclaimTimer !== null) clearTimeout(this.reclaimTimer);
+    this.reclaimTimer = null;
+  }
+
   private reset(): void {
     this.avatarAppliedFor = null;
+    this.held = null;
+    this.clearReclaimTimer();
     this.setState({
       status: 'offline',
       mode: null,
@@ -279,12 +377,13 @@ export class ShowdownLogin {
       avatar: '',
       registering: false,
       registerError: null,
+      reclaiming: false,
     });
   }
 
   private busy(): boolean {
     const state = this.stateSignal();
-    return state.status === 'naming' || state.loggingIn;
+    return state.status === 'naming' || state.loggingIn || state.reclaiming;
   }
 
   /** Claims a random name for the current challenge; registered names are skipped. */
@@ -355,7 +454,8 @@ export class ShowdownLogin {
 
   /** `|nametaken|name|message`: another connection holds it. Another name, while tries are left. */
   private onNameTaken(message: string): void {
-    if (this.stateSignal().loggingIn) this.loginFailed(message);
+    if (this.held) this.retryReclaim();
+    else if (this.stateSignal().loggingIn) this.loginFailed(message);
     else if (this.tries < MAX_NAME_TRIES) void this.claimName();
     else this.fail(message);
   }
@@ -388,6 +488,12 @@ export class ShowdownLogin {
       registering: false,
       loggingIn: this.stateSignal().loggingIn && !ownName,
     });
+    if (this.held && toId(name) === toId(this.held.name)) {
+      this.held = null;
+      this.clearReclaimTimer();
+      this.setState({ reclaiming: false });
+    }
+    this.namedSubject.next();
   }
 
   /**

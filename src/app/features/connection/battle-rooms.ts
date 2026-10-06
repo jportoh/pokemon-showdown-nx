@@ -2,6 +2,7 @@ import { Service, inject, signal } from '@angular/core';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { Observable, Subject } from 'rxjs';
 import { ShowdownConnection } from './showdown-connection';
+import { ShowdownLogin } from './showdown-login';
 
 /** How long a new room may go without anything to show before it opens anyway (as "Joining battle…"). */
 const READY_TIMEOUT_MS = 10000;
@@ -15,6 +16,7 @@ const READY_TIMEOUT_MS = 10000;
 @Service()
 export class BattleRooms {
   private readonly connection = inject(ShowdownConnection);
+  private readonly login = inject(ShowdownLogin);
   private readonly render = inject(RenderScheduler);
   private readonly startedSubject = new Subject<string>();
   /** Frames waiting for a listener, per room. */
@@ -23,6 +25,8 @@ export class BattleRooms {
   /** New rooms with nothing to show yet, each with the timer that announces it anyway. */
   private readonly pending = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly joiningSignal = signal(false);
+  /** The connection was replaced while we were in rooms: they're joined again once we can (see rejoin). */
+  private rejoinPending = false;
 
   /** Emits a room's ID when a battle in it has something to show. */
   readonly started: Observable<string> = this.startedSubject.asObservable();
@@ -30,6 +34,14 @@ export class BattleRooms {
   readonly joining = this.joiningSignal.asReadonly();
 
   constructor() {
+    // Back after a drop: the rooms we were in are joined again, which sends each battle from its
+    // start (the battle page catches up). Ours only once we have our name back: the server puts the
+    // player back in by the name. Watching needs no name.
+    this.connection.opened.subscribe(() => {
+      this.rejoinPending = this.listeners.size > 0 || this.buffers.size > 0;
+      if (!this.login.state().mode) this.rejoin();
+    });
+    this.login.named.subscribe(() => this.rejoin());
     this.connection.frames.subscribe(({ roomId, lines }) => {
       if (!roomId.startsWith('battle-')) return;
       const frame = lines.join('\n');
@@ -74,6 +86,16 @@ export class BattleRooms {
   /** Sends a command to the room (`/choose move 1|3`, `/forfeit`). */
   send(roomId: string, text: string): void {
     this.connection.send(roomId, text);
+  }
+
+  /**
+   * Joins again the rooms we were in before the connection dropped. Joining one we're already back
+   * in (the server puts a player back in their battles by itself) changes nothing.
+   */
+  private rejoin(): void {
+    if (!this.rejoinPending) return;
+    this.rejoinPending = false;
+    for (const roomId of new Set([...this.listeners.keys(), ...this.buffers.keys()])) this.connection.send('', `/join ${roomId}`);
   }
 
   /** A new room has something to show (or has waited long enough): the battle page may open it. */

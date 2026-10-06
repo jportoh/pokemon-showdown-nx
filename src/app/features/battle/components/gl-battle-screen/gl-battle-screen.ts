@@ -21,6 +21,9 @@ import { DONE_ID, SheetButton, TeamSelectView } from '@features/battle/gl/screen
 import { PANEL_IDS, WatchPanelView } from '@features/battle/gl/screen/watch-panel-view';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
+import { connectionNotice } from '@features/connection/connection-notice';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { ShowdownLogin } from '@features/connection/showdown-login';
 
 const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
 
@@ -67,6 +70,8 @@ export class GlBattleScreen {
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly stage = inject(GlStage);
+  private readonly connection = inject(ShowdownConnection);
+  private readonly login = inject(ShowdownLogin);
 
   private readonly field = new BattleFieldScene();
   private readonly header = new HeaderView();
@@ -154,7 +159,7 @@ export class GlBattleScreen {
     this.focus.begin();
 
     const hold = this.forfeitHold();
-    const canForfeit = !this.store.result() && !this.store.watching() && this.forfeitState() === 'idle';
+    const canForfeit = !this.store.result() && !this.store.lost() && !this.store.watching() && this.forfeitState() === 'idle';
     if (hold?.step(now, canForfeit)) this.forfeit.emit();
     if (this.sheetHold.step(now, this.sheetButton() === 'accept')) this.store.acceptTeamSheets();
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
@@ -220,11 +225,26 @@ export class GlBattleScreen {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
       write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
     }
+    // Live battles (ours or watched): the connection being got back, over everything.
+    const notice = this.store.replay() ? null : connectionNotice(this.connection.state(), this.login.state(), Date.now());
+    if (notice) this.drawConnectionNotice({ ...ctx, text: hudText }, notice);
     if (this.diagnosticsShown) this.drawDiagnostics(renderer, hudText, now);
 
     this.focus.end();
     this.settleFocus(picking, party);
     renderer.end();
+  }
+
+  /**
+   * The connection dropped: a dark banner under the top bar, edged in yellow, saying why and when the
+   * next try is. Its text changes every second, so it's drawn with the stage's overlay text cache.
+   */
+  private drawConnectionNotice(ctx: ScreenContext, notice: string): void {
+    const style = { size: 22, bold: true };
+    const w = Math.min(STAGE_W - 80, ctx.text.measure(notice, style) + 64);
+    const box = { x: (STAGE_W - w) / 2, y: FIELD.y + 16, w, h: 52 };
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: INK.dark, stroke: INK.yellow300, radius: 10, border: 3 });
+    write(ctx, notice, STAGE_W / 2, box.y + box.h / 2, style, INK.yellow100, 'center', box.w - 32);
   }
 
   /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */

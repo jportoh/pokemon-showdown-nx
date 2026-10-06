@@ -70,11 +70,11 @@ export class PlayPanelView {
   /** Changes whenever a new set of buttons appears, so the focus moves to it. */
   readonly viewKey = computed(() => {
     const request = this.store.request();
-    return [this.store.result(), request?.rqid, this.choices.slot(), !!this.choices.pendingMove(), this.store.canUndo()].join('|');
+    return [this.store.result(), !!this.store.lost(), request?.rqid,this.choices.slot(), !!this.choices.pendingMove(), this.store.canUndo()].join('|');
   });
 
   /** Choosing a move or its target (the party screen takes forced switches). */
-  readonly choosing = computed(() => this.choices.slot() !== null && !this.choices.forceSwitch() && !this.store.result());
+  readonly choosing = computed(() => this.choices.slot() !== null && !this.choices.forceSwitch() && !this.store.result() && !this.store.lost());
 
   private readonly moves = computed(() =>
     this.choices.moves().map((move, i) => {
@@ -126,7 +126,7 @@ export class PlayPanelView {
 
   draw(ctx: ScreenContext, actions: PlayActions): string[] {
     drawCommandBar(ctx);
-    if (this.store.result()) return this.drawResult(ctx, actions);
+    if (this.store.result() || this.store.lost()) return this.drawResult(ctx, actions);
     if (this.choices.slot() !== null) {
       // A forced switch is chosen on the party screen.
       if (this.choices.forceSwitch()) return [];
@@ -139,14 +139,16 @@ export class PlayPanelView {
 
   private drawResult(ctx: ScreenContext, actions: PlayActions): string[] {
     const result = this.store.result();
-    const text = result === 'win' ? 'You won!' : result === 'loss' ? 'You lost.' : 'A tie.';
+    // Cut off from the battle after a reconnection: why, in the result's place.
+    const lost = result ? null : this.store.lost();
+    const text = lost !== null ? 'Disconnected' : result === 'win' ? 'You won!' : result === 'loss' ? 'You lost.' : 'A tie.';
     const buttonW = 340;
     const textW = RIGHT - X - 2 * (buttonW + GAP) - GAP;
     write(ctx, text, X + 12, BAR_TOP + 32, { size: 28, bold: true }, INK.white, 'left', textW);
-    writeLines(ctx, actions.rematchNote, X + 12, BAR_TOP + 52, textW, 24, { size: 16 }, INK.gray200, 2);
+    writeLines(ctx, lost ?? actions.rematchNote, X + 12, BAR_TOP + 52, textW, 24, { size: 16 }, INK.gray200, 2);
     const picks: string[] = [];
     const leave = { x: RIGHT - buttonW, y: MOVE_Y, w: buttonW, h: MOVE_H };
-    if (actions.canRematch) {
+    if (actions.canRematch && lost === null) {
       bigButton(ctx, 'result-rematch', { ...leave, x: leave.x - buttonW - GAP }, actions.rematchLabel, 'primary', actions.rematch);
       picks.push('result-rematch');
     }
