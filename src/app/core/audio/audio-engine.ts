@@ -81,11 +81,11 @@ export class AudioEngine {
       this.musicBus!.gain.value = loudness(musicVolume);
       this.soundBus!.gain.value = loudness(soundVolume);
     });
-    // A browser's autoplay rule: the context can only start from a key or a click.
+    // A browser's autoplay rule: the context can only start from a key, a click or a touch.
     const unlock = () => {
       if (context.state === 'suspended') void context.resume().catch(() => undefined);
     };
-    for (const type of ['keydown', 'pointerdown']) window.addEventListener(type, unlock, true);
+    for (const type of ['keydown', 'pointerdown', 'touchstart', 'touchend', 'click']) window.addEventListener(type, unlock, true);
     this.job = this.synthesize(context);
   }
 
