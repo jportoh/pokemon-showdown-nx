@@ -4,7 +4,7 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, UiContext, button, label, modal, pill, retroBox, textField } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, button, label, modal, paragraph, pill, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { Challenge, ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
@@ -49,12 +49,15 @@ export class ChallengePopupView {
   private shownAt = 0;
   private teamIndex = 0;
   private teamAt = 0;
+  /** "Joining battle…" was shown last frame: if it goes without a battle, the focus goes back to Accept. */
+  private wasJoining = false;
 
   constructor(private readonly focus: CanvasFocus) {}
 
   /** The panel went away (or another box covers it): the next showing starts over. */
   reset(): void {
     this.shownFrom = null;
+    this.wasJoining = false;
   }
 
   joining(challenge: Challenge): boolean {
@@ -97,8 +100,14 @@ export class ChallengePopupView {
     label(ctx, challenge.from, left, y + 112, { size: 34, bold: true }, p.accentText, {
       maxWidth: inner,
     });
-    label(ctx, 'wants to battle!', left, y + 152, { size: 22 }, p.ink);
-    if (model.waiting > 0) label(ctx, `${model.waiting} more waiting`, left, y + 182, { size: 16 }, p.muted);
+    // Accepting failed (a team the server refused): why, in place of the invitation; L/R pick another team.
+    const failure = this.challenges.acceptFailed() === challenge.fromId ? this.challenges.error() : null;
+    if (failure) {
+      paragraph(ctx, failure, left, y + 134, inner, 22, { size: 17, bold: true }, p.danger, 3);
+    } else {
+      label(ctx, 'wants to battle!', left, y + 152, { size: 22 }, p.ink);
+      if (model.waiting > 0) label(ctx, `${model.waiting} more waiting`, left, y + 182, { size: 16 }, p.muted);
+    }
 
     // What it's played with.
     const teamBox = { x: left, y: y + 204, w: inner, h: 160 };
@@ -122,7 +131,10 @@ export class ChallengePopupView {
     }
 
     const buttonsY = teamBox.y + teamBox.h + 24;
-    if (this.joining(challenge)) {
+    const joining = this.joining(challenge);
+    if (this.wasJoining && !joining) this.focus.focus(canAccept ? 'popup-accept' : 'popup-reject');
+    this.wasJoining = joining;
+    if (joining) {
       label(ctx, 'Joining battle…', left, buttonsY + 32, { size: 26, bold: true }, p.ink);
       return;
     }

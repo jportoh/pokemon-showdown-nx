@@ -15,7 +15,7 @@ import { INK, ScreenContext, hint, ring, write } from './screen-context';
 /** The four we bring along the foot: two leads, two in the back. */
 const BRING_SLOT = { x: 424, y: 616, h: 96, width: 448, gap: 12 };
 const DONE_BOX = { x: 884, y: 636, w: 160, h: 56 };
-const SHEET_BOX = { x: 1052, y: 648, w: 116, h: 32 };
+const SHEET_BOX = { x: 1052, y: 648, w: 176, h: 32 };
 const POP_MS = 200;
 /** Done's beat while it waits to be pressed (all picked), and its shake when L comes too soon. */
 const DONE_BEAT_MS = 900;
@@ -204,7 +204,7 @@ export class TeamSelectView {
     const focused = ctx.focus.control({ id: DONE_ID, ...DONE_BOX, accept: () => this.done(), move: (direction) => this.moveFromDone(ctx, direction) });
     this.drawDone(ctx, ready, standing, focused);
     if (sheet) {
-      const label = { sheet: 'Sheet', accept: 'Accept', waiting: 'Waiting' }[sheet.button];
+      const label = { sheet: 'Sheet', accept: 'Accept open TS', waiting: 'Waiting' }[sheet.button];
       const held = sheet.button === 'accept' ? { progress: sheet.held, color: ACCEPT_FILL } : undefined;
       hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline }, held);
     }
@@ -324,7 +324,7 @@ export class TeamSelectView {
   private hint(sheet: SheetButton | null): string {
     if (this.standingBy()) return sheet === 'sheet' ? 'ZL their full team sheet' : '';
     if (sheet === 'sheet') return 'A pick · L done · ZL their sheet';
-    if (sheet === 'accept') return 'A pick · L done · hold ZL: accept sheets';
+    if (sheet === 'accept') return 'A pick · L done · hold ZL: accept open TS';
     if (sheet === 'waiting') return 'A pick · L done · waiting on sheets';
     return 'A pick · ◀▶ sides · L done';
   }
