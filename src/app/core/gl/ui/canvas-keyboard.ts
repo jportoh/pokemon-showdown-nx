@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { CanvasFocus, focusInput } from '../canvas-ui';
 import { GlStage, StageFrame } from '../gl-stage';
+import { TextStyle, TextTextures } from '../gl-textures';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { GlTheme } from './gl-theme';
 import { UiContext, button, label, pill } from './retro-kit';
@@ -31,6 +32,16 @@ const KEY_STEP_X = 116;
 const KEY_TOP = 200;
 const KEY_STEP_Y = 88;
 const FIRST_KEY = 'key-1-0';
+/** The keys' characters, and the bottom keys' names and buttons. */
+const KEY_STYLE: TextStyle = { size: 30, bold: true };
+const KEY_FIT = 88;
+const BOTTOM_STYLE: TextStyle = { size: 24, bold: true };
+const PILL_STYLE: TextStyle = { size: 14, bold: true };
+const FOOTER = 'A types the key pointed at · B deletes (hold it to keep deleting) · ZL cancels';
+const FOOTER_STYLE: TextStyle = { size: 20 };
+const FOOTER_WIDTH = 1152;
+/** Texts made per call of warm(), so the loading screen keeps its pace. */
+const WARM_PER_FRAME = 12;
 
 type BottomKey = 'shift' | 'space' | 'delete' | 'cancel' | 'ok';
 const BOTTOM: readonly { id: BottomKey; text: string; button: string }[] = [
@@ -60,6 +71,25 @@ export class CanvasKeyboard {
   private shift = false;
   private readonly focus = new CanvasFocus();
   private release: (() => void)[] = [];
+  /** The keyboard's texts still to make ahead (see warm). */
+  private toWarm: (() => void)[] | null = null;
+
+  /**
+   * Makes the keyboard's texts ahead, a few per call (the loading screen calls it each frame): the
+   * first time it opens, its keys are all there at once instead of coming in over a few frames.
+   * Returns true once done.
+   */
+  warm(text: TextTextures): boolean {
+    this.toWarm ??= [
+      ...ROWS.flat()
+        .flat()
+        .map((character) => () => text.get(text.fit(character, KEY_STYLE, KEY_FIT), KEY_STYLE)),
+      ...BOTTOM.flatMap((key) => [() => text.get(key.text, BOTTOM_STYLE), () => (text.measure(key.button, PILL_STYLE), text.get(key.button, PILL_STYLE))]),
+      () => text.get(text.fit(FOOTER, FOOTER_STYLE, FOOTER_WIDTH), FOOTER_STYLE),
+    ];
+    this.toWarm.splice(0, WARM_PER_FRAME).forEach((make) => make());
+    return this.toWarm.length === 0;
+  }
 
   open(entry: KeyboardEntry): void {
     this.close(null);
@@ -154,6 +184,18 @@ export class CanvasKeyboard {
   private draw(frame: StageFrame): void {
     const entry = this.entry();
     if (!entry) return;
+    // Over the whole stage, all at once: its texts aren't held back for the frame's budget (they're
+    // made on the loading screen; one gone from the cache since comes back in this frame).
+    const budget = frame.text.budgetMs;
+    frame.text.budgetMs = Infinity;
+    try {
+      this.drawKeyboard(frame, entry);
+    } finally {
+      frame.text.budgetMs = budget;
+    }
+  }
+
+  private drawKeyboard(frame: StageFrame, entry: KeyboardEntry): void {
     const p = this.theme.palette();
     const ctx: UiContext = { ...frame, focus: this.focus, palette: p };
     const { renderer } = frame;
@@ -170,7 +212,7 @@ export class CanvasKeyboard {
     ROWS.forEach((row, r) =>
       row.forEach(([normal, shifted], c) => {
         const character = this.shift ? shifted : normal;
-        button(ctx, `key-${r}-${c}`, { x: KEY_LEFT + c * KEY_STEP_X, y: KEY_TOP + r * KEY_STEP_Y, w: 104, h: 76 }, character, { size: 30, accept: () => this.type(character) });
+        button(ctx, `key-${r}-${c}`, { x: KEY_LEFT + c * KEY_STEP_X, y: KEY_TOP + r * KEY_STEP_Y, w: KEY_FIT + 16, h: 76 }, character, { size: KEY_STYLE.size, accept: () => this.type(character) });
       }),
     );
     BOTTOM.forEach((key, i) => {
@@ -178,11 +220,11 @@ export class CanvasKeyboard {
       const focused = button(ctx, `bottom-${key.id}`, box, '', { primary: key.id === 'ok', accept: () => this.press(key.id) });
       if (key.id === 'shift' && this.shift) renderer.rect(box.x + 2, box.y + 2, box.w - 4, box.h - 4, { fill: p.select, radius: 5 });
       const width = pill(ctx, key.button, box.x + 12, box.y + box.h / 2, 36);
-      label(ctx, key.text, box.x + 12 + width + (box.w - 24 - width) / 2, box.y + box.h / 2, { size: 24, bold: true }, key.id === 'ok' ? [1, 1, 1, 1] : p.ink, { align: 'center' });
+      label(ctx, key.text, box.x + 12 + width + (box.w - 24 - width) / 2, box.y + box.h / 2, BOTTOM_STYLE, key.id === 'ok' ? [1, 1, 1, 1] : p.ink, { align: 'center' });
       if (focused && key.id === 'shift' && this.shift) renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: [0.98, 0.8, 0.08, 1], radius: 6, border: 3 });
     });
-    const footer = entry.hint ? entry.hint(this.text) : 'A types the key pointed at · B deletes (hold it to keep deleting) · ZL cancels';
-    label(ctx, footer, KEY_LEFT, 672, { size: 20 }, p.muted, { maxWidth: 1152 });
+    const footer = entry.hint ? entry.hint(this.text) : FOOTER;
+    label(ctx, footer, KEY_LEFT, 672, FOOTER_STYLE, p.muted, { maxWidth: FOOTER_WIDTH });
     this.focus.end();
     renderer.end();
   }

@@ -207,7 +207,8 @@ export interface StatChange {
  * guarding its whole side, Wide Guard and the like (a barrier pulses across the side); confusion
  * starting or holding it before its move (stars circle its head as it wobbles), hurting it (it hits
  * itself) or ending (the stars scatter); a substitute made (the doll takes its place in a puff of
- * smoke) or broken (the doll vanishes and the Pokémon is back).
+ * smoke) or broken (the doll vanishes and the Pokémon is back); a berry eaten (it appears over its head and
+ * goes in a few bites).
  */
 export interface FieldEvent {
   id: number;
@@ -224,8 +225,11 @@ export interface FieldEvent {
     | 'confusion-hit'
     | 'confusion-end'
     | 'substitute'
-    | 'substitute-end';
+    | 'substitute-end'
+    | 'berry';
   slot: SlotKey;
+  /** The berry eaten, for its colour. */
+  item?: string;
 }
 
 /** A line of the battle log: a turn header, a message, a minor detail (HP lost) or the result. */

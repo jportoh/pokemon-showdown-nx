@@ -45,11 +45,13 @@ interface SettingRow {
 const BOX = { x: 32, y: 100, w: 1216, h: 596 };
 const ROW_X = BOX.x + 24;
 const ROW_W = 1162;
-const ROW_H = 76;
-const ROW_STEP = 84;
+const ROW_H = 80;
+const ROW_STEP = 89;
 /** Rows shown at once, big enough to read: the list scrolls under them, with arrows when there's more. */
 const ROWS_SHOWN = 6;
-const rowY = (index: number): number => BOX.y + 20 + index * ROW_STEP;
+/** The rows sit in the middle of the box: the same room above and below them for the "more" arrows. */
+const ROWS_MARGIN = Math.round((BOX.h - (ROWS_SHOWN - 1) * ROW_STEP - ROW_H) / 2);
+const rowY = (index: number): number => BOX.y + ROWS_MARGIN + index * ROW_STEP;
 /** Rows slide in one after another on arrival; the page fades out on leaving. */
 const INTRO_MS = 320;
 const LEAVE_MS = 180;
@@ -326,8 +328,8 @@ export class SettingsScene {
         down: i === end - 1 && i < rows.length - 1 ? rows[i + 1].id : null,
       });
     });
-    if (this.rowStart > 0) label(ctx, '▲ more', BOX.x + BOX.w / 2, BOX.y + 8, { size: 16, bold: true }, p.accentText, { align: 'center' });
-    if (end < rows.length) label(ctx, `▼ ${rows.length - end} more`, BOX.x + BOX.w / 2, BOX.y + BOX.h - 26, { size: 20, bold: true }, p.accentText, { align: 'center' });
+    if (this.rowStart > 0) label(ctx, `▲ ${this.rowStart} more`, BOX.x + BOX.w / 2, BOX.y + ROWS_MARGIN / 2, { size: 18, bold: true }, p.accentText, { align: 'center' });
+    if (end < rows.length) label(ctx, `▼ ${rows.length - end} more`, BOX.x + BOX.w / 2, BOX.y + BOX.h - ROWS_MARGIN / 2, { size: 18, bold: true }, p.accentText, { align: 'center' });
     if (this.leaving) {
       const t = clamp01((now - this.leaving.at) / LEAVE_MS);
       renderer.rect(0, 0, STAGE_W, 720, { fill: withAlpha(p.bg, t) });
@@ -370,8 +372,8 @@ export class SettingsScene {
     const a = (color: Rgba): Rgba => withAlpha(color, alpha);
     renderer.rect(x, y, ROW_W, ROW_H, { fill: a(mixRgba(p.button, p.select, f)), stroke: a(p.rim), radius: 8, border: 2 });
 
-    label(ctx, row.label, x + 22, y + 24, { size: 28, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
-    label(ctx, row.detail, x + 22, y + 54, { size: 19 }, a(p.muted), { maxWidth: 720 });
+    label(ctx, row.label, x + 22, y + 26, { size: 28, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
+    label(ctx, row.detail, x + 22, y + 56, { size: 19 }, a(p.muted), { maxWidth: 720 });
 
     // The value, flashing white for a moment when it changes, its ◀ ▶ nudging the way it went.
     const valueColor = row.disabled ? p.muted : row.kind === 'toggle' ? (row.on ? p.teal : p.muted) : p.accentText;

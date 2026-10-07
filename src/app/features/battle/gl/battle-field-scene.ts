@@ -4,7 +4,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { BattleCries } from '@features/battle/audio/battle-cries';
 import { drains, isContactMark, movePattern } from '@features/battle/gl/move-patterns';
 import { LungeStyle, MoveStage, StageActor, StageTarget, Visual } from '@features/battle/gl/move-stage';
-import { contactMark, drainLights, signatureMove } from '@features/battle/gl/signature-moves';
+import { BITE_SNAP_MS, contactMark, drainLights, signatureMove } from '@features/battle/gl/signature-moves';
 import { BattleCamera, CameraFocus, REST_FOCUS, depthOf } from '@features/battle/gl/battle-camera';
 import { CAMERA_DEPTHS, CAMERA_TUNING } from '@features/battle/gl/camera-tuning';
 import {
@@ -98,6 +98,12 @@ const CONFUSED_MS = 1000;
 const CONFUSED_SWAYS = 2;
 const CONFUSED_SWAY_PX = 14;
 const CONFUSED_DIP_PX = 5;
+/** Eating a berry: it dips this much at each bite. */
+const BERRY_DIP_MS = 160;
+const BERRY_DIP_PX = 6;
+/** Where the berry shows, from the sprite's middle (shares of its size): in front of it, at mid-body. */
+const BERRY_REACH = 0.36;
+const BERRY_HEIGHT = 0.52;
 /** Behind a substitute, the Pokémon shows itself only while it uses a move: this long from the move's start. */
 const SUBSTITUTE_ACT_MS = 950;
 /** The substitute doll (Showdown's, bundled), drawn in its Pokémon's place. */
@@ -284,6 +290,9 @@ export class BattleFieldScene {
   private terrain: string | null = null;
   private motes: Mote[] = [];
   private readonly preloaded = new Set<string>();
+  /** The store's last move and field event played (see catchUp). */
+  private lastAction = -1;
+  private lastEvent = -1;
 
   /** Time spent on each part of the field (ms, added up until the diagnostics read and clear it). */
   readonly timings: Record<FieldPart, number> = { scenery: 0, pokemon: 0, effects: 0, weather: 0, boxes: 0 };
@@ -294,26 +303,11 @@ export class BattleFieldScene {
   }
 
   constructor() {
-    let lastAction = -1;
+    // Each frame looks too (see draw): on the console an effect can run a few hundred ms late.
     effect(() => {
-      const action = this.store.action();
-      if (!action || action.id === lastAction) return;
-      lastAction = action.id;
-      untracked(() => {
-        this.syncIdents();
-        this.banner = { id: action.id, born: performance.now() };
-        if (this.renderer) this.playMove(action);
-      });
-    });
-    let lastEvent = -1;
-    effect(() => {
-      const event = this.store.fieldEvent();
-      if (!event || event.id === lastEvent) return;
-      lastEvent = event.id;
-      untracked(() => {
-        this.syncIdents();
-        if (this.renderer) this.playEvent(event);
-      });
+      this.store.action();
+      this.store.fieldEvent();
+      untracked(() => this.catchUp());
     });
     this.follow(this.store.popups, (list) => (this.popups = list), () => this.popups, POPUP_MS);
     this.follow(this.store.hpChanges, (list) => (this.hpLabels = list), () => this.hpLabels, HP_LABEL_MS);
@@ -403,6 +397,27 @@ export class BattleFieldScene {
   }
 
   // ---------------------------------------------------------------- events
+
+  /**
+   * Plays the store's latest move and field event if they're new. A new Pokémon stays hidden only a
+   * moment for its send-out (ENTRY_WAIT_MS): run from the frame as well as from an effect, a send-out
+   * doesn't come after it has shown up already standing in place (the jump seen on the console).
+   */
+  private catchUp(): void {
+    const action = this.store.action();
+    if (action && action.id !== this.lastAction) {
+      this.lastAction = action.id;
+      this.syncIdents();
+      this.banner = { id: action.id, born: performance.now() };
+      if (this.renderer) this.playMove(action);
+    }
+    const event = this.store.fieldEvent();
+    if (event && event.id !== this.lastEvent) {
+      this.lastEvent = event.id;
+      this.syncIdents();
+      if (this.renderer) this.playEvent(event);
+    }
+  }
 
   /** A new Pokémon in a slot starts from its place, whatever the one before was doing. */
   private syncIdents(): void {
@@ -555,6 +570,19 @@ export class BattleFieldScene {
         if (head) this.effects.confusionEnd(head, size);
         return;
       }
+      case 'berry': {
+        // The berry shows in front of it and goes in three bites: it munches, dipping at each.
+        const data = this.slotData(event.slot);
+        if (!data?.pokemon || data.pokemon.fainted) return;
+        // Ours look right, at the opponents; theirs left. Beside the body, clear of the pop-ups over it.
+        const facing = event.slot.startsWith('p1') ? 1 : -1;
+        const at = { x: Math.round(data.left + data.size / 2 + facing * data.size * BERRY_REACH), y: Math.round(data.top + data.size * BERRY_HEIGHT) };
+        this.effects.berry(at, facing, size, event.item ?? '', () => {
+          this.audio.play('eat');
+          this.animate(event.slot, BERRY_DIP_MS, (v, p) => (v.dy = Math.sin(p * Math.PI) * BERRY_DIP_PX));
+        });
+        return;
+      }
     }
   }
 
@@ -654,7 +682,14 @@ export class BattleFieldScene {
           if (!at) this.blink(slot);
           else if (pattern === 'flurry') effects.flurry(at, action.type, sizeAt(slot), () => this.blink(slot));
           else if (pattern === 'clap') effects.clap(at, action.type, sizeAt(slot), () => this.blink(slot, true));
-          else {
+          else if (pattern === 'bite') {
+            // The jaws come first: the hit lands as they snap shut.
+            contactMark(effects, pattern, at, sizeAt(slot), action.type);
+            effects.later(BITE_SNAP_MS, () => {
+              this.blink(slot, true);
+              effects.impact(at, action.type, sizeAt(slot));
+            });
+          } else {
             this.blink(slot, pattern === 'slam');
             effects.impact(at, action.type, sizeAt(slot) * (pattern === 'slam' ? SLAM_HIT : 1));
             if (isContactMark(pattern)) contactMark(effects, pattern, at, sizeAt(slot), action.type);
@@ -694,6 +729,7 @@ export class BattleFieldScene {
       lunge: (contact, style = 'lunge') => this.lunge(action, contact, style),
       glow: (slot) => this.glow(slot),
       shake: (ms) => this.shakeField(ms),
+      sound: (id) => this.audio.play(id),
     };
   }
 
@@ -782,6 +818,7 @@ export class BattleFieldScene {
     this.camera.update(now);
     this.cameraMoves++;
     this.effects.update(now, dt);
+    this.catchUp();
     this.syncIdents();
     if (covered) {
       for (const slot of this.slots()) this.step(slot, now);
@@ -1048,7 +1085,8 @@ export class BattleFieldScene {
       if (p >= 1) {
         this.anims.delete(slot.key);
         anim.done?.();
-        if (pokemon.fainted && !this.fainting.has(slot.key)) return null;
+        // Gone for good now (fainted, or back in its ball): not one more frame standing in its place.
+        if ((pokemon.fainted && !this.fainting.has(slot.key)) || this.withdrawn.has(slot.key)) return null;
         Object.assign(visual, { dx: 0, dy: 0, alpha: 1, bright: 1 });
       }
     }

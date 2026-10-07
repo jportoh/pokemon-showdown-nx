@@ -5,9 +5,9 @@ export type SoundId = 'move' | 'accept' | 'back' | 'page' | 'hold' | BattleSound
 
 /**
  * Battle sounds: a hit as the games tell its effectiveness (normal, super effective, not very), a move
- * starting, by its category, a stat rising or falling, and a challenge coming in.
+ * starting, by its category, a stat rising or falling, a bite of a berry, a clap (Helping Hand), and a challenge coming in.
  */
-export type BattleSoundId = 'hit' | 'hitSuper' | 'hitWeak' | 'physical' | 'special' | 'status' | 'statUp' | 'statDown' | 'challenge';
+export type BattleSoundId = 'hit' | 'hitSuper' | 'hitWeak' | 'physical' | 'special' | 'status' | 'statUp' | 'statDown' | 'eat' | 'clap' | 'challenge';
 
 /** Sounds the music dips under for a moment, so they stand out: the hits. */
 export const DUCKING_SOUNDS: ReadonlySet<SoundId> = new Set<SoundId>(['hit', 'hitSuper', 'hitWeak']);
@@ -86,6 +86,16 @@ export const SOUNDS: Record<SoundId, readonly Note[]> = {
   // Stand-ins for the recorded ones: a sweep up, or down.
   statUp: [{ at: 0, dur: 0.4, freq: n('C5'), slideTo: n('C7'), wave: 'pulse25', gain: 0.16, decay: 3 }],
   statDown: [{ at: 0, dur: 0.4, freq: n('C7'), slideTo: n('C5'), wave: 'pulse25', gain: 0.16, decay: 3 }],
+  // A bite of a berry: a short crunch over a low pop.
+  eat: [
+    { at: 0, dur: 0.05, freq: 5000, wave: 'noise', gain: 0.18, decay: 40 },
+    { at: 0, dur: 0.07, freq: n('E4'), slideTo: n('A3'), wave: 'pulse50', gain: 0.14, decay: 25 },
+  ],
+  // A clap: a sharp burst of noise, a bright one over a duller one.
+  clap: [
+    { at: 0, dur: 0.06, freq: 2400, wave: 'noise', gain: 0.3, decay: 45 },
+    { at: 0.008, dur: 0.05, freq: 6000, wave: 'noise', gain: 0.18, decay: 55 },
+  ],
   // A challenge coming in: a bright three-note call, twice, as a phone ringing.
   challenge: [
     { at: 0, dur: 0.08, freq: n('G5'), wave: 'pulse25', gain: 0.22 },

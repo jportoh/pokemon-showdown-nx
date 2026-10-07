@@ -1,8 +1,8 @@
-import { GlRenderer, Rgba } from '@core/gl/gl-renderer';
+import { GlRenderer, Rgba, rgba } from '@core/gl/gl-renderer';
 import { SlotKey } from '@features/battle/models/battle';
 import { FIELD_H, FIELD_W } from '@features/battle/gl/field-layout';
 import { maskOf } from '@core/gl/ui/masks';
-import { EffectShape, POW, SPARKLE, STAR } from '@features/battle/gl/effect-shapes';
+import { BERRY, BERRY_BITTEN, BERRY_HALF, BERRY_LEAVES, EffectShape, POW, SPARKLE, STAR, mirrored } from '@features/battle/gl/effect-shapes';
 import { IMPACT_PIECES, Piece, typeEffect } from '@features/battle/gl/type-effects';
 
 /**
@@ -108,8 +108,43 @@ const PUFF_COLORS: readonly Rgba[] = [
   [0.82, 0.82, 0.86, 1],
 ];
 const WHITE: Rgba = [1, 1, 1, 1];
+/** A berry eaten: how long it shows, when its three bites come (shares of it) and the glint after. */
+const BERRY_MS = 1150;
+const BERRY_BITES = [0.4, 0.6, 0.8] as const;
+const BERRY_GLOW_MS = 500;
+const BERRY_LEAF: Rgba = [0.36, 0.78, 0.3, 1];
+const BERRY_FRAMES = [BERRY, BERRY_BITTEN, BERRY_HALF] as const;
+const BERRY_FRAMES_LEFT = BERRY_FRAMES.map(mirrored);
+/** The berries' own colours (the rest are red, as most are). */
+const BERRY_COLORS: Readonly<Record<string, string>> = {
+  sitrusberry: '#f7d23c',
+  oranberry: '#4a82f0',
+  lumberry: '#7ad84e',
+  chestoberry: '#6a5ae0',
+  pechaberry: '#ff9ac8',
+  rawstberry: '#3ccab8',
+  aspearberry: '#f0e070',
+  persimberry: '#ff9a3c',
+  leppaberry: '#ff6a3c',
+  magoberry: '#ff8ac0',
+  wikiberry: '#9a6ae8',
+  aguavberry: '#7ad08a',
+  iapapaberry: '#f7d23c',
+  salacberry: '#5ad05a',
+  ganlonberry: '#6a6ad8',
+  apicotberry: '#4a8ae8',
+  petayaberry: '#ff70a8',
+  starfberry: '#ffb0d0',
+  keeberry: '#ffd23c',
+  marangaberry: '#4a8ae8',
+};
 const FIELD_WIDTH = FIELD_W;
 const FIELD_HEIGHT = FIELD_H;
+
+/** A berry's colour, by its name ("Sitrus Berry"). */
+export function berryColor(item: string): Rgba {
+  return rgba(BERRY_COLORS[item.toLowerCase().replace(/[^a-z]/g, '')] ?? '#e8404a');
+}
 
 /** A move's type as a colour for light (bright, unlike the type rows' colours). */
 export function effectColor(type: string): Rgba {
@@ -335,6 +370,46 @@ export class GlEffects {
         glowDot(r, x, y, height * 0.8, STAR_COLOR, 0.4 * fade * (0.4 + 0.6 * front), true);
         drawShape(r, STAR, x, y, height, STAR_COLOR, fade * (0.5 + 0.5 * front), Math.sin(p * 9 + i * 2) * 0.35, false);
       }
+    });
+  }
+
+  /**
+   * A berry eaten: it pops up at `at`, in front of the Pokémon (which looks towards `facing`, 1 right
+   * or -1 left), and goes in three bites from its side, crumbs falling at each (`bitten` with the
+   * bite, 0 to 2), the last one in a glint of its colour.
+   */
+  berry(at: EffectPoint, facing: 1 | -1, size: number, item: string, bitten: (bite: number) => void): void {
+    const k = size / 240;
+    const color = berryColor(item);
+    const frames = facing < 0 ? BERRY_FRAMES : BERRY_FRAMES_LEFT;
+    const height = 50 * k;
+    const leafHeight = 20 * k;
+    this.tween(BERRY_MS, (r, p) => {
+      const bites = BERRY_BITES.filter((when) => p >= when).length;
+      if (bites >= BERRY_BITES.length) return;
+      const pop = backOut(Math.min(1, p / 0.16));
+      // Each bite squashes it for a moment, as a mouthful is taken.
+      const since = bites > 0 ? (p - BERRY_BITES[bites - 1]) / 0.08 : 1;
+      const squash = since < 1 ? 0.18 * Math.sin(since * Math.PI) : 0;
+      const bob = Math.sin(p * Math.PI * 6) * 3 * k;
+      const x = at.x;
+      const y = at.y + bob;
+      const h = height * pop * (1 - squash);
+      const fade = Math.min(1, p / 0.08);
+      drawShape(r, frames[bites], x, y, h, color, fade);
+      // A glint on its skin, and the leaves on top.
+      if (bites === 0) glowDot(r, x + 12 * facing * k, y - 10 * k, 5 * k * pop, WHITE, 0.9 * fade, false);
+      drawShape(r, BERRY_LEAVES, x + (bites === 2 ? 8 * facing : 0) * k, y - h / 2 - leafHeight * 0.3, leafHeight * pop, BERRY_LEAF, fade);
+    });
+    BERRY_BITES.forEach((when, bite) => {
+      this.later(BERRY_MS * when, () => {
+        const last = bite === BERRY_BITES.length - 1;
+        bitten(bite);
+        this.pieces({ x: at.x - 16 * facing * k, y: at.y }, { colors: [color, WHITE], size: 7, endSize: 3, speed: 150, direction: -Math.PI / 2, spread: 1.2, gravity: 900, drag: 0.5, life: 520 }, last ? 12 : 6, k);
+        if (!last) return;
+        this.pieces(at, { shape: SPARKLE, colors: [WHITE, color], size: 22, endSize: 4, speed: 220, drag: 0.1, life: 520, spin: 3 }, 7, k);
+        this.tween(BERRY_GLOW_MS, (r, p) => glowDot(r, at.x, at.y, (50 + 80 * p) * k, color, 0.5 * (1 - p), true));
+      });
     });
   }
 

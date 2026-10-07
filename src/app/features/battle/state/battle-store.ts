@@ -1038,6 +1038,9 @@ export class BattleStore {
       case '-item':
         return this.say(itemText(args[0], args[1], tags, names));
       case '-enditem':
+        // A berry eaten: by its holder, or stolen and eaten by the one that hit it (Bug Bite, Pluck).
+        if ('eat' in tags) this.emit('berry', args[0], args[1]);
+        else if (tags['from'] === 'stealeat' && tags['of']) this.emit('berry', tags['of'], args[1]);
         return this.say(endItemText(args[0], args[1], tags, names));
       case '-weather':
         return this.changeWeather(args[0], tags);
@@ -1252,9 +1255,9 @@ export class BattleStore {
     this.popupsSignal.update((popups) => [...popups, popup].slice(-MAX_POPUPS));
   }
 
-  private emit(kind: FieldEvent['kind'], ident: string): void {
+  private emit(kind: FieldEvent['kind'], ident: string, item?: string): void {
     const slot = this.slotOf(ident);
-    if (slot) this.fieldEventSignal.set({ id: this.nextEventId++, kind, slot });
+    if (slot) this.fieldEventSignal.set({ id: this.nextEventId++, kind, slot, ...(item ? { item } : {}) });
   }
 
   /** "p2a: Charizard" → "p2a"; "p2: Charizard" (no slot) → the slot it's active in, if any. */
