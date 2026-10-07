@@ -1,5 +1,5 @@
 import { GlRenderer, Rgba, rgba } from '@core/gl/gl-renderer';
-import { ANGER, BLAZE, FANGS, FEATHER, FIST, FLAME, FOOT, HAND, HEART, NOTE, POW, ROCK, SHARD, SLEEPY_Z, SPARKLE, STAR, SWORD, WISP } from '@features/battle/gl/effect-shapes';
+import { ANGER, BLAZE, FANGS, FEATHER, FIST, FLAME, FOOT, HAND, HEART, NOTE, POW, ROCK, SHARD, SLEEPY_Z, SPARKLE, STAR, SWORD, WISP, mirrored } from '@features/battle/gl/effect-shapes';
 import {
   EffectPoint,
   GlEffects,
@@ -63,6 +63,19 @@ const MYSTIC: readonly Rgba[] = [rgba('#ff5ab4'), rgba('#ff9ad8'), rgba('#c040ff
 const BOLT: Rgba = rgba('#ffe23c');
 const GOLD: Rgba = rgba('#ffd23c');
 const BRAWL: readonly Rgba[] = [rgba('#e8e0ea'), rgba('#f4c8dc')];
+/** A bite: the jaws open until BITE_OPEN of it, are shut at BITE_SHUT and let go at BITE_LET_GO. */
+const BITE_MS = 560;
+const BITE_OPEN = 0.24;
+const BITE_SHUT = 0.36;
+const BITE_LET_GO = 0.66;
+/** When the jaws are shut on the target, from the bite's start: the hit lands then. */
+export const BITE_SNAP_MS = BITE_MS * BITE_SHUT;
+const FLASH_MS = 220;
+/** Helping Hand: this many claps, in this long. */
+const CLAPS = 3;
+const CLAP_MS = 900;
+/** The right hand of the pair (HAND is a left one, thumb in). */
+const HAND_RIGHT = mirrored(HAND);
 
 // ---------------------------------------------------------------- helpers
 
@@ -266,21 +279,37 @@ const recover: Signature = (s) => {
 
 // ---------------------------------------------------------------- status moves on others
 
-/** A hand waves over the ally, which lights up (Helping Hand). */
+/** The user cheers its ally on: two hands clap over the ally, which lights up (Helping Hand). */
 const helpingHand: Signature = (s) => {
   const { fx, user } = s;
   s.animate(user.slot, 500, (v, p) => (v.dy = -Math.sin(Math.PI * p) * 18));
-  for (const ally of s.targets) {
+  s.targets.forEach((ally, index) => {
     const { head, k } = ally;
-    fx.tween(800, (r, p) => {
-      const grow = p < 0.25 ? backOut(p / 0.25) : 1;
-      drawShape(r, HAND, head.x, head.y - 40 * k, 80 * k * grow, SKIN, fadeInOut(p, 0.05, 0.2), Math.sin(p * Math.PI * 4) * 0.35);
+    const y = head.y - 20 * k;
+    const height = 72 * k;
+    fx.tween(CLAP_MS, (r, p) => {
+      const grow = p < 0.12 ? backOut(p / 0.12) : 1;
+      // Apart, then together at each clap (a quick close, a slower open).
+      const beat = (p * CLAPS) % 1;
+      const apart = beat < 0.35 ? 1 - easeIn(beat / 0.35) : easeOut((beat - 0.35) / 0.65);
+      const gap = (14 + 46 * (p < 0.12 ? 1 : apart)) * k;
+      const tilt = 0.25 + 0.2 * apart;
+      const fade = fadeInOut(p, 0.05, 0.15);
+      drawShape(r, HAND, head.x - gap, y, height * grow, SKIN, fade, tilt);
+      drawShape(r, HAND_RIGHT, head.x + gap, y, height * grow, SKIN, fade, -tilt);
     });
-    fx.later(450, () => {
+    for (let i = 0; i < CLAPS; i++) {
+      fx.later(CLAP_MS * ((i + 0.35) / CLAPS), () => {
+        if (index === 0) s.sound('clap');
+        fx.tween(160, (r, p) => glowDot(r, head.x, y, (16 + 40 * p) * k, WHITE, 0.85 * (1 - p), true));
+        fx.pieces({ x: head.x, y }, { shape: SPARKLE, colors: [rgba('#ffe066'), WHITE], size: 16, endSize: 4, speed: 200, direction: -Math.PI / 2, spread: 1.4, drag: 0.15, life: 360, spin: 3 }, 3, k);
+      });
+    }
+    fx.later(CLAP_MS * 0.9, () => {
       s.glow(ally.slot);
       fx.pieces(ally.at, { shape: SPARKLE, colors: [rgba('#ffe066'), WHITE], size: 22, endSize: 6, speed: 180, drag: 0.15, life: 500, spin: 3 }, 8, k);
     });
-  }
+  });
 };
 
 /** A spotlight falls on the user, which waves for attention; Rage Powder throws powder round it too. */
@@ -855,15 +884,30 @@ export function contactMark(fx: GlEffects, mark: ContactMark, at: EffectPoint, s
         drawShape(r, mark === 'punch' ? FIST : FOOT, at.x, at.y, (mark === 'punch' ? 84 : 96) * k * (0.4 + 0.6 * grow), mark === 'punch' ? mix(SKIN, tint, 0.5) : tint, fade, mark === 'kick' ? -0.35 : 0);
       });
       return;
-    case 'bite':
-      fx.tween(440, (r, p) => {
-        const gap = 70 * k * (1 - easeIn(clamp01(p / 0.45)));
-        const fade = p < 0.65 ? 1 : 1 - (p - 0.65) / 0.35;
-        const height = 34 * k;
-        drawShape(r, FANGS, at.x, at.y - 12 * k - gap, height, WHITE, fade);
-        drawShape(r, FANGS, at.x, at.y + 12 * k + gap, height, WHITE, fade, Math.PI);
+    case 'bite': {
+      // The jaws open wide (a little wider still, winding up), snap shut, clamp on shaking, and let go.
+      const height = 63 * k;
+      const teeth = mix(WHITE, tint, 0.6);
+      fx.tween(BITE_MS, (r, p) => {
+        const grow = backOut(clamp01(p / BITE_OPEN));
+        const gap = p < BITE_OPEN
+          ? 80 * k + 16 * k * (p / BITE_OPEN)
+          : p < BITE_SHUT
+            ? 96 * k * (1 - easeIn((p - BITE_OPEN) / (BITE_SHUT - BITE_OPEN)))
+            : p < BITE_LET_GO ? -3 * k : 26 * k * easeOut((p - BITE_LET_GO) / (1 - BITE_LET_GO));
+        const shake = p >= BITE_SHUT && p < BITE_LET_GO ? Math.sin(p * 140) * 5 * k : 0;
+        const fade = p < BITE_LET_GO ? 1 : 1 - (p - BITE_LET_GO) / (1 - BITE_LET_GO);
+        const scale = 0.6 + 0.4 * grow;
+        drawShape(r, FANGS, at.x + shake, at.y - 20 * k - gap, height * scale, teeth, fade);
+        drawShape(r, FANGS, at.x - shake, at.y + 20 * k + gap, height * scale, teeth, fade, Math.PI);
+      });
+      // As they shut: a flash and sparks out of the bite.
+      fx.later(BITE_SNAP_MS, () => {
+        fx.tween(FLASH_MS, (r, p) => glowDot(r, at.x, at.y, (40 + 90 * p) * k, WHITE, 0.8 * (1 - p), true));
+        fx.pieces(at, { shape: SPARKLE, colors: [WHITE, tint], size: 22, endSize: 4, speed: 300, drag: 0.1, life: 380, spin: 4 }, 6, k);
       });
       return;
+    }
     case 'claw':
       for (let i = 0; i < 3; i++) {
         fx.tween(

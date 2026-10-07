@@ -17,6 +17,12 @@ function shape(rows: readonly string[]): EffectShape {
   return { fill: rows.map((row) => row.replace(/o/g, 'x')), ink, width: rows[0].length, height: rows.length };
 }
 
+/** The shape turned left to right. */
+export function mirrored(source: EffectShape): EffectShape {
+  const flip = (rows: readonly string[]) => rows.map((row) => [...row].reverse().join(''));
+  return { ...source, fill: flip(source.fill), ink: flip(source.ink) };
+}
+
 export const STAR = shape([
   '.....o.....',
   '....oxo....',
@@ -207,13 +213,62 @@ export const FOOT = shape([
   '..ooooo..',
 ]);
 
-/** An upper jaw's teeth, pointing down (bites: turned over, the lower jaw). */
+/** An upper jaw, arched, its teeth and long canines pointing down (bites: turned over, the lower jaw). */
 export const FANGS = shape([
-  'oooooooooooooooooooo',
-  'oxxxxxxxxxxxxxxxxxxo',
-  'oxxxooxxxooxxxooxxxo',
-  '.oxo..oxo..oxo..oxo.',
-  '..o....o....o....o..',
+  '........oooooooo........',
+  '.....oooxxxxxxxxooo.....',
+  '...ooxxxxxxxxxxxxxxoo...',
+  '..oxxxxxxxxxxxxxxxxxxo..',
+  '.oxxxxooooooooooooxxxxo.',
+  '.oxxxooxo.oxxo.oxooxxxo.',
+  '.oxxo.oxo.oxxo.oxo.oxxo.',
+  '..oxo..o...oo...o..oxo..',
+  '...o................o...',
+]);
+
+/** A berry, whole and then after one bite and two (the bites come out of its right side; `mirrored` for the left). */
+export const BERRY = shape([
+  '...ooooo...',
+  '..oxxxxxo..',
+  '.oxxxxxxxo.',
+  'oxxxxxxxxxo',
+  'oxxxxxxxxxo',
+  'oxxxxxxxxxo',
+  'oxxxxxxxxxo',
+  '.oxxxxxxxo.',
+  '..oxxxxxo..',
+  '...ooooo...',
+]);
+export const BERRY_BITTEN = shape([
+  '...oooo....',
+  '..oxxxxo...',
+  '.oxxxxxo...',
+  'oxxxxxxxo..',
+  'oxxxxxxo...',
+  'oxxxxxxxo..',
+  'oxxxxxxxxxo',
+  '.oxxxxxxxo.',
+  '..oxxxxxo..',
+  '...ooooo...',
+]);
+export const BERRY_HALF = shape([
+  '...ooo.....',
+  '..oxxo.....',
+  '.oxxxo.....',
+  'oxxxxxo....',
+  'oxxxxo.....',
+  'oxxxxxo....',
+  'oxxxxo.....',
+  '.oxxxxo....',
+  '..oxxxo....',
+  '...oooo....',
+]);
+/** The berry's two leaves, on its top. */
+export const BERRY_LEAVES = shape([
+  '.ooo.ooo.',
+  'oxxxoxxxo',
+  '.ooxxxoo.',
+  '...ooo...',
 ]);
 
 /** A sword, point up (Swords Dance). */

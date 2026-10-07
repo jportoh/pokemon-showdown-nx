@@ -4,13 +4,35 @@ import { BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-la
 import { FieldCondition, SideId } from '@features/battle/models/battle';
 import { BattleStore, parseCondition } from '@features/battle/state/battle-store';
 import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
+import { maskOf } from '@core/gl/ui/masks';
 import { INK, ScreenContext, write } from './screen-context';
 
 const BALL = 22;
 const BALL_GAP = 6;
 const CHIP_H = 34;
+/** The balls' pill keeps the same room round them on every side (the end balls sit in its round ends). */
+const BALL_PAD = (CHIP_H - BALL) / 2;
 const CHIP_GAP = 8;
 const MAX_TEAM = 6;
+/** A Poké Ball in pixels (drawn twice as big, BALL square): R its red top, W its white bottom and button, o the outline and band. */
+const BALL_PIXELS = [
+  '...ooooo...',
+  '.ooRRRRRoo.',
+  '.oRRRRRRRo.',
+  'oRRRRRRRRRo',
+  'oRRRoooRRRo',
+  'ooooowooooo',
+  'oWWWoooWWWo',
+  'oWWWWWWWWWo',
+  '.oWWWWWWWo.',
+  '.ooWWWWWoo.',
+  '...ooooo...',
+];
+const pixelsOf = (keys: string): string[] => BALL_PIXELS.map((row) => [...row].map((c) => (keys.includes(c) ? 'x' : '.')).join(''));
+const BALL_RED = pixelsOf('R');
+const BALL_WHITE = pixelsOf('Ww');
+const BALL_INK = pixelsOf('o');
+const BALL_TOP = rgba('#ef4444');
 
 type Ball = 'alive' | 'fainted' | 'unseen';
 
@@ -90,7 +112,7 @@ export class SideStripView {
   }
 
   private ballsWidth(balls: Ball[]): number {
-    return balls.length === 0 ? 0 : balls.length * (BALL + BALL_GAP) + 4;
+    return balls.length === 0 ? 0 : balls.length * (BALL + BALL_GAP) - BALL_GAP + 2 * BALL_PAD;
   }
 
   /** The balls on a dark pill; returns where it ends. */
@@ -100,8 +122,8 @@ export class SideStripView {
     const width = this.ballsWidth(balls);
     renderer.rect(x, y, width, CHIP_H, { fill: [0.06, 0.09, 0.16, 0.82], radius: CHIP_H / 2 });
     balls.forEach((ball, i) => {
-      const bx = x + 5 + BALL_GAP / 2 + i * (BALL + BALL_GAP);
-      const by = y + (CHIP_H - BALL) / 2;
+      const bx = x + BALL_PAD + i * (BALL + BALL_GAP);
+      const by = y + BALL_PAD;
       if (ball === 'unseen') {
         renderer.rect(bx, by, BALL, BALL, { fill: [0, 0, 0, 0], stroke: INK.gray500, radius: BALL / 2, border: 2 });
         return;
@@ -111,11 +133,9 @@ export class SideStripView {
         return;
       }
       // A Poké Ball: red top, white bottom, the band and the button.
-      renderer.rect(bx, by, BALL, BALL, { fill: INK.gray100, radius: BALL / 2 });
-      renderer.rect(bx, by, BALL, BALL / 2, { fill: rgba('#ef4444'), radius: BALL / 2 });
-      renderer.rect(bx, by + BALL / 2 - 1.5, BALL, 3, { fill: INK.dark });
-      renderer.rect(bx + BALL / 2 - 4, by + BALL / 2 - 4, 8, 8, { fill: INK.gray100, stroke: INK.dark, radius: 4, border: 2 });
-      renderer.rect(bx, by, BALL, BALL, { fill: [0, 0, 0, 0], stroke: INK.dark, radius: BALL / 2, border: 2 });
+      renderer.rect(bx, by, BALL, BALL, { fill: BALL_TOP, texture: maskOf(renderer, BALL_RED) });
+      renderer.rect(bx, by, BALL, BALL, { fill: INK.gray100, texture: maskOf(renderer, BALL_WHITE) });
+      renderer.rect(bx, by, BALL, BALL, { fill: INK.dark, texture: maskOf(renderer, BALL_INK) });
     });
     return x + width;
   }

@@ -1,5 +1,6 @@
 import { SlotKey } from '@features/battle/models/battle';
 import { EffectPoint, GlEffects } from '@features/battle/gl/gl-effects';
+import { BattleSoundId } from '@core/audio/sfx';
 
 /** How a sprite is drawn this frame: moved, faded, brightened. */
 export interface Visual {
@@ -57,4 +58,6 @@ export interface MoveStage {
   glow(slot: SlotKey): void;
   /** The whole field shakes. */
   shake(ms: number): void;
+  /** Plays a battle sound (a clap…). */
+  sound(id: BattleSoundId): void;
 }
