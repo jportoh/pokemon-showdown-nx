@@ -51,9 +51,16 @@ export class GlyphAtlas {
 
   constructor(
     private readonly renderer: GlRenderer,
-    private readonly scale: number,
+    private scale: number,
     private readonly family: string,
   ) {}
+
+  /** Draws the glyphs `scale` times denser from now on (the canvas changed size): the atlases are redrawn. */
+  setScale(scale: number): void {
+    if (scale === this.scale) return;
+    this.scale = scale;
+    this.dispose();
+  }
 
   /** Whether every character of `text` is in the atlas. */
   covers(text: string): boolean {

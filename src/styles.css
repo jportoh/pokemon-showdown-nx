@@ -1,17 +1,19 @@
 /*
-  The whole app is one 1280x720 WebGL canvas (GlStage), the Brewser console's resolution: every screen
-  is drawn on it, so the page itself only holds the canvas. Plain CSS, which Brewser's engine renders
-  as written (no layers, nesting or modern colour functions).
+  The whole app is one WebGL canvas (GlStage) drawing a 1280x720 stage, the Brewser console's handheld
+  resolution: every screen is drawn on it, so the page itself only holds the canvas. GlStageHost sizes
+  and centres the canvas to the screen (1920x1080 docked) keeping 16:9; the page's colour fills any
+  bands. Plain CSS, which Brewser's engine renders as written (no layers, nesting or modern colour
+  functions).
 */
 html {
-  height: 720px;
+  height: 100%;
   background-color: #0a1620;
 }
 
 body {
-  width: 1280px;
-  height: 720px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   overflow: hidden;
   font-family: Roboto, sans-serif;
   background-color: #0a1620;
@@ -33,6 +35,7 @@ app-gl-stage {
   display: none;
 }
 
+/* Its size and margins come from GlStageHost. */
 .gl-stage canvas {
   display: block;
   width: 1280px;
