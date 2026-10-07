@@ -290,6 +290,9 @@ export class BattleFieldScene {
   private terrain: string | null = null;
   private motes: Mote[] = [];
   private readonly preloaded = new Set<string>();
+  /** The store's last move and field event played (see catchUp). */
+  private lastAction = -1;
+  private lastEvent = -1;
 
   /** Time spent on each part of the field (ms, added up until the diagnostics read and clear it). */
   readonly timings: Record<FieldPart, number> = { scenery: 0, pokemon: 0, effects: 0, weather: 0, boxes: 0 };
@@ -300,26 +303,11 @@ export class BattleFieldScene {
   }
 
   constructor() {
-    let lastAction = -1;
+    // Each frame looks too (see draw): on the console an effect can run a few hundred ms late.
     effect(() => {
-      const action = this.store.action();
-      if (!action || action.id === lastAction) return;
-      lastAction = action.id;
-      untracked(() => {
-        this.syncIdents();
-        this.banner = { id: action.id, born: performance.now() };
-        if (this.renderer) this.playMove(action);
-      });
-    });
-    let lastEvent = -1;
-    effect(() => {
-      const event = this.store.fieldEvent();
-      if (!event || event.id === lastEvent) return;
-      lastEvent = event.id;
-      untracked(() => {
-        this.syncIdents();
-        if (this.renderer) this.playEvent(event);
-      });
+      this.store.action();
+      this.store.fieldEvent();
+      untracked(() => this.catchUp());
     });
     this.follow(this.store.popups, (list) => (this.popups = list), () => this.popups, POPUP_MS);
     this.follow(this.store.hpChanges, (list) => (this.hpLabels = list), () => this.hpLabels, HP_LABEL_MS);
@@ -409,6 +397,27 @@ export class BattleFieldScene {
   }
 
   // ---------------------------------------------------------------- events
+
+  /**
+   * Plays the store's latest move and field event if they're new. A new Pokémon stays hidden only a
+   * moment for its send-out (ENTRY_WAIT_MS): run from the frame as well as from an effect, a send-out
+   * doesn't come after it has shown up already standing in place (the jump seen on the console).
+   */
+  private catchUp(): void {
+    const action = this.store.action();
+    if (action && action.id !== this.lastAction) {
+      this.lastAction = action.id;
+      this.syncIdents();
+      this.banner = { id: action.id, born: performance.now() };
+      if (this.renderer) this.playMove(action);
+    }
+    const event = this.store.fieldEvent();
+    if (event && event.id !== this.lastEvent) {
+      this.lastEvent = event.id;
+      this.syncIdents();
+      if (this.renderer) this.playEvent(event);
+    }
+  }
 
   /** A new Pokémon in a slot starts from its place, whatever the one before was doing. */
   private syncIdents(): void {
@@ -809,6 +818,7 @@ export class BattleFieldScene {
     this.camera.update(now);
     this.cameraMoves++;
     this.effects.update(now, dt);
+    this.catchUp();
     this.syncIdents();
     if (covered) {
       for (const slot of this.slots()) this.step(slot, now);
@@ -1075,7 +1085,8 @@ export class BattleFieldScene {
       if (p >= 1) {
         this.anims.delete(slot.key);
         anim.done?.();
-        if (pokemon.fainted && !this.fainting.has(slot.key)) return null;
+        // Gone for good now (fainted, or back in its ball): not one more frame standing in its place.
+        if ((pokemon.fainted && !this.fainting.has(slot.key)) || this.withdrawn.has(slot.key)) return null;
         Object.assign(visual, { dx: 0, dy: 0, alpha: 1, bright: 1 });
       }
     }

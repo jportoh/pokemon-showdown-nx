@@ -9,6 +9,7 @@ import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { TEXT_PAD, TextStyle, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
+import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { categoryIcon } from '@core/gl/ui/category-icons';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { BALL } from '@features/home/gl/logo-ball';
@@ -55,6 +56,9 @@ export class LoadingScene {
   private readonly audio = inject(AudioEngine);
   private readonly music = inject(BattleMusic);
   private readonly diagnostics = inject(GlDiagnostics);
+  private readonly keyboard = inject(CanvasKeyboard);
+  /** The on-screen keyboard's texts are made (see CanvasKeyboard.warm). */
+  private keyboardWarm = false;
 
   private readonly assets: readonly PreloadAsset[] = preloadList();
   /** Not a texture yet (nor failed). */
@@ -133,6 +137,7 @@ export class LoadingScene {
 
     renderer.begin(now / 1000, p.bg, p.rim);
     this.prime(frame);
+    if (!this.keyboardWarm) this.keyboardWarm = this.keyboard.warm(frame.text);
     if (fly > 0) renderer.rect(0, 0, STAGE_W, HEADER.height, { fill: withAlpha(p.bar, fly) });
 
     // The ball bobs and rocks while loading, and settles as it flies.
