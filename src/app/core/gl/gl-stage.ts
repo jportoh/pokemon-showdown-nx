@@ -1,11 +1,14 @@
 import { Service, inject, signal } from '@angular/core';
+import { AudioEngine } from '@core/audio/audio-engine';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { GlDiagnostics } from './gl-diagnostics';
 import { GlRenderer, Texture } from './gl-renderer';
 import { GlSprites } from './gl-sprites';
 import { TEXT_BUDGET_MS, TextPages, TextTextures, discTexture } from './gl-textures';
 import { GlyphAtlas } from './glyph-atlas';
 import { PerfHud } from './perf-hud';
+import type { PointerInput } from './pointer-input';
 import { SpriteBitmaps } from './sprite-bitmaps';
 
 export const STAGE_W = 1280;
@@ -42,7 +45,8 @@ export interface StageFrame extends StageResources {
 export interface GlScene {
   draw(frame: StageFrame): void;
   input?(action: CanvasAction): boolean;
-  click?(x: number, y: number): void;
+  /** A tap or a click; true when it pressed a control (it then sounds like A). */
+  click?(x: number, y: number): boolean | void;
   hover?(x: number, y: number): void;
   /** The scene's own lines in the diagnostics (L3), worked out every half second. */
   diagnostics?(): string[];
@@ -60,6 +64,8 @@ export class GlStage {
   private readonly navigation = inject(KeyboardNavigation);
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly bitmaps = inject(SpriteBitmaps);
+  private readonly audio = inject(AudioEngine);
+  private readonly renderScheduler = inject(RenderScheduler);
 
   /** A scene is shown: the host shows the canvas. */
   readonly active = signal(false);
@@ -74,8 +80,10 @@ export class GlStage {
   private frame = 0;
   private last = 0;
   private releaseInput: (() => void) | null = null;
-  /** L3, on any screen: the frame-time diagnostics, with the shown scene's own lines. */
-  private readonly hud = new PerfHud(() => this.top()?.diagnostics?.() ?? []);
+  /** The touchscreen and the mouse (set by the host): its last raw events show in the diagnostics. */
+  pointer: PointerInput | null = null;
+  /** L3, on any screen: the frame-time diagnostics, with the shown scene's own lines and the last touches. */
+  private readonly hud = new PerfHud(() => [...(this.top()?.diagnostics?.() ?? []), ...(this.pointer?.log ?? [])]);
 
   constructor() {
     // The stage lasts as long as the app: L3 is never let go.
@@ -140,9 +148,13 @@ export class GlStage {
     this.overlay = overlay;
   }
 
-  /** The mouse (browsers): the overlay's, else the top scene's. */
+  /** A tap or a click: the overlay's, else the top scene's. */
   click(x: number, y: number): void {
-    (this.overlay ?? this.top())?.click?.(x, y);
+    // The controller's presses sound in KeyboardNavigation; a tap that presses a control sounds the same.
+    if ((this.overlay ?? this.top())?.click?.(x, y)) {
+      this.audio.play('accept');
+      this.renderScheduler.request();
+    }
   }
 
   hover(x: number, y: number): void {
@@ -180,6 +192,9 @@ export class GlStage {
       this.overlay?.draw(frame);
       if (this.hud.shown) {
         this.hud.draw(frame, STAGE_W);
+        // Where the last tap landed, to check the touchscreen's coordinates.
+        const tap = this.pointer?.lastTap;
+        if (tap) resources.renderer.rect(tap.x - 6, tap.y - 6, 12, 12, { fill: [1, 0.2, 0.4, 0.9], radius: 6 });
         resources.renderer.end();
       }
       this.diagnostics.frame(interval, performance.now() - started);

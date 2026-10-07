@@ -1,5 +1,6 @@
 import { Component, ElementRef, afterNextRender, inject, viewChild } from '@angular/core';
 import { GlStage, STAGE_H, STAGE_W } from './gl-stage';
+import { PointerInput } from './pointer-input';
 
 /**
  * The app's one canvas, at the root (GlStage draws every screen on it). It hides while no screen is
@@ -32,9 +33,14 @@ export class GlStageHost {
   constructor() {
     afterNextRender(() => {
       const canvas = this.canvas().nativeElement;
-      // Plain listeners: a template binding would render the app on every mouse move.
-      canvas.addEventListener('click', (event) => this.stage.click(event.offsetX, event.offsetY));
-      canvas.addEventListener('mousemove', (event) => this.stage.hover(event.offsetX, event.offsetY));
+      // The host lasts as long as the app: the listeners are never removed.
+      const pointer = new PointerInput(
+        canvas,
+        (x, y) => this.stage.click(x, y),
+        (x, y) => this.stage.hover(x, y),
+      );
+      pointer.listen();
+      this.stage.pointer = pointer;
       this.stage.attach(canvas);
     });
   }

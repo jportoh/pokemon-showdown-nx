@@ -193,12 +193,13 @@ export class CanvasFocus {
     return true;
   }
 
-  /** A click or tap (web): focuses and presses the control under it. */
+  /** A click or tap: focuses and presses the control under it; whether it pressed one (it then sounds like A). */
   click(x: number, y: number): boolean {
     const control = this.controls.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
     if (!control) return false;
     this.focused = control.id;
-    control.accept?.();
+    if (!control.accept) return false;
+    control.accept();
     return true;
   }
 
