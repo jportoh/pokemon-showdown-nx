@@ -57,6 +57,7 @@ export class ShowdownChallenges {
   private readonly errorSignal = signal<string | null>(null);
   private readonly outgoingSignal = signal<OutgoingChallenge | null>(null);
   private readonly acceptedSignal = signal<Challenge | null>(null);
+  private readonly acceptFailedSignal = signal<string | null>(null);
   private acceptTimer: ReturnType<typeof setTimeout> | null = null;
   /** When we last accepted, rejected or challenged: a popup soon after is the server's answer. */
   private answeredAt = 0;
@@ -72,6 +73,8 @@ export class ShowdownChallenges {
   readonly outgoing = this.outgoingSignal.asReadonly();
   /** The challenge we accepted, until its battle has something to show (or it failed). */
   readonly accepted = this.acceptedSignal.asReadonly();
+  /** Whose challenge we couldn't accept (the server refused our team, say): it waits again, with `error`. */
+  readonly acceptFailed = this.acceptFailedSignal.asReadonly();
 
   constructor() {
     this.connection.frames.subscribe((frame) => {
@@ -88,6 +91,7 @@ export class ShowdownChallenges {
       this.setIncoming([]);
       this.setOutgoing(null);
       this.setAccepted(null);
+      this.acceptFailedSignal.set(null);
     });
     this.rooms.started.subscribe(() => this.setAccepted(null));
   }
@@ -132,7 +136,7 @@ export class ShowdownChallenges {
     this.acceptTimer = setTimeout(() => {
       this.acceptTimer = null;
       if (this.acceptedSignal() && !this.rooms.joining()) {
-        this.setAccepted(null);
+        this.failAccept();
         this.setError('The battle did not start.');
       }
     }, ANSWER_WINDOW_MS);
@@ -146,6 +150,7 @@ export class ShowdownChallenges {
   private answer(challenge: Challenge): void {
     this.answeredAt = Date.now();
     this.errorSignal.set(null);
+    this.acceptFailedSignal.set(null);
     this.setIncoming(this.incomingSignal().filter((c) => c.fromId !== challenge.fromId));
   }
 
@@ -178,6 +183,7 @@ export class ShowdownChallenges {
     if (toId(receiver) !== me) return;
     const others = this.incomingSignal().filter((c) => c.fromId !== fromId);
     if (!format) {
+      if (this.acceptFailedSignal() === fromId) this.acceptFailedSignal.set(null);
       this.setIncoming(others);
       return;
     }
@@ -201,7 +207,7 @@ export class ShowdownChallenges {
   /** An error after challenging ("The user 'ffenrix' was not found.") means the challenge didn't go out. */
   private onPopup(error: string): void {
     this.setOutgoing(null);
-    this.setAccepted(null);
+    this.failAccept();
     // A popup's "||" is a line break.
     this.setError(error.replace(/\|\|/g, ' ').trim());
   }
@@ -214,6 +220,18 @@ export class ShowdownChallenges {
     }
     this.outgoingSignal.set(challenge);
     this.render.request();
+  }
+
+  /**
+   * The challenge we accepted didn't start a battle (the server refused our team, say). It's still
+   * pending on the server, so it waits for an answer again, first in line, to be accepted with another team.
+   */
+  private failAccept(): void {
+    const challenge = this.acceptedSignal();
+    this.setAccepted(null);
+    if (!challenge) return;
+    this.acceptFailedSignal.set(challenge.fromId);
+    this.setIncoming([challenge, ...this.incomingSignal().filter((c) => c.fromId !== challenge.fromId)]);
   }
 
   private setAccepted(challenge: Challenge | null): void {
