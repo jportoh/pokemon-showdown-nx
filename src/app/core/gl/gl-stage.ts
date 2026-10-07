@@ -171,8 +171,8 @@ export class GlStage {
       const interval = now - this.last;
       this.last = now;
       resources.images.startFrame(now);
-      resources.text.startFrame();
-      resources.overlayText.startFrame();
+      resources.text.startFrame(now);
+      resources.overlayText.startFrame(now);
       frame.now = now;
       frame.dt = Math.min(0.1, interval / 1000);
       scene.draw(frame);
