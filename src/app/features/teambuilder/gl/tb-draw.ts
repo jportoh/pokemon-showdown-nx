@@ -1,5 +1,6 @@
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
+import { textSkeleton } from '@core/gl/canvas-ui';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
 import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
 import { TextStyle } from '@core/gl/gl-textures';
@@ -216,6 +217,8 @@ export function ring(ctx: UiContext, box: Box, focused: boolean): void {
  */
 export class WrapCache {
   private readonly lines = new Map<string, string[]>();
+  /** Texts whose wrapping waited for a frame (skeleton lines meanwhile): their lines fade in. */
+  private readonly held = new Set<string>();
 
   get(ctx: UiContext, text: string, style: TextStyle, maxWidth: number, maxLines: number): string[] {
     const key = `${style.size}|${style.bold ? 1 : 0}|${maxWidth}|${maxLines}|${text}`;
@@ -223,6 +226,8 @@ export class WrapCache {
     // Wrapping measures every word: past the frame's budget for new text, it waits for the next frame.
     if (!lines && !ctx.text.withinBudget) {
       ctx.text.deferred++;
+      if (this.held.size > 400) this.held.clear();
+      this.held.add(key);
       return [];
     }
     if (!lines) {
@@ -231,13 +236,30 @@ export class WrapCache {
       if (all.length > maxLines) lines[lines.length - 1] = ctx.text.fit(`${lines[lines.length - 1]} ${all.slice(maxLines).join(' ')}`, style, maxWidth);
       if (this.lines.size > 400) this.lines.clear();
       this.lines.set(key, lines);
+      if (this.held.delete(key)) for (const line of lines) ctx.text.wait(line, style);
     }
     return lines;
   }
 
-  /** The lines drawn from `top` (the first line's top), `lineHeight` apart. */
+  /** The lines drawn from `top` (the first line's top), `lineHeight` apart; skeleton lines while they wait. */
   draw(ctx: UiContext, text: string, x: number, top: number, maxWidth: number, lineHeight: number, style: TextStyle, color: Rgba, maxLines: number): void {
-    this.get(ctx, text, style, maxWidth, maxLines).forEach((line, i) => label(ctx, line, x, top + i * lineHeight + lineHeight / 2, style, color));
+    const lines = this.get(ctx, text, style, maxWidth, maxLines);
+    if (lines.length === 0 && text) {
+      skeletonLines(ctx, text, x, top, maxWidth, lineHeight, style, color, maxLines);
+      return;
+    }
+    lines.forEach((line, i) => label(ctx, line, x, top + i * lineHeight + lineHeight / 2, style, color));
+  }
+}
+
+/** Skeleton bars where `text`'s wrapped lines will be: as many as it about fills, the last one shorter. */
+function skeletonLines(ctx: UiContext, text: string, x: number, top: number, maxWidth: number, lineHeight: number, style: TextStyle, color: Rgba, maxLines: number): void {
+  const guess = text.length * style.size * 0.52;
+  const count = Math.max(1, Math.min(maxLines, Math.ceil(guess / maxWidth)));
+  for (let i = 0; i < count; i++) {
+    const last = i === count - 1;
+    const width = last ? Math.max(maxWidth * 0.3, Math.min(maxWidth, guess - maxWidth * i)) : maxWidth;
+    textSkeleton(ctx.renderer, ctx.now, x, top + i * lineHeight + lineHeight / 2, Math.round(width), style, color);
   }
 }
 

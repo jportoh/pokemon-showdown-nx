@@ -31,6 +31,10 @@ export interface TextPages {
 export const SCENE_PAGES: TextPages = { height: 1024, count: 6 };
 /** Time a frame spends making new texts at most (drawText); the rest wait for the next frames. */
 export const TEXT_BUDGET_MS = 4;
+/** How long a text that was held back (a skeleton stood in for it) takes to fade in. */
+const REVEAL_MS = 160;
+/** Held-back texts remembered for their fade-in, at most. */
+const MAX_LATE = 2000;
 
 /** One texture full of texts, laid out in rows (shelves) of one height each. */
 interface Page {
@@ -77,6 +81,10 @@ export class TextTextures {
   private spentMs = 0;
   /** New texts turned away for the frame's budget so far (diagnostics). */
   deferred = 0;
+  /** The frame's time (ms), set by startFrame. */
+  now = 0;
+  /** Texts a skeleton stood in for: when they first came out (0 while still waiting), for their fade-in. */
+  private readonly late = new Map<string, number>();
 
   constructor(
     private readonly renderer: GlRenderer,
@@ -92,9 +100,39 @@ export class TextTextures {
   }
 
   /** Each frame, before drawing: a page drawn from in this frame is never cleared during it. */
-  startFrame(): void {
+  startFrame(now = performance.now()): void {
     this.frame++;
     this.spentMs = 0;
+    this.now = now;
+  }
+
+  /** `text` was held back this frame (a skeleton stood in for it): it fades in when it comes. */
+  wait(text: string, style: TextStyle): void {
+    const key = this.key(text, style);
+    if (this.late.has(key)) return;
+    if (this.late.size >= MAX_LATE) this.late.clear();
+    this.late.set(key, 0);
+  }
+
+  /** `text` is shown in full some other way (glyphs): it needs no fade-in. */
+  arrived(text: string, style: TextStyle): void {
+    if (this.late.size > 0) this.late.delete(this.key(text, style));
+  }
+
+  /** How opaque `text` is drawn now: 1, or rising from 0 for a held-back text that just came out. */
+  reveal(text: string, style: TextStyle): number {
+    if (this.late.size === 0) return 1;
+    const key = this.key(text, style);
+    const since = this.late.get(key);
+    if (since === undefined) return 1;
+    if (since === 0) {
+      this.late.set(key, this.now);
+      return 0;
+    }
+    const t = (this.now - since) / REVEAL_MS;
+    if (t < 1) return t;
+    this.late.delete(key);
+    return 1;
   }
 
   /** Whether this frame can still make new text (textures or glyphs). */

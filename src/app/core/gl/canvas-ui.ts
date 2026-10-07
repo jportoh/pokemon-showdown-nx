@@ -1,5 +1,5 @@
 import { CanvasAction } from '@core/input/keyboard-navigation';
-import { GlRenderer, Rgba, rgba } from './gl-renderer';
+import { GlRenderer, Rgba, rgba, withAlpha } from './gl-renderer';
 import { TEXT_PAD, TextStyle, TextTextures } from './gl-textures';
 import type { GlyphAtlas } from './glyph-atlas';
 
@@ -27,7 +27,7 @@ export function drawText(
   if (options.fast && glyphs?.covers(value)) {
     if (text.withinBudget || glyphs.has(value, style)) return drawGlyphs(glyphs, value, x, cy, style, color, align, options.maxWidth);
     text.deferred++;
-    return 0;
+    return held(renderer, text, value, x, cy, style, color, align, options.maxWidth);
   }
   // Fitting a new text measures it: that waits for a frame with budget left too.
   const fitLater = options.maxWidth !== undefined && !text.withinBudget && !text.measured(value, style);
@@ -36,12 +36,46 @@ export function drawText(
   if (fitLater) text.deferred++;
   if (!texture) {
     // The frame's budget for new text is spent: from glyphs already made meanwhile, its own texture in a frame or two.
-    return glyphs?.covers(value) && glyphs.has(value, style) ? drawGlyphs(glyphs, value, x, cy, style, color, align, options.maxWidth) : 0;
+    if (glyphs?.covers(value) && glyphs.has(value, style)) {
+      // Shown in full already: no fade-in when its texture comes.
+      text.arrived(value, style);
+      return drawGlyphs(glyphs, value, x, cy, style, color, align, options.maxWidth);
+    }
+    return held(renderer, text, value, x, cy, style, color, align, options.maxWidth);
   }
   const width = texture.width - TEXT_PAD * 2;
   const left = align === 'left' ? x : align === 'center' ? x - width / 2 : x - width;
-  renderer.image(texture, left - TEXT_PAD, cy - texture.height / 2, 1, color);
+  // A text a skeleton stood in for fades in over it.
+  const shownAlpha = text.reveal(value, style);
+  // The skeleton is gone by half the fade, so it never strikes through the text.
+  if (shownAlpha < 0.5) textSkeleton(renderer, text.now, left, cy, width, style, color, 1 - shownAlpha * 2);
+  renderer.image(texture, left - TEXT_PAD, cy - texture.height / 2, 1, shownAlpha < 1 ? withAlpha(color, shownAlpha) : color);
   return width;
+}
+
+/** A text held back for the frame's budget: its skeleton meanwhile, and it fades in when it comes. */
+function held(renderer: GlRenderer, text: TextTextures, value: string, x: number, cy: number, style: TextStyle, color: Rgba, align: Align, maxWidth?: number): number {
+  text.wait(value, style);
+  const width = skeletonWidth(text, value, style, maxWidth);
+  textSkeleton(renderer, text.now, align === 'left' ? x : align === 'center' ? x - width / 2 : x - width, cy, width, style, color);
+  return 0;
+}
+
+/** About how wide `value` comes out: its width when measured already, else guessed from its length (no measuring: the budget is spent). */
+export function skeletonWidth(text: TextTextures, value: string, style: TextStyle, maxWidth = Infinity): number {
+  const guess = text.measured(value, style) ? text.measure(value, style) : value.length * style.size * 0.52;
+  return Math.round(Math.max(style.size * 0.8, Math.min(maxWidth, guess)));
+}
+
+/**
+ * A loading placeholder where a text will be: a soft, gently pulsing bar of the text's colour, from
+ * `left`, as tall as its lowercase letters. Stands in for texts and lines still being made (drawText,
+ * wrapped lines) and fades out under them as they fade in.
+ */
+export function textSkeleton(renderer: GlRenderer, now: number, left: number, cy: number, width: number, style: TextStyle, color: Rgba, opacity = 1): void {
+  const height = Math.max(4, Math.round(style.size * 0.62));
+  const pulse = 0.17 + 0.07 * Math.sin(now / 260);
+  renderer.rect(left, cy - height / 2, width, height, { fill: withAlpha(color, pulse * opacity), radius: height / 2 });
 }
 
 function drawGlyphs(glyphs: GlyphAtlas, value: string, x: number, cy: number, style: TextStyle, color: Rgba, align: Align, maxWidth?: number): number {
