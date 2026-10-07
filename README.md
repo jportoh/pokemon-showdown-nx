@@ -1,33 +1,39 @@
 # Pokémon Showdown for Brewser
 
-A [Pokémon Showdown](https://pokemonshowdown.com) client for the **Brewser** console, built with Angular.
-It connects to Showdown's main server and is designed to be played with a controller on a fixed
-1280×720 screen, with a Gen 3–style retro look.
+A [Pokémon Showdown](https://pokemonshowdown.com) client for the **Brewser** console. It connects to
+Showdown's main server, is played with a controller on a 1280×720 screen (1920×1080 docked), and has
+a Gen 3 style retro look. It's built with Angular, and the whole UI is drawn with WebGL on a single
+canvas.
 
 ## Features
 
-- **Battle**: pick a format and one of your teams, then search Showdown's ladder for an opponent.
-  You can also challenge a player by name and accept incoming challenges. Doubles (VGC) and singles
-  (Random Battle) are supported, including Mega Evolution, Terastallization, the battle timer,
-  forfeit and rematches.
-- **Random Battle**: a one-button ladder search from the home screen.
-- **Teambuilder**: build and validate teams for `[Gen 9 Champions] VGC 2026 Reg M-C`.
-- **Watch Live**: spectate battles that are being played right now.
-- **Replays**: browse and play back replays from `replay.pokemonshowdown.com`.
-- **Chats**: join Showdown's chat rooms.
-- **Login**: connect as a guest (random name) or log in with a registered Showdown account.
+- **Battle**: pick a format and a team, then search Showdown's ladder or challenge a player by name.
+  Incoming challenges can be answered from any page. Doubles and singles, Mega Evolution,
+  Terastallization, the battle timer, forfeit, rematches, Best-of-3 sets and Open Team Sheets.
+- **Formats**: VGC 2026 Reg M-C (single games and Bo3), BSS Reg M-C, and Gen 9, Champions and
+  Gen 3 Random Battles.
+- **Teambuilder**: build teams for the Champions formats, validate them on the server, import them
+  from PokePaste, and check damage against common sets with the built-in calculator.
+- **Watch Live**: spectate battles being played right now.
+- **Replays and battle history**: play back public replays, and your own battles (saved
+  automatically).
+- **Chats**: join Showdown's main chat rooms.
+- **Trainer Card**: your avatar, ladder ratings and record.
+- **Settings**: six colour themes, music and sound volumes, default formats, spectators, saved login.
+- Animated battles with per-move effects, battle music and cries, and synthesized chiptune menu
+  music.
 
 ## Controls
 
-The UI is controller-only on the console. Buttons come from the Gamepad API.
+| Controller | Keyboard | Use |
+| --- | --- | --- |
+| D-pad | Arrows / WASD | Move between controls |
+| A / B | Enter / Escape (J / K) | Confirm / back |
+| L / R, ZL / ZR | Q / E, Z / C | Page actions, shown on screen (switch formats and teams, Battle info, Mega Evolution…) |
+| R3 | R | Page action (battle timer, search) |
+| L3 | F | Performance overlay |
 
-| Button | Use |
-| --- | --- |
-| D-pad | Move between controls (spatial navigation) |
-| A / B | Confirm / back |
-| L / R, ZL / ZR | Page-specific actions, shown as badges on screen. Examples: Mega/Tera and Forfeit in battle, switching teams on the Battle page, login on the home screen |
-
-The keyboard also works in a desktop browser (arrow keys, Enter, Escape).
+The console's touchscreen and a mouse also work.
 
 ## Getting started
 
@@ -38,76 +44,44 @@ npm install
 npm start          # dev server at http://localhost:4200
 ```
 
-Signing in to Showdown needs `play.pokemonshowdown.com/api`, and that endpoint only allows CORS from
-Showdown's own site. So in a regular browser, online play works only with web security disabled, for
-example Chrome started with `--disable-web-security`. The Brewser console doesn't enforce CORS.
+Logging in to Showdown needs `play.pokemonshowdown.com/api`, which only allows CORS from Showdown's
+own site, so in a desktop browser online play needs web security disabled (for example Chrome
+started with `--disable-web-security`). The Brewser console doesn't enforce CORS.
 
 ## Building for Brewser
 
-The console runs a custom engine, not Chrome. It runs every script as a classic script (no ES modules),
-and its HTML/CSS layout is fragile and slow. So the whole app is drawn with WebGL on one 1280×720 canvas
-(`GlStage`), and the page holds nothing else. `scripts/build-brewser.mjs` post-processes the normal
-Angular build so it can run there: it re-bundles the app into a single classic `app.js` and adds a
-few runtime polyfills and patches.
-
 ```bash
 npm run build:brewser        # → dist/pokemon-showdown-brewser/brewser.zip
-npm run build:brewser:diag   # same, with on-screen diagnostics
+npm run build:brewser:diag   # the same, with an on-screen boot report
 ```
 
-Upload `brewser.zip` (`index.html`, `app.js` and `assets/`) to Brewser. The submission's network
-allow-list must include:
+Upload `brewser.zip` to Brewser, with these origins on the network allow-list:
+`wss://sim3.psim.us`, `https://play.pokemonshowdown.com`, `https://replay.pokemonshowdown.com` and
+`https://pokepast.es`. CI builds the zip for every pull request and attaches it to every release.
 
-- `wss://sim3.psim.us`: the Showdown server
-- `https://play.pokemonshowdown.com`: login, sprites and data
-- `https://replay.pokemonshowdown.com`: replays
-- `https://pokepast.es`: importing teams from PokePaste
+## Documentation
 
-### Things to keep in mind on Brewser
+Developer documentation lives in [docs/](docs/):
 
-- Every screen is a scene drawn on the canvas, built from the kit in `src/app/core/gl/` (focus,
-  text, retro boxes and buttons, lists, pickers, the on-screen keyboard). Don't add DOM UI.
-- The d-pad, A and B reach the top scene through `KeyboardNavigation.captureInput`; L, R, ZL, ZR and
-  R3 through `registerButton`.
-- The controller is read every frame: Brewser's timers fire only 20 to 25 times a second.
+- [Architecture](docs/architecture.md): one canvas, Angular as the skeleton, scenes, state, code layout
+- [UI kit](docs/ui-kit.md): building screens on the canvas, step by step
+- [Input](docs/input.md): controller, keyboard, touch and focus
+- [Rendering](docs/rendering.md): the renderer, text and image caches, performance
+- [Running on Brewser](docs/brewser.md): the console's engine, the console build, testing on a device
+- [Talking to Showdown](docs/showdown.md): connection, login, battles
+- [Game data and assets](docs/data.md): bundled data, update scripts, formats
+- [Features](docs/features/README.md): one page per area of the app
+- [Branches, CI and releases](docs/releases.md)
 
-## Game data
+Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The game data is bundled as JSON under `src/app/core/dex/`. It's generated from Showdown's client data
-files by these scripts:
+## License
 
-| Script | Output |
-| --- | --- |
-| `npm run update:champions` | `champions-regmc.json`: species, learnsets, items and rules for the VGC format |
-| `npm run update:moves` | `moves.json` and category icons: every move's name, type, category, power and accuracy |
-| `npm run update:names` | `names.json` and item icons: item and ability names for any format |
-| `npm run update:species` | `species.json`: types, base stats and abilities of every species |
+The code is released under the [MIT License](LICENSE).
 
-## Project structure
+The license covers this project's code only. Pokémon, its names, sprites, music and sounds belong to
+Nintendo, Game Freak and The Pokémon Company; game data and many assets come from Pokémon Showdown
+and its contributors. They are not covered by this license.
 
-```
-src/app/
-  core/       dex data, controller input, layout, persistence, render scheduling
-  features/
-    battle/       battle screen, protocol parsing, live/spectate/replay connections
-    connection/   Showdown WebSocket, login, challenges, ladder search, battle rooms
-    home/         home menu and login box
-    play/         Battle page (format/team selection, challenges)
-    teambuilder/  team editor, packed-team format, validation
-    live/         live battle list
-    replays/      replay list
-    lobby/        chat rooms
-  shared/     shared components, format list, directives, UI classes, utilities
-scripts/      Brewser build and game-data update scripts
-```
-
-## Tests
-
-```bash
-npm test     # Vitest
-```
-
-## Disclaimer
-
-This is an unofficial fan project. It is not affiliated with Pokémon Showdown, Nintendo, Game Freak or
-The Pokémon Company.
+This is an unofficial fan project. It is not affiliated with Pokémon Showdown, Brewser, Nintendo, Game
+Freak or The Pokémon Company.
