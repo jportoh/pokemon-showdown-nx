@@ -24,6 +24,11 @@ export class SpectateBattleConnection implements BattleConnection {
 
   forfeit(): void {}
 
+  /** Spectators can talk in the battle's chat too (when the server lets them: guests can't). */
+  say(text: string): void {
+    this.rooms.send(this.roomId, text);
+  }
+
   stop(): void {
     this.rooms.leave(this.roomId);
   }

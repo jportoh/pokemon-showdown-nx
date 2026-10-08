@@ -18,6 +18,8 @@ const LOG_TEXT_W = LOG_W - 40;
 /** The rows' block inside its padding (12px over, 12px under). */
 const LOG_ROOM = LOG_H - 24;
 const PAGE_STEP_ENTRIES = 3;
+/** Chat messages' lines start after their mark. */
+const CHAT_INDENT = 14;
 
 interface LogStyle {
   style: TextStyle;
@@ -34,11 +36,18 @@ const LOG_STYLES: Record<BattleLogEntry['kind'], LogStyle> = {
   minor: { style: { size: 18 }, color: INK.gray300, lineHeight: 26, before: 0, after: 0, width: LOG_TEXT_W },
   result: { style: { size: 22, bold: true }, color: INK.yellow200, lineHeight: 34, before: 10, after: 0, width: LOG_TEXT_W },
   message: { style: { size: 20 }, color: INK.gray100, lineHeight: 30, before: 0, after: 0, width: LOG_TEXT_W },
+  chat: { style: { size: 20 }, color: INK.white, lineHeight: 30, before: 4, after: 4, width: LOG_TEXT_W - CHAT_INDENT },
 };
+
+/** A chat message's text, after its author's name: "Jorge: gg". */
+export function chatText(entry: BattleLogEntry): string {
+  return entry.author ? `${entry.author}: ${entry.text}` : entry.text;
+}
 
 /**
  * The battle log, Battle info's Log tab (1248x604): a turn header per turn, each
- * message, minor details in smaller grey text, the result in yellow; the newest entries that fit,
+ * message, minor details in smaller grey text, the result in yellow, chat messages marked in sky blue
+ * by the side (the author's name too; the server's notices grey); the newest entries that fit,
  * unless the reader has paged back with the d-pad. On the canvas each entry's lines are measured
  * exactly.
  */
@@ -91,19 +100,40 @@ export class LogView {
       const lines = this.lines(ctx, entry);
       y += look.before;
       if (entry.kind === 'turn') renderer.rect(LOG_X + 20, y - 2, LOG_TEXT_W, lines.length * look.lineHeight + 4, { fill: INK.stage, radius: 4 });
-      const x = LOG_X + 20 + (entry.kind === 'turn' ? 10 : 0);
-      lines.forEach((line, n) => write(ctx, line, x, y + look.lineHeight * n + look.lineHeight / 2, look.style, look.color));
+      if (entry.kind === 'chat') this.drawChat(ctx, entry, lines, y);
+      else {
+        const x = LOG_X + 20 + (entry.kind === 'turn' ? 10 : 0);
+        lines.forEach((line, n) => write(ctx, line, x, y + look.lineHeight * n + look.lineHeight / 2, look.style, look.color));
+      }
       y += lines.length * look.lineHeight + look.after;
     }
     if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 14, { size: 16 }, INK.gray400, 'center');
     if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 14, { size: 16 }, INK.gray400, 'center');
   }
 
+  /** A chat message: a sky-blue mark by its lines, its author's name in sky blue; the server's notices grey. */
+  private drawChat(ctx: ScreenContext, entry: BattleLogEntry, lines: string[], top: number): void {
+    const look = LOG_STYLES.chat;
+    const x = LOG_X + 20 + CHAT_INDENT;
+    ctx.renderer.rect(LOG_X + 20, top, 4, lines.length * look.lineHeight, { fill: entry.author ? INK.sky300 : INK.gray500, radius: 2 });
+    const color = entry.author ? look.color : INK.gray300;
+    const prefix = entry.author ? `${entry.author}:` : '';
+    lines.forEach((line, n) => {
+      const cy = top + look.lineHeight * n + look.lineHeight / 2;
+      if (n === 0 && prefix && line.startsWith(prefix)) {
+        const width = write(ctx, prefix, x, cy, look.style, INK.sky300);
+        write(ctx, line.slice(prefix.length), x + width, cy, look.style, color);
+      } else {
+        write(ctx, line, x, cy, look.style, color);
+      }
+    });
+  }
+
   private lines(ctx: ScreenContext, entry: BattleLogEntry): string[] {
     let lines = this.wrapped.get(entry.id);
     if (!lines) {
       const look = LOG_STYLES[entry.kind];
-      lines = ctx.text.wrap(entry.text, look.style, look.width);
+      lines = ctx.text.wrap(entry.kind === 'chat' ? chatText(entry) : entry.text, look.style, look.width);
       if (this.wrapped.size > 600) this.wrapped.clear();
       this.wrapped.set(entry.id, lines);
     }

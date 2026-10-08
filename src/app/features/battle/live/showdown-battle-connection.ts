@@ -61,6 +61,10 @@ export class ShowdownBattleConnection implements BattleConnection {
     this.rooms.send(this.roomId, '/forfeit');
   }
 
+  say(text: string): void {
+    this.rooms.send(this.roomId, text);
+  }
+
   stop(): void {
     this.rooms.leave(this.roomId);
   }
