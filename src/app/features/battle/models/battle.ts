@@ -232,11 +232,13 @@ export interface FieldEvent {
   item?: string;
 }
 
-/** A line of the battle log: a turn header, a message, a minor detail (HP lost) or the result. */
+/** A line of the battle log: a turn header, a message, a minor detail (HP lost), the result or a chat message. */
 export interface BattleLogEntry {
   id: number;
-  kind: 'turn' | 'message' | 'minor' | 'result';
+  kind: 'turn' | 'message' | 'minor' | 'result' | 'chat';
   text: string;
+  /** A chat message's author ('' for the server's notices). */
+  author?: string;
 }
 
 /** A player's ladder rating before and after a rated battle. */
@@ -290,6 +292,8 @@ export interface BattleConnection {
   setTimer?(on: boolean): void;
   /** Agrees to the open team sheets offered at team preview (Open Team Sheets formats); absent where there's no offer. */
   acceptTeamSheets?(): void;
+  /** Says a message in the battle's chat (the server echoes it back as a `|c|` line); absent in replays. */
+  say?(text: string): void;
   stop(): void;
 }
 
