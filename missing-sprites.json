@@ -1,5 +1,5 @@
 {
-  "_help": "Sprites que Showdown no tiene en gen5 / gen5-back o que se ven mal (renders reducidos, borrosos). Pon en cada campo el link a la imagen (PNG; mejor 96x96 estilo BW o al doble, 192x192). front = de frente, back = de espaldas. Lo que quede vacío sigue con el sprite de Showdown, salvo una espalda vacía con frente propio: usa ese frente.",
+  "_help": "Sprites Showdown lacks in gen5 / gen5-back, or that look poor there (scaled-down or blurry renders). Put the link to each image in its field (PNG; ideally 96x96 in BW style, or double, 192x192). front = facing the viewer, back = seen from behind. An empty field keeps the Showdown sprite, except an empty back next to a linked front: that front is used.",
   "barbaracle-mega": {
     "front": "https://rejuvenation.wiki.gg/images/689_1.png",
     "back": "https://rejuvenation.wiki.gg/images/689b_1.png"

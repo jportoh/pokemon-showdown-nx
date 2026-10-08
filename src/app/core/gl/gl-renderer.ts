@@ -2,9 +2,7 @@
  * A small 2D renderer on WebGL (1, so it also runs on a WebGL 2 context): rounded rectangles with a
  * border, circles and textured quads (text, pixel art), all from one shader drawing a signed distance
  * to a rounded box, batched into as few draw calls as textures allow. Coordinates are the stage's CSS
- * pixels (1280x720); the canvas itself can be denser (devicePixelRatio).
- *
- * Experimental (feat/webgl-probe): to measure what WebGL buys on the Brewser console.
+ * pixels (1280x720); the canvas itself can be denser (devicePixelRatio). GlStage owns the one instance.
  */
 
 /** pos 2, local 2, half size 2, radius 1, border 1, softness 1, fill 4, stroke 4, uv 2, textured 1. */

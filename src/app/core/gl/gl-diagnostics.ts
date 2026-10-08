@@ -36,9 +36,9 @@ const GRAPH_FRAMES = 150;
 export const LONG_FRAME_MS = 25;
 
 /**
- * EXPERIMENT (feat/webgl-probe): what the main thread does around the WebGL field's frames, to find
- * the stutters on the console: Angular's renders (timed by wrapping ApplicationRef's tick), text and
- * sprite textures uploaded, and the field's own drawing time. The field draws it as a graph.
+ * What the main thread does around the stage's frames, to find the stutters on the console: Angular's
+ * renders (timed by wrapping ApplicationRef's tick), text and sprite textures uploaded, and the
+ * stage's own drawing time. PerfHud (L3) draws it as a graph.
  */
 @Service()
 export class GlDiagnostics {

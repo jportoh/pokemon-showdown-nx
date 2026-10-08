@@ -1,4 +1,6 @@
-You are an expert in TypeScript, Angular, WebGL and scalable web application development. You write functional, maintainable and performant code following Angular and TypeScript best practices.
+# Project rules
+
+The rules for working on this codebase, for people and code assistants alike. They are kept short on purpose: the reasons and the details are in [docs/](docs/) (start with [architecture](docs/architecture.md)) and [CONTRIBUTING.md](CONTRIBUTING.md). Write functional, maintainable and performant code that follows current Angular and TypeScript practice.
 
 ## TypeScript Best Practices
 
@@ -26,9 +28,9 @@ The app targets the Brewser console (a custom engine at 1280x720, driven by a co
 
 ## Accessibility
 
-The owner chose a pure canvas UI (2026-10-01), knowing a canvas is invisible to assistive technology, so AXE checks and ARIA don't apply to it: do NOT add hidden DOM controls or ARIA mirrors of canvas screens. Still keep WCAG AA colour contrast in every theme (GlTheme), and make every screen fully usable with the controller alone.
+The UI is deliberately pure canvas (see [docs/rendering.md](docs/rendering.md)). A canvas is invisible to assistive technology, so AXE checks and ARIA don't apply to it: do NOT add hidden DOM controls or ARIA mirrors of canvas screens. Still keep WCAG AA colour contrast in every theme (GlTheme), and make every screen fully usable with the controller alone.
 
-### Components
+## Components
 
 - Keep components small and focused on a single responsibility
 - Use `input()` and `output()` functions instead of decorators
@@ -42,7 +44,7 @@ The owner chose a pure canvas UI (2026-10-01), knowing a canvas is invisible to 
 - Use `computed()` for derived state
 - Keep state transformations pure and predictable
 - Do NOT use `mutate` on signals, use `update` or `set` instead
-- Do not assume globals like (`new Date()`) are available.
+- Do not assume browser globals (such as `new Date()`) are available.
 
 ## Services
 

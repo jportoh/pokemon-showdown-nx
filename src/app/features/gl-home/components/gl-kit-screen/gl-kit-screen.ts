@@ -19,8 +19,8 @@ const SPEEDS = ['Slow', 'Normal', 'Fast', 'Instant'];
 const STRESS_LINES = 28;
 
 /**
- * EXPERIMENT (migration phase 1): the canvas UI kit on show, to try it on the console before the
- * pages are built with it. Widgets (buttons, steppers, text fields with the canvas keyboard, a modal
+ * The canvas UI kit on show (R3 on the home screen), to try widgets on the console on their own.
+ * Widgets (buttons, steppers, text fields with the canvas keyboard, a modal
  * dialog), a long paged list, and a stress test of fast-changing text drawn from the glyph atlas or
  * as textures. ZL/ZR switch tabs, B goes back to the menu. The theme stepper changes the app's theme.
  */

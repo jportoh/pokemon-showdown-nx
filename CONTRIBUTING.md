@@ -65,7 +65,7 @@ npm run build:brewser   # must pass: CI runs it as the required check
 
 It runs `ng build` and then re-bundles the result for the console ([brewser.md](docs/brewser.md#the-console-build)).
 
-The unit test suite (`npm test`, Vitest) is almost empty and isn't run by CI yet. Tests for pure
+There are no unit tests yet (`npm test` runs Vitest, and CI doesn't run it). Tests for pure
 logic (protocol parsing, battle text, team formats, the damage calc wrapper) are a very welcome
 contribution.
 
