@@ -35,7 +35,8 @@ interface ConditionRow {
  * Battle info (ZR), over the whole stage under the top bar: tabs for each side's team (every member
  * as a team card with all that's known of it: ours exact, theirs as far as the battle or their open
  * team sheet has shown), the field's conditions (weather, terrain and rooms, then each side's, with
- * their turns left) and the battle log. ZL/ZR or left/right change tabs, up/down page the log, B closes.
+ * their turns left) and the battle log with the chat. ZL/ZR or left/right change tabs, up/down page the
+ * log, A writes a chat message there (live battles), B closes.
  */
 export class InfoView {
   private readonly store = inject(BattleStore);
@@ -100,7 +101,7 @@ export class InfoView {
       const color = t === 'p2' ? INK.red300 : t === 'p1' ? INK.sky300 : INK.white;
       write(ctx, this.tabLabel(t), x + TAB_W / 2, TAB_Y + TAB_H / 2, { size: 18, bold: true }, on ? INK.white : color, 'center', TAB_W - 16);
     });
-    const keys = tab === 'log' ? '◀ ▶ Tabs · ▲ ▼ Scroll · B Close' : '◀ ▶ Tabs · B Close';
+    const keys = tab !== 'log' ? '◀ ▶ Tabs · B Close' : this.store.canChat() ? 'A Chat · ▲ ▼ Scroll · B Close' : '◀ ▶ Tabs · ▲ ▼ Scroll · B Close';
     const sheet = tab === 'p2' && sheetHint;
     write(ctx, sheet || keys, 1264, TAB_Y + TAB_H / 2, { size: 16, bold: !!sheet }, sheet ? INK.yellow200 : INK.gray300, 'right', 300);
 

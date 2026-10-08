@@ -1,6 +1,7 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
+import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
@@ -8,7 +9,7 @@ import { BattleFieldScene, FIELD_PARTS } from '@features/battle/gl/battle-field-
 import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
 import { INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
-import { TeamsOverviewView } from '@features/battle/gl/screen/overlay-views';
+import { TeamsOverviewView, chatText } from '@features/battle/gl/screen/overlay-views';
 import { PartyView } from '@features/battle/gl/screen/party-view';
 import { PlayPanelView, targetSlot } from '@features/battle/gl/screen/play-panel-view';
 import { INK, ScreenContext, write } from '@features/battle/gl/screen/screen-context';
@@ -22,6 +23,10 @@ import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
 const FIELD = { x: 0, y: FIELD_TOP, w: FIELD_W, h: FIELD_H };
+/** How long a chat message stays popped up over the field. */
+const CHAT_POP_MS = 6000;
+const CHAT_POP_W = 480;
+const MAX_CHAT_LENGTH = 300;
 /** The parts of a frame the diagnostics time: field, top bar and labels, command panel, screens over it, GL flush. */
 const SECTIONS = ['field', 'chrome', 'panel', 'overlays', 'flush'] as const;
 type Section = (typeof SECTIONS)[number];
@@ -69,6 +74,7 @@ export class GlBattleScreen {
   private readonly stage = inject(GlStage);
   private readonly connection = inject(ShowdownConnection);
   private readonly login = inject(ShowdownLogin);
+  private readonly keyboard = inject(CanvasKeyboard);
 
   private readonly field = new BattleFieldScene();
   private readonly header = new HeaderView();
@@ -97,6 +103,8 @@ export class GlBattleScreen {
   private partyWasShown = false;
   /** The battle drawn last: a new one (a rematch, a set's next game) closes what was open over the old. */
   private shownBattle: unknown = null;
+  /** The chat message popped up over the field, and since when. */
+  private chatPop: { id: number; since: number } | null = null;
 
   /**
    * ZL's part with the opponent's open team sheet: agreeing to open team sheets while offered, or
@@ -132,6 +140,7 @@ export class GlBattleScreen {
 
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
+      this.keyboard.close(null);
       hide();
     });
   }
@@ -147,6 +156,9 @@ export class GlBattleScreen {
       this.infoTab = null;
       this.partyOpen = null;
     }
+    // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
+    const pop = this.store.chatPop();
+    if (pop && this.chatPop?.id !== pop.id) this.chatPop = { id: pop.id, since: now };
     renderer.beginPlain(INK.header);
     this.focus.begin();
 
@@ -183,6 +195,7 @@ export class GlBattleScreen {
       this.field.drawOver(renderer, now);
       renderer.clip(null);
       renderer.setView(1, 0, 0);
+      this.drawChatPop(ctx);
     }
     mark = this.timeSection('chrome', mark);
 
@@ -255,6 +268,38 @@ export class GlBattleScreen {
     const box = { x: (STAGE_W - w) / 2, y: FIELD.y + 16, w, h: 52 };
     ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: INK.dark, stroke: INK.yellow300, radius: 10, border: 3 });
     write(ctx, notice, STAGE_W / 2, box.y + box.h / 2, style, INK.yellow100, 'center', box.w - 32);
+  }
+
+  /**
+   * The latest chat message, for a few seconds after it's said: a bubble at the top right of the field,
+   * one line ("Jorge: gg", the rest cut). The whole chat is in Battle info's log.
+   */
+  private drawChatPop(ctx: ScreenContext): void {
+    const entry = this.store.chatPop();
+    if (!entry || !this.chatPop || ctx.now - this.chatPop.since > CHAT_POP_MS) return;
+    const style = { size: 20 };
+    const w = Math.min(CHAT_POP_W, ctx.text.measure(chatText(entry), style) + 32);
+    const box = { x: STAGE_W - 16 - w, y: FIELD.y + 54, w, h: 40 };
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0.06, 0.09, 0.16, 0.9], stroke: entry.author ? INK.sky300 : INK.gray500, radius: 10, border: 2 });
+    const cy = box.y + box.h / 2;
+    let x = box.x + 16;
+    if (entry.author) x += write(ctx, `${entry.author}:`, x, cy, style, INK.sky300, 'left', box.w - 32);
+    write(ctx, `${entry.author ? ' ' : ''}${entry.text}`, x, cy, style, entry.author ? INK.white : INK.gray300, 'left', box.x + box.w - 16 - x);
+  }
+
+  /** Battle info's log, A: the keyboard over the battle for a chat message; OK says it. */
+  private writeChat(): void {
+    this.keyboard.open({
+      label: 'Message to the battle chat',
+      value: '',
+      maxLength: MAX_CHAT_LENGTH,
+      done: (value) => {
+        if (value === null) return;
+        this.store.sendChat(value);
+        // Back to the newest entries, where it shows once the server echoes it.
+        this.info.log.reset();
+      },
+    });
   }
 
   /** The party screen is up: a forced switch, or Switch pressed while choosing (a new choice closes it). */
@@ -342,6 +387,7 @@ export class GlBattleScreen {
       if (action === 'back') this.infoTab = null;
       else if (action === 'left' || action === 'right') this.stepTab(action === 'left' ? -1 : 1);
       else if (this.infoTab === 'log' && (action === 'up' || action === 'down' || action === 'first' || action === 'last')) this.info.log.page(action, this.ctx);
+      else if (this.infoTab === 'log' && action === 'accept' && this.store.canChat()) this.writeChat();
       return true;
     }
     if (isDirection(action)) {

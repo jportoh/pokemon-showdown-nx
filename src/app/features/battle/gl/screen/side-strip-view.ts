@@ -32,7 +32,11 @@ const pixelsOf = (keys: string): string[] => BALL_PIXELS.map((row) => [...row].m
 const BALL_RED = pixelsOf('R');
 const BALL_WHITE = pixelsOf('Ww');
 const BALL_INK = pixelsOf('o');
-const BALL_TOP = rgba('#ef4444');
+/** Each part's colour: red and white while it can fight, dull greys once it has fainted. */
+const BALL_COLORS: Record<'alive' | 'fainted', { top: Rgba; bottom: Rgba; ink: Rgba }> = {
+  alive: { top: rgba('#ef4444'), bottom: INK.gray100, ink: INK.dark },
+  fainted: { top: INK.gray600, bottom: INK.gray500, ink: INK.dark },
+};
 
 type Ball = 'alive' | 'fainted' | 'unseen';
 
@@ -128,14 +132,11 @@ export class SideStripView {
         renderer.rect(bx, by, BALL, BALL, { fill: [0, 0, 0, 0], stroke: INK.gray500, radius: BALL / 2, border: 2 });
         return;
       }
-      if (ball === 'fainted') {
-        renderer.rect(bx, by, BALL, BALL, { fill: INK.gray600, stroke: INK.dark, radius: BALL / 2, border: 2 });
-        return;
-      }
-      // A Poké Ball: red top, white bottom, the band and the button.
-      renderer.rect(bx, by, BALL, BALL, { fill: BALL_TOP, texture: maskOf(renderer, BALL_RED) });
-      renderer.rect(bx, by, BALL, BALL, { fill: INK.gray100, texture: maskOf(renderer, BALL_WHITE) });
-      renderer.rect(bx, by, BALL, BALL, { fill: INK.dark, texture: maskOf(renderer, BALL_INK) });
+      // A Poké Ball: its top, its bottom, the band and the button (greyed out once fainted).
+      const colors = BALL_COLORS[ball];
+      renderer.rect(bx, by, BALL, BALL, { fill: colors.top, texture: maskOf(renderer, BALL_RED) });
+      renderer.rect(bx, by, BALL, BALL, { fill: colors.bottom, texture: maskOf(renderer, BALL_WHITE) });
+      renderer.rect(bx, by, BALL, BALL, { fill: colors.ink, texture: maskOf(renderer, BALL_INK) });
     });
     return x + width;
   }

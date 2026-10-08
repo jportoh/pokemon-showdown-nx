@@ -3,6 +3,9 @@ import { BattleMusic } from '@core/audio/battle-music';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { moveInfo, moveType } from '@core/dex/moves';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { ShowdownLogin } from '@features/connection/showdown-login';
+import { splitLine } from '@features/connection/showdown-protocol';
 import {
   BattleConnection,
   BattleFieldState,
@@ -73,6 +76,8 @@ const INTRO_MS = 3000;
 const MAX_LOG_ENTRIES = 250;
 /** How long a request waits for its log before it's shown anyway (a request may come alone). */
 const LOG_WAIT_MS = 1000;
+/** A message we said comes back from the server this soon (or a popup saying why it didn't go). */
+const CHAT_ANSWER_MS = 4000;
 const SLOT_INDEX: Record<string, number> = { a: 0, b: 1 };
 /** Lines whose `[from]` ability or item belongs to the `[of]` Pokémon (the one causing the effect). */
 const SOURCE_OWNS_EFFECT = ['-weather', '-fieldstart', '-damage', '-item', '-enditem', '-sidestart'];
@@ -88,6 +93,23 @@ const ROOM_LINES = new Set([
 
 function isBattleLine(line: string): boolean {
   return line.startsWith('|') && !ROOM_LINES.has(line.slice(1).split('|')[0]);
+}
+
+/** A `message-error` box's text, without its HTML: the app never renders HTML from the server. */
+function messageError(line: string): string {
+  const inner = line.slice(line.indexOf('>') + 1).split('</div>')[0];
+  return inner
+    .replace(/<[^>]*>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .trim();
+}
+
+function isChatLine(line: string): boolean {
+  return line.startsWith('|c|') || line.startsWith('|c:|') || line.startsWith('|chat|');
 }
 
 /**
@@ -168,6 +190,23 @@ export class BattleStore {
   private readonly renderScheduler = inject(RenderScheduler);
   private readonly session = inject(BattleSession);
   private readonly music = inject(BattleMusic);
+  private readonly login = inject(ShowdownLogin);
+  /** A chat message we said and haven't seen back yet: a notice if the server neither echoes it nor says why. */
+  private chatAnswer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    // The server turns some messages down outside the battle's room: a popup, or an error as a PM
+    // (`|pm|~|Brewser1234|/error Due to spam from your internet provider…`).
+    inject(ShowdownConnection).frames.subscribe((frame) => {
+      if (this.chatAnswer === null) return;
+      for (const line of frame.lines) {
+        const [type, text = ''] = splitLine(line, 1);
+        if (type === 'popup' && text) this.answerChat(text.replace(/\|\|/g, ' '));
+        const pm = type === 'pm' ? (splitLine(line, 3)[3] ?? '') : '';
+        if (pm.startsWith('/error ')) this.answerChat(pm.slice('/error '.length));
+      }
+    });
+  }
 
   private readonly sidesSignal = signal<Record<SideId, BattleSide>>({
     p1: emptySide('p1'),
@@ -210,10 +249,16 @@ export class BattleStore {
   private readonly seriesScoreSignal = signal<SeriesScore | null>(null);
   private readonly readySignal = signal<ReadyState>('none');
   private readonly sheetOfferSignal = signal<SheetOffer>('none');
+  private readonly chatPopSignal = signal<BattleLogEntry | null>(null);
+  private readonly canChatSignal = signal(false);
 
   readonly sides = this.sidesSignal.asReadonly();
   /** The battle log so far, oldest first. */
   readonly log = this.logSignal.asReadonly();
+  /** The latest chat message said while watching or playing (not one caught up on), to pop up over the field. */
+  readonly chatPop = this.chatPopSignal.asReadonly();
+  /** Whether messages can be said in the battle's chat (live battles, ours or watched; not replays). */
+  readonly canChat = this.canChatSignal.asReadonly();
   readonly turn = this.turnSignal.asReadonly();
   /** What the player has to choose now; null while the log plays or the server is thinking. */
   readonly request = this.requestSignal.asReadonly();
@@ -382,6 +427,7 @@ export class BattleStore {
     this.session.setActive(true);
     this.connection = connection;
     this.canToggleTimerSignal.set(!!connection.setTimer && !connection.replay);
+    this.canChatSignal.set(!!connection.say && !connection.replay);
     void this.music.start();
     connection.start((frame) => this.receive(frame));
   }
@@ -437,6 +483,7 @@ export class BattleStore {
     this.hpChangesSignal.set([]);
     this.statusChangesSignal.set([]);
     this.statChangesSignal.set([]);
+    this.chatPopSignal.set(null);
     this.introSignal.set(null);
     this.startedSignal.set(false);
     this.formatSignal.set('');
@@ -526,6 +573,26 @@ export class BattleStore {
     this.renderScheduler.request();
   }
 
+  /**
+   * Says `text` in the battle's chat: it shows once the server echoes it back. Only `/me` goes as a
+   * command; any other leading slash is sent as text (`//`), so nothing typed can act on the battle.
+   */
+  sendChat(text: string): void {
+    let message = text.replace(/\s+/g, ' ').trim();
+    if (!message || !this.canChatSignal() || !this.connection?.say) return;
+    if (message.startsWith('/') && !message.startsWith('/me ')) message = `/${message}`;
+    this.connection.say(message);
+    this.answerChat(null);
+    this.chatAnswer = setTimeout(() => this.answerChat("The server didn't post your message (no answer from it)."), CHAT_ANSWER_MS);
+  }
+
+  /** What we said was answered: echoed back (null), or turned down with this notice. */
+  private answerChat(notice: string | null): void {
+    if (this.chatAnswer !== null) clearTimeout(this.chatAnswer);
+    this.chatAnswer = null;
+    if (notice) this.showChat({ id: this.nextLogId++, kind: 'chat', text: notice, author: '' });
+  }
+
   /** Pauses or resumes the playback (replays). */
   togglePause(): void {
     this.pausedSignal.update((paused) => !paused);
@@ -562,12 +629,16 @@ export class BattleStore {
     this.hpChangesSignal.set([]);
     this.statusChangesSignal.set([]);
     this.statChangesSignal.set([]);
+    // The chat caught up on is in the log; only what's said from now on pops up.
+    this.chatPopSignal.set(null);
     this.step();
   }
 
   private stop(): void {
     this.connection?.stop();
     this.connection = null;
+    this.canChatSignal.set(false);
+    this.answerChat(null);
     this.halt();
   }
 
@@ -589,6 +660,7 @@ export class BattleStore {
       this.initialized = true;
       this.lostSignal.set(null);
     }
+    const catching = this.catchingUp || isRejoin(frame);
     for (const line of frame.split('\n')) {
       // A room frame starts with ">battle-…"; this screen shows a single battle. Chat commands' notices
       // come as bare text: the opponent turning down the open team sheets is one.
@@ -611,7 +683,18 @@ export class BattleStore {
         this.onChoiceError(line.slice('|error|'.length));
         continue;
       }
+      // `|html|<div class="message-error">You must be registered to chat in temporary rooms (like battles).</div>…`:
+      // a message we said turned down (guests can't talk in battles).
+      if (line.startsWith('|html|<div class="message-error">')) {
+        this.answerChat(messageError(line));
+        continue;
+      }
       if (this.takeRoomNotice(line)) continue;
+      // Chat said now shows now, not after the turn being played; what's caught up on keeps its place in the log.
+      if (!catching && isChatLine(line)) {
+        this.addChat(line);
+        continue;
+      }
       // `|noinit|nonexistent|The room "battle-…" does not exist.`: the battle to watch is gone, or
       // ours, joined again after a reconnection, has ended and closed meanwhile.
       if (line.startsWith('|noinit|')) {
@@ -627,7 +710,7 @@ export class BattleStore {
     // players joining don't count.
     if (hasRequest || frame.split('\n').some(isBattleLine)) this.canUndoSignal.set(false);
     if (this.undone) this.dropUndoneIfTooLate(frame);
-    if ((this.catchingUp || isRejoin(frame)) && hasLog) {
+    if (catching && hasLog) {
       this.catchUp();
       return;
     }
@@ -741,10 +824,14 @@ export class BattleStore {
   /**
    * `|error|[Invalid choice] …`. Too late to cancel (the opponent chose meanwhile) or not allowed to
    * (a trapping move would give information away): the turn goes on as chosen. Any other refused
-   * choice: the request comes back to choose again.
+   * choice: the request comes back to choose again. Other errors answer what we said in the chat
+   * (guests can't talk, too fast…): a server notice among the chat.
    */
   private onChoiceError(error: string): void {
-    if (!error.startsWith('[Invalid choice]')) return;
+    if (!error.startsWith('[Invalid choice]')) {
+      if (error) this.answerChat(error);
+      return;
+    }
     const message = error.slice('[Invalid choice]'.length).trim();
     if (/too late to cancel|Can't undo/.test(message)) {
       // Only the request shown again by undo() goes: a newer one stays.
@@ -1096,10 +1183,47 @@ export class BattleStore {
       case 'raw':
         this.addRating(rest.join('|'));
         return 0;
+      case 'c':
+      case 'c:':
+      case 'chat':
+        // Chat caught up on or in a replay, in its place among the battle's lines.
+        this.addChat(line);
+        return 0;
       default:
-        // Chat, timers, ratings (|c|, |t:|, |raw|, |inactive|…) and effects with nothing to show.
+        // Timers, joins, ratings (|t:|, |j|, |inactive|…) and effects with nothing to show.
         return 0;
     }
+  }
+
+  /**
+   * `|c|☆Jorge|gg`, `|c:|1712345678|+Someone|/me waves`: a chat message in the log, popped up over the
+   * field. Commands other than `/me` (server HTML such as `/raw` or `/uhtml`) are skipped: the app never
+   * renders HTML from the server.
+   */
+  private addChat(line: string): void {
+    const parts = line.slice(1).split('|');
+    const [author, ...words] = parts[0] === 'c:' ? parts.slice(2) : parts.slice(1);
+    let text = words.join('|');
+    // The rank symbol first (' ' for none), an `@status` after: ` Jorge@!` → Jorge.
+    let name = (author ?? '').slice(1).split('@')[0].trim();
+    // Ours, back from the server: it went out.
+    if (toId(name) === this.login.userId()) this.answerChat(null);
+    if (text.startsWith('/me ')) {
+      // An action reads as one sentence: "Jorge waves".
+      text = `${name} ${text.slice(4)}`;
+      name = '';
+    } else if (text.startsWith('//')) {
+      text = text.slice(1);
+    } else if (text.startsWith('/')) {
+      return;
+    }
+    if (text.trim()) this.showChat({ id: this.nextLogId++, kind: 'chat', text, author: name });
+  }
+
+  private showChat(entry: BattleLogEntry): void {
+    this.logSignal.update((log) => [...log, entry].slice(-MAX_LOG_ENTRIES));
+    this.chatPopSignal.set(entry);
+    this.renderScheduler.request();
   }
 
   /** `|raw|X's rating: 1822 &rarr; <strong>1839</strong><br />(+17 for winning)`, for X's side. */

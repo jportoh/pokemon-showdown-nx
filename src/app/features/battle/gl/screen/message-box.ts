@@ -28,6 +28,7 @@ export function drawMessage(ctx: ScreenContext, log: readonly BattleLogEntry[], 
 }
 
 function latest(log: readonly BattleLogEntry[]): BattleLogEntry | null {
-  for (let i = log.length - 1; i >= 0; i--) if (log[i].kind !== 'minor') return log[i];
+  // The chat pops up over the field instead.
+  for (let i = log.length - 1; i >= 0; i--) if (log[i].kind !== 'minor' && log[i].kind !== 'chat') return log[i];
   return null;
 }
