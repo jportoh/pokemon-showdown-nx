@@ -7,7 +7,10 @@ import { DEFAULT_TEAM_FORMAT, TEAM_FORMATS } from '@shared/data/formats';
 /** Versioned so a future change of shape can migrate instead of misreading old data. */
 const STORAGE_KEY = 'psb.teams.v1';
 
-/** The user's teams, kept on the device (on the console, in a file on the SD card). */
+/**
+ * The user's teams, kept on the device (on the console, in a file on the SD card). They're stored in
+ * the reverse of the grid's order (see inGridOrder), so a new team, added at the end, shows first.
+ */
 @Service()
 export class TeamStore {
   private readonly teamsSignal = signal<Team[]>(loadTeams());
@@ -61,8 +64,36 @@ export class TeamStore {
     this.update((teams) => teams.map((team) => (team.id === id ? { ...team, name } : team)));
   }
 
+  /** A team moved to another format stops being a favourite when that format already has one. */
   setFormat(id: string, format: string): void {
-    this.update((teams) => teams.map((team) => (team.id === id ? { ...team, format } : team)));
+    this.update((teams) => {
+      const taken = teams.some((team) => team.id !== id && team.format === format && team.favourite);
+      return teams.map((team) => (team.id === id ? { ...team, format, favourite: team.favourite && !taken } : team));
+    });
+  }
+
+  /** Makes the team its format's favourite (the one before stops being it), or no longer a favourite. */
+  toggleFavourite(id: string): void {
+    const chosen = this.team(id);
+    if (!chosen) return;
+    const favourite = !chosen.favourite;
+    this.update((teams) =>
+      teams.map((team) => {
+        if (team.id === id) return { ...team, favourite };
+        return favourite && team.format === chosen.format && team.favourite ? { ...team, favourite: false } : team;
+      }),
+    );
+  }
+
+  /** Puts the teams in this order (the grid's, first to last); teams it leaves out go after them. */
+  reorder(gridOrder: readonly string[]): void {
+    this.update((teams) => {
+      const byId = new Map(teams.map((team) => [team.id, team]));
+      const ordered = gridOrder.flatMap((id) => byId.get(id) ?? []);
+      const rest = teams.filter((team) => !gridOrder.includes(team.id));
+      // Stored back to front (see the class).
+      return [...rest, ...ordered.reverse()];
+    });
   }
 
   remove(id: string): void {

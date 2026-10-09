@@ -23,10 +23,10 @@ import { BOX as CARD_BOX } from '@features/home/gl/login-view';
 import { ChallengeFormView, ChallengePopupView, POPUP_CARD_ID, PopupModel } from '@features/play/gl/challenge-views';
 import { FormatCard, FormatCarouselView } from '@features/play/gl/format-carousel';
 import { ShowcaseTeam, TeamShowcaseView } from '@features/play/gl/team-showcase';
-import { PlaySelection } from '@features/play/state/play-selection';
+import { PlaySelection, preferredTeam } from '@features/play/state/play-selection';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE } from '@features/teambuilder/models/team';
-import { newestFirst } from '@features/teambuilder/gl/team-grid-view';
+import { inGridOrder } from '@features/teambuilder/gl/team-grid-view';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
@@ -115,7 +115,7 @@ export class PlayScene {
     this.teams().map((team) => ({
       id: team.id,
       title: team.name,
-      detail: `${team.sets.length} Pokémon`,
+      detail: `${team.favourite ? 'Favourite · ' : ''}${team.sets.length} Pokémon`,
       sprites: team.sets.map((set) => this.dex.mega(set.species, set.item)?.sprite ?? spriteId(set.species)),
     })),
   );
@@ -216,7 +216,7 @@ export class PlayScene {
     const challenge = this.popupChallenge();
     if (!challenge?.needsTeam) return [];
     const teamFormat = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.teamFormat ?? challenge.format;
-    return newestFirst(this.teamStore.teams()).filter((team) => team.format === teamFormat && team.sets.length > 0);
+    return inGridOrder(this.teamStore.teams()).filter((team) => team.format === teamFormat && team.sets.length > 0);
   });
   private readonly waitingBehind = computed(() => Math.max(0, this.unanswered().length - (this.challenges.accepted() ? 0 : 1)));
   private readonly postponedCount = computed(() => this.challenges.incoming().length - this.unanswered().length);
@@ -398,7 +398,7 @@ export class PlayScene {
       challenge,
       waiting: this.waitingBehind(),
       teams: this.popupTeams(),
-      preferredTeam: this.selection.teamId(),
+      preferredTeam: preferredTeam(this.popupTeams(), this.selection.teamId())?.id ?? null,
       viewCard: () => this.openCard(challenge.from),
     };
   }
