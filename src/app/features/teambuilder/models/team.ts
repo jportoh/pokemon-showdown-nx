@@ -29,6 +29,8 @@ export interface Team {
   /** Showdown format ID, such as "gen9championsvgc2026regmc". */
   format: string;
   sets: PokemonSet[];
+  /** The format's favourite team: the Battle page picks it first. One per format at most. */
+  favourite?: boolean;
 }
 
 export const MAX_TEAM_SIZE = 6;

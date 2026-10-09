@@ -14,7 +14,7 @@ import { AppSettings } from '@core/settings/app-settings';
 import { SetEditorView } from '@features/teambuilder/gl/set-editor-view';
 import { SpriteStage } from '@features/teambuilder/gl/sprite-stage';
 import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend, keyPill } from '@features/teambuilder/gl/tb-draw';
-import { NEW_TEAM_ID, TeamGridView, newestFirst } from '@features/teambuilder/gl/team-grid-view';
+import { NEW_TEAM_ID, TeamGridView, inGridOrder } from '@features/teambuilder/gl/team-grid-view';
 import { MAX_TEAM_NAME_LENGTH, TEAM_FORMAT_ID, TEAM_RENAME_ID, TeamView, slotId } from '@features/teambuilder/gl/team-view';
 import { VALIDATION_BACK_ID, ValidationView } from '@features/teambuilder/gl/validation-view';
 import { PokePasteImport, pasteId } from '@features/teambuilder/state/pokepaste-import';
@@ -86,25 +86,27 @@ export class TeambuilderScene {
       hover: (x, y) => this.focus.hover(x, y),
       diagnostics: () => this.diagnosticLines(),
     });
-    // The grid opens on the most recently created team (teams are stored in creation order), or New.
+    // The grid opens on its first team (stored last), or New.
     this.grid.focusTeam(this.store.teams(), this.store.teams().at(-1)?.id ?? null);
-    // On a team L/R go through the teams, ZL validates and ZR deletes it; in the editor L/R switch
-    // Details/Stats (or a list's filters), ZL picks No item/No move (on Stats it undoes the points)
-    // and ZR removes the Pokémon; R3 searches an open list.
+    // On the grid ZL picks a team up (and puts it down), R makes it its format's favourite and ZR
+    // imports a PokePaste. On a team L/R go through the teams, ZL validates and ZR deletes it; in the
+    // editor L/R switch Details/Stats (or a list's filters), ZL picks No item/No move (on Stats it
+    // undoes the points) and ZR removes the Pokémon; R3 searches an open list.
     const release = [
       this.navigation.registerButton('buttonZL', () => {
         if (this.leaving) return true;
+        if (this.view === 'teams') return this.pressMove();
         if (this.view === 'team') return this.validate();
         return this.view === 'edit' && this.editor.pressClear();
       }),
       this.navigation.registerButton('buttonZR', () => {
         if (this.leaving) return true;
-        if (this.view === 'teams') return this.askPaste();
+        if (this.view === 'teams') return this.grid.isMoving() || this.askPaste();
         if (this.view === 'team') return this.pressDelete();
         return this.view === 'edit' && this.editor.pressRemove();
       }),
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
-      this.navigation.registerButton('buttonR', () => this.pressLR(1)),
+      this.navigation.registerButton('buttonR', () => (this.view === 'teams' ? this.pressFavourite() : this.pressLR(1))),
       // R3: an open list's search, without walking up to its box first.
       this.navigation.registerButton('buttonR3', () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),
     ];
@@ -124,7 +126,7 @@ export class TeambuilderScene {
     }
     if (action === 'first' || action === 'last') {
       if (this.view === 'edit') this.editor.jump(action);
-      else if (this.view === 'teams') this.grid.jump(action, this.store.teams().length);
+      else if (this.view === 'teams' && !this.grid.isMoving()) this.grid.jump(action, this.store.teams().length);
       else if (this.view === 'team') this.focus.focus(slotId(action === 'first' ? 0 : Math.max(0, (this.team()?.sets.length ?? 1) - 1)));
       return true;
     }
@@ -140,6 +142,7 @@ export class TeambuilderScene {
       case 'team':
         return this.showTeams();
       default:
+        if (this.grid.isMoving()) return this.grid.cancel(this.store.teams());
         return this.leave();
     }
   }
@@ -149,7 +152,7 @@ export class TeambuilderScene {
     if (this.leaving) return true;
     if (this.view === 'edit') return this.editor.pressLR(by);
     if (this.view !== 'team') return false;
-    const teams = newestFirst(this.store.teams());
+    const teams = inGridOrder(this.store.teams());
     const index = teams.findIndex((team) => team.id === this.selectedId());
     const next = teams[index + by];
     if (!next) return true;
@@ -202,6 +205,22 @@ export class TeambuilderScene {
     this.teamView.reset();
     this.view = 'edit';
     this.editor.open(index);
+  }
+
+  /** ZL on the grid: picks the focused team up, or puts the one carried down where it is. */
+  private pressMove(): boolean {
+    if (!this.grid.isMoving()) return this.grid.pickUp(this.store.teams());
+    const order = this.grid.drop();
+    if (order) this.store.reorder(order);
+    return true;
+  }
+
+  /** R on the grid: the focused team becomes its format's favourite, or stops being it. */
+  private pressFavourite(): boolean {
+    if (this.leaving || this.grid.isMoving()) return true;
+    const id = this.grid.focusedTeam(this.store.teams());
+    if (id) this.store.toggleFavourite(id);
+    return id !== null;
   }
 
   /** ZR on the grid: the keyboard, for a PokePaste's link or ID. */
@@ -264,7 +283,7 @@ export class TeambuilderScene {
 
   /** The team goes; the grid shows the card that takes its place. */
   private deleteTeam(id: string): void {
-    const card = newestFirst(this.store.teams()).findIndex((team) => team.id === id) + 1;
+    const card = inGridOrder(this.store.teams()).findIndex((team) => team.id === id) + 1;
     this.store.remove(id);
     this.selectedId.set(null);
     this.view = 'teams';
@@ -292,7 +311,12 @@ export class TeambuilderScene {
 
     // The pages first: the grid scrolls under the bar and the legend.
     if (this.view === 'teams') {
-      this.grid.draw(ctx, { teams: this.store.teams(), create: () => this.createTeam(), open: (id) => this.openTeam(id) });
+      this.grid.draw(ctx, {
+        teams: this.store.teams(),
+        create: () => this.createTeam(),
+        open: (id) => this.openTeam(id),
+        reorder: (order) => this.store.reorder(order),
+      });
     } else if (this.view === 'edit' && team) {
       this.editor.draw(ctx);
     } else if (team) {
@@ -341,7 +365,7 @@ export class TeambuilderScene {
 
   /** "L  Team 2 of 8  R": where the team is among them, in the grid's order; ends at `right`. */
   private drawPlace(ctx: UiContext, id: string, right: number, cy: number): number {
-    const teams = newestFirst(this.store.teams());
+    const teams = inGridOrder(this.store.teams());
     const text = `Team ${teams.findIndex((team) => team.id === id) + 1} of ${teams.length}`;
     if (teams.length < 2) return right - label(ctx, text, right, cy, { size: 20 }, ctx.palette.muted, { align: 'right' });
     const rW = Math.max(34, ctx.text.measure('R', { size: 16, bold: true }) + 14);
@@ -358,12 +382,24 @@ export class TeambuilderScene {
     const p = ctx.palette;
     const focused = this.focus.focused ?? '';
     if (this.view === 'teams') {
-      controlsLegend(ctx, [
+      const cy = STAGE_H - LEGEND_H / 2 + 1;
+      if (this.grid.isMoving()) {
+        controlsLegend(ctx, [
+          { keys: ['D-pad'], text: 'Move' },
+          { keys: ['A'], text: 'Put down' },
+          { keys: ['B'], text: 'Cancel' },
+        ]);
+        label(ctx, 'Moving the team: put it where you want it', EDIT_RIGHT, cy, { size: 18, bold: true }, p.accentText, { align: 'right' });
+        return;
+      }
+      const team = this.store.team(this.grid.focusedTeam(this.store.teams()));
+      const entries: LegendEntry[] = [
         { keys: ['A'], text: focused === NEW_TEAM_ID ? 'New team' : 'Open' },
         { keys: ['B'], text: 'Menu' },
-        { keys: ['ZR'], text: 'Import PokePaste' },
-      ]);
-      const cy = STAGE_H - LEGEND_H / 2 + 1;
+      ];
+      if (team) entries.push({ keys: ['ZL'], text: 'Move' }, { keys: ['R'], text: team.favourite ? 'Unfavourite' : 'Favourite' });
+      entries.push({ keys: ['ZR'], text: 'Import PokePaste' });
+      controlsLegend(ctx, entries);
       const notice = this.importNotice;
       if (notice?.at != null && ctx.now - notice.at > IMPORT_NOTICE_MS) this.importNotice = null;
       if (this.importNotice) label(ctx, this.importNotice.text, EDIT_RIGHT, cy, { size: 18, bold: true }, this.importNotice.error ? p.danger : p.accentText, { align: 'right', maxWidth: 720 });

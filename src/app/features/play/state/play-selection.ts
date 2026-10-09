@@ -1,6 +1,7 @@
 import { Service, computed, inject, linkedSignal, signal } from '@angular/core';
 import { AppSettings } from '@core/settings/app-settings';
-import { newestFirst } from '@features/teambuilder/gl/team-grid-view';
+import { inGridOrder } from '@features/teambuilder/gl/team-grid-view';
+import { Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
 
@@ -15,22 +16,23 @@ export class PlaySelection {
    * changes (only then: its source is the default alone, so other settings leave the pick alone).
    */
   readonly format = linkedSignal({ source: () => this.settings.settings().battleFormat, computation: (format) => format });
-  /** The team's ID; null picks the first team that fits. */
+  /** The team's ID; null picks the format's favourite, or its first team. */
   readonly teamId = signal<string | null>(null);
 
   /** The format picked, as the app offers it. */
   readonly playFormat = computed(() => PLAYABLE_FORMATS.find((f) => f.id === this.format()) ?? PLAYABLE_FORMATS[0]);
 
-  /** The player's teams for the format, with at least one Pokémon, newest first (as the teambuilder shows them). */
+  /** The player's teams for the format, with at least one Pokémon, in the teambuilder's order. */
   readonly teams = computed(() => {
     const format = this.playFormat();
-    return newestFirst(this.teamStore.teams()).filter((team) => team.format === (format.teamFormat ?? format.id) && team.sets.length > 0);
+    return inGridOrder(this.teamStore.teams()).filter((team) => team.format === (format.teamFormat ?? format.id) && team.sets.length > 0);
   });
 
-  /** The team picked, or the newest one that fits while none is (or the picked one is gone); none with random teams. */
-  readonly team = computed(() => {
-    if (this.playFormat().randomTeams) return null;
-    const teams = this.teams();
-    return teams.find((team) => team.id === this.teamId()) ?? teams[0] ?? null;
-  });
+  /** The team picked, or the format's favourite (else its first team) while none is; none with random teams. */
+  readonly team = computed(() => (this.playFormat().randomTeams ? null : preferredTeam(this.teams(), this.teamId())));
+}
+
+/** Of a format's teams, the one picked if it's among them, else the favourite, else the first. */
+export function preferredTeam(teams: readonly Team[], pickedId: string | null): Team | null {
+  return teams.find((team) => team.id === pickedId) ?? teams.find((team) => team.favourite) ?? teams[0] ?? null;
 }
