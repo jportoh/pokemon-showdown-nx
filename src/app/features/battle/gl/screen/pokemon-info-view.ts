@@ -31,7 +31,7 @@ const MOVE_ROW = 21;
 const MOVE_SLOTS = 4;
 
 /** A base stat's bar colour, from red (low) to teal (very high), as Showdown's. */
-function statColor(value: number): string {
+export function statColor(value: number): string {
   if (value < 50) return '#dc2626';
   if (value < 70) return '#ea580c';
   if (value < 90) return '#ca8a04';

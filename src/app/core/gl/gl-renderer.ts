@@ -9,6 +9,8 @@
 const FLOATS_PER_VERTEX = 20;
 /** 16-bit indices: 4 vertices a quad, so at most 16383 quads in one draw call. */
 const MAX_QUADS = 16000;
+/** Rows of a texture cleared in one upload (a 2048-wide atlas page: 512 KB of zeros). */
+const CLEAR_ROWS = 64;
 
 const SHAPE_VERTEX = `
 attribute vec2 a_pos;
@@ -187,6 +189,8 @@ export class GlRenderer {
   private readonly shapeResolution: WebGLUniformLocation | null;
   private readonly shapeView: WebGLUniformLocation | null;
   private view: [number, number, number] = [1, 0, 0];
+  /** Clear pixels to wipe a texture with, kept between clears. */
+  private zeros: Uint8Array | null = null;
   private readonly backdropUniforms: Record<'time' | 'base' | 'band' | 'res', WebGLUniformLocation | null>;
   private readonly backdropPosition: number;
 
@@ -274,6 +278,15 @@ export class GlRenderer {
     const handle = reuse ?? gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, handle);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    // WebGL promises a null texture is clear, but the console hands back old pixels (another text, after
+    // a long session) that smoothing then bleeds in beside each glyph: it's cleared by hand, in strips.
+    const rows = Math.min(height, CLEAR_ROWS);
+    if (!this.zeros || this.zeros.length < width * rows * 4) this.zeros = new Uint8Array(width * rows * 4);
+    const strip = this.zeros.subarray(0, width * rows * 4);
+    for (let y = 0; y < height; y += rows) {
+      const h = Math.min(rows, height - y);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y, width, h, gl.RGBA, gl.UNSIGNED_BYTE, h === rows ? strip : strip.subarray(0, width * h * 4));
+    }
     setSampling(gl, smooth);
     return { handle, width, height };
   }

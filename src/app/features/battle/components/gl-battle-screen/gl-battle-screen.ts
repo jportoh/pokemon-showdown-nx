@@ -8,7 +8,7 @@ import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
 import { BattleFieldScene, FIELD_PARTS } from '@features/battle/gl/battle-field-scene';
 import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
-import { INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
+import { CARD_PREFIX, INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
 import { TeamsOverviewView, chatText } from '@features/battle/gl/screen/overlay-views';
 import { PartyView } from '@features/battle/gl/screen/party-view';
 import { PlayPanelView, targetSlot } from '@features/battle/gl/screen/play-panel-view';
@@ -93,6 +93,8 @@ export class GlBattleScreen {
   private infoTab: InfoTab | null = null;
   /** The tab it opens on with ZR: the last one shown. */
   private lastTab: InfoTab = 'p2';
+  /** The focus under Battle info when it opened, back when it closes. */
+  private focusBeforeInfo: string | null = null;
   /** The slot Switch was pressed for: the party screen is open while it chooses (a forced switch opens it by itself). */
   private partyOpen: number | null = null;
   private ctx: ScreenContext | null = null;
@@ -154,6 +156,7 @@ export class GlBattleScreen {
     if (battle !== this.shownBattle) {
       this.shownBattle = battle;
       this.infoTab = null;
+      this.info.closeSheet();
       this.partyOpen = null;
     }
     // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
@@ -384,7 +387,15 @@ export class GlBattleScreen {
   /** The controller's d-pad, A and B (everything else comes as page buttons). */
   private onAction(action: CanvasAction): boolean {
     if (this.infoTab) {
-      if (action === 'back') this.infoTab = null;
+      if (this.info.sheetOpen()) {
+        if (action === 'back') this.focus.focus(this.info.closeSheet());
+        else if (action === 'left' || action === 'right') this.info.stepSheet(action === 'left' ? -1 : 1);
+        return true;
+      }
+      const team = this.infoTab === 'p1' || this.infoTab === 'p2' ? this.infoTab : null;
+      if (action === 'back') this.closeInfo();
+      else if (team && isDirection(action)) this.moveOnTeam(team, action);
+      else if (team && action === 'accept') this.focus.accept();
       else if (action === 'left' || action === 'right') this.stepTab(action === 'left' ? -1 : 1);
       else if (this.infoTab === 'log' && (action === 'up' || action === 'down' || action === 'first' || action === 'last')) this.info.log.page(action, this.ctx);
       else if (this.infoTab === 'log' && action === 'accept' && this.store.canChat()) this.writeChat();
@@ -444,9 +455,32 @@ export class GlBattleScreen {
   }
 
   private openInfo(tab: InfoTab): void {
+    // Where the focus was under it, to go back to when it closes.
+    if (this.infoTab === null) this.focusBeforeInfo = this.focus.focused;
+    this.info.closeSheet();
     this.infoTab = tab;
     this.lastTab = tab;
     if (tab === 'log') this.info.log.reset();
+    if (tab === 'p1' || tab === 'p2') this.focus.focus(`${CARD_PREFIX}${tab}-0`);
+  }
+
+  private closeInfo(): void {
+    this.infoTab = null;
+    this.info.closeSheet();
+    this.focus.focus(this.focusBeforeInfo);
+  }
+
+  /**
+   * The d-pad on a team's tab: between its cards (two columns); left or right past the edge goes to the
+   * tab that way, landing on the card nearest the one left, in the same row.
+   */
+  private moveOnTeam(team: 'p1' | 'p2', direction: 'up' | 'down' | 'left' | 'right'): void {
+    if (this.focus.move(direction, (control) => control.id.startsWith(`${CARD_PREFIX}${team}-`))) return;
+    if (direction !== 'left' && direction !== 'right') return;
+    const index = Number(this.focus.focused?.slice(`${CARD_PREFIX}${team}-`.length) ?? 0) || 0;
+    this.stepTab(direction === 'left' ? -1 : 1);
+    const next = this.infoTab;
+    if (next === 'p1' || next === 'p2') this.focus.focus(`${CARD_PREFIX}${next}-${Math.floor(index / 2) * 2 + (direction === 'left' ? 1 : 0)}`);
   }
 
   private stepTab(step: number): void {
