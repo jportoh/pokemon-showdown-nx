@@ -24,12 +24,15 @@ import {
   BattleSide,
   BattleTimer,
   Replay,
+  RequestActive,
   RequestPokemon,
   SideId,
+  Volatile,
 } from '@features/battle/models/battle';
 import { spriteId, spriteSetOf } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 import { BattleSession } from './battle-session';
+import { batonPassed, dropVolatiles, endVolatile, isTrapping, startVolatile } from './volatiles';
 import { ReadyState, SeriesInfo, SeriesScore, parseReadyPrompt, parseSeriesScore, parseSeriesTitle } from './battle-series';
 import { parseRatingChange } from './battle-ratings';
 import { emptyField, isTerrain, namedCondition, weatherCondition } from './field-conditions';
@@ -221,6 +224,7 @@ export class BattleStore {
   private readonly ratingsSignal = signal<Partial<Record<SideId, RatingChange>>>({});
   private readonly playingSignal = signal(false);
   private readonly teamSignal = signal<readonly RequestPokemon[]>([]);
+  private readonly activeMovesSignal = signal<readonly RequestActive[]>([]);
   private readonly battleIdSignal = signal(0);
   private readonly replaySignal = signal<Replay | null>(null);
   private readonly spectatingSignal = signal(false);
@@ -274,6 +278,8 @@ export class BattleStore {
   readonly playing = this.playingSignal.asReadonly();
   /** The player's whole team as of the last request (it stays while the turn plays). */
   readonly team = this.teamSignal.asReadonly();
+  /** Our Pokémon on the field's moves as of the last request that had them (PP, disabled), one entry per slot. */
+  readonly activeMoves = this.activeMovesSignal.asReadonly();
   /** Changes with every new battle, so per-battle state elsewhere can start over. */
   readonly battleId = this.battleIdSignal.asReadonly();
   /** The replay being watched; null in a battle the player plays. */
@@ -398,6 +404,8 @@ export class BattleStore {
   private logWait: ReturnType<typeof setTimeout> | null = null;
   /** Set once the turn's end-of-turn effects have run: what starts now counts from the next turn. */
   private afterUpkeep = false;
+  /** Who used the last move: the one an Attract started without an `[of]` infatuates its target with. */
+  private lastMover = '';
   /** Slots the current move's lunge has already blinked: their first damage line doesn't blink again. */
   private readonly blinkedHits = new Set<string>();
   /** Slots a critical hit is about to land on: their next damage line is labelled with it. */
@@ -474,9 +482,11 @@ export class BattleStore {
     this.ratingsSignal.set({});
     this.requestSignal.set(null);
     this.teamSignal.set([]);
+    this.activeMovesSignal.set([]);
     this.pausedSignal.set(false);
     this.fieldSignal.set(emptyField());
     this.afterUpkeep = false;
+    this.lastMover = '';
     this.actionSignal.set(null);
     this.fieldEventSignal.set(null);
     this.popupsSignal.set([]);
@@ -896,6 +906,8 @@ export class BattleStore {
       this.lastRequest = this.pendingRequest;
       this.undone = false;
       this.teamSignal.set(this.pendingRequest.side.pokemon);
+      // A forced switch has no moves: the last ones stay (their PP is as it was).
+      if (this.pendingRequest.active) this.activeMovesSignal.set(this.pendingRequest.active);
       this.pendingRequest = null;
     }
     this.renderScheduler.request();
@@ -962,7 +974,7 @@ export class BattleStore {
       case 'replace': {
         this.actionSignal.set(null);
         if (command !== 'replace' && this.withdrawFirst(args[0], line)) return WITHDRAW_MS;
-        const pokemon = this.switchIn(args[0], args[1], args[2]);
+        const pokemon = this.switchIn(args[0], args[1], args[2], command === 'replace');
         if (!pokemon || command === 'replace') return 0;
         this.emit('send-out', args[0]);
         if (command === 'drag') return this.say(`${this.label(args[0])} was dragged out!`);
@@ -991,11 +1003,13 @@ export class BattleStore {
         const move = this.typedMove(args[0], args[1]);
         this.revealMove(args[0], move, tags);
         this.notePass(args[0], move);
+        this.noteMove(args[0], move);
         this.actionSignal.set(this.moveAction(args[0], move, args[2], tags));
         return this.say(`${this.label(args[0])} used ${move}!`);
       }
       case 'cant':
         this.actionSignal.set(null);
+        if (args[1] === 'recharge') this.updatePokemon(args[0], (p) => ({ ...p, volatiles: endVolatile(p.volatiles, 'mustrecharge') }));
         return this.say(cantText(args[0], args[1], args[2], names));
       case '-damage':
       case '-heal': {
@@ -1097,11 +1111,13 @@ export class BattleStore {
         // until it switches out (switching in takes the sprite from its own species again).
         const sprite = this.findPokemon(args[1])?.sprite;
         if (sprite) this.updatePokemon(args[0], (p) => ({ ...p, sprite }));
+        this.addVolatile(args[0], 'Transform', parseIdent(args[1]).name);
         return this.say(`${this.label(args[0])} transformed into ${this.label(args[1], false)}!`);
       }
       case '-singleturn':
         if (isSideGuard(args[1])) this.emit('side-guard', args[0]);
         else if (isProtection(args[1])) this.emit('protect', args[0]);
+        this.addVolatile(args[0], args[1], undefined, 'turn');
         return this.sayIf(singleTurnText(args[0], args[1], names, tags));
       case '-activate':
         // Protect (and the like) blocking a move shows its shield again.
@@ -1111,6 +1127,8 @@ export class BattleStore {
         else if (effectName(args[1]) === 'confusion') this.emit('confused', args[0]);
         // A hit taken by the substitute: the doll blinks.
         else if (effectName(args[1]) === 'Substitute') this.emit('hit', args[0]);
+        // A binding move (Fire Spin, Wrap…) starting, or Mean Look, Block… holding it in.
+        if (isTrapping(args[1]) || args[1] === 'trapped') this.addVolatile(args[0], args[1]);
         return this.sayIf(activateText(args[0], args[1], names));
       case '-start':
       case '-end':
@@ -1118,6 +1136,12 @@ export class BattleStore {
         if (effectName(args[1]) === 'Substitute') {
           this.updatePokemon(args[0], (p) => ({ ...p, substitute: command === '-start' }));
           this.emit(command === '-start' ? 'substitute' : 'substitute-end', args[0]);
+        } else if (command === '-end') {
+          this.updatePokemon(args[0], (p) => ({ ...p, volatiles: endVolatile(p.volatiles, args[1]) }));
+        } else {
+          // Infatuated with whoever caused it: the ability's or item's owner, or the move's user.
+          const source = effectName(args[1]) === 'Attract' ? (tags['of'] ?? this.lastMover) : '';
+          this.addVolatile(args[0], args[1], source ? parseIdent(source).name : args[2]);
         }
         return this.sayIf(volatileText(args[0], args[1], command === '-end', names, args[2]));
       case '-ability':
@@ -1147,16 +1171,23 @@ export class BattleStore {
       case '-swapsideconditions':
         this.fieldSignal.update((f) => ({ ...f, sides: { p1: f.sides.p2, p2: f.sides.p1 } }));
         return this.say('The effects on both sides of the field were swapped!');
+      case '-singlemove':
+        this.addVolatile(args[0], args[1], undefined, 'move');
+        return 0;
+      case '-mustrecharge':
+        this.addVolatile(args[0], 'mustrecharge');
+        return 0;
       case 'upkeep':
         this.afterUpkeep = true;
         this.actionSignal.set(null);
         return 0;
       case 'faint':
         this.emit('faint', args[0]);
-        this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true, substitute: false }));
+        this.updatePokemon(args[0], (p) => ({ ...p, hp: 0, fainted: true, substitute: false, volatiles: {} }));
         return this.say(`${this.label(args[0])} fainted!`);
       case 'turn':
         this.afterUpkeep = false;
+        this.dropAllVolatiles('turn');
         this.passing.clear();
         this.actionSignal.set(null);
         this.turnSignal.set(Number(args[0]));
@@ -1519,7 +1550,8 @@ export class BattleStore {
     return `${sentenceStart ? 'The' : 'the'} opposing ${name}`;
   }
 
-  private switchIn(ident: string, details: string, condition: string): BattlePokemon | undefined {
+  /** `replacing`: Illusion broken (`|replace|`): the one on the field is the same, its conditions stay. */
+  private switchIn(ident: string, details: string, condition: string, replacing = false): BattlePokemon | undefined {
     const { side, slot, name } = parseIdent(ident);
     if (!side || slot === undefined) return undefined;
     const key = `${side}: ${name}`;
@@ -1541,17 +1573,26 @@ export class BattleStore {
       item: '',
       lostItem: '',
       ability: '',
+      volatiles: {},
+      cameIn: 0,
+      lastMove: '',
     };
-    // Stat stages and the substitute go with switching out, unless they're passed on.
+    // Stat stages, volatile conditions and the substitute go with switching out, unless they're passed on.
     const pass = this.passing.get(`${side}${'ab'[slot]}`);
     this.passing.delete(`${side}${'ab'[slot]}`);
     const leaving = pass ? this.sidesSignal()[side].active[slot] : null;
-    const pokemon = {
+    const replaced = replacing ? this.sidesSignal()[side].active[slot] : null;
+    const pokemon: BattlePokemon = {
       ...base,
       ...parseDetails(details, this.dex),
       ...parseCondition(condition, base.maxHp),
       boosts: leaving && pass === 'batonpass' ? { ...leaving.boosts } : {},
       substitute: !!leaving?.substitute,
+      volatiles: leaving && pass === 'batonpass' ? batonPassed(leaving.volatiles) : {},
+      // Its first turn out is the next one (leads: turn 1).
+      cameIn: this.turnSignal() + 1,
+      lastMove: '',
+      ...(replaced ? { volatiles: replaced.volatiles, cameIn: replaced.cameIn, lastMove: replaced.lastMove } : {}),
     };
     this.updateSide(side, (s) => ({
       ...s,
@@ -1569,6 +1610,28 @@ export class BattleStore {
     const kind = id === 'batonpass' || id === 'zbatonpass' ? 'batonpass' : id === 'shedtail' ? 'shedtail' : null;
     const slot = kind && this.slotOf(ident);
     if (kind && slot) this.passing.set(slot, kind);
+  }
+
+  /**
+   * A move used: it's the Pokémon's last move from now (what Encore holds it to), and what lasted
+   * until it moved again (Destiny Bond, Glaive Rush…) is gone.
+   */
+  private noteMove(ident: string, move: string): void {
+    this.lastMover = ident;
+    this.updatePokemon(ident, (p) => ({ ...p, lastMove: move, volatiles: dropVolatiles(p.volatiles, 'move') }));
+  }
+
+  /** A volatile condition starting on a Pokémon, counted from the turn it first counts for. */
+  private addVolatile(ident: string, effect: string, extra?: string, until?: Volatile['until']): void {
+    this.updatePokemon(ident, (p) => ({ ...p, volatiles: startVolatile(p.volatiles, effect, this.startTurn(), extra, until) }));
+  }
+
+  /** The turn's over: what lasted only for it (Protect, Helping Hand…) is gone from everyone. */
+  private dropAllVolatiles(until: Volatile['until']): void {
+    const drop = (p: BattlePokemon) => (Object.values(p.volatiles).some((v) => v.until === until) ? { ...p, volatiles: dropVolatiles(p.volatiles, until) } : p);
+    for (const side of ['p1', 'p2'] as const) {
+      this.updateSide(side, (s) => ({ ...s, active: s.active.map((p) => p && drop(p)), pokemon: s.pokemon.map(drop) }));
+    }
   }
 
   /**

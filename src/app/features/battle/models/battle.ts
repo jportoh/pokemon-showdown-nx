@@ -99,6 +99,26 @@ export interface BattlePokemon {
   lostItem: string;
   /** Its ability's name once revealed (Intimidate, a Trace…); '' while unknown. */
   ability: string;
+  /** Volatile conditions on it (confusion, Taunt, the perish count…) by key; they go with switching out, unless Baton Passed. */
+  volatiles: Record<string, Volatile>;
+  /** The turn its time on the field started counting from (Fake Out works on its first); 0 while it's never been out. */
+  cameIn: number;
+  /** The last move it used; '' until it moves. */
+  lastMove: string;
+}
+
+/** A volatile condition on a Pokémon (`|-start|`, `|-singleturn|`…), kept until it ends or the Pokémon leaves. */
+export interface Volatile {
+  /** Its key: "confusion", "taunt", "perish", "partiallytrapped"… */
+  id: string;
+  /** As the protocol names it: "confusion", "Taunt", "Fire Spin". */
+  name: string;
+  /** The first turn it counts for. */
+  since: number;
+  /** What it carries: the perish count, the disabled move, who it's infatuated with, the new type… */
+  extra?: string;
+  /** Gone at the end of the turn (Protect, Helping Hand) or once it moves again (Destiny Bond). */
+  until?: 'turn' | 'move';
 }
 
 /** A weather, terrain, room (Trick Room…) or side condition (Tailwind, Reflect…) in play. */

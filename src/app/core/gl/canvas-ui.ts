@@ -195,7 +195,7 @@ export class CanvasFocus {
 
   /** A click or tap: focuses and presses the control under it; whether it pressed one (it then sounds like A). */
   click(x: number, y: number): boolean {
-    const control = this.controls.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
+    const control = this.controlAt(x, y);
     if (!control) return false;
     this.focused = control.id;
     if (!control.accept) return false;
@@ -203,9 +203,18 @@ export class CanvasFocus {
     return true;
   }
 
+  /** The control drawn last (on top) under a point. */
+  private controlAt(x: number, y: number): UiControl | undefined {
+    for (let i = this.controls.length - 1; i >= 0; i--) {
+      const c = this.controls[i];
+      if (x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h) return c;
+    }
+    return undefined;
+  }
+
   /** The mouse over a control (web): it takes the focus. */
   hover(x: number, y: number): void {
-    const control = this.controls.find((c) => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
+    const control = this.controlAt(x, y);
     if (control) this.focused = control.id;
   }
 }
