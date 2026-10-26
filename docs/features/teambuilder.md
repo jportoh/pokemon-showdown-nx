@@ -28,6 +28,8 @@ always goes back one step (editor → team → grid → home menu):
 | `gl/stats-view.ts` | Stats: points per stat (0–32, 66 in all) and the nature grid |
 | `gl/calcs-view.ts` | Calcs: what your moves do to a rival, or the rival's to you (ZR) |
 | `gl/rival-picker.ts`, `gl/field-modal.ts` | The rival and field modals of the Calcs tab |
+| `gl/rival-editor.ts` | Calcs: the rival's set edited (R3): item, ability and moves as the Details rows, points and nature as the Stats; the first change makes it a Custom set |
+| `gl/set-choosers.ts` | The lists' options, filters and picks for a set (the editor's and the edited rival's) |
 | `gl/validation-view.ts` | The server's verdict on a team |
 | `gl/tb-draw.ts` | Drawing helpers shared by the views |
 
@@ -59,8 +61,8 @@ Champions rules worth knowing:
 | File | Role |
 | --- | --- |
 | `damage-calc.ts` | Wraps [`@smogon/calc`](https://github.com/smogon/damage-calc) with Champions mechanics: a Mega Stone holder battles as its Mega, Aegislash's formes, immune moves, weather and terrain set by abilities |
-| `rival-sets.ts` | The sets a rival can have: common sets (`calc-sets.json`), your own teams' Pokémon, generic spreads |
-| `calc-state.ts` | The rival, the direction and the field, kept while the teambuilder is open |
+| `rival-sets.ts` | The sets a rival can have: your edited one, common sets (`calc-sets.json`), your own teams' Pokémon, generic spreads |
+| `calc-state.ts` | The rival, its edited set per species, the direction and the field, kept while the teambuilder is open |
 
 The calculator is a teambuilder tool only: there's no damage calc during battles, by design.
 

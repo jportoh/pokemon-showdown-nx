@@ -1,5 +1,6 @@
 import { Service, signal } from '@angular/core';
 import { CalcField, CalcSide } from './damage-calc';
+import { toId } from '@shared/utils/to-id';
 import { RivalSet } from './rival-sets';
 
 /** Who hits whom: your Pokémon the rival, or the rival yours. */
@@ -22,6 +23,8 @@ export function freshField(format: string): CalcField {
 @Service()
 export class CalcState {
   readonly rival = signal<RivalSet | null>(null);
+  /** The set you edited for each species (by ID), kept while the teambuilder is open. */
+  readonly customs = signal<Readonly<Record<string, RivalSet>>>({});
   readonly mode = signal<CalcMode>('attack');
   /** Null until the tab first opens on a team (its format says Doubles or Singles). */
   readonly field = signal<CalcField | null>(null);
@@ -34,6 +37,12 @@ export class CalcState {
       this.field.set(field);
     }
     return field;
+  }
+
+  /** The rival as you edited it: it becomes the rival and its species' edited set. */
+  setCustom(set: RivalSet): void {
+    this.customs.update((customs) => ({ ...customs, [toId(set.species)]: set }));
+    this.rival.set(set);
   }
 
   update(change: (field: CalcField) => CalcField): void {

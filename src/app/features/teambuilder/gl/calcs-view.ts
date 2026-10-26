@@ -10,11 +10,13 @@ import { CalcBoosts, CalcField, CalcOutcome, CalcRun, DamageCalc, MoveCalc, perc
 import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { FieldModal } from './field-modal';
+import { RivalEditor } from './rival-editor';
 import { RivalPicker } from './rival-picker';
-import { BAR_FULL, BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LEFT, RIGHT, WHITE, WrapCache, arrow, categoryBadge, typePills, typeRgba } from './tb-draw';
+import { BAR_FULL, BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LEFT, RIGHT, WHITE, WrapCache, arrow, categoryBadge, shortcutButton, typePills, typeRgba } from './tb-draw';
 import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
 
 export const RIVAL_ID = 'calc-rival';
+const EDIT_ID = 'calc-rival-edit';
 const MOVE_PREFIX = 'calc-move-';
 /** The rival's card, the move rows under it, and the detail box at the bottom. */
 const CARD_H = 140;
@@ -25,6 +27,8 @@ const DETAIL_Y = ROWS_Y + 4 * ROW_H + 3 * ROW_GAP + 12;
 /** A move row: the move's pill (its category inside), and the room the damage's numbers take after the bar. */
 const NAME_W = 250;
 const PERCENT_W = 156;
+/** The rival card's Edit button (R3). */
+const EDIT_W = 100;
 /** Your card's stage chips, in the order they're drawn (three over two). */
 const STAGE_CHIPS: readonly (readonly [keyof CalcBoosts, string])[] = [
   ['atk', 'Atk'],
@@ -50,7 +54,8 @@ export interface CalcsModel {
  * the rival's moves do to yours, worked out by @smogon/calc. The rival's card is on top (A picks
  * another Pokémon from a list; left/right go through its sets: the format's common ones, your teams'
  * and generic spreads), a row per move under it (the damage as a bar of the target's HP, its range,
- * how many hits it takes), and the focused move's full calc at the bottom. ZL opens the field.
+ * how many hits it takes), and the focused move's full calc at the bottom. ZL opens the field; R3
+ * edits the rival's set (RivalEditor), which then takes the tab's place.
  */
 export class CalcsView {
   private readonly dex = inject(ChampionsDex);
@@ -60,6 +65,8 @@ export class CalcsView {
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly picker: RivalPicker;
   private readonly field: FieldModal;
+  /** The rival's set being edited (R3). */
+  readonly editor: RivalEditor;
   private readonly wraps = new WrapCache();
 
   /** The last outcome and what it was worked out from (frames are many, changes few). */
@@ -68,11 +75,16 @@ export class CalcsView {
   constructor(private readonly focus: CanvasFocus) {
     this.picker = new RivalPicker(focus);
     this.field = new FieldModal(focus);
+    this.editor = new RivalEditor(focus);
   }
 
-  /** The rival list or the field is open (they keep the d-pad, A and B). */
+  /** The rival list or the field is open, or the rival is edited (they keep the d-pad, A and B). */
   get isOpen(): boolean {
-    return this.picker.isOpen || this.field.isOpen;
+    return this.picker.isOpen || this.field.isOpen || this.editor.isOpen;
+  }
+
+  get isEditing(): boolean {
+    return this.editor.isOpen;
   }
 
   get isPicking(): boolean {
@@ -98,8 +110,12 @@ export class CalcsView {
     this.focus.focus(RIVAL_ID);
   }
 
-  /** B: closes the list or the field; false when neither is open. */
+  /** B: closes the list, the field or the editing (a step at a time); false when none is open. */
   back(): boolean {
+    if (this.editor.isOpen) {
+      if (!this.editor.back()) this.focus.focus(RIVAL_ID);
+      return true;
+    }
     if (this.field.isOpen) {
       this.field.close();
       this.focus.focus(RIVAL_ID);
@@ -120,8 +136,9 @@ export class CalcsView {
     return true;
   }
 
-  /** ZL: the field (or, while it's open, the field as it starts). */
+  /** ZL: the field (or, while it's open, the field as it starts); while editing, the editor's. */
   pressField(format: string): boolean {
+    if (this.editor.isOpen) return this.editor.pressClear();
     if (this.picker.isOpen) return false;
     if (this.field.isOpen) {
       this.state.field.set(freshField(format));
@@ -134,6 +151,7 @@ export class CalcsView {
 
   /** L/R while the rival list or the field is open: the list's filters, or the focused row's value. */
   pressLR(by: 1 | -1): boolean {
+    if (this.editor.isOpen) return this.editor.pressLR(by);
     if (this.field.isOpen) {
       this.field.step(by);
       return true;
@@ -143,15 +161,25 @@ export class CalcsView {
     return true;
   }
 
-  /** R3 in the rival list: its search box's keyboard. */
+  /** R3: the rival list's or an edited list's search; on the tab itself, edits the rival. */
   pressSearch(): boolean {
-    if (!this.picker.isOpen) return false;
+    if (this.editor.isOpen) return this.editor.pressSearch();
+    if (this.field.isOpen) return false;
+    if (!this.picker.isOpen) return this.edit();
     this.picker.openSearch();
+    return true;
+  }
+
+  /** Starts editing the rival's set. */
+  private edit(): boolean {
+    if (!this.state.rival()) return false;
+    this.editor.open();
     return true;
   }
 
   /** Home/End in the rival list. */
   jump(to: 'first' | 'last'): boolean {
+    if (this.editor.isOpen) return this.editor.jump(to);
     if (!this.picker.isOpen) return false;
     this.picker.jump(to);
     return true;
@@ -176,6 +204,10 @@ export class CalcsView {
   }
 
   draw(ctx: UiContext, model: CalcsModel): void {
+    if (this.editor.isOpen) {
+      this.editor.draw(ctx);
+      return;
+    }
     const field = this.state.fieldFor(model.format);
     const rival = this.rival();
     const mode = this.state.mode();
@@ -260,11 +292,16 @@ export class CalcsView {
     const sets = this.sets.setsFor(rival.species);
     const index = sets.findIndex((set) => set.id === rival.id);
     const setY = box.y + 68;
+    // The set's title (left/right), where it comes from, and Edit (R3) ending the line.
+    const editBox = { x: box.x + box.w - 280 - EDIT_W, y: setY - 15, w: EDIT_W, h: 30 };
+    shortcutButton(ctx, EDIT_ID, editBox, 'R3', 'Edit', { size: 16, accept: () => this.edit() });
+    const where = rival.source === 'common' ? 'common set' : rival.source === 'team' ? 'your team' : rival.source === 'custom' ? 'your edit' : 'generic spread';
+    const whereText = `${where} · ${index + 1} / ${sets.length}`;
+    const whereW = ctx.text.measure(whereText, { size: 15 });
     arrow(ctx, LEFT, left, setY - 7, 2, p.accentText);
-    const titleW = label(ctx, rival.title, left + 20, setY, { size: 20, bold: true }, p.ink, { maxWidth: 340 });
+    const titleW = label(ctx, rival.title, left + 20, setY, { size: 20, bold: true }, p.ink, { maxWidth: Math.min(340, editBox.x - 12 - whereW - 30 - (left + 20)) });
     arrow(ctx, RIGHT, left + 28 + titleW, setY - 7, 2, p.accentText);
-    const where = rival.source === 'common' ? 'common set' : rival.source === 'team' ? 'your team' : 'generic spread';
-    label(ctx, `${where} · ${index + 1} / ${sets.length}`, left + 50 + titleW, setY, { size: 15 }, p.muted, { fast: true });
+    label(ctx, whereText, left + 50 + titleW, setY, { size: 15 }, p.muted, { fast: true });
 
     const set = rival.set;
     const ability = this.dex.mega(set.species, set.item)?.ability ?? set.ability;
@@ -363,7 +400,7 @@ export class CalcsView {
       const text =
         mode === 'attack'
           ? 'Your Pokémon has no moves yet: give it some on the Details tab.'
-          : `This ${rival.source === 'preset' ? 'generic spread' : 'set'} has no moves. Left/right on the rival's card: a common set or one of your teams' has them.`;
+          : `This ${rival.source === 'preset' ? 'generic spread' : 'set'} has no moves. R3 edits it and gives it some; left/right on the rival's card: a common set or one of your teams' has them.`;
       this.wraps.draw(ctx, text, box.x + 24, box.y + 24, box.w - 48, 30, { size: 20 }, p.muted, 4);
       return;
     }
@@ -456,7 +493,7 @@ export class CalcsView {
     const moves = rival.set.moves.length ? rival.set.moves.join(' · ') : 'No moves (a generic spread: it only takes hits)';
     this.wraps.draw(ctx, `${rival.title}: ${moves}`, x, box.y + 10, width, 24, { size: 17 }, p.ink, 2);
     const source = rival.source === 'common' ? ` · Common sets from the ${this.sets.source}` : '';
-    label(ctx, `A: another Pokémon · ◀▶: its other sets${source}`, x, box.y + 72, { size: 15 }, p.muted, { maxWidth: width });
+    label(ctx, `A: another Pokémon · ◀▶: its other sets · R3: edit this one${source}`, x, box.y + 72, { size: 15 }, p.muted, { maxWidth: width });
   }
 
   // ---------------------------------------------------------------- the rival picker

@@ -24,6 +24,8 @@ export interface RowsModel {
   species: DexSpecies | undefined;
   mega: DexMega | undefined;
   open: (field: DetailsField) => void;
+  /** Where the rows start: beside the full card (the default) or the compact one (the Calcs tab's rival). */
+  x?: number;
 }
 
 /**
@@ -37,7 +39,7 @@ export class SetRowsView {
   private readonly info = new InfoPanel();
 
   draw(ctx: UiContext, model: RowsModel): void {
-    const x = BESIDE_HERO_X;
+    const x = model.x ?? BESIDE_HERO_X;
     const w = EDIT_RIGHT - x;
     ROWS.forEach((field, i) => this.drawRow(ctx, { x, y: EDIT_BODY_Y + i * ROW_STEP, w, h: ROW_H }, field, model));
     const top = EDIT_BODY_Y + ROWS.length * ROW_STEP + 4;

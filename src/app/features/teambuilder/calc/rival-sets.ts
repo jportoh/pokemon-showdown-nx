@@ -3,17 +3,21 @@ import { ChampionsDex, DexSpecies } from '@core/dex/champions-dex';
 import { STAT_IDS, STAT_NAMES } from '@features/teambuilder/data/game-rules';
 import { PokemonSet, StatSpread } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
+import { CalcState } from './calc-state';
 import { toId } from '@shared/utils/to-id';
 import CALC_SETS from '@core/dex/calc-sets.json';
 
-/** A set the rival can be: one of the format's common sets, one of your teams', or a generic spread. */
+/**
+ * A set the rival can be: one of the format's common sets, one of your teams', a generic spread, or
+ * one of those as you edited it on the Calcs tab.
+ */
 export interface RivalSet {
   /** Unique among a species' sets. */
   id: string;
   species: string;
   /** "Balanced Bulk Sitrus", "Rain Doubles", "Max HP & Defense" */
   title: string;
-  source: 'common' | 'team' | 'preset';
+  source: 'common' | 'team' | 'preset' | 'custom';
   set: PokemonSet;
 }
 
@@ -32,12 +36,14 @@ const DATA = CALC_SETS as { source: string; generated: string; abilities: Record
 /**
  * The sets a rival can have, by species: first the common ones (the NCP VGC Damage Calculator's
  * hand-picked Champions sets), then the Pokémon of your own teams, then generic spreads any species
- * can have (no moves: they only take hits). A species' default ability is the calc's choice.
+ * can have (no moves: they only take hits). The one you edited goes before them all. A species'
+ * default ability is the calc's choice.
  */
 @Service()
 export class RivalSets {
   private readonly dex = inject(ChampionsDex);
   private readonly store = inject(TeamStore);
+  private readonly state = inject(CalcState);
 
   /** Where the common sets come from, for the picker. */
   readonly source = `${DATA.source}, ${DATA.generated}`;
@@ -88,10 +94,11 @@ export class RivalSets {
   setsFor(species: string): RivalSet[] {
     const id = toId(species);
     const dexSpecies = this.dex.species(species);
-    return [...(this.common.get(id) ?? []), ...(this.fromTeams().get(id) ?? []), ...(dexSpecies ? this.presets(dexSpecies) : [])];
+    const custom = this.state.customs()[id];
+    return [...(custom ? [custom] : []), ...(this.common.get(id) ?? []), ...(this.fromTeams().get(id) ?? []), ...(dexSpecies ? this.presets(dexSpecies) : [])];
   }
 
-  /** The species' first set: a common one if it has any. */
+  /** The species' first set: the one you edited, else a common one if it has any. */
   firstSet(species: string): RivalSet | undefined {
     return this.setsFor(species)[0];
   }
