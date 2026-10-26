@@ -284,7 +284,7 @@ export class RivalPicker {
     renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 6, border: 2 });
     const x = box.x + 14;
     const right = box.x + box.w - 16;
-    const where = rival.source === 'common' ? 'Common set' : rival.source === 'team' ? 'Your team' : 'Generic spread';
+    const where = rival.source === 'common' ? 'Common set' : rival.source === 'team' ? 'Your team' : rival.source === 'custom' ? 'Your edit' : 'Generic spread';
     const whereW = label(ctx, where, right, box.y + 20, { size: 14, bold: true }, rival.source === 'common' ? p.accentText : p.muted, { align: 'right' });
     label(ctx, rival.title, x, box.y + 20, { size: 19, bold: true }, p.ink, { maxWidth: right - whereW - 16 - x });
 
