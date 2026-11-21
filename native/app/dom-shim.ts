@@ -806,6 +806,22 @@ define('scrollX', 0);
 define('scrollY', 0);
 define('getComputedStyle', () => ({ fontFamily: 'sans-serif', getPropertyValue: () => '' }));
 define('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+// nx.js keeps localStorage in the user's save data, picking a user first ("Who is playing?"). The app's
+// data lives in files on the SD card (device-storage); localStorage is only its fallback, kept in memory.
+const memoryStorage = new Map<string, string>();
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    get length() {
+      return memoryStorage.size;
+    },
+    key: (index: number) => [...memoryStorage.keys()][index] ?? null,
+    getItem: (key: string) => memoryStorage.get(String(key)) ?? null,
+    setItem: (key: string, value: string) => void memoryStorage.set(String(key), String(value)),
+    removeItem: (key: string) => void memoryStorage.delete(String(key)),
+    clear: () => memoryStorage.clear(),
+  } satisfies Storage,
+});
 define('structuredClone', (value: unknown) => (value === undefined ? undefined : JSON.parse(JSON.stringify(value))));
 
 export { ShimCanvas };

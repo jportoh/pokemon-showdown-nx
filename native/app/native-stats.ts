@@ -4,6 +4,7 @@
 
 import { fontFaceCount } from './bold-font';
 import { nativeLog } from './native-log';
+import { netStats } from './net-diagnostics';
 
 export interface Timing {
   count: number;
@@ -57,11 +58,13 @@ setInterval(() => {
   try {
     const usage = memoryUsage?.();
     if (usage) {
-      memory = `fonts ${fontFaceCount()} · heap ${mib(usage.usedHeapSize)}/${mib(usage.heapSizeLimit)} MiB · external ${mib(usage.externalMemory)} · native ${mib(usage.nativeHeapUsed)} used ${mib(usage.nativeHeapFree)} free`;
+      memory = `lag max ${netStats.lagMs.toFixed(0)} ms · fetches max ${netStats.maxFetches} · fonts ${fontFaceCount()} · heap ${mib(usage.usedHeapSize)}/${mib(usage.heapSizeLimit)} MiB · external ${mib(usage.externalMemory)} · native ${mib(usage.nativeHeapUsed)} used ${mib(usage.nativeHeapFree)} free`;
     }
   } catch {
     memory = 'memoryUsage failed';
   }
+  netStats.lagMs = 0;
+  netStats.maxFetches = netStats.fetches;
   if (text === last) {
     nativeLog(`[mem] ${memory}`);
     return;

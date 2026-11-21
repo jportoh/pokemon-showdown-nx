@@ -86,3 +86,29 @@ battle, and `fillText` costs a third of what it did.
 (`Switch.memoryUsage()`, plus the number of font faces) to `native.log` every 5 seconds.
 `build-nro.mjs --engine=beta5` (or `--engine-file=<any nx.js .nro>`) packages the app on another
 engine build, to compare.
+
+## Phase 2: start-up and the connection (tests x7–x11)
+
+nx.js runs the TLS handshake (for `wss://` and `https://`) on the **main thread**, a step each time
+the event loop is free. Anything that holds the main thread while loading also holds back the
+connection: with the loading screen busy, the first WebSocket opened after 8.5 s, while idle
+reconnections take about 1 s. `net-diagnostics.ts` logs each attempt (and, after a failure, a DNS
+lookup and a bare TLS connection with the engine's own error, which its WebSocket swallows), the
+main thread's lag, long frames, long uploads, audio decodes and slow server messages.
+
+What held it, and what changed:
+
+- **The Champions sprite sheets** (1960×1960 and 1960×1470) took seconds to decode in JavaScript.
+  `build-nro.mjs` stores them already decoded (`PSBRAW1` header, then premultiplied RGBA) at the
+  same paths, and `decodeRaw` (png-decode.ts) hands those pixels straight to the GPU. The `.nro`
+  grows to ~84 MiB.
+- **`AudioEngine.reduce`** copied each battle track sample by sample (about a second per track on the
+  console), although the engine already decodes them mono at 24 kHz: that case is now one copy.
+- **The "Who is playing?" picker**: nx.js keeps `localStorage` in a user's save data and shows the
+  picker the first time it is used, mid start-up. The app's data lives in files on the SD card
+  (device-storage), so dom-shim gives it an in-memory `localStorage`, and the NACP asks for no user
+  account or save data.
+
+Result (test x11): no picker, loading ~6 s on the HUD (which counts from the engine's clock, about
+0.4 s before the app starts), the first connection open in 3.9 s. Still left: ~1.6 s evaluating the
+bundle and starting Angular, and one ~450 ms frame when the home screen first draws.

@@ -7,6 +7,7 @@
 // the canvas shim's own surface, without the extra copy), premultiply them when asked, and pass the
 // engine an array.
 
+import { nativeLog } from './native-log';
 import { nativeStats, timed } from './native-stats';
 
 const PREMULTIPLY_ALPHA = 0x9241; // UNPACK_PREMULTIPLY_ALPHA_WEBGL
@@ -74,7 +75,12 @@ export function patchUploads(gl: WebGL2RenderingContext, contextOf: CanvasContex
   const texImage2D = gl.texImage2D.bind(gl) as (...args: unknown[]) => void;
   const texSubImage2D = gl.texSubImage2D.bind(gl) as (...args: unknown[]) => void;
   const prepare = (pixels: Pixels) => (premultiplyOn ? premultiply(pixels.data, pixels.owned) : pixels.data);
-  const upload = (run: () => void) => timed(nativeStats.upload, run);
+  const upload = (run: () => void, pixels?: number) => {
+    const started = performance.now();
+    timed(nativeStats.upload, run);
+    const took = performance.now() - started;
+    if (took > 50) nativeLog(`[upload] ${pixels ?? '?'} px took ${took.toFixed(0)} ms`);
+  };
 
   const patched = gl as unknown as Record<string, unknown>;
   patched['pixelStorei'] = (name: number, value: number | boolean) => {
@@ -88,11 +94,11 @@ export function patchUploads(gl: WebGL2RenderingContext, contextOf: CanvasContex
       const [target, level, internalFormat, format, type] = args;
       const pixels = readPixels(last, contextOf);
       const data = prepare(pixels);
-      upload(() => texImage2D(target, level, internalFormat, pixels.width, pixels.height, 0, format, type, data));
+      upload(() => texImage2D(target, level, internalFormat, pixels.width, pixels.height, 0, format, type, data), pixels.width * pixels.height);
     } else if (args.length === 9 && premultiplyOn && last instanceof Uint8Array) {
       const data = premultiply(last, false);
       upload(() => texImage2D(...args.slice(0, 8), data));
-    } else texImage2D(...args);
+    } else upload(() => texImage2D(...args), args.length === 9 ? (args[3] as number) * (args[4] as number) : undefined);
   };
   patched['texSubImage2D'] = (...args: unknown[]) => {
     const last = args[args.length - 1];
@@ -100,7 +106,7 @@ export function patchUploads(gl: WebGL2RenderingContext, contextOf: CanvasContex
       const [target, level, x, y, format, type] = args;
       const pixels = readPixels(last, contextOf);
       const data = prepare(pixels);
-      upload(() => texSubImage2D(target, level, x, y, pixels.width, pixels.height, format, type, data));
+      upload(() => texSubImage2D(target, level, x, y, pixels.width, pixels.height, format, type, data), pixels.width * pixels.height);
     } else if (args.length === 9 && premultiplyOn && last instanceof Uint8Array) {
       const data = premultiply(last, false);
       upload(() => texSubImage2D(...args.slice(0, 8), data));

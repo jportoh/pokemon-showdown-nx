@@ -84,8 +84,10 @@ async function main() {
   for (const name of ENGINE_FILES) if (engineRomfs[name] instanceof Blob) romfs[name] = engineRomfs[name];
   romfs['main.js'] = new Blob([await bundle(target.entry())]);
   let assetBytes = 0;
+  const predecode = target === TARGETS.app ? await loadPngDecoder() : null;
   for (const [name, source] of target.files()) {
-    const bytes = fs.readFileSync(source);
+    let bytes = fs.readFileSync(source);
+    if (predecode && PREDECODED.test(name)) bytes = predecode(bytes, name);
     assetBytes += bytes.length;
     place(romfs, name, new Blob([bytes]));
   }
@@ -96,6 +98,13 @@ async function main() {
   nacp.author = AUTHOR;
   nacp.version = target.version;
   nacp.id = target.titleId;
+  // No user account: the app keeps its data in files on the SD card (device-storage), not in a user's
+  // save data. nx.js keeps localStorage in a user's save data and shows the "Who is playing?" picker
+  // on its first use (test x10); without save data in the NACP it doesn't, and dom-shim gives the app
+  // an in-memory localStorage instead.
+  nacp.startupUserAccount = 0;
+  nacp.userAccountSaveDataSize = 0n;
+  nacp.userAccountSaveDataJournalSize = 0n;
 
   const nro = await NRO.encode({
     data: base.data,
@@ -144,6 +153,34 @@ function staticFiles() {
   return list;
 }
 
+/**
+ * The big sprite sheets go in already decoded (src/app/core/gl/png-decode.ts, decodeRaw): decoding
+ * them in JavaScript held the console's main thread for seconds (test x8). Same path, so the app's
+ * URLs don't change; it tells the raw format by its header.
+ */
+const PREDECODED = /^sprites\/champions-\d+\.png$/;
+
+async function loadPngDecoder() {
+  const result = await esbuild.build({
+    entryPoints: [path.join(root, 'src/app/core/gl/png-decode.ts')],
+    bundle: true,
+    format: 'esm',
+    platform: 'node',
+    write: false,
+    logLevel: 'warning',
+  });
+  const module = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].contents).toString('base64')}`);
+  return (bytes, name) => {
+    const image = module.decodePng(new Uint8Array(bytes));
+    if (!image) throw new Error(`${name}: the app's PNG decoder can't read it`);
+    const header = Buffer.alloc(16);
+    header.write(module.RAW_MAGIC, 0, 'latin1');
+    header.writeUInt32LE(image.width, 8);
+    header.writeUInt32LE(image.height, 12);
+    return Buffer.concat([header, image.pixels]);
+  };
+}
+
 function place(tree, relative, blob) {
   const parts = relative.split('/');
   let node = tree;
@@ -186,7 +223,7 @@ async function bundle(entry) {
     target: 'es2022',
     platform: 'neutral',
     write: false,
-    minify: true,
+    minify: process.env.NRO_MINIFY !== '0',
     legalComments: 'none',
     logLevel: 'warning',
   });

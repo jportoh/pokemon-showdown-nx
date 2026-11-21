@@ -2,6 +2,7 @@
 // production build (the build script appends the import of Angular's main chunk after these).
 
 import './native-log';
+import './net-diagnostics';
 import './dom-shim';
 import { registerBoldFace } from './bold-font';
 

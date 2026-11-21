@@ -265,8 +265,14 @@ export class AudioEngine {
       } catch {
         continue;
       }
-      // Each sample, the average of the `step` samples of every channel it stands for.
       const out = reduced.getChannelData(0);
+      // Already mono at the rate kept (the native .nro's engine decodes the bundled tracks as they are):
+      // a straight copy. The loop below took about a second per track on the console's main thread.
+      if (step === 1 && channels.length === 1) {
+        out.set(channels[0].subarray(0, out.length));
+        return reduced;
+      }
+      // Each sample, the average of the `step` samples of every channel it stands for.
       const scale = 1 / (step * channels.length);
       for (let i = 0; i < out.length; i++) {
         let sum = 0;

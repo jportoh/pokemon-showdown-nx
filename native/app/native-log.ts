@@ -39,7 +39,7 @@ try {
 } catch {
   // Already there.
 }
-nativeLog(`---- start ${navigator.userAgent} ----`);
+nativeLog(`---- start ${navigator.userAgent} (engine clock ${performance.now().toFixed(0)} ms) ----`);
 
 const originalError = console.error.bind(console);
 console.error = (...args: unknown[]) => {
@@ -54,20 +54,3 @@ globalThis.addEventListener('unhandledrejection', (event) => {
   nativeLog(`[unhandled rejection] ${describe((event as PromiseRejectionEvent).reason)}`);
 });
 
-// Connection attempts (the home screen once showed "Can't reach Showdown" while connecting).
-const NativeWebSocket = globalThis.WebSocket;
-if (typeof NativeWebSocket === 'function') {
-  let attempt = 0;
-  globalThis.WebSocket = class extends NativeWebSocket {
-    constructor(url: string | URL, protocols?: string | string[]) {
-      super(url, protocols);
-      const id = ++attempt;
-      const opened = Date.now();
-      const since = () => `${Date.now() - opened} ms`;
-      nativeLog(`[ws ${id}] connecting to ${String(url)}`);
-      this.addEventListener('open', () => nativeLog(`[ws ${id}] open after ${since()}`));
-      this.addEventListener('error', () => nativeLog(`[ws ${id}] error after ${since()}`));
-      this.addEventListener('close', (event) => nativeLog(`[ws ${id}] closed after ${since()} (code ${(event as CloseEvent).code})`));
-    }
-  } as typeof WebSocket;
-}
