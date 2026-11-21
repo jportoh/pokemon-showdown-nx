@@ -3,6 +3,7 @@
 
 import './native-log';
 import './net-diagnostics';
+import './bundled-sprites';
 import './dom-shim';
 import { registerBoldFace } from './bold-font';
 

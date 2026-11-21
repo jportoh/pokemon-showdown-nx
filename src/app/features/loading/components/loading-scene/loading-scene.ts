@@ -1,4 +1,5 @@
 import { Component, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { BattleMusic } from '@core/audio/battle-music';
@@ -12,6 +13,7 @@ import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { categoryIcon } from '@core/gl/ui/category-icons';
 import { GlTheme } from '@core/gl/ui/gl-theme';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { BALL } from '@features/home/gl/logo-ball';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
@@ -57,6 +59,10 @@ export class LoadingScene {
   private readonly music = inject(BattleMusic);
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly keyboard = inject(CanvasKeyboard);
+  private readonly connection = inject(ShowdownConnection);
+  /** The teambuilder's code is set up (see warmTeambuilder). */
+  private teambuilderWarm = false;
+  private teambuilderWarming = false;
   /** The on-screen keyboard's texts are made (see CanvasKeyboard.warm). */
   private keyboardWarm = false;
 
@@ -82,9 +88,9 @@ export class LoadingScene {
       void this.router.navigateByUrl('/', { replaceUrl: true });
       return;
     }
-    // The teambuilder's code (and @smogon/calc's data tables) set up now rather than on its first
-    // visit, where it stalled the first frame (test-w2).
-    void import('@features/teambuilder/components/teambuilder-scene/teambuilder-scene');
+    // The teambuilder's code waits for the connection to open (or for the rest to load).
+    if (this.connection.state().status === 'connected') this.warmTeambuilder();
+    else this.connection.opened.pipe(takeUntilDestroyed()).subscribe(() => this.warmTeambuilder());
     this.bitmaps.rush = true;
     // All at once from the start: waiting for the images first was no faster (test-m2/m3).
     this.music.preload();
@@ -102,6 +108,19 @@ export class LoadingScene {
       this.restore();
       this.stage.whenReady(({ renderer }) => this.ball && renderer.deleteTexture(this.ball));
     });
+  }
+
+  /**
+   * Sets up the teambuilder's code (and @smogon/calc's data tables) while this screen shows, not on
+   * its first visit, where it stalled the first frame (test-w2). It holds the main thread a while
+   * (~0.7 s on the console), and nx.js runs the connection's TLS handshake there: so it waits for the
+   * connection to open, or for everything else to load, whichever comes first (test x12).
+   */
+  private warmTeambuilder(): void {
+    if (this.teambuilderWarming) return;
+    this.teambuilderWarming = true;
+    const done = () => (this.teambuilderWarm = true);
+    void import('@features/teambuilder/components/teambuilder-scene/teambuilder-scene').then(done, done);
   }
 
   /** Back to the menu's pace. */
@@ -122,9 +141,11 @@ export class LoadingScene {
     const tracksDone = now - this.startedAt > MUSIC_WAIT_MS ? tracks : this.music.preloaded();
     const pending = this.waiting.length + this.priming.length;
     if (pending === 0 && !this.imagesAt) this.imagesAt = performance.now();
-    const loaded = (this.assets.length - pending + (soundsReady ? 1 : 0) + tracksDone) / (this.assets.length + 1 + tracks);
+    if (pending === 0 && soundsReady && tracksDone === tracks) this.warmTeambuilder();
+    const warm = this.teambuilderWarm ? 1 : 0;
+    const loaded = (this.assets.length - pending + (soundsReady ? 1 : 0) + tracksDone + warm) / (this.assets.length + 2 + tracks);
     this.shown += (loaded - this.shown) * (1 - Math.exp(-dt * 10));
-    if (!this.outroAt && pending === 0 && soundsReady && tracksDone === tracks && this.shown > 0.98) {
+    if (!this.outroAt && pending === 0 && soundsReady && tracksDone === tracks && warm && this.shown > 0.98) {
       this.outroAt = now;
       this.restore();
       this.preload.finished.set(true);

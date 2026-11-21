@@ -112,3 +112,32 @@ What held it, and what changed:
 Result (test x11): no picker, loading ~6 s on the HUD (which counts from the engine's clock, about
 0.4 s before the app starts), the first connection open in 3.9 s. Still left: ~1.6 s evaluating the
 bundle and starting Angular, and one ~450 ms frame when the home screen first draws.
+
+### Shipping work done ahead (test x12)
+
+Commercial games ship their assets in the form the hardware uses, so nothing is converted while the
+game runs. The `.nro` now does the same for what every session loaded or computed:
+
+- **The synthesized audio.** The interface's sounds, the menu theme and the battle themes are
+  synthesized by chip-synth. On the native build, `build-nro.mjs` runs the same code
+  (`synth-pieces.ts`) at 48 kHz and stores each piece as raw 16-bit audio (`raw-audio.ts`, a
+  `PSBPCM1` header) under `audio/synth/`. `AudioEngine` reads them instead of synthesizing, which took
+  ~240 ms of CPU in Node, so seconds on the console, spread over the loading screen and the first
+  menu frames. That adds ~10 MiB. If a piece is missing, it synthesizes as before.
+- **Showdown's images every session loads.** The item sheet (already decoded) and the trainer
+  avatars the app knows by name (~300) go under `showdown/sprites/`. `bundled-sprites.ts` redirects
+  `fetch` for those URLs to the RomFS, so the app's cache keys don't change. Each https request
+  costs a TLS handshake on the main thread, and at start they competed with the connection. The
+  build caches them in `dist/nro-cache/showdown` and refreshes them weekly.
+- `after-app.ts` logs `[boot]` marks: when the bundle has been evaluated and the first frames, to
+  split the ~1.6 s start-up block.
+- **The battle music**, decoded here (`@wasm-audio-decoders/ogg-vorbis`, a dev dependency) into the
+  same raw format at the same paths. `AudioEngine.decode` reads it, which avoids the console's
+  300–550 ms hand-overs after each decode. That adds ~20 MiB, for a ~112 MiB `.nro`.
+
+Test x12 (synthesized audio and sprites): loading **3 s** on the HUD (was ~6 s), everything drawn and
+played right. Its `[boot]` marks: the bundle is evaluated ~170 ms after the app starts, then the main
+thread is held ~1.7 s before the first frame and ~1 s before the second, with the connection waiting
+behind both (open at 4.5 s). In Node, ~40% of the first block was the loading screen's warm-up of
+the teambuilder (`@smogon/calc` builds its data tables), so it now starts when the connection opens,
+or once everything else has loaded, and the loading screen waits for it.
