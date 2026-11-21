@@ -15,7 +15,16 @@ export function spriteId(species: string): string {
   return `${toId(species.slice(0, cut))}-${toId(species.slice(cut + 1))}`;
 }
 
-const SPRITES_URL = 'https://play.pokemonshowdown.com/sprites';
+/**
+ * The base species' sprite for a forme's ("alcremie-rubyswirl" → "alcremie"), or null for a base
+ * species: what's drawn when Showdown has no sprite for the forme (some cosmetic ones).
+ */
+export function baseSprite(sprite: string): string | null {
+  const cut = sprite.indexOf('-');
+  return cut > 0 ? sprite.slice(0, cut) : null;
+}
+
+const SPRITES_URL ='https://play.pokemonshowdown.com/sprites';
 
 /**
  * A sprite's URL, from its file name (96x96 PNGs; play.pokemonshowdown.com is allow-listed in the

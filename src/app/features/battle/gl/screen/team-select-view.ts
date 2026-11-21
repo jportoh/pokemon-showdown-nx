@@ -33,7 +33,8 @@ export type SheetButton = 'sheet' | 'accept' | 'waiting';
  * team sheet), so the two can be weighed against each other. ▲▼ go down a column, ◀▶ cross over; A
  * on ours adds it to the four slots along the foot (two leads, two back) or takes it out; B takes the
  * last pick back; Done sends the order; ZL agrees to open team sheets or shows theirs. After Done it
- * stands by, the picks kept, until the battle starts.
+ * stands by, the picks kept, until the battle starts; B there takes Done back while the opponent is
+ * still choosing.
  */
 export class TeamSelectView {
   private readonly store = inject(BattleStore);
@@ -63,8 +64,15 @@ export class TeamSelectView {
     return request ? Math.min(request.maxChosenTeamSize ?? request.side.pokemon.length, request.side.pokemon.length) : 0;
   });
 
-  /** The team's positions (0-based) in the order picked; a new request starts over. */
-  private readonly order = linkedSignal({ source: this.request, computation: (): number[] => [] });
+  /**
+   * The team's positions (0-based) in the order picked; a new request starts over, the same one shown
+   * again (Done taken back) keeps them.
+   */
+  private readonly order = linkedSignal({
+    source: this.request,
+    computation: (request, previous?: { source: BattleRequest | null; value: number[] }): number[] =>
+      request && previous?.source?.rqid === request.rqid ? previous.value : [],
+  });
 
   private readonly ready = computed(() => {
     const count = this.order().length;
@@ -124,9 +132,10 @@ export class TeamSelectView {
     return this.order().length === this.toBring();
   }
 
-  /** B: takes the last pick back. */
+  /** B: takes the last pick back; after Done, takes Done back while the opponent is still choosing. */
   undo(): void {
     if (!this.standingBy()) this.order.update((order) => order.slice(0, -1));
+    else if (this.store.canUndo()) this.store.undo();
   }
 
   private done(): void {
@@ -213,7 +222,7 @@ export class TeamSelectView {
     const shake = nudge < 1 ? Math.sin(nudge * 6 * Math.PI) * 8 * (1 - nudge) : 0;
     write(ctx, status, CARD.left + shake, 640, { size: 18, bold: true }, nudge < 1 ? INK.red300 : ready || standing ? p.teal : p.ink, 'left', 290);
     write(ctx, this.hint(sheet?.button ?? null), CARD.left, 672, { size: 14 }, p.muted, 'left', 290);
-    write(ctx, standing ? '' : 'B undo', CARD.left, 696, { size: 14 }, p.muted, 'left', 290);
+    write(ctx, standing ? (this.store.canUndo() ? 'B change picks' : '') : 'B undo', CARD.left, 696, { size: 14 }, p.muted, 'left', 290);
   }
 
   /**

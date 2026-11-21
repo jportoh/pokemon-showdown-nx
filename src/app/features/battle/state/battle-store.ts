@@ -1592,7 +1592,20 @@ export class BattleStore {
       // Its first turn out is the next one (leads: turn 1).
       cameIn: this.turnSignal() + 1,
       lastMove: '',
-      ...(replaced ? { volatiles: replaced.volatiles, cameIn: replaced.cameIn, lastMove: replaced.lastMove } : {}),
+      // Illusion broken: `replace` carries no HP, the one shown for the disguise was already its own.
+      ...(replaced
+        ? {
+            hp: replaced.hp,
+            maxHp: replaced.maxHp,
+            status: replaced.status,
+            fainted: replaced.fainted,
+            boosts: replaced.boosts,
+            substitute: replaced.substitute,
+            volatiles: replaced.volatiles,
+            cameIn: replaced.cameIn,
+            lastMove: replaced.lastMove,
+          }
+        : {}),
     };
     this.updateSide(side, (s) => ({
       ...s,

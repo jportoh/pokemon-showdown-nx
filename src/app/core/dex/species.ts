@@ -19,6 +19,18 @@ const SPECIES = data as unknown as Readonly<Record<string, readonly [string, str
 const GEN3_SPECIES = gen3.species as unknown as Readonly<Record<string, readonly [string[], number[], string[]]>>;
 
 /**
+ * The base species of a cosmetic forme ("Vivillon-Marine" → "Vivillon", "Alcremie-Ruby-Swirl" →
+ * "Alcremie"): a forme with no data of its own. Null for anything else, a species or a forme that
+ * plays differently (Rotom-Wash).
+ */
+export function cosmeticBase(species: string): string | null {
+  const cut = species.indexOf('-');
+  if (cut <= 0 || SPECIES[toId(species)]) return null;
+  const base = species.slice(0, cut);
+  return SPECIES[toId(base)] ? base : null;
+}
+
+/**
  * A species' types, base stats and abilities by its name or ID, as in the generation played (Gen 3:
  * before the Fairy type, older stats, no hidden abilities); a cosmetic forme ("Vivillon-Pokeball")
  * gets its base species'. Undefined when unknown.
