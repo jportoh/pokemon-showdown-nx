@@ -45,8 +45,26 @@ jobs:
           archive: false
           retention-days: 30
 
+      # The native Switch app (docs/native.md), from the same ng build: the pinned nx.js_extended
+      # engine (downloaded and checked) with the app in its RomFS. Named like the zip.
+      - name: Build the .nro
+        id: nro
+        run: |
+          node scripts/build-nro.mjs
+          if [ "$GITHUB_REF_TYPE" = tag ]; then label="$GITHUB_REF_NAME"; else label="$(git rev-parse --short HEAD)"; fi
+          file="dist/nro/pokemon-showdown-$label.nro"
+          mv dist/nro/pokemon-showdown.nro "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      # The file itself: copied to sdmc:/switch/ as it is.
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.nro.outputs.file }}
+          archive: false
+          retention-days: 30
+
       - name: Publish the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "${{ steps.zip.outputs.file }}" --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" "${{ steps.zip.outputs.file }}" "${{ steps.nro.outputs.file }}" --verify-tag --generate-notes

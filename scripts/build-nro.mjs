@@ -54,6 +54,8 @@ const TARGETS = {
     title: 'Pokémon Showdown',
     version: packageVersion,
     titleId: 0x05f5d0c0de001000n,
+    // A placeholder made from the app's pixel-art Poké Ball (logo-ball.ts); replace the file to change it.
+    icon: path.join(root, 'native/icon.jpg'),
     entry: () => appEntry(),
     files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await renderedAudio())],
   },
@@ -110,7 +112,8 @@ async function main() {
 
   const nro = await NRO.encode({
     data: base.data,
-    icon: base.icon, // The engine's default icon for now (phase 3 adds our own).
+    // hbmenu's (and the forwarder's) icon: a 256x256 JPEG. The probe keeps the engine's.
+    icon: target.icon ? new Blob([fs.readFileSync(target.icon)]) : base.icon,
     nacp: new Blob([new Uint8Array(nacp.buffer)]),
     romfs: await RomFS.encode(romfs),
   });

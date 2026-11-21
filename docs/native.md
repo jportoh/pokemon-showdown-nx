@@ -141,3 +141,14 @@ thread is held ~1.7 s before the first frame and ~1 s before the second, with th
 behind both (open at 4.5 s). In Node, ~40% of the first block was the loading screen's warm-up of
 the teambuilder (`@smogon/calc` builds its data tables), so it now starts when the connection opens,
 or once everything else has loaded, and the loading screen waits for it.
+
+## Phase 3: a finished app
+
+- **Icon**: `native/icon.jpg`, a 256×256 JPEG made from the app's pixel-art Poké Ball. Replace the file
+  to change it. The NACP has the title "Pokémon Showdown", the author, `package.json`'s version and
+  the title id.
+- **CI**: the workflow builds the `.nro` after the Brewser zip, from the same `ng build`, uploads it
+  as `pokemon-showdown-<commit>.nro` and adds it to tagged releases.
+- **HOME menu**: no NSP is built here. Installing a title needs the console's own keys, which can't
+  go to CI. sphaira makes a forwarder to the `.nro` on the console itself, and the icon carries over.
+  An installed title always runs in application mode (no need to hold R).
