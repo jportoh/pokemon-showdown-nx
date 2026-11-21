@@ -160,6 +160,6 @@ rooms); the battle protocol is parsed in `features/battle/state`. See [showdown.
 ## Building for the console
 
 `ng build` produces ES modules, which Brewser can't run. `scripts/build-brewser.mjs` re-bundles the
-build into one classic `app.js`, adds polyfills and zips it for upload. A native `.nro` that runs
-without Brewser is in progress ([native.md](native.md)). See [brewser.md](brewser.md)
-for the engine's limits and how to test on the console.
+build into one classic `app.js`, adds polyfills and zips it for upload. See [brewser.md](brewser.md)
+for the engine's limits and how to test on the console. A native `.nro` that runs without Brewser
+is in progress ([native.md](native.md)).
