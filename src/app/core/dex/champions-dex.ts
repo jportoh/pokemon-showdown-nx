@@ -1,6 +1,8 @@
 import { Service } from '@angular/core';
+import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 import data from './champions-regmc.json';
+import { cosmeticBase } from './species';
 
 // The game data of [Gen 9 Champions] VGC 2026 Reg M-C, generated from Showdown's data by
 // `npm run update:champions` and bundled with the app, so the console downloads nothing.
@@ -94,6 +96,8 @@ export class ChampionsDex {
   readonly allMegas: readonly DexMega[] = DATA.megas.map((mega) => ({ ...mega, baseStats: toStatTable(mega.baseStats) }));
 
   private readonly speciesById: ReadonlyMap<string, DexSpecies>;
+  /** Cosmetic formes looked up so far (see species()). */
+  private readonly cosmetic = new Map<string, DexSpecies>();
   private readonly megasById = new Map(this.allMegas.map((mega) => [mega.id, mega]));
   private readonly movesById = new Map(DATA.moves.map((move) => [move.id, move]));
   private readonly itemsById = new Map(DATA.items.map((item) => [item.id, item]));
@@ -114,9 +118,22 @@ export class ChampionsDex {
     this.speciesById = new Map(this.allSpecies.map((species) => [species.id, species]));
   }
 
-  /** Looks a species up by any spelling of its name ("Rotom-Wash", "rotom wash"). */
+  /**
+   * Looks a species up by any spelling of its name ("Rotom-Wash", "rotom wash"). A cosmetic forme
+   * the data doesn't list ("Vivillon-Marine", from a paste or a battle) is its base species with its
+   * own sprite (GlSprites draws the base one if Showdown has none).
+   */
   species(name: string): DexSpecies | undefined {
-    return this.speciesById.get(toId(name));
+    const id = toId(name);
+    const known = this.speciesById.get(id) ?? this.cosmetic.get(id);
+    if (known) return known;
+    const base = cosmeticBase(name);
+    const species = base ? this.speciesById.get(toId(base)) : undefined;
+    if (!species) return undefined;
+    // Kept, so each lookup gives the same object.
+    const forme = { ...species, sprite: spriteId(name) };
+    this.cosmetic.set(id, forme);
+    return forme;
   }
 
   megaById(id: string): DexMega | undefined {

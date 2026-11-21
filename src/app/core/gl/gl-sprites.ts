@@ -1,6 +1,6 @@
 import { ITEM_ICON_SIZE, ITEM_SHEET_URL, itemIconCell } from '@core/dex/names';
 import { GlRenderer, Rgba, Texture } from '@core/gl/gl-renderer';
-import { SpriteSet, spriteUrl } from '@shared/utils/sprite-id';
+import { SpriteSet, baseSprite, spriteUrl } from '@shared/utils/sprite-id';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 import { SPRITE_SHEET_URLS, SheetSprite, sheetSprite } from './sprite-sheets';
 
@@ -103,7 +103,7 @@ export class GlSprites {
   /**
    * A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. Gen 3's sprites
    * come from Showdown alone (the sheets are Black/White's), falling back to the gen5 one when the
-   * species has none.
+   * species has none; a forme Showdown has no sprite for (some cosmetic ones) is drawn as its base species.
    */
   sprite(sprite: string, back: boolean, priority: ImagePriority, set: SpriteSet = 'gen5'): Texture | null {
     if (!sprite) return null;
@@ -115,6 +115,8 @@ export class GlSprites {
     if (texture) return texture;
     if (set !== 'gen5' && this.bitmaps.failed(url)) return this.sprite(sprite, back, priority);
     if (back && this.bitmaps.failed(url)) return this.sprite(sprite, false, priority);
+    const base = this.bitmaps.failed(url) ? baseSprite(sprite) : null;
+    if (base) return this.sprite(base, back, priority, set);
     return this.upload(url, priority, false);
   }
 
@@ -158,6 +160,8 @@ export class GlSprites {
     if (this.textures.has(url)) return false;
     if (set !== 'gen5' && this.bitmaps.failed(url)) return this.pending(sprite, back);
     if (back && this.bitmaps.failed(url)) return this.pending(sprite, false);
+    const base = this.bitmaps.failed(url) ? baseSprite(sprite) : null;
+    if (base) return this.pending(base, back, set);
     return !this.bitmaps.failed(url);
   }
 
