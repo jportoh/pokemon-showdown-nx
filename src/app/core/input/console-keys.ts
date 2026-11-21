@@ -1,3 +1,5 @@
+import { PLATFORM } from '@core/runtime/platform';
+
 /**
  * What each controller button and key does, so the whole app works with them alone (no mouse or touch).
  *
@@ -33,11 +35,15 @@ export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'butt
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
  * 12–15, the standard mapping's positions for those labels). L=4, R=5, L3=10 and R3=11 (the sticks
- * pressed) are the standard mapping's too.
+ * pressed) are the standard mapping's too. The native .nro's engine (nx.js) numbers the face buttons
+ * by position instead, B=0 and A=1 (test x1), so there they swap.
  */
+const ACCEPT_INDEX = PLATFORM === 'native' ? 1 : 0;
+const BACK_INDEX = PLATFORM === 'native' ? 0 : 1;
+
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
-  [0, 'accept'],
-  [1, 'back'],
+  [ACCEPT_INDEX, 'accept'],
+  [BACK_INDEX, 'back'],
   [6, 'prevTab'],
   [7, 'nextTab'],
   [4, 'buttonL'],

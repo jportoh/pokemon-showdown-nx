@@ -43,3 +43,46 @@ driver and `getContext('webgl2')` returns null.
   **+ exits the app** by default (the engine's `beforeunload`, which can be cancelled).
 - **Missing globals**: `document`, `location`, `history`, `MutationObserver`, `structuredClone`,
   `Intl`. Angular needs a minimal `document` and a location for its router (phase 1).
+
+## Phase 1: the app on the engine
+
+`npm run build:nro` runs `ng build` and bundles Angular's output (one ES module, lazy routes
+included) after the native entry, `native/app/main.ts`, which first installs:
+
+- **`native-log.ts`**: errors, unhandled rejections and `console.error` (Angular's error handler)
+  go to `sdmc:/switch/pokemon-showdown-brewser/native.log`. There are no developer tools, and
+  nothing printed shows once WebGL owns the screen.
+- **`dom-shim.ts`**: a minimal DOM for Angular: a node tree (elements, text, comments) with
+  attributes, classes, inline styles, events and simple selectors (`tag`, `#id`, `.class`,
+  `[attr="value"]`); a document with `<base href="/">` and `<app-root>`; `location` and `history`
+  in memory (the router uses hash URLs); and `innerWidth`/`innerHeight` 1280×720,
+  `devicePixelRatio` 1, `getComputedStyle` (font `sans-serif`), `matchMedia`, `structuredClone`.
+  Nothing in it is drawn.
+- **Canvases**: the canvas that asks for WebGL gets the engine's screen context (once). Other
+  canvases are 2D surfaces on an `OffscreenCanvas` that only grows: the text caches resize their
+  canvas for every glyph, which here clears and resets it instead of allocating a new one.
+- **`gl-uploads.ts`**: the engine ignores `UNPACK_PREMULTIPLY_ALPHA_WEBGL` and copies canvas sources
+  through a new canvas. The context's upload methods are wrapped to read a canvas's pixels directly,
+  premultiply them when asked (the renderer's blending needs it) and pass the engine an array.
+
+The static files (sprites, audio, category icons) go in the RomFS at the same paths: nx.js resolves
+a relative `fetch` against `romfs:/main.js`. `PLATFORM` (`core/runtime/platform.ts`) tells the
+app it is native (`nx.js/` in the user agent): A and B swap indices, and text is typed with the
+on-screen keyboard, as on Brewser.
+
+### The bold font leak (tests x3–x6, 2026-11-21)
+
+The first builds ran out of memory after one or two minutes (`[v8] FATAL JS heap OOM` in
+`sdmc:/switch/nxjs-debug.log`, which the engine overwrites on every launch), while the JS heap stayed
+around 40 MiB: native memory grew about 2.5 MiB per new text. nx.js registers the system font only
+as `sans-serif` at the normal weight, and a canvas font such as `bold 18px sans-serif` matches no
+face, so the engine loads another copy of the system font (~2 MiB) into its font set on every such
+assignment, never freeing it; each lookup also got slower as the set grew. `bold-font.ts` lets that
+happen once at start and marks the copy as the bold face, so later bold fonts find it (it draws the
+same regular glyphs as before). With it, native memory levels off around 600 MiB through a whole
+battle, and `fillText` costs a third of what it did.
+
+`native-stats.ts` writes the native steps' timings and the engine's memory figures
+(`Switch.memoryUsage()`, plus the number of font faces) to `native.log` every 5 seconds.
+`build-nro.mjs --engine=beta5` (or `--engine-file=<any nx.js .nro>`) packages the app on another
+engine build, to compare.

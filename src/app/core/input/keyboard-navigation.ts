@@ -2,6 +2,7 @@ import { Service, inject } from '@angular/core';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { SoundId } from '@core/audio/sfx';
 import { GAMEPAD_BUTTONS, InputAction, PageButton, inputAction } from '@core/input/console-keys';
+import { ON_CONSOLE } from '@core/runtime/platform';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 
 /**
@@ -22,9 +23,6 @@ const GAMEPAD_REPEAT_MIN_MS = 35;
 const STICK_THRESHOLD = 0.5;
 /** The same action from the keyboard and the controller this close together is one press. */
 const DUPLICATE_MS = 150;
-
-/** The console's engine: text is typed with the on-screen keyboard, never with the buttons. */
-const ON_BREWSER = /Brewser/.test(navigator.userAgent);
 
 type Source = 'keyboard' | 'gamepad';
 
@@ -171,7 +169,7 @@ export class KeyboardNavigation {
   }
 
   private onKeyDown(event: KeyboardEvent): void {
-    if (this.textInput && !(ON_BREWSER && this.gamepadConnected) && this.textInput(event)) {
+    if (this.textInput && !(ON_CONSOLE && this.gamepadConnected) && this.textInput(event)) {
       event.preventDefault();
       return;
     }
@@ -179,7 +177,7 @@ export class KeyboardNavigation {
     if (!action) return;
     this.keysDown.add(action);
     // On the console the controller is read directly; its d-pad's key events would move twice more.
-    if (ON_BREWSER && this.gamepadConnected) {
+    if (ON_CONSOLE && this.gamepadConnected) {
       event.preventDefault();
       return;
     }
