@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { PageButton, ROLE_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
@@ -88,10 +89,12 @@ export class TeambuilderScene {
     });
     // The grid opens on its first team (stored last), or New.
     this.grid.focusTeam(this.store.teams(), this.store.teams().at(-1)?.id ?? null);
-    // On the grid ZL picks a team up (and puts it down), R makes it its format's favourite and ZR
-    // imports a PokePaste. On a team L/R go through the teams, ZL validates and ZR deletes it; in the
-    // editor L/R switch Details/Stats (or a list's filters), ZL picks No item/No move (on Stats it
-    // undoes the points) and ZR removes the Pokémon; R3 searches an open list.
+    // On the grid ZL picks a team up (and puts it down), ROLE_KEYS.favourite (R, X on the native
+    // .nro) makes it its format's favourite and ZR imports a PokePaste. On a team L/R go through the
+    // teams, ZL validates and ZR deletes it; in the editor L/R switch Details/Stats (or a list's
+    // filters), ZL picks No item/No move (on Stats it undoes the points) and ZR removes the Pokémon;
+    // ROLE_KEYS.search (R3, also Y on native) searches an open list, ROLE_KEYS.editRival edits the
+    // Calcs rival. Where two roles share a button (Brewser's R3, R), the newest registered tries first.
     const release = [
       this.navigation.registerButton('buttonZL', () => {
         if (this.leaving) return true;
@@ -106,9 +109,13 @@ export class TeambuilderScene {
         return this.view === 'edit' && this.editor.pressRemove();
       }),
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
-      this.navigation.registerButton('buttonR', () => (this.view === 'teams' ? this.pressFavourite() : this.pressLR(1))),
-      // R3: an open list's search, without walking up to its box first.
-      this.navigation.registerButton('buttonR3', () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),
+      this.navigation.registerButton('buttonR', () => this.view !== 'teams' && this.pressLR(1)),
+      this.navigation.registerButton(ROLE_KEYS.favourite.button, () => this.view === 'teams' && this.pressFavourite()),
+      this.navigation.registerButton(ROLE_KEYS.editRival.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressEditRival())),
+      // An open list's search, without walking up to its box first.
+      ...[...new Set<PageButton>(['buttonR3', ROLE_KEYS.search.button])].map((button) =>
+        this.navigation.registerButton(button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),
+      ),
     ];
     inject(DestroyRef).onDestroy(() => {
       hide();
@@ -397,7 +404,7 @@ export class TeambuilderScene {
         { keys: ['A'], text: focused === NEW_TEAM_ID ? 'New team' : 'Open' },
         { keys: ['B'], text: 'Menu' },
       ];
-      if (team) entries.push({ keys: ['ZL'], text: 'Move' }, { keys: ['R'], text: team.favourite ? 'Unfavourite' : 'Favourite' });
+      if (team) entries.push({ keys: ['ZL'], text: 'Move' }, { keys: [ROLE_KEYS.favourite.label], text: team.favourite ? 'Unfavourite' : 'Favourite' });
       entries.push({ keys: ['ZR'], text: 'Import PokePaste' });
       controlsLegend(ctx, entries);
       const notice = this.importNotice;

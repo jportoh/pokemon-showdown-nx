@@ -1,4 +1,5 @@
 import { computed, inject, signal } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { UiContext } from '@core/gl/ui/retro-kit';
 import { CalcState } from '@features/teambuilder/calc/calc-state';
@@ -174,7 +175,7 @@ export class RivalEditor {
         { keys: ['A'], text: 'Pick' },
         { keys: ['B'], text: current ? `Keep ${current}` : 'Close' },
       ];
-      if (spec.searchable && !spec.unavailable) entries.push({ keys: ['R3'], text: 'Search' });
+      if (spec.searchable && !spec.unavailable) entries.push({ keys: [ROLE_KEYS.search.label], text: 'Search' });
       if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
       const clear = this.choosers.clearLabel();
       if (clear) entries.push({ keys: ['ZL'], text: clear });

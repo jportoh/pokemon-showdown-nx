@@ -1,4 +1,5 @@
 import { inject } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
@@ -161,13 +162,18 @@ export class CalcsView {
     return true;
   }
 
-  /** R3: the rival list's or an edited list's search; on the tab itself, edits the rival. */
+  /** Search (ROLE_KEYS.search): the rival list's or an edited list's. */
   pressSearch(): boolean {
     if (this.editor.isOpen) return this.editor.pressSearch();
-    if (this.field.isOpen) return false;
-    if (!this.picker.isOpen) return this.edit();
+    if (this.field.isOpen || !this.picker.isOpen) return false;
     this.picker.openSearch();
     return true;
+  }
+
+  /** Edit the rival (ROLE_KEYS.editRival), from the Calcs page itself. */
+  pressEditRival(): boolean {
+    if (this.editor.isOpen || this.field.isOpen || this.picker.isOpen) return false;
+    return this.edit();
   }
 
   /** Starts editing the rival's set. */
@@ -292,9 +298,9 @@ export class CalcsView {
     const sets = this.sets.setsFor(rival.species);
     const index = sets.findIndex((set) => set.id === rival.id);
     const setY = box.y + 68;
-    // The set's title (left/right), where it comes from, and Edit (R3) ending the line.
+    // The set's title (left/right), where it comes from, and Edit (ROLE_KEYS.editRival) ending the line.
     const editBox = { x: box.x + box.w - 280 - EDIT_W, y: setY - 15, w: EDIT_W, h: 30 };
-    shortcutButton(ctx, EDIT_ID, editBox, 'R3', 'Edit', { size: 16, accept: () => this.edit() });
+    shortcutButton(ctx, EDIT_ID, editBox, ROLE_KEYS.editRival.label, 'Edit', { size: 16, accept: () => this.edit() });
     const where = rival.source === 'common' ? 'common set' : rival.source === 'team' ? 'your team' : rival.source === 'custom' ? 'your edit' : 'generic spread';
     const whereText = `${where} · ${index + 1} / ${sets.length}`;
     const whereW = ctx.text.measure(whereText, { size: 15 });
