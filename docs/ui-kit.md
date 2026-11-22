@@ -33,7 +33,7 @@ shadows are all one call:
 
 | Call | What it draws |
 | --- | --- |
-| `begin(time, base, band)` | Starts a frame on the animated backdrop |
+| `begin(time, base, band)` | Starts a frame on the backdrop (dots in the band colour) |
 | `beginPlain(color)` | Starts a frame on a plain colour |
 | `rect(x, y, w, h, style)` | A box: `fill`, `stroke`, `border`, `radius`, `softness` (glow/shadow), `texture`, `angle`, `additive` |
 | `image(texture, x, y, scale?, tint?)` | A texture at its size |
