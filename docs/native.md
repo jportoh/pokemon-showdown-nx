@@ -152,3 +152,13 @@ or once everything else has loaded, and the loading screen waits for it.
 - **HOME menu**: no NSP is built here. Installing a title needs the console's own keys, which can't
   go to CI. sphaira makes a forwarder to the `.nro` on the console itself, and the icon carries over.
   An installed title always runs in application mode (no need to hold R).
+
+## Controls (test x14)
+
+- **Touch**: nx.js turns the touchscreen on only once something listens on `screen`, and dispatches
+  touches there, not on the window. `touch-bridge.ts` copies them to the window, where
+  `PointerInput` listens, as it does on Brewser.
+- **+** no longer exits. `plus-button.ts` cancels nx.js's `beforeunload`; the console's HOME button is
+  for leaving. +, X and Y are page buttons on the native build only (`buttonPlus`, `buttonX`,
+  `buttonY` in console-keys; nx.js numbers them Y=2, X=3, +=9). On Brewser they stay the browser's.
+  + is OK on the on-screen keyboard, as on the console's own keyboard; Brewser keeps ZR.

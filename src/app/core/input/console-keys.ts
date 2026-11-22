@@ -23,6 +23,9 @@ export type InputAction =
   | 'buttonR'
   | 'buttonR3'
   | 'buttonL3'
+  | 'buttonPlus'
+  | 'buttonX'
+  | 'buttonY'
   | 'first'
   | 'last';
 
@@ -30,7 +33,7 @@ export type InputAction =
  * The shoulder buttons, R3 and L3 (the sticks pressed), whose meaning depends on the screen (see
  * KeyboardNavigation.registerButton).
  */
-export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3';
+export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3' | 'buttonPlus' | 'buttonX' | 'buttonY';
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
@@ -54,6 +57,16 @@ export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [13, 'down'],
   [14, 'left'],
   [15, 'right'],
+  // Only the native .nro has them: on Brewser, X, Y and + are the browser's own (restart, exit).
+  // nx.js numbers them by position like A and B: Y=2, X=3, +=9 (test x1). + no longer exits there
+  // (native/app/plus-button.ts): leaving is the console's HOME button.
+  ...(PLATFORM === 'native'
+    ? ([
+        [2, 'buttonY'],
+        [3, 'buttonX'],
+        [9, 'buttonPlus'],
+      ] as const)
+    : []),
 ];
 
 // Keyed by `KeyboardEvent.key` (lower-cased), then `code`, then the legacy `keyCode` (undefined on
