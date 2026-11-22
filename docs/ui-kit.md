@@ -14,8 +14,11 @@ guide lists its pieces and then builds a screen step by step.
   template is `''`.
 - **Controller first.** Every action must be reachable with the d-pad, A, B and the shoulder buttons.
   Mouse and touch are extras.
-- **Colours come from the palette** (`GlTheme`), never hard-coded, so every theme works. Each palette
-  is checked for WCAG AA contrast. If you add a colour role, check it in all six themes.
+- **Colours come from the palette** (`GlTheme`), never hard-coded, so every theme works. Each of the six
+  themes has a light and a dark palette (Settings → Appearance; light is the default), each checked for
+  WCAG AA contrast. If you add a colour role, check it in all twelve. Text on a bright fill (teal,
+  danger, accentText) uses `contrast`; colours that depend only on light/dark (focus ring, disabled
+  controls, logo) are the mode roles in `gl-theme.ts`.
 - **Text fields never open the keyboard on their own.** A opens it. Focusing a field automatically
   would open the console's own keyboard.
 - **The stage is 1280×720.** Lay screens out in stage pixels; the host scales the canvas to the
@@ -95,7 +98,7 @@ the focused one.
 | `FormatListScreen` | `ui/format-list-screen.ts` | A whole page: a format selector, Previous/Next/Refresh and a paged list (Watch Live, Replays) |
 | `CanvasKeyboard` | `ui/canvas-keyboard.ts` | The on-screen keyboard, the **only** way to type text |
 | `HoldAction` | `ui/hold-action.ts` | Hold-to-confirm for irreversible actions (a button that fills red) |
-| `GlTheme` | `ui/gl-theme.ts` | The palette of the theme chosen in Settings |
+| `GlTheme` | `ui/gl-theme.ts` | The palette of the theme and appearance (light/dark) chosen in Settings |
 | Pixel icons, masks, category icons | `ui/pixel-icons.ts`, `ui/masks.ts`, `ui/category-icons.ts` | Pixel art and tinted shapes as textures |
 
 ## Focus: `CanvasFocus`

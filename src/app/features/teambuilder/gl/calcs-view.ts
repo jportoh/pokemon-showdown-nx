@@ -43,6 +43,8 @@ const FIRST_RIVAL = 'Incineroar';
 const HP_GREEN: Rgba = rgba('#4cd07d');
 const HP_YELLOW: Rgba = rgba('#e8c547');
 const HP_RED: Rgba = rgba('#ef5350');
+/** The 2HKO badge's text on its fixed orange, in every theme. */
+const KO_DARK_INK: Rgba = rgba('#0b1016');
 
 /** What the tab needs from the editor: the Pokémon being edited and its team's format. */
 export interface CalcsModel {
@@ -467,7 +469,7 @@ export class CalcsView {
     const ko = koBadge(move);
     const koBox = { x: koX, y: cy - 20, w: koW, h: 40 };
     renderer.rect(koBox.x, koBox.y, koBox.w, koBox.h, { fill: ko.tier === 3 ? p.rim : fill, radius: 6 });
-    const ink = ko.tier === 3 ? p.muted : p.bar;
+    const ink = ko.tier === 3 ? p.muted : ko.tier === 1 ? p.contrast : KO_DARK_INK;
     label(ctx, ko.title, koBox.x + koW / 2, cy - 7, { size: 18, bold: true }, ink, { align: 'center' });
     label(ctx, ko.detail, koBox.x + koW / 2, cy + 11, { size: 12, bold: true }, ink, { align: 'center', maxWidth: koW - 8 });
     if (focused) focusRing(ctx, box, 8);

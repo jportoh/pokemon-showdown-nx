@@ -3,7 +3,7 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { Box, UiContext, focusRing, label, modal } from '@core/gl/ui/retro-kit';
 import { MAX_STAT_POINTS, MAX_TOTAL_STAT_POINTS, NATURES, STAT_IDS, STAT_NAMES, calcStat, totalStatPoints } from '@features/teambuilder/data/game-rules';
 import { PokemonSet, StatId, StatSpread } from '@features/teambuilder/models/team';
-import { BAR_FILL, BAR_FULL, LEFT, LOWERED_FILL, LOWERED_INK, RIGHT, SEGMENT_FREE, WHITE, arrow, card, ring } from './tb-draw';
+import { BAR_FILL, BAR_FULL, LEFT, LOWERED_FILL, RIGHT, WHITE, arrow, card, ring } from './tb-draw';
 
 const FULL_NAMES: Record<StatId, string> = { hp: 'HP', atk: 'Attack', def: 'Defense', spa: 'Sp. Atk', spd: 'Sp. Def', spe: 'Speed' };
 const DEFAULT_NATURE = 'Serious';
@@ -179,7 +179,7 @@ export class StatsView {
     ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.input, stroke: p.outline, radius: 4, border: 2 });
     const size = (box.w - pad * 2 - gap * (MAX_STAT_POINTS - 1)) / MAX_STAT_POINTS;
     for (let i = 0; i < MAX_STAT_POINTS; i++) {
-      const color = i < points ? fill : i < reachable ? SEGMENT_FREE : p.button;
+      const color = i < points ? fill : i < reachable ? ctx.palette.segmentFree : p.button;
       ctx.renderer.rect(box.x + pad + i * (size + gap), box.y + pad, size, box.h - pad * 2, { fill: color });
     }
   }
@@ -196,7 +196,7 @@ export class StatsView {
     x += label(ctx, name, x, cy, { size: 24, bold: true }, p.ink) + 14;
     if (nature?.plus && nature.minus) {
       x += label(ctx, `+${STAT_NAMES[nature.plus]}`, x, cy, { size: 18, bold: true }, p.accentText) + 10;
-      label(ctx, `−${STAT_NAMES[nature.minus]}`, x, cy, { size: 18, bold: true }, LOWERED_INK);
+      label(ctx, `−${STAT_NAMES[nature.minus]}`, x, cy, { size: 18, bold: true }, ctx.palette.lowered);
     } else label(ctx, 'Neutral', x, cy, { size: 18 }, p.muted);
     ring(ctx, box, focused);
   }
@@ -216,7 +216,7 @@ export class StatsView {
     const cellW = (box.w - 56 - header - gap * GRID_STATS.length) / GRID_STATS.length;
     const cellH = 72;
     GRID_STATS.forEach((stat, i) => {
-      label(ctx, `−${STAT_NAMES[stat]}`, left + header + gap + i * (cellW + gap) + cellW / 2, top + 16, { size: 20, bold: true }, LOWERED_INK, { align: 'center' });
+      label(ctx, `−${STAT_NAMES[stat]}`, left + header + gap + i * (cellW + gap) + cellW / 2, top + 16, { size: 20, bold: true }, ctx.palette.lowered, { align: 'center' });
       label(ctx, `+${STAT_NAMES[stat]}`, left, top + 40 + i * (cellH + gap) + cellH / 2, { size: 20, bold: true }, p.accentText);
     });
     const current = this.natureName();
@@ -259,7 +259,7 @@ export class StatsView {
       const width = ctx.text.measure(text, { size: 20, bold: true }) + 28;
       x -= width;
       ctx.renderer.rect(x, cy - 18, width, 36, { fill: p.bg, radius: 6 });
-      label(ctx, text, x + 14, cy, { size: 20, bold: true }, change.to > change.from ? p.accentText : LOWERED_INK);
+      label(ctx, text, x + 14, cy, { size: 20, bold: true }, change.to > change.from ? p.accentText : ctx.palette.lowered);
       x -= 10;
     }
     label(ctx, 'Changes', x - 6, cy, { size: 20 }, p.muted, { align: 'right' });

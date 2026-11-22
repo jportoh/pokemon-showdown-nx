@@ -1,4 +1,4 @@
-import { Texture } from '@core/gl/gl-renderer';
+import { Rgba, Texture, rgba } from '@core/gl/gl-renderer';
 import { Box, UiContext, focusRing, label, paragraph, pill } from '@core/gl/ui/retro-kit';
 import { DIM_TINT, CarouselMotion, drawCarouselCard, sideFade } from '@features/play/gl/carousel';
 import { PlayableFormat } from '@shared/data/formats';
@@ -10,6 +10,8 @@ const SIDE_SCALE = 0.8;
 /** The card turning over to show the search, and back. */
 const FLIP_MS = 420;
 const ART = 100;
+/** A random format's "?" card: dark on its near-white, in every theme. */
+const RANDOM_INK: Rgba = rgba('#0b1016');
 /** The right column: how many teams, and the rules. */
 const COLUMN_X = 448;
 
@@ -184,16 +186,15 @@ export class FormatCarouselView {
  * greyed: it may not be needed), two for doubles, one for singles.
  */
 function drawFormatArt(ctx: UiContext, format: PlayableFormat, cx: number, cy: number, ball: Texture | null): void {
-  const p = ctx.palette;
   const { renderer } = ctx;
   if (format.randomTeams) {
     renderer.rect(cx - 28, cy - 28, 56, 56, {
       fill: [0.96, 0.96, 0.96, 1],
-      stroke: p.bar,
+      stroke: RANDOM_INK,
       radius: 10,
       border: 3,
     });
-    label(ctx, '?', cx, cy + 1, { size: 38, bold: true }, p.bar, { align: 'center' });
+    label(ctx, '?', cx, cy + 1, { size: 38, bold: true }, RANDOM_INK, { align: 'center' });
     return;
   }
   if (!ball) return;

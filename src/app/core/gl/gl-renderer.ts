@@ -90,7 +90,9 @@ void main() {
   vec2 px = (v_pos * 0.5 + 0.5) * u_res;
   float band = step(0.5, fract((px.x + px.y + u_time * 24.0) / 64.0));
   vec3 color = mix(u_base, u_band, band * 0.55);
-  float vignette = 1.0 - 0.35 * length(v_pos * vec2(0.8, 1.0));
+  // Dark edges on a dark base; barely any on a light one (they'd turn it grey).
+  float strength = mix(0.35, 0.08, dot(u_base, vec3(0.2126, 0.7152, 0.0722)));
+  float vignette = 1.0 - strength * length(v_pos * vec2(0.8, 1.0));
   gl_FragColor = vec4(color * vignette, 1.0);
 }`;
 
