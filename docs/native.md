@@ -79,8 +79,13 @@ as `sans-serif` at the normal weight, and a canvas font such as `bold 18px sans-
 face, so the engine loads another copy of the system font (~2 MiB) into its font set on every such
 assignment, never freeing it; each lookup also got slower as the set grew. `bold-font.ts` lets that
 happen once at start and marks the copy as the bold face, so later bold fonts find it (it draws the
-same regular glyphs as before). With it, native memory levels off around 600 MiB through a whole
+same regular glyphs as before, see below for real-looking bold). With it, native memory levels off around 600 MiB through a whole
 battle, and `fillText` costs a third of what it did.
+
+There is still no real bold face, so bold text is synthesized from the regular one
+(`src/app/core/gl/faux-bold.ts`): when bold measures exactly as wide as regular, texts and glyphs
+are filled and stroked in the same colour (2.5% of the size, at most 2.4 px: subtle, so letters keep their gaps), as browsers embolden a
+missing bold. Advances stay the regular ones, so measures and layouts do not change.
 
 `native-stats.ts` writes the native steps' timings and the engine's memory figures
 (`Switch.memoryUsage()`, plus the number of font faces) to `native.log` every 5 seconds.

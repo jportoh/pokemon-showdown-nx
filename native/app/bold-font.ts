@@ -8,6 +8,7 @@
 //
 // Here that happens once: the copy the engine adds for the first bold font is marked as the bold
 // face, so later lookups find it. It draws the same (regular) glyphs as before; only the leak goes.
+// The app thickens bold text itself (src/app/core/gl/faux-bold.ts: it sees bold measure the same).
 
 import { nativeLog } from './native-log';
 

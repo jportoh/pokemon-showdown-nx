@@ -1,3 +1,4 @@
+import { fillBold, needsFauxBold } from './faux-bold';
 import { GlRenderer, Rgba, Texture } from './gl-renderer';
 import { TextStyle } from './gl-textures';
 
@@ -24,6 +25,9 @@ interface Glyph {
 interface Face {
   texture: Texture;
   font: string;
+  /** Bold the font has no face for: drawn thickened (faux-bold.ts), at this size (stage px). */
+  fauxBold: boolean;
+  size: number;
   glyphs: Map<string, Glyph>;
   /** The glyphs' row height in texture pixels, and where the next glyph goes. */
   cell: number;
@@ -134,6 +138,8 @@ export class GlyphAtlas {
     face = {
       texture: this.renderer.emptyTexture(ATLAS_WIDTH, rows * cell, true),
       font: `${style.bold ? 'bold ' : ''}${Math.round(style.size * this.scale)}px ${style.font ?? this.family}`,
+      fauxBold: !!style.bold && needsFauxBold(this.context, style.font ?? this.family),
+      size: style.size,
       glyphs: new Map(),
       cell,
       x: 0,
@@ -170,7 +176,8 @@ export class GlyphAtlas {
       context.textBaseline = 'middle';
       context.fillStyle = '#ffffff';
       context.clearRect(0, 0, box, face.cell);
-      context.fillText(char, pad, face.cell / 2);
+      if (face.fauxBold) fillBold(context, char, pad, face.cell / 2, face.size, this.scale);
+      else context.fillText(char, pad, face.cell / 2);
       this.renderer.drawInto(face.texture, x, y, this.canvas);
       uv = [x / ATLAS_WIDTH, y / size, (x + box) / ATLAS_WIDTH, (y + face.cell) / size];
       face.x += box;
