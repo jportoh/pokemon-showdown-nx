@@ -1,5 +1,7 @@
-import { Rgba, Texture, rgba } from '@core/gl/gl-renderer';
-import { Box, UiContext, focusRing, label, paragraph, pill } from '@core/gl/ui/retro-kit';
+import { Rgba, Texture, mixRgba, rgba } from '@core/gl/gl-renderer';
+import { SLANT } from '@core/gl/ui/menu-kit';
+import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
+import { Box, UiContext, label, paragraph, pill } from '@core/gl/ui/retro-kit';
 import { DIM_TINT, CarouselMotion, drawCarouselCard, sideFade } from '@features/play/gl/carousel';
 import { PlayableFormat } from '@shared/data/formats';
 
@@ -85,11 +87,15 @@ export class FormatCarouselView {
     const { renderer } = ctx;
     const box = FORMAT_CARD;
     const { format } = card;
+    // A slanted card like the menu's buttons, fading into Battle's colour.
+    renderer.rect(box.x, box.y + 10, box.w, box.h, { fill: [0, 0, 0, middle ? 0.18 : 0.1], radius: 14, softness: 20, skew: SLANT });
     renderer.rect(box.x, box.y, box.w, box.h, {
       fill: focused ? p.select : p.panel,
-      stroke: middle ? p.accentText : p.outline,
+      fillEnd: mixRgba(p.panel, battlePlate(p.appearance), 0.85),
+      stroke: focused ? p.accentText : p.rim,
       radius: 14,
-      border: 3,
+      border: focused ? 4 : 1,
+      skew: SLANT,
     });
     renderer.rect(box.x + 10, box.y + 10, ART, ART, { fill: p.bg, radius: 10 });
     drawFormatArt(ctx, format, box.x + 10 + ART / 2, box.y + 10 + ART / 2, ball);
@@ -117,7 +123,7 @@ export class FormatCarouselView {
     const teams = format.randomTeams ? 'No team needed' : card.teams === 0 ? 'No teams yet' : `${card.teams} team${card.teams === 1 ? '' : 's'}`;
     label(ctx, teams, box.x + COLUMN_X, box.y + 36, { size: 16, bold: true }, format.randomTeams ? p.teal : card.teams === 0 ? p.danger : p.ink, { maxWidth: columnW });
     paragraph(ctx, format.rules, box.x + COLUMN_X, box.y + 54, columnW, 20, { size: 14 }, p.muted, 2);
-    if (focused) focusRing(ctx, box, 14);
+    if (focused) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, border: 4, radius: 14, skew: SLANT });
   }
 
   /** Turning over: the card narrows to its edge and opens out again on its other side. */
@@ -132,6 +138,7 @@ export class FormatCarouselView {
       stroke: p.accentText,
       radius: Math.min(14, width / 2),
       border: 3,
+      skew: SLANT,
     });
     // The face shows once it's open enough to read.
     if (width < box.w * 0.85) return;
@@ -156,7 +163,7 @@ export class FormatCarouselView {
     label(ctx, search.line, box.x + 140, box.y + 82, { size: 16 }, p.muted, {
       maxWidth: box.w - 170,
     });
-    if (focused) focusRing(ctx, box, 14);
+    if (focused) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, border: 4, radius: 14, skew: SLANT });
   }
 
   /** ZL and ZR in the gaps between the cards (a click turns it too). */
@@ -212,4 +219,9 @@ function drawFormatArt(ctx: UiContext, format: PlayableFormat, cx: number, cy: n
   if (format.id.endsWith('bo3')) balls(1, 3, 4);
   else if (format.category === 'Doubles') balls(1.5, 2, 4);
   else balls(2.5, 1, 0);
+}
+
+/** Battle's own colour (the menu's Battle button's), which the cards fade into. */
+export function battlePlate(appearance: 'light' | 'dark'): Rgba {
+  return rgba(HOME_MENU_ITEMS.find((item) => item.id === 'battle')?.plate[appearance] ?? '#4a1f2b');
 }

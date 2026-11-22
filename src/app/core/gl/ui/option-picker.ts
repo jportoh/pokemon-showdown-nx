@@ -1,7 +1,8 @@
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { CanvasFocus } from '../canvas-ui';
 import { ImagePriority } from '../sprite-bitmaps';
-import { Box, UiContext, button, focusRing, label, modal } from './retro-kit';
+import { drawKeyButton, menuModal } from './menu-kit';
+import { Box, UiContext, label } from './retro-kit';
 import { maskOf } from './masks';
 
 /** One choice in the picker. */
@@ -121,14 +122,14 @@ export class OptionPickerView {
     if (!this.isOpen) return;
     const p = ctx.palette;
     const { renderer } = ctx;
-    modal(ctx, BOX, 0.7);
-    label(ctx, this.title, BOX.x + 32, BOX.y + 36, { size: 30, bold: true }, p.ink, { maxWidth: 660 });
+    menuModal(ctx, BOX, undefined, 0.7);
+    label(ctx, this.title, BOX.x + 32, BOX.y + 38, { size: 30, bold: true }, p.ink, { maxWidth: 660 });
     const options = this.optionIndexes();
     const selectedAt = options.findIndex((i) => (this.rows[i] as { option: PickerOption }).option.id === this.selected);
     if (options.length > 1 && selectedAt >= 0) label(ctx, `${selectedAt + 1} of ${options.length}`, BOX.x + 988, BOX.y + 38, { size: 18 }, p.muted, { align: 'right' });
     const arrows = `${this.start > 0 ? '▲' : ''} ${this.start + this.layout.visible < this.rows.length ? '▼' : ''}`.trim();
     if (arrows) label(ctx, arrows, BOX.x + 700, BOX.y + 38, { size: 18 }, p.muted);
-    button(ctx, 'picker-close', { x: BOX.x + 1040, y: BOX.y + 18, w: 128, h: 36 }, 'Close', { shortcut: 'B', skip: true, accept: () => this.close() });
+    drawKeyButton(ctx, 'picker-close', { x: BOX.x + BOX.w - 160, y: BOX.y + 16, w: 136, h: 44 }, 'B', 'Close', () => this.close());
 
     const { visible, height } = this.layout;
     const end = Math.min(this.rows.length, this.start + visible);
@@ -137,8 +138,8 @@ export class OptionPickerView {
       const row = this.rows[index];
       const y = LIST_Y + (index - this.start) * height;
       if (row.kind === 'heading') {
-        label(ctx, row.text.toUpperCase(), LIST_X + 8, y + height - 22, { size: 18, bold: true }, p.teal, { maxWidth: LIST_W - 16 });
-        renderer.rect(LIST_X + 8, y + height - 2, LIST_W - 16, 2, { fill: p.rim });
+        label(ctx, row.text.toUpperCase(), LIST_X + 12, y + height - 20, { size: 15, bold: true }, p.muted, { maxWidth: LIST_W - 24 });
+        renderer.rect(LIST_X + 12, y + height - 4, LIST_W - 24, 2, { fill: p.rim });
         continue;
       }
       const option = row.option;
@@ -150,7 +151,8 @@ export class OptionPickerView {
         move: (direction) => this.step(index, direction),
       });
       const chosen = option.id === this.selected;
-      if (chosen || focused) renderer.rect(box.x, box.y, box.w, box.h, { fill: p.select, radius: 6 });
+      // The menu's rows: the focused one ringed in the accent, the one picked so far lit.
+      if (chosen || focused) renderer.rect(box.x, box.y, box.w, box.h, { fill: p.select, stroke: p.accentText, border: focused ? 3 : 0, radius: 14 });
       if (chosen) renderer.image(cursor, box.x + 12, box.y + (box.h - 28) / 2, 4, p.accentText);
       label(ctx, option.title, box.x + 44, y + this.layout.titleCy, { size: 24, bold: true }, p.ink, { maxWidth: this.layout.titleWidth });
       label(ctx, option.detail, box.x + 44, y + this.layout.detailCy, { size: 16 }, p.muted, { maxWidth: this.layout.titleWidth });
@@ -158,7 +160,6 @@ export class OptionPickerView {
         const texture = ctx.images.sprite(sprite, false, ImagePriority.Screen);
         if (texture) renderer.rect(box.x + SPRITES_LEFT + i * SPRITE_STEP, y, SPRITE_SIZE, SPRITE_SIZE, { fill: [1, 1, 1, 1], texture });
       });
-      if (focused) focusRing(ctx, box);
     }
   }
 

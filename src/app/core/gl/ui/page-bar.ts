@@ -6,6 +6,7 @@ import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { Texture, rgba } from '../gl-renderer';
 import { STAGE_W } from '../gl-stage';
 import { iconTexture } from '../gl-textures';
+import { drawKeyButton } from './menu-kit';
 import { UiContext, focusRing, label, pill } from './retro-kit';
 
 /** The bar over every page, 76px high. */
@@ -127,10 +128,7 @@ export class PageBar {
     renderer.image(icon, 40, 24, 2);
     label(ctx, page.title, 100, 48, { size: 34, bold: true }, p.ink, { maxWidth: 360 });
     const back = { x: 1232 - 128, y: 26, w: 128, h: 44 };
-    const focused = ctx.focus.control({ id: 'bar-back', ...back, accept: page.back, skip: true });
-    renderer.rect(back.x, back.y, back.w, back.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.rim, border: focused ? 3 : 1, radius: back.h / 2 });
-    const width = pill(ctx, 'B', back.x + 14, back.y + back.h / 2, 28);
-    label(ctx, 'Back', back.x + 22 + width, back.y + back.h / 2, { size: 18, bold: true }, p.ink);
+    drawKeyButton(ctx, 'bar-back', back, 'B', 'Back', page.back);
     const statusLeft = this.drawStatus(ctx, back.x - 20, 48);
     const notice = this.challengeNotice();
     if (notice) {

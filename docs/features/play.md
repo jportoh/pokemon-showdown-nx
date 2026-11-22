@@ -15,6 +15,11 @@ The page is a showcase in three rows:
    sprite, types, item and ability. Random formats need no team.
 3. **Actions**: BATTLE! (search or cancel), challenge a player, and a pending challenge's button.
 
+It is drawn in the menu's style (`core/gl/ui/menu-kit.ts`): the menu-style header (`PageBar.drawHeader`),
+slanted format cards and a team panel fading into Battle's colour, a name plate with the player's
+trainer, and BATTLE! and the challenge button as slanted buttons (BATTLE! in the accent, the lead
+Pokémon drawn on it).
+
 Over the page, as modals: the format and team lists (`OptionPickerView`), the challenge form, incoming
 challenges (`gl/challenge-views.ts`) and a challenger's Trainer Card.
 

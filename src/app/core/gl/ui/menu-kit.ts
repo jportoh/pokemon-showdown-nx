@@ -107,6 +107,8 @@ export interface SlantedButton {
   titleSize: number;
   /** The title's centre from the top; centred in the button when absent. */
   titleY?: number;
+  /** With `titleY`: the chips' centre from the bottom (34 by default). */
+  chipBottom?: number;
   icon?: Texture | null;
   /** How much bigger the icon is drawn (2: a 24px menu icon at 48px). */
   iconScale?: number;
@@ -163,7 +165,7 @@ export function drawSlantedButton(ctx: UiContext, b: SlantedButton): void {
   label(ctx, b.title, left, titleY, { size: b.titleSize, bold: true }, withAlpha(ink, alpha), { maxWidth: w - (left - x) - 16 });
 
   // Under a centred title, or along the bottom when the title has its own place.
-  const chipY = b.titleY === undefined ? titleY + 40 : y + h - 34;
+  const chipY = b.titleY === undefined ? titleY + 40 : y + h - (b.chipBottom ?? 34);
   let cx = edge(chipY) + 24;
   for (const chip of chips) cx += drawChip(ctx, chip, cx, chipY, alpha, 30, x + w - 40 - cx) + 8;
 }
@@ -197,6 +199,50 @@ export function drawSwitch(ctx: UiContext, id: string, x: number, y: number, tex
   ctx.renderer.rect(x + 12, y + 7, 54, 30, { fill: on ? p.accent : p.rim, radius: 15 });
   ctx.renderer.rect(x + (on ? 40 : 16), y + 11, 22, 22, { fill: [1, 1, 1, 1], radius: 11 });
   label(ctx, text, x + 80, y + 22, { size: 19, bold: true }, p.ink);
+}
+
+/**
+ * A box over the page in the menu's style: the page dimmed (its controls out of reach), a soft shadow,
+ * the panel fading from `tint` (the hero colour by default) at its left into the panel colour.
+ */
+export function menuModal(ctx: UiContext, box: { x: number; y: number; w: number; h: number }, tint?: Rgba, dim = 0.65): void {
+  const p = ctx.palette;
+  ctx.renderer.rect(0, 0, 1280, 720, { fill: withAlpha(p.bg, dim) });
+  ctx.focus.trap();
+  menuPanel(ctx, box, tint);
+}
+
+/** The menu's panel: a soft shadow, the panel fading from `tint` (the hero colour by default) into the panel colour. */
+export function menuPanel(ctx: UiContext, box: { x: number; y: number; w: number; h: number }, tint?: Rgba, alpha = 1): void {
+  const p = ctx.palette;
+  const { renderer } = ctx;
+  renderer.rect(box.x, box.y + 14, box.w, box.h, { fill: [0, 0, 0, 0.25 * alpha], radius: 22, softness: 30 });
+  renderer.rect(box.x, box.y, box.w, box.h, {
+    fill: withAlpha(mixRgba(tint ?? p.hero, p.panel, 0.55), alpha),
+    fillEnd: withAlpha(p.panel, alpha),
+    stroke: withAlpha(p.rim, alpha),
+    border: 1,
+    radius: 22,
+  });
+}
+
+/** A round button with a controller button's name in it ("B Close"): `skip` keeps it off the d-pad's path (the button does it). */
+export function drawKeyButton(
+  ctx: UiContext,
+  id: string,
+  box: { x: number; y: number; w: number; h: number },
+  key: string,
+  text: string,
+  accept: () => void,
+  skip = true,
+): void {
+  const p = ctx.palette;
+  const focused = ctx.focus.control({ id, ...box, accept, skip });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.rim, border: focused ? 3 : 1, radius: box.h / 2 });
+  const keyW = Math.max(28, ctx.text.measure(key, { size: 14, bold: true }) + 14);
+  ctx.renderer.rect(box.x + 12, box.y + box.h / 2 - 14, keyW, 28, { fill: p.select, radius: 6 });
+  label(ctx, key, box.x + 12 + keyW / 2, box.y + box.h / 2, { size: 14, bold: true }, p.ink, { align: 'center' });
+  label(ctx, text, box.x + 20 + keyW, box.y + box.h / 2, { size: 18, bold: true }, p.ink, { maxWidth: box.w - keyW - 32 });
 }
 
 /** A round button with a short text (the entry screen's other ways in). */
