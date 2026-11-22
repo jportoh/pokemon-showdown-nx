@@ -1,4 +1,5 @@
 import { COLORS, ICONS, PixelIconName, greyed } from '@core/gl/ui/pixel-icons';
+import { fillBold, needsFauxBold } from './faux-bold';
 import { GlRenderer, Texture } from './gl-renderer';
 import type { GlyphAtlas } from './glyph-atlas';
 
@@ -188,7 +189,9 @@ export class TextTextures {
     context.textBaseline = 'middle';
     context.fillStyle = '#ffffff';
     context.clearRect(0, 0, width, height);
-    context.fillText(text, TEXT_PAD * this.scale, height / 2);
+    // Bold where the font has none: the regular glyphs, thickened (faux-bold.ts).
+    if (style.bold && needsFauxBold(context, style.font ?? this.family)) fillBold(context, text, TEXT_PAD * this.scale, height / 2, style.size, this.scale);
+    else context.fillText(text, TEXT_PAD * this.scale, height / 2);
     const entry = this.place(key, width, height) ?? this.alone(key, width, height);
     this.cache.set(key, entry);
     const took = performance.now() - started;
