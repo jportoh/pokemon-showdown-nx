@@ -2,15 +2,27 @@ import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { AssetPreload } from '@core/gl/asset-preload';
 import { BattleSession } from '@features/battle/state/battle-session';
+import { ShowdownLogin } from '@features/connection/showdown-login';
+import { HomeMenu } from '@features/home/state/home-menu';
 
 export const routes: Routes = [
   {
     // The home menu, drawn on the stage (its own bar, no page frame).
     path: '',
     pathMatch: 'full',
-    // A launch shows the loading screen first, which makes every image ahead.
-    canActivate: [() => inject(AssetPreload).finished() || inject(Router).parseUrl('/loading')],
+    // A launch shows the loading screen first, which makes every image ahead; then the entry screen,
+    // unless a connection was asked for (Settings' automatic login) or offline chosen.
+    canActivate: [
+      () => inject(AssetPreload).finished() || inject(Router).parseUrl('/loading'),
+      () => inject(ShowdownLogin).state().mode !== null || inject(HomeMenu).offlineChosen() || inject(Router).parseUrl('/start'),
+    ],
     loadComponent: () => import('@features/home/components/home-scene/home-scene').then((c) => c.HomeScene),
+  },
+  {
+    // Who's playing, before the menu: a guest, a login, or offline.
+    path: 'start',
+    canActivate: [() => inject(AssetPreload).finished() || inject(Router).parseUrl('/loading')],
+    loadComponent: () => import('@features/home/components/start-scene/start-scene').then((c) => c.StartScene),
   },
   {
     path: 'loading',

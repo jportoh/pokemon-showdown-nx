@@ -39,7 +39,7 @@ texture changes, when the clip or view changes, and at `end()`. So:
   call; alternating text and sprites breaks it into many. Group similar things when you can.
 - **Untextured quads** (plain boxes) never break a batch: they join whatever batch is open.
 - `clip(box)` (scissor) and `setView(scale, x, y)` (the battle camera) flush the batch.
-- `begin(time, base, band)` draws the animated backdrop with its own shader; `beginPlain(color)`
+- `begin(time, base, band)` draws the backdrop (a grid of dots in the band colour) with its own shader; `beginPlain(color)`
   just clears.
 - `renderer.originX/originY` offsets everything drawn (screen shake).
 

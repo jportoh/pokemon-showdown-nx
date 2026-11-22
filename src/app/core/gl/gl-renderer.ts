@@ -78,7 +78,7 @@ void main() {
   gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
 
-/** The stage's background: diagonal bands drifting slowly, darker at the edges (Gen 3 menus). */
+/** The stage's background: a grid of small dots (the band colour, a darker base on light), darker at the edges. */
 const BACKDROP_FRAGMENT = `
 precision mediump float;
 uniform float u_time;
@@ -88,8 +88,13 @@ uniform vec2 u_res;
 varying vec2 v_pos;
 void main() {
   vec2 px = (v_pos * 0.5 + 0.5) * u_res;
-  float band = step(0.5, fract((px.x + px.y + u_time * 24.0) / 64.0));
-  vec3 color = mix(u_base, u_band, band * 0.55);
+  // A dot every 24 stage pixels, 1.3 px across its radius, its edge antialiased.
+  float dist = length(fract(px / 24.0) - 0.5) * 24.0;
+  float spot = clamp(1.8 - dist, 0.0, 1.0);
+  // On a light base the band colour is about as light: the dots are a darker shade of the base instead.
+  float light = step(0.45, dot(u_base, vec3(0.2126, 0.7152, 0.0722)));
+  vec3 ink = mix(u_band, u_base * 0.84, light);
+  vec3 color = mix(u_base, ink, spot * 0.9);
   // Dark edges on a dark base; barely any on a light one (they'd turn it grey).
   float strength = mix(0.35, 0.08, dot(u_base, vec3(0.2126, 0.7152, 0.0722)));
   float vignette = 1.0 - strength * length(v_pos * vec2(0.8, 1.0));
@@ -108,6 +113,10 @@ export interface Texture {
 
 export interface QuadStyle {
   fill: Rgba;
+  /** The fill at the right edge, blended across from `fill` at the left (a horizontal gradient). */
+  fillEnd?: Rgba;
+  /** Slants it into a parallelogram: each row moves right by -y * skew from the centre (its rounding and border stay true). */
+  skew?: number;
   stroke?: Rgba;
   radius?: number;
   border?: number;
@@ -397,6 +406,8 @@ export class GlRenderer {
     const border = style.border ?? 0;
     const softness = Math.max(1, style.softness ?? 1);
     const fill = style.fill;
+    const fillEnd = style.fillEnd ?? fill;
+    const skew = style.skew ?? 0;
     const stroke = style.stroke ?? NO_STROKE;
     const textured = (style.texture ? 1 : 0) + (style.additive ? 2 : 0);
     const uv = style.uv ?? texture.uv;
@@ -412,8 +423,9 @@ export class GlRenderer {
       const bottom = corner >= 2 ? 1 : 0;
       const lx = (right * 2 - 1) * halfW;
       const ly = (bottom * 2 - 1) * halfH;
-      data[i++] = cx + lx * cos - ly * sin;
-      data[i++] = cy + lx * sin + ly * cos;
+      const sx = lx - ly * skew;
+      data[i++] = cx + sx * cos - ly * sin;
+      data[i++] = cy + sx * sin + ly * cos;
       data[i++] = lx;
       data[i++] = ly;
       data[i++] = halfW;
@@ -421,10 +433,11 @@ export class GlRenderer {
       data[i++] = radius;
       data[i++] = border;
       data[i++] = softness;
-      data[i++] = fill[0];
-      data[i++] = fill[1];
-      data[i++] = fill[2];
-      data[i++] = fill[3];
+      const tint = right ? fillEnd : fill;
+      data[i++] = tint[0];
+      data[i++] = tint[1];
+      data[i++] = tint[2];
+      data[i++] = tint[3];
       data[i++] = stroke[0];
       data[i++] = stroke[1];
       data[i++] = stroke[2];

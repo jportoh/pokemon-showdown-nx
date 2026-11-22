@@ -16,7 +16,10 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { PLATFORM } from '@core/runtime/platform';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
+import { ShowdownLogin } from '@features/connection/showdown-login';
 import { BALL } from '@features/home/gl/logo-ball';
+import { HOME_LOGO, LogoPlace, entryLogo } from '@features/home/gl/logo-layout';
+import { HomeMenu } from '@features/home/state/home-menu';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
@@ -47,14 +50,14 @@ const INTRO_FADE_MS = 500;
 /** The title's arrival: a white flash, the Poké Ball dropping in with a bounce, the logo fading up. */
 const FLASH_MS = 600;
 const DROP_MS = 900;
-/** START pressed: a quick flash, then the logo flies to the menu's header. */
+/** START pressed: a quick flash, then the logo flies to where the next screen draws it. */
 const PRESS_FLASH_MS = 250;
 const OUTRO_MS = 700;
 
-/** The logo on the title, big, and where the home screen's header draws it (HomeScene.drawHeader). */
+/** The logo on the title, big; START sends it to the next screen's (see logo-layout). */
 const BIG = { ballX: (STAGE_W - 120) / 2, ballY: 96, ballScale: 5, textCy: 290, gap: 16, style: { size: 64, bold: true } };
-const HEADER = { ballX: 24, ballY: 14, ballScale: 2, textX: 84, textCy: 38, gap: 10, style: { size: 32, bold: true }, height: 76 };
 const PROMPT_CY = 420;
+const PROMPT_STYLE: TextStyle = { size: 26, bold: true };
 /** The edition: a red sticker, tilted, under SHOWDOWN!'s end; it pops in after the logo. */
 const EDITION = 'NINTENDO SWITCH EDITION';
 const EDITION_STYLE: TextStyle = { size: 17, bold: true };
@@ -83,8 +86,9 @@ const PARADE_SCALE = 2;
  * back (SpriteBitmaps.rush) and more textures are made per frame. Meanwhile the interface's sounds and
  * the menu theme are synthesized, a slice each frame (AudioEngine.prepare), and the battle music
  * (bundled) decodes (BattleMusic.preload, up to MUSIC_WAIT_MS). Until all of that is done a small ball
- * spins in a corner; then the menu theme starts and PRESS START blinks. Pressed, the logo flies to its
- * place in the home screen's header, the header's bar fading in behind it, and the menu takes over.
+ * spins in a corner; then the menu theme starts and PRESS START breathes in its capsule. Pressed, the
+ * logo flies to its place on the next screen (the menu's corner, or over the entry screen's box: the
+ * menu's when a connection was asked for or offline chosen) and that screen takes over.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -102,6 +106,12 @@ export class LoadingScene {
   private readonly keyboard = inject(CanvasKeyboard);
   private readonly connection = inject(ShowdownConnection);
   private readonly navigation = inject(KeyboardNavigation);
+  private readonly login = inject(ShowdownLogin);
+  private readonly menu = inject(HomeMenu);
+  /** Where the logo lands: chosen as START is pressed. */
+  private target: LogoPlace = HOME_LOGO;
+  /** The frames' text cache, to measure the entry screen's logo with. */
+  private lastText: TextTextures | null = null;
   /** The teambuilder's code is set up (see warmTeambuilder). */
   private teambuilderWarm = false;
   private teambuilderWarming = false;
@@ -171,6 +181,9 @@ export class LoadingScene {
     }
     if (!this.ready || now - this.titleAt < DROP_MS) return false;
     this.outroAt = now;
+    // The menu when it opens straight away (the home route's guard), the entry screen otherwise.
+    const toMenu = this.login.state().mode !== null || this.menu.offlineChosen();
+    this.target = toMenu ? HOME_LOGO : entryLogo((value, style) => this.lastText?.measure(value, style) ?? 0);
     return true;
   }
 
@@ -196,6 +209,7 @@ export class LoadingScene {
   private draw(frame: StageFrame): void {
     const { renderer, now } = frame;
     this.lastNow = now;
+    this.lastText = frame.text;
     if (!this.startedAt) {
       this.startedAt = now;
       this.titleAt = Infinity;
@@ -223,7 +237,6 @@ export class LoadingScene {
 
     renderer.begin(now / 1000, p.bg, p.rim);
     this.prime(frame);
-    if (fly > 0) renderer.rect(0, 0, STAGE_W, HEADER.height, { fill: withAlpha(p.bar, fly) });
     if (fade > 0) this.drawParade(frame, Math.min(1, age / 1200) * fade);
     this.drawBall(frame, age, fly);
     this.drawWordmark(frame, fly, Math.min(1, age / 500));
@@ -231,10 +244,7 @@ export class LoadingScene {
 
     if (fade > 0) {
       if (this.ready && age >= DROP_MS) {
-        // Blinks: on most of the time, off briefly (faster once pressed).
-        const period = this.outroAt ? 120 : 1100;
-        const on = (now % period) / period < (this.outroAt ? 0.5 : 0.72);
-        if (on) say(renderer, frame.text, PROMPT, STAGE_W / 2, PROMPT_CY, { size: 34, bold: true }, withAlpha(p.ink, fade));
+        this.drawPrompt(frame, Math.min(1, (age - DROP_MS) / 400) * fade);
       } else if (!this.ready) {
         this.drawSpinner(frame, Math.min(1, age / 400));
       }
@@ -273,8 +283,9 @@ export class LoadingScene {
   }
 
   /**
-   * The studio's card on white: its logo easing up and in, the name under it with a blue line growing
-   * beneath, then "presents"; all fading out to white, where the title's flash takes over.
+   * The studio's card on white: its logo, the name with a blue line beneath and "presents", all
+   * fading in together and out to white, where the title's flash takes over. Nothing moves: the
+   * loading runs flat out meanwhile, and a stutter shows far less in a fade than in motion.
    */
   private drawCard({ renderer, text, images, now }: StageFrame): void {
     if (!this.cardAt) return;
@@ -283,17 +294,11 @@ export class LoadingScene {
     const alpha = Math.min(1, age / INTRO_FADE_MS, out / INTRO_FADE_MS);
     if (alpha <= 0) return;
     const logo = images.image(STUDIO_LOGO, ImagePriority.Screen);
-    if (logo) {
-      const rise = (1 - easeInOut(Math.min(1, age / 700))) * 16;
-      renderer.rect((STAGE_W - STUDIO_LOGO_W) / 2, 120 + rise, STUDIO_LOGO_W, STUDIO_LOGO_H, { fill: withAlpha(WHITE, alpha), texture: logo });
-    }
+    if (logo) renderer.rect((STAGE_W - STUDIO_LOGO_W) / 2, 120, STUDIO_LOGO_W, STUDIO_LOGO_H, { fill: withAlpha(WHITE, alpha), texture: logo });
     const cy = 468;
     say(renderer, text, STUDIO, STAGE_W / 2, cy, { size: 40, bold: true }, withAlpha(STUDIO_INK, alpha));
-    const grow = easeInOut(Math.min(1, Math.max(0, (age - 300) / 900)));
-    const width = 420 * grow;
-    renderer.rect(STAGE_W / 2 - width / 2, cy + 32, width, 3, { fill: withAlpha(STUDIO_BLUE, alpha) });
-    const line = Math.min(alpha, Math.max(0, (age - 1000) / 400));
-    if (line > 0) say(renderer, text, STUDIO_LINE, STAGE_W / 2, cy + 64, { size: 22 }, withAlpha(STUDIO_INK, line * 0.6));
+    renderer.rect(STAGE_W / 2 - 210, cy + 32, 420, 3, { fill: withAlpha(STUDIO_BLUE, alpha) });
+    say(renderer, text, STUDIO_LINE, STAGE_W / 2, cy + 64, { size: 22 }, withAlpha(STUDIO_INK, alpha * 0.6));
   }
 
   /** NINTENDO SWITCH EDITION on a red sticker, tilted, under SHOWDOWN!'s end: it pops in after the logo. */
@@ -325,11 +330,11 @@ export class LoadingScene {
     const drop = Math.min(1, age / DROP_MS);
     const fall = (1 - bounceOut(drop)) * -(BIG.ballY + 140);
     const spin = (1 - drop) * Math.PI * 4;
-    const scale = lerp(BIG.ballScale, HEADER.ballScale, fly);
+    const scale = lerp(BIG.ballScale, this.target.ballScale, fly);
     const size = this.ball.width * scale;
-    const x = lerp(BIG.ballX, HEADER.ballX, fly);
+    const x = lerp(BIG.ballX, this.target.ballX, fly);
     const bob = drop >= 1 ? Math.sin(time * 3) * 6 * settle : 0;
-    const y = lerp(BIG.ballY + fall, HEADER.ballY, fly) + bob;
+    const y = lerp(BIG.ballY + fall, this.target.ballY, fly) + bob;
     renderer.rect(x, y, size, size, { fill: WHITE, texture: this.ball, angle: spin + Math.sin(time * 2.4) * 0.12 * settle });
   }
 
@@ -348,6 +353,39 @@ export class LoadingScene {
       renderer.rect(x + 36, PARADE_GROUND - 12, size - 72, 22, { fill: [0, 0, 0, 0.22 * alpha], texture: disc });
       renderer.rect(x, PARADE_GROUND - size + 8 - hop, size, size, { fill: [1, 1, 1, alpha], texture: sprite });
     });
+  }
+
+  /**
+   * PRESS START in a capsule, a Poké Ball at each end: it breathes (its glow and ink) while waiting, and
+   * flashes in the accent colour once pressed.
+   */
+  private drawPrompt({ renderer, text, now }: StageFrame, alpha: number): void {
+    if (alpha <= 0) return;
+    const p = this.theme.palette();
+    const label = text.get(PROMPT, PROMPT_STYLE);
+    if (!label) return;
+    const textW = label.width - TEXT_PAD * 2;
+    const w = textW + 140;
+    const h = 60;
+    const x = (STAGE_W - w) / 2;
+    const y = PROMPT_CY - h / 2;
+    const pressed = this.outroAt > 0;
+    const breath = pressed ? ((now - this.outroAt) % 120 < 60 ? 1 : 0) : 0.5 + 0.5 * Math.sin((now / 1000) * 3);
+    renderer.rect(x - 14, y - 10, w + 28, h + 20, { fill: withAlpha(p.accentText, (0.12 + 0.22 * breath) * alpha), radius: h, softness: 18 });
+    renderer.rect(x, y + 5, w, h, { fill: [0, 0, 0, 0.16 * alpha], radius: h / 2, softness: 8 });
+    renderer.rect(x, y, w, h, {
+      fill: withAlpha(pressed && breath > 0 ? p.accent : p.panel, alpha),
+      stroke: withAlpha(p.accentText, alpha),
+      border: 3,
+      radius: h / 2,
+    });
+    if (this.ball) {
+      const spin = Math.sin((now / 1000) * 2) * 0.25;
+      renderer.rect(x + 20, PROMPT_CY - 12, 24, 24, { fill: withAlpha(WHITE, alpha), texture: this.ball, angle: spin });
+      renderer.rect(x + w - 44, PROMPT_CY - 12, 24, 24, { fill: withAlpha(WHITE, alpha), texture: this.ball, angle: -spin });
+    }
+    const ink = pressed && breath > 0 ? WHITE : withAlpha(p.ink, 0.7 + 0.3 * breath);
+    renderer.image(label, (STAGE_W - textW) / 2 - TEXT_PAD, PROMPT_CY - label.height / 2, 1, withAlpha(ink, alpha));
   }
 
   /** While loading: a small spinning Poké Ball and "Loading…" where PRESS START comes. */
@@ -372,19 +410,19 @@ export class LoadingScene {
   private drawWordmark({ renderer, text }: StageFrame, fly: number, alpha: number): void {
     const landed = fly >= 1;
     const { logo, logoInk } = this.theme.palette();
-    const style: TextStyle = landed ? HEADER.style : BIG.style;
+    const style: TextStyle = landed ? this.target.style : BIG.style;
     const first = text.get('POKÉMON', style);
     const second = text.get('SHOWDOWN!', style);
     const bigFirst = text.get('POKÉMON', BIG.style);
-    const smallFirst = text.get('POKÉMON', HEADER.style);
+    const smallFirst = text.get('POKÉMON', this.target.style);
     if (!first || !second || !bigFirst || !smallFirst) return;
     const width = (texture: Texture) => texture.width - TEXT_PAD * 2;
     const bigSecond = text.measure('SHOWDOWN!', BIG.style);
     const bigLeft = (STAGE_W - (width(bigFirst) + BIG.gap + bigSecond)) / 2;
     const from = [bigLeft, bigLeft + width(bigFirst) + BIG.gap];
-    const to = [HEADER.textX, HEADER.textX + width(smallFirst) + HEADER.gap];
-    const scale = landed ? 1 : lerp(1, HEADER.style.size / BIG.style.size, fly);
-    const cy = lerp(BIG.textCy, HEADER.textCy, fly);
+    const to = [this.target.textX, this.target.textX + width(smallFirst) + this.target.gap];
+    const scale = landed ? 1 : lerp(1, (this.target.style.size ?? BIG.style.size) / BIG.style.size, fly);
+    const cy = lerp(BIG.textCy, this.target.textCy, fly);
     [first, second].forEach((texture, i) => {
       const x = lerp(from[i], to[i], fly);
       renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, withAlpha(i === 0 ? logoInk : logo, alpha));
