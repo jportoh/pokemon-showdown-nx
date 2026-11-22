@@ -24,4 +24,10 @@ export interface ChatRoom {
   /** Room ID on the server (what `/join` takes). */
   id: string;
   title: string;
+  /** The Pokémon drawn on its card (a bundled sprite's name). */
+  art: string;
+  /** What it's about, until the server's own description arrives. */
+  desc: string;
+  /** Its language, for the rooms not in English ("ES"). */
+  lang?: string;
 }
