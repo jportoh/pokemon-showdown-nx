@@ -1,10 +1,11 @@
 import { inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { withAlpha } from '@core/gl/gl-renderer';
+import { mixRgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, UiContext, button, label, modal, paragraph, pill, retroBox, textField } from '@core/gl/ui/retro-kit';
+import { drawChip, drawField, drawRoundButton, drawSlantedButton, menuModal, menuPanel } from '@core/gl/ui/menu-kit';
+import { Box, UiContext, label, paragraph, pill } from '@core/gl/ui/retro-kit';
 import { Challenge, ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { packTeam } from '@features/teambuilder/data/packed-team';
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
@@ -21,7 +22,6 @@ const SPRITE = 64;
 const SPRITE_STEP = 74;
 const FORM_BOX: Box = { x: 248, y: 234, w: 784, h: 296 };
 export const POPUP_CARD_ID = 'popup-card';
-const WHITE = [1, 1, 1, 1] as const;
 
 /** What the Battle page shows a challenge with. */
 export interface PopupModel {
@@ -51,6 +51,8 @@ export class ChallengePopupView {
   private teamAt = 0;
   /** "Joining battle…" was shown last frame: if it goes without a battle, the focus goes back to Accept. */
   private wasJoining = false;
+  /** Accept's eased focus. */
+  private acceptFocus = 0;
 
   constructor(private readonly focus: CanvasFocus) {}
 
@@ -88,16 +90,15 @@ export class ChallengePopupView {
     const x = PANEL.x + (1280 - PANEL.x) * (1 - backOut(t));
     const y = PANEL.y;
     const w = PANEL.w;
-    retroBox(ctx, { ...PANEL, x });
-    renderer.rect(x + 3, y + 3, w - 6, BAND_H, { fill: p.accent, radius: 11 });
-    renderer.rect(x + 3, y + BAND_H - 12, w - 6, 15, { fill: p.accent });
-    label(ctx, 'CHALLENGE', x + 24, y + 3 + BAND_H / 2, { size: 18, bold: true }, WHITE);
+    // The menu's panel, lit with the accent: a challenge is the page's news.
+    menuPanel(ctx, { ...PANEL, x }, p.accent);
+    drawChip(ctx, { text: 'CHALLENGE', tone: 'alert' }, x + 24, y + 3 + BAND_H / 2, 1, 30);
     const formatLabel = PLAYABLE_FORMATS.find((format) => format.id === challenge.format)?.label ?? challenge.formatName;
-    label(ctx, formatLabel, x + w - 24, y + 3 + BAND_H / 2, { size: 15, bold: true }, WHITE, { align: 'right', maxWidth: 300 });
+    label(ctx, formatLabel, x + w - 24, y + 3 + BAND_H / 2, { size: 15, bold: true }, p.muted, { align: 'right', maxWidth: 300 });
 
     const left = x + 28;
     const inner = w - 56;
-    label(ctx, challenge.from, left, y + 112, { size: 34, bold: true }, p.accentText, {
+    label(ctx, challenge.from, left, y + 112, { size: 36, bold: true }, p.ink, {
       maxWidth: inner,
     });
     // Accepting failed (a team the server refused): why, in place of the invitation; L/R pick another team.
@@ -111,12 +112,7 @@ export class ChallengePopupView {
 
     // What it's played with.
     const teamBox = { x: left, y: y + 204, w: inner, h: 160 };
-    renderer.rect(teamBox.x, teamBox.y, teamBox.w, teamBox.h, {
-      fill: p.bg,
-      stroke: p.rim,
-      radius: 12,
-      border: 2,
-    });
+    renderer.rect(teamBox.x, teamBox.y, teamBox.w, teamBox.h, { fill: mixRgba(p.panel, p.rim, 0.6), radius: 16 });
     if (!challenge.needsTeam) {
       label(ctx, 'Random teams', teamBox.x + 20, teamBox.y + 40, { size: 22, bold: true }, p.ink);
       label(ctx, 'Showdown hands out the teams.', teamBox.x + 20, teamBox.y + 76, { size: 18 }, p.muted);
@@ -139,18 +135,14 @@ export class ChallengePopupView {
       return;
     }
     if (canAccept) {
-      button(ctx, 'popup-accept', { x: left, y: buttonsY, w: inner, h: 64 }, 'Accept', {
-        primary: true,
-        size: 26,
-        accept: () => this.challenges.accept(challenge, team ? packTeam(team.sets) : null),
-      });
+      const box = { x: left + 6, y: buttonsY, w: inner - 12, h: 68 };
+      const focused = ctx.focus.control({ id: 'popup-accept', ...box, accept: () => this.challenges.accept(challenge, team ? packTeam(team.sets) : null) });
+      this.acceptFocus += ((focused ? 1 : 0) - this.acceptFocus) * 0.25;
+      drawSlantedButton(ctx, { ...box, f: this.acceptFocus, alpha: 1, title: 'ACCEPT', titleSize: 30, plate: p.accent, primary: true });
     }
     const half = (inner - 16) / 2;
-    button(ctx, 'popup-reject', { x: left, y: buttonsY + 80, w: half, h: 52 }, 'Reject', {
-      size: 22,
-      accept: () => this.challenges.reject(challenge),
-    });
-    button(ctx, POPUP_CARD_ID, { x: left + half + 16, y: buttonsY + 80, w: half, h: 52 }, 'Trainer Card', { size: 20, accept: model.viewCard });
+    drawRoundButton(ctx, 'popup-reject', { x: left, y: buttonsY + 84, w: half, h: 52 }, 'Reject', () => this.challenges.reject(challenge));
+    drawRoundButton(ctx, POPUP_CARD_ID, { x: left + half + 16, y: buttonsY + 84, w: half, h: 52 }, 'Trainer Card', model.viewCard);
     const width = pill(ctx, 'B', left, y + PANEL.h - 30, 24);
     label(ctx, 'Answer later', left + width + 8, y + PANEL.h - 30, { size: 16 }, p.muted);
   }
@@ -229,6 +221,8 @@ export class ChallengeFormView {
   private readonly keyboard = inject(CanvasKeyboard);
   private name = '';
   private error: string | null = null;
+  /** Send's eased focus. */
+  private sendFocus = 0;
 
   constructor(private readonly focus: CanvasFocus) {}
 
@@ -241,17 +235,19 @@ export class ChallengeFormView {
 
   draw(ctx: UiContext, format: PlayableFormat, team: Team | null, close: () => void): void {
     const p = ctx.palette;
-    const x = FORM_BOX.x + 29;
+    const x = FORM_BOX.x + 32;
     const y = FORM_BOX.y;
-    modal(ctx, FORM_BOX);
-    label(ctx, 'Challenge a player', x, y + 48, { size: 36, bold: true }, p.ink, { maxWidth: 720 });
+    menuModal(ctx, FORM_BOX);
+    label(ctx, 'CHALLENGE A PLAYER', x, y + 46, { size: 32, bold: true }, p.ink, { maxWidth: 720 });
     const intro = format.randomTeams
       ? `Challenge a player on Showdown to ${format.label}.`
       : team
         ? `Challenge a player to ${format.label} with ${team.name}.`
         : `Pick a team for ${format.label} first.`;
-    label(ctx, this.error ?? intro, x, y + 116, { size: 18, bold: this.error !== null }, this.error ? p.danger : p.muted, { maxWidth: 720 });
-    textField(ctx, 'form-name', { x, y: y + 148, w: 720, h: 44 }, this.name, {
+    label(ctx, this.error ?? intro, x, y + 90, { size: 18, bold: this.error !== null }, this.error ? p.danger : p.muted, { maxWidth: 720 });
+    drawField(ctx, 'form-name', { x, y: y + 140, w: 720, h: 56 }, {
+      label: 'PLAYER',
+      value: this.name,
       placeholder: "Player's name",
       edit: () =>
         this.keyboard.open({
@@ -266,8 +262,11 @@ export class ChallengeFormView {
           },
         }),
     });
-    button(ctx, 'form-send', { x, y: y + 208, w: 352, h: 44 }, 'Send challenge', { primary: true, size: 22, accept: () => this.submit(format, team, close) });
-    button(ctx, 'form-cancel', { x: x + 368, y: y + 208, w: 352, h: 44 }, 'Cancel', { size: 22, accept: close });
+    const send = { x: x + 6, y: y + 214, w: 440, h: 60 };
+    const focused = ctx.focus.control({ id: 'form-send', ...send, accept: () => this.submit(format, team, close) });
+    this.sendFocus += ((focused ? 1 : 0) - this.sendFocus) * 0.25;
+    drawSlantedButton(ctx, { ...send, f: this.sendFocus, alpha: 1, title: 'SEND CHALLENGE', titleSize: 24, plate: p.accent, primary: true });
+    drawRoundButton(ctx, 'form-cancel', { x: x + 472, y: y + 218, w: 248, h: 52 }, 'Cancel', close);
   }
 
   private submit(format: PlayableFormat, team: Team | null, close: () => void): void {

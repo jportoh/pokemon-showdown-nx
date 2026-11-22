@@ -1,6 +1,7 @@
-import { Texture, withAlpha } from '@core/gl/gl-renderer';
+import { Texture, mixRgba, withAlpha } from '@core/gl/gl-renderer';
+import { battlePlate } from '@features/play/gl/format-carousel';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
-import { Box, UiContext, focusRing, label, pill } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CarouselMotion, drawCarouselCard, sideFade } from '@features/play/gl/carousel';
 import { typePills } from '@features/teambuilder/gl/tb-draw';
 import { MAX_TEAM_SIZE } from '@features/teambuilder/models/team';
@@ -105,11 +106,14 @@ export class TeamShowcaseView {
   private frame(ctx: UiContext, middle: boolean, focused: boolean): void {
     const p = ctx.palette;
     const box = TEAM_CARD;
+    // The menu's panel: Battle's colour fading into the panel, a soft shadow under it.
+    ctx.renderer.rect(box.x, box.y + 12, box.w, box.h, { fill: [0, 0, 0, middle ? 0.2 : 0.1], radius: 22, softness: 30 });
     ctx.renderer.rect(box.x, box.y, box.w, box.h, {
-      fill: focused ? p.select : p.panel,
-      stroke: middle ? p.accentText : p.outline,
-      radius: 16,
-      border: middle ? 3 : 2,
+      fill: mixRgba(battlePlate(p.appearance), focused ? p.select : p.panel, 0.4),
+      fillEnd: focused ? p.select : p.panel,
+      stroke: focused ? p.accentText : p.rim,
+      radius: 22,
+      border: focused ? 4 : 1,
     });
   }
 
@@ -147,7 +151,7 @@ export class TeamShowcaseView {
       const member = team.members[k];
       if (member) this.drawMember(ctx, tile, member, middle ? (focused ? 10 : 3) : 0, k);
     }
-    if (focused) focusRing(ctx, box, 16);
+    if (focused) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, border: 4, radius: 22 });
   }
 
   /** A Pokémon's column; `hop` px high at most, in a wave along the team. */
@@ -219,7 +223,7 @@ export class TeamShowcaseView {
     this.frame(ctx, true, focused);
     label(ctx, `No teams for ${model.formatLabel}`, box.x + box.w / 2, box.y + box.h / 2 - 24, { size: 28, bold: true }, p.ink, { align: 'center', maxWidth: box.w - 60 });
     label(ctx, 'Press A to build one in the Teambuilder', box.x + box.w / 2, box.y + box.h / 2 + 22, { size: 18 }, p.muted, { align: 'center' });
-    if (focused) focusRing(ctx, box, 16);
+    if (focused) ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, border: 4, radius: 22 });
   }
 
   /** L and R in the gaps between the cards (a click turns it too). */

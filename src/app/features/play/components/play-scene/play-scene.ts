@@ -3,13 +3,14 @@ import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { speciesInfo } from '@core/dex/species';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
-import { Texture, withAlpha } from '@core/gl/gl-renderer';
+import { Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { pixelTexture } from '@core/gl/gl-textures';
+import { iconTexture, pixelTexture } from '@core/gl/gl-textures';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { OptionPickerView, PickerOption } from '@core/gl/ui/option-picker';
+import { drawGround, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { Box, UiContext, button, focusRing, label, modal, paragraph } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, button, label, modal, paragraph } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
@@ -29,6 +30,8 @@ import { MAX_TEAM_SIZE } from '@features/teambuilder/models/team';
 import { inGridOrder } from '@features/teambuilder/gl/team-grid-view';
 import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
+import { avatarUrl } from '@features/trainer-card/data/avatar-url';
+import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
@@ -46,12 +49,11 @@ const FORMAT_OPTIONS: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) =>
 }));
 
 /** The actions along the foot: who's playing on the left, BATTLE! in the middle, challenges on the right. */
-const BATTLE_BOX: Box = { x: 400, y: 592, w: 480, h: 108 };
-const CHALLENGE_BOX: Box = { x: 904, y: 606, w: 344, h: 80 };
-const PLAYER_X = 32;
-const PLAYER_W = 348;
+const BATTLE_BOX: Box = { x: 412, y: 590, w: 470, h: 108 };
+const CHALLENGE_BOX: Box = { x: 906, y: 600, w: 326, h: 92 };
+/** Who's playing: a name plate as the menu's, left of BATTLE!. */
+const PLATE_BOX: Box = { x: 32, y: 590, w: 356, h: 108 };
 const LEAVE_MS = 180;
-const WHITE = [1, 1, 1, 1] as const;
 
 /**
  * The Battle page, drawn on the stage as a showcase in three rows: the formats as a carousel that
@@ -226,6 +228,10 @@ export class PlayScene {
   private lastLayer: Layer = 'page';
   /** Where the focus goes when the page shows again. */
   private returnTo: PageControl = 'battle';
+  /** BATTLE!'s and the challenge button's eased focus. */
+  private battleFocus = 0;
+  private challengeFocus = 0;
+  private chatIcon: Texture | null = null;
   private leaving: { at: number; path: string } | null = null;
   /** When the search on the format's card began (the clock on its back). */
   private searchSince = 0;
@@ -248,8 +254,8 @@ export class PlayScene {
     inject(DestroyRef).onDestroy(() => {
       hide();
       release.forEach((fn) => fn());
-      const ball = this.ball;
-      if (ball) this.stage.whenReady(({ renderer }) => renderer.deleteTexture(ball));
+      const textures = [this.ball, this.chatIcon];
+      this.stage.whenReady(({ renderer }) => textures.forEach((texture) => texture && renderer.deleteTexture(texture)));
     });
   }
 
@@ -422,7 +428,8 @@ export class PlayScene {
 
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
-    this.bar.draw(ctx, { title: 'Battle', icon: 'battle', back: () => this.onAction('back') });
+    drawGround(ctx, 1);
+    this.bar.drawHeader(ctx, { title: 'BATTLE', icon: 'battle', back: () => this.onAction('back') });
     this.drawFormats(ctx);
     this.drawTeams(ctx);
     this.drawPlayer(ctx);
@@ -487,49 +494,62 @@ export class PlayScene {
     });
   }
 
-  /** Who's playing (or why nobody is yet), a guest's New name, and the page's hint or problem. */
+  /** Who's playing (or why nobody is yet) on a name plate with their trainer, a guest's New name, and the page's hint or problem. */
   private drawPlayer(ctx: UiContext): void {
     const p = ctx.palette;
-    const top = BATTLE_BOX.y;
+    const { renderer } = ctx;
+    const box = PLATE_BOX;
+    renderer.rect(box.x, box.y + 10, box.w, box.h, { fill: [0, 0, 0, 0.2], radius: 16, softness: 18 });
+    renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: p.rim, border: 1, radius: 16 });
     const name = this.name();
+    const avatar = name ? ctx.images.pixelArt(avatarUrl(this.login.state().avatar)) : null;
+    // The trainer, in a little window at the left.
+    renderer.rect(box.x + 12, box.y + 12, 60, 60, { fill: p.select, radius: 12 });
+    if (avatar) {
+      renderer.clip({ x: box.x + 12, y: box.y + 12, w: 60, h: 60 });
+      renderer.rect(box.x + 4, box.y + 6, 76, 76, { fill: [1, 1, 1, 1], texture: avatar });
+      renderer.clip(null);
+    } else if (this.ball) {
+      renderer.image(this.ball, box.x + 30, box.y + 30, 1, [1, 1, 1, 0.5]);
+    }
+    const x = box.x + 86;
+    const width = box.w - 98;
     if (name) {
-      label(ctx, 'Playing as', PLAYER_X, top + 14, { size: 16 }, p.muted);
-      label(ctx, name, PLAYER_X, top + 42, { size: 24, bold: true }, p.ink, {
-        maxWidth: this.canRename() ? 220 : PLAYER_W,
-      });
+      label(ctx, name, x, box.y + 30, { size: 22, bold: true }, p.ink, { maxWidth: this.canRename() ? width - 110 : width });
+      label(ctx, 'Playing as', x, box.y + 56, { size: 14 }, p.muted);
     } else {
-      label(ctx, this.statusText(), PLAYER_X, top + 28, { size: 18, bold: true }, p.muted, {
-        maxWidth: this.canRename() ? 220 : PLAYER_W,
-      });
+      label(ctx, this.statusText(), x, box.y + 38, { size: 17, bold: true }, p.muted, { maxWidth: this.canRename() ? width - 110 : width });
     }
     // A guest's name is random: another one, for when it's taken or blocked.
-    if (this.canRename()) button(ctx, 'new-name', { x: PLAYER_X + PLAYER_W - 110, y: top + 10, w: 110, h: 32 }, 'New name', { size: 16, accept: () => this.login.newName() });
+    if (this.canRename()) button(ctx, 'new-name', { x: box.x + box.w - 120, y: box.y + 12, w: 108, h: 32 }, 'New name', { size: 16, accept: () => this.login.newName() });
     const problem = this.problem();
-    paragraph(ctx, this.hintText(), PLAYER_X, top + 62, PLAYER_W, 20, { size: 14, bold: !!problem }, problem ? p.danger : p.muted, 2);
+    paragraph(ctx, this.hintText(), box.x + 14, box.y + 84, box.w - 28, 18, { size: 13, bold: !!problem }, problem ? p.danger : p.muted, 1);
   }
 
-  /** BATTLE!, big, with what it does now under it; CANCEL while searching. */
+  /** BATTLE!, the page's main action as the menu's slanted accent button, with what it does now on its chip; CANCEL while searching. */
   private drawBattle(ctx: UiContext): void {
-    const p = ctx.palette;
     const box = BATTLE_BOX;
     const enabled = this.canBattle();
     const focused = enabled && ctx.focus.control({ id: 'battle', ...box, accept: () => this.battle() });
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, {
-      fill: enabled ? p.accent : p.rim,
-      stroke: enabled ? p.bar : p.outline,
-      radius: 8,
-      border: 2,
+    this.battleFocus += ((focused ? 1 : 0) - this.battleFocus) * 0.25;
+    const lead = this.showcaseTeams()[this.teamIndex()]?.members[0]?.sprite;
+    drawSlantedButton(ctx, {
+      ...box,
+      f: this.battleFocus,
+      alpha: enabled ? 1 : 0.6,
+      title: this.searching() ? 'CANCEL' : 'BATTLE!',
+      titleSize: 42,
+      titleY: 34,
+      chipBottom: 26,
+      plate: enabled ? ctx.palette.accent : ctx.palette.rim,
+      primary: enabled,
+      faded: !enabled,
+      chips: [{ text: this.battleLine(), tone: 'muted' }],
+      art: lead && !this.randomTeams() ? (b, alpha, grow) => drawSprite(ctx, lead, b.x + b.w - 30 - 112 * grow, b.y + b.h - 112 * grow + 14, 112 * grow, alpha * 0.7) : undefined,
     });
-    const ink = enabled ? WHITE : p.muted;
-    label(ctx, this.searching() ? 'CANCEL' : 'BATTLE!', box.x + box.w / 2, box.y + 42, { size: 48, bold: true }, ink, { align: 'center' });
-    label(ctx, this.battleLine(), box.x + box.w / 2, box.y + 84, { size: 16 }, ink, {
-      align: 'center',
-      maxWidth: box.w - 24,
-    });
-    if (focused) focusRing(ctx, box, 8);
   }
 
-  /** Challenge a player, Cancel challenge or Answer challenges, with a line under it. */
+  /** Challenge a player, Cancel challenge or Answer challenges, as a slanted button (in the accent while waiting). */
   private drawChallenge(ctx: UiContext): void {
     const p = ctx.palette;
     const box = CHALLENGE_BOX;
@@ -537,26 +557,24 @@ export class PlayScene {
     const postponed = this.postponedCount();
     const waiting = outgoing !== null || postponed > 0;
     const enabled = waiting || this.name() !== null;
-    const title = outgoing ? 'Cancel challenge' : postponed > 0 ? `Answer challenge${postponed > 1 ? `s (${postponed})` : ''}` : 'Challenge a player';
-    const line = outgoing ? `to ${outgoing.to}` : postponed > 0 ? `${this.challenges.incoming()[0]?.from ?? 'A player'} is waiting` : 'by name';
+    const title = outgoing ? 'CANCEL CHALLENGE' : postponed > 0 ? `ANSWER${postponed > 1 ? ` (${postponed})` : ''}` : 'CHALLENGE';
+    const line = outgoing ? `to ${outgoing.to}` : postponed > 0 ? `${this.challenges.incoming()[0]?.from ?? 'A player'} is waiting` : 'A player, by name';
     const focused = enabled && ctx.focus.control({ id: 'challenge', ...box, accept: () => this.challengeAction() });
-    const fill = !enabled ? p.rim : waiting ? p.accent : focused ? p.select : p.button;
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, {
-      fill,
-      stroke: waiting ? p.bar : p.outline,
-      radius: 8,
-      border: 2,
+    this.challengeFocus += ((focused ? 1 : 0) - this.challengeFocus) * 0.25;
+    this.chatIcon ??= iconTexture(ctx.renderer, 'chats', false);
+    const plate = HOME_MENU_ITEMS.find((item) => item.id === 'chats')?.plate[p.appearance];
+    drawSlantedButton(ctx, {
+      ...box,
+      f: this.challengeFocus,
+      alpha: enabled ? 1 : 0.6,
+      title,
+      titleSize: 22,
+      icon: waiting ? null : this.chatIcon,
+      plate: plate ? rgba(plate) : p.rim,
+      primary: waiting,
+      faded: !enabled,
+      chips: [{ text: line, tone: 'muted' }],
     });
-    const ink = !enabled ? p.muted : waiting ? WHITE : p.ink;
-    label(ctx, title, box.x + box.w / 2, box.y + 30, { size: 22, bold: true }, ink, {
-      align: 'center',
-      maxWidth: box.w - 24,
-    });
-    label(ctx, line, box.x + box.w / 2, box.y + 58, { size: 15 }, waiting ? WHITE : p.muted, {
-      align: 'center',
-      maxWidth: box.w - 24,
-    });
-    if (focused) focusRing(ctx, box, 8);
   }
 }
 
