@@ -67,11 +67,40 @@ const TARGETS = {
     entry: () => ({ entryPoints: [path.join(root, 'native/poc/main.ts')] }),
     files: () => [['xy-trainer.ogg', path.join(root, 'public/audio/battle/xy-trainer.ogg')]],
   },
+  // Can the app draw at 1080p when docked? (native/poc/res-probe.ts)
+  resProbe: {
+    output: 'psb-res-probe.nro',
+    title: 'PSB Resolution Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000001n,
+    entry: () => ({ entryPoints: [path.join(root, 'native/poc/res-probe.ts')] }),
+    files: () => [],
+  },
 };
 const AUTHOR = 'pokemon-showdown-brewser';
 
+/** Which feature crashes the app on sleep and wake? `--sleep-probe=ws|wsplain|audio|pad` (native/poc/sleep-probe.ts). */
+function sleepProbe(mode) {
+  if (!['ws', 'wsplain', 'audio', 'pad'].includes(mode)) throw new Error(`Unknown sleep probe "${mode}" (ws, wsplain, audio, pad)`);
+  return {
+    output: `psb-sleep-${mode}.nro`,
+    title: `PSB Sleep Probe (${mode})`,
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000002n,
+    entry: () => ({ entryPoints: [path.join(root, 'native/poc/sleep-probe.ts')], define: { __SLEEP_MODE__: JSON.stringify(mode) } }),
+    files: () => [],
+  };
+}
+
 async function main() {
-  const target = process.argv.includes('--probe') ? TARGETS.probe : TARGETS.app;
+  const sleepMode = option('sleep-probe');
+  const target = sleepMode
+    ? sleepProbe(sleepMode)
+    : process.argv.includes('--res-probe')
+      ? TARGETS.resProbe
+      : process.argv.includes('--probe')
+        ? TARGETS.probe
+        : TARGETS.app;
   const engineFile = option('engine-file');
   const engineName = engineFile ? 'file' : (option('engine') ?? DEFAULT_ENGINE);
   if (!engineFile && !ENGINES[engineName]) throw new Error(`Unknown engine "${engineName}" (${Object.keys(ENGINES).join(', ')})`);
@@ -321,7 +350,7 @@ async function loadEngine(ENGINE) {
 async function bundle(entry, define = {}) {
   const result = await esbuild.build({
     ...entry,
-    define,
+    define: { ...entry.define, ...define },
     bundle: true,
     format: 'esm',
     target: 'es2022',

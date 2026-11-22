@@ -162,3 +162,24 @@ or once everything else has loaded, and the loading screen waits for it.
   for leaving. +, X and Y are page buttons on the native build only (`buttonPlus`, `buttonX`,
   `buttonY` in console-keys; nx.js numbers them Y=2, X=3, +=9). On Brewser they stay the browser's.
   + is OK on the on-screen keyboard, as on the console's own keyboard; Brewser keeps ZR.
+
+## Known limitations (tests x14–x15, 2026-11-22)
+
+- **No 1080p when docked.** nx.js makes the screen a 1280×720 canvas, and its GL surface stays
+  1280×720 even when the screen is set to 1920×1080 before `getContext` (`native/poc/res-probe.ts`:
+  `drawingBuffer 1280x720`). Docked, the console scales that 720p image to the TV. Real 1080p needs a
+  change in the engine's C code.
+- **Sleep closes the app.** If a socket is open when the console sleeps, the engine dies when it
+  wakes, before any JavaScript runs again. The app always has its Showdown WebSocket open, so it
+  closes on wake. `native/poc/sleep-probe.ts` isolates the cause: with
+  `node scripts/build-nro.mjs --sleep-probe=ws|wsplain|audio|pad`, the WebSocket builds (`wss://` and plain
+  `ws://`) are killed on resume, while audio, controller polling and plain rendering survive. In the
+  full app the crash reports vary:
+  - `2345-0008`: libnx `NotInitialized` in the engine's controller polling (HID shared memory gone).
+  - `2168-0002`: a data abort in native code.
+
+  The engine gives no notice before sleeping, so the app can't close its socket first. Brewser, built
+  on its own engine, survives. Until the engine is fixed: leave the app with HOME before putting the
+  console to sleep. **Pending:** report it to natureglass/nx.js_extended, with the minimal repro
+  (the `ws` sleep probe), the results by feature and the crash reports, and ask for a "going to
+  sleep" event as an alternative: with one, the app could close its socket and reconnect on wake.
