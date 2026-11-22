@@ -1,9 +1,10 @@
 import { Service, effect, inject, signal } from '@angular/core';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
-import { Note, noteSteps, notesLength, renderNote } from '@core/audio/chip-synth';
-import { MENU_THEME_SECONDS, menuThemeNotes } from '@core/audio/menu-theme';
-import { BattleTheme, battleThemeNotes, battleThemeSeconds } from '@core/audio/battle-themes';
-import { DUCKING_SOUNDS, SOUND_FILES, SOUNDS, SoundId } from '@core/audio/sfx';
+import { BattleTheme } from '@core/audio/battle-themes';
+import { RENDERED_AUDIO_DIR, decodeRawAudio } from '@core/audio/raw-audio';
+import { DUCKING_SOUNDS, SOUND_FILES, SoundId } from '@core/audio/sfx';
+import { BATTLE_THEMES, SYNTH_PIECES, SynthPiece, pieceSeconds, renderPiece } from '@core/audio/synth-pieces';
+import { PLATFORM } from '@core/runtime/platform';
 import { AppSettings } from '@core/settings/app-settings';
 
 /** Time per frame for what's synthesized after the loading screen (4 ms left the idle menu at the edge of its frame on the console, test-w6). */
@@ -86,7 +87,18 @@ export class AudioEngine {
       if (context.state === 'suspended') void context.resume().catch(() => undefined);
     };
     for (const type of ['keydown', 'pointerdown', 'touchstart', 'touchend', 'click']) window.addEventListener(type, unlock, true);
-    this.job = this.synthesize(context);
+    if (PLATFORM !== 'native') {
+      this.job = this.synthesize(context);
+      return;
+    }
+    void this.loadRendered(context).then((loaded) => {
+      if (!loaded) {
+        this.job = this.synthesize(context);
+        return;
+      }
+      this.ready.set(true);
+      this.loadFiles();
+    });
   }
 
   /**
@@ -95,7 +107,8 @@ export class AudioEngine {
    */
   prepare(budgetMs: number): boolean {
     const job = this.job;
-    if (!job || this.ready()) return true;
+    if (this.ready()) return true;
+    if (!job) return false; // The native .nro's pieces, still being read.
     const until = performance.now() + budgetMs;
     while (performance.now() < until) {
       const step = job.next();
@@ -228,10 +241,12 @@ export class AudioEngine {
     }
   }
 
-  /** Decodes audio bytes (the console's engine may answer through the callbacks, the promise, or both). */
+  /** Decodes audio bytes (the console's engine may answer through the callbacks, the promise, or both), or reads raw audio. */
   decode(bytes: ArrayBuffer): Promise<AudioBuffer | null> {
     const context = this.context;
     if (!context) return Promise.resolve(null);
+    const raw = decodeRawAudio(bytes);
+    if (raw) return Promise.resolve(this.rawBuffer(context, raw));
     return new Promise((resolve) => {
       let settled = false;
       const done = (buffer: AudioBuffer | null) => {
@@ -265,8 +280,14 @@ export class AudioEngine {
       } catch {
         continue;
       }
-      // Each sample, the average of the `step` samples of every channel it stands for.
       const out = reduced.getChannelData(0);
+      // Already mono at the rate kept (the native .nro's engine decodes the bundled tracks as they are):
+      // a straight copy. The loop below took about a second per track on the console's main thread.
+      if (step === 1 && channels.length === 1) {
+        out.set(channels[0].subarray(0, out.length));
+        return reduced;
+      }
+      // Each sample, the average of the `step` samples of every channel it stands for.
       const scale = 1 / (step * channels.length);
       for (let i = 0; i < out.length; i++) {
         let sum = 0;
@@ -278,36 +299,52 @@ export class AudioEngine {
     return buffer;
   }
 
-  /** The synthesis a step at a time (a sound, or a slice of a note): the sounds first, then the menu theme straight into its buffer. */
+  /** The synthesis a step at a time (a sound, or a slice of a note): the sounds first, then the menu theme, then the battle themes. */
   private *synthesize(context: AudioContext): Iterator<'ready' | void> {
     const rate = context.sampleRate;
-    for (const [id, notes] of Object.entries(SOUNDS) as [SoundId, readonly Note[]][]) {
-      const buffer = context.createBuffer(1, Math.ceil(notesLength(notes) * rate), rate);
-      const samples = buffer.getChannelData(0);
-      for (const note of notes) renderNote(samples, rate, note);
-      this.sounds.set(id, buffer);
-      yield;
+    for (const piece of SYNTH_PIECES) {
+      const buffer = context.createBuffer(1, Math.ceil(pieceSeconds(piece) * rate), rate);
+      yield* renderPiece(piece, buffer.getChannelData(0), rate);
+      this.keep(piece, buffer);
+      yield piece === 'menu' ? 'ready' : undefined;
     }
-    const theme = context.createBuffer(1, Math.ceil(MENU_THEME_SECONDS * rate), rate);
-    const samples = theme.getChannelData(0);
-    let seed = 1;
-    for (const note of menuThemeNotes()) {
-      yield* noteSteps(samples, rate, note, seed++);
-      yield;
+  }
+
+  /**
+   * The native .nro's pieces, synthesized by its build (raw-audio): read, not synthesized, which
+   * took seconds of the console's CPU while loading. False if any is missing (then they're synthesized).
+   */
+  private async loadRendered(context: AudioContext): Promise<boolean> {
+    const pieces = await Promise.all(
+      SYNTH_PIECES.map(async (piece) => {
+        const response = await fetch(`${RENDERED_AUDIO_DIR}${piece}.pcm`);
+        const raw = response.ok ? decodeRawAudio(await response.arrayBuffer()) : null;
+        return raw && ([piece, raw] as const);
+      }),
+    ).catch(() => []);
+    if (pieces.length !== SYNTH_PIECES.length || pieces.some((piece) => !piece)) return false;
+    for (const piece of pieces) {
+      const [id, raw] = piece!;
+      this.keep(id, this.rawBuffer(context, raw));
     }
-    this.menuTheme = { id: 'menu', buffer: theme };
-    yield 'ready';
-    for (const id of ['preview', 'victory', 'defeat'] as const) {
-      const buffer = context.createBuffer(1, Math.ceil(battleThemeSeconds(id) * rate), rate);
-      const channel = buffer.getChannelData(0);
-      for (const note of battleThemeNotes(id)) {
-        yield* noteSteps(channel, rate, note, seed++);
-        yield;
-      }
-      const track = { id, buffer };
-      this.battleThemes.set(id, track);
-      if (this.wantedTheme === id) this.playMusic(track);
-    }
+    return true;
+  }
+
+  /** Raw audio in an AudioBuffer, copied in one call. */
+  private rawBuffer(context: AudioContext, raw: { samples: Float32Array; rate: number }): AudioBuffer {
+    const buffer = context.createBuffer(1, raw.samples.length, raw.rate);
+    buffer.getChannelData(0).set(raw.samples);
+    return buffer;
+  }
+
+  /** A piece synthesized (or read): where the app finds it. */
+  private keep(piece: SynthPiece, buffer: AudioBuffer): void {
+    if (piece === 'menu') this.menuTheme = { id: 'menu', buffer };
+    else if ((BATTLE_THEMES as readonly string[]).includes(piece)) {
+      const track = { id: piece, buffer };
+      this.battleThemes.set(piece as BattleTheme, track);
+      if (this.wantedTheme === piece) this.playMusic(track);
+    } else this.sounds.set(piece as SoundId, buffer);
   }
 }
 

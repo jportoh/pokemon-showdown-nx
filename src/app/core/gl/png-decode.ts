@@ -7,6 +7,26 @@ export interface RawImage {
   height: number;
 }
 
+/**
+ * Raw images: `PSBRAW1` and a zero byte, the width and the height (32-bit little endian), then the
+ * premultiplied RGBA pixels. The native .nro's build stores the big Champions sprite sheets this way
+ * (scripts/build-nro.mjs): decoding them in JavaScript held the console's main thread for seconds
+ * at a time (test x8), stalling the connection's TLS handshake, which runs there.
+ */
+export const RAW_MAGIC = 'PSBRAW1\0';
+const RAW_HEADER = 16;
+
+/** A raw image's pixels, in place (no copy), or null when `bytes` isn't one. */
+export function decodeRaw(bytes: Uint8Array): RawImage | null {
+  if (bytes.length < RAW_HEADER) return null;
+  for (let i = 0; i < RAW_MAGIC.length; i++) if (bytes[i] !== RAW_MAGIC.charCodeAt(i)) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, RAW_HEADER);
+  const width = view.getUint32(8, true);
+  const height = view.getUint32(12, true);
+  if (bytes.length < RAW_HEADER + width * height * 4) return null;
+  return { pixels: bytes.subarray(RAW_HEADER, RAW_HEADER + width * height * 4), width, height };
+}
+
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 /** Channels per colour type: grey, RGB, palette, grey + alpha, RGBA. */
 const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };

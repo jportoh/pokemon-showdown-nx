@@ -1,5 +1,5 @@
 import { Service } from '@angular/core';
-import { RawImage, decodePng } from './png-decode';
+import { RawImage, decodePng, decodeRaw } from './png-decode';
 
 /** How soon an image is wanted: what the field shows now, what the screen shows, what may come later. */
 export const ImagePriority = { Field: 0, Screen: 1, Ahead: 2 } as const;
@@ -228,6 +228,12 @@ export class SpriteBitmaps {
   private decode(url: string): boolean {
     const entry = this.entries.get(url);
     if (entry?.state !== 'downloaded') return true;
+    // Already pixels (the native build's pre-decoded sheets): nothing to decode.
+    const raw = decodeRaw(entry.bytes);
+    if (raw) {
+      this.finish(url, raw, raw.width, raw.height);
+      return true;
+    }
     if (this.decoder === 'js') {
       let image: RawImage | null = null;
       try {
