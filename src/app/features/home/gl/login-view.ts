@@ -20,7 +20,7 @@ export const INNER_Y = BOX.y + 6;
  * password, a free one with the password left empty). The fields type with the canvas keyboard, whose
  * OK moves on: from the name to the password, from the password to Log in. B closes it; it closes
  * itself once the server calls us by a name (`finished`), so the menu never shows while the
- * connection is still on its way. On the entry screen (`offline` given) a third choice skips connecting.
+ * connection is still on its way.
  */
 export class LoginView {
   private readonly login = inject(ShowdownLogin);
@@ -34,11 +34,7 @@ export class LoginView {
   /** A login was asked for here: its success closes the box. */
   private readonly submitted = signal(false);
 
-  /** `offline`: the entry screen's "Play offline" next to the guest's button. */
-  constructor(
-    private readonly focus: CanvasFocus,
-    private readonly offline?: () => void,
-  ) {}
+  constructor(private readonly focus: CanvasFocus) {}
 
   private readonly guestConnecting = computed(() => {
     const state = this.login.state();
@@ -100,9 +96,7 @@ export class LoginView {
     const x = INNER_X + 48;
     const y = INNER_Y + 112;
     const retry = this.canRetry();
-    const offline = this.offline;
-    if (offline) button(ctx, 'login-offline', { x: x + 676, y, w: 304, h: 80 }, 'Play offline', { size: 30, accept: offline });
-    button(ctx, 'login-guest', { x, y, w: offline ? 660 : 980, h: 80 }, retry ? 'Try again now' : this.guestConnecting() ? 'Connecting…' : 'Connect as guest', {
+    button(ctx, 'login-guest', { x, y, w: 980, h: 80 }, retry ? 'Try again now' : this.guestConnecting() ? 'Connecting…' : 'Connect as guest', {
       size: 30,
       accept: () => {
         // While attempts keep failing, it tries again at once rather than waiting for the next try.
@@ -115,7 +109,7 @@ export class LoginView {
         this.login.connectAsGuest();
       },
     });
-    label(ctx, offline ? 'Play straight away with a random name, or build teams without a connection.' : 'Play straight away with a random name.', x, y + 104, { size: 20 }, p.muted, { maxWidth: 980 });
+    label(ctx, 'Play straight away with a random name.', x, y + 104, { size: 20 }, p.muted);
     ctx.renderer.rect(x, y + 148, 980, 3, { fill: p.outline });
     label(ctx, 'Or log in with your own name', x, y + 186, { size: 24, bold: true }, p.ink);
     textField(ctx, 'login-name', { x, y: y + 220, w: 482, h: 64 }, this.name(), {

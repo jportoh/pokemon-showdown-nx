@@ -92,4 +92,6 @@ export class HomeMenu {
    * Teambuilder and Settings work offline). Otherwise the menu needs a connection asked for first.
    */
   readonly offlineChosen = signal(false);
+  /** The menu opens from the entry screen (same trainer, same lit side): it doesn't bring them in again. */
+  readonly fromEntry = signal(false);
 }

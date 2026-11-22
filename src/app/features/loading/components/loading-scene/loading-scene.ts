@@ -16,10 +16,8 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { PLATFORM } from '@core/runtime/platform';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
-import { ShowdownLogin } from '@features/connection/showdown-login';
 import { BALL } from '@features/home/gl/logo-ball';
-import { HOME_LOGO, LogoPlace, entryLogo } from '@features/home/gl/logo-layout';
-import { HomeMenu } from '@features/home/state/home-menu';
+import { HOME_LOGO } from '@features/home/gl/logo-layout';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
@@ -87,8 +85,7 @@ const PARADE_SCALE = 2;
  * the menu theme are synthesized, a slice each frame (AudioEngine.prepare), and the battle music
  * (bundled) decodes (BattleMusic.preload, up to MUSIC_WAIT_MS). Until all of that is done a small ball
  * spins in a corner; then the menu theme starts and PRESS START breathes in its capsule. Pressed, the
- * logo flies to its place on the next screen (the menu's corner, or over the entry screen's box: the
- * menu's when a connection was asked for or offline chosen) and that screen takes over.
+ * logo flies to its corner, where the entry screen and the menu both draw it, and that screen takes over.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -106,12 +103,8 @@ export class LoadingScene {
   private readonly keyboard = inject(CanvasKeyboard);
   private readonly connection = inject(ShowdownConnection);
   private readonly navigation = inject(KeyboardNavigation);
-  private readonly login = inject(ShowdownLogin);
-  private readonly menu = inject(HomeMenu);
-  /** Where the logo lands: chosen as START is pressed. */
-  private target: LogoPlace = HOME_LOGO;
-  /** The frames' text cache, to measure the entry screen's logo with. */
-  private lastText: TextTextures | null = null;
+  /** Where the logo lands: the entry screen's and the menu's corner. */
+  private readonly target = HOME_LOGO;
   /** The teambuilder's code is set up (see warmTeambuilder). */
   private teambuilderWarm = false;
   private teambuilderWarming = false;
@@ -181,9 +174,6 @@ export class LoadingScene {
     }
     if (!this.ready || now - this.titleAt < DROP_MS) return false;
     this.outroAt = now;
-    // The menu when it opens straight away (the home route's guard), the entry screen otherwise.
-    const toMenu = this.login.state().mode !== null || this.menu.offlineChosen();
-    this.target = toMenu ? HOME_LOGO : entryLogo((value, style) => this.lastText?.measure(value, style) ?? 0);
     return true;
   }
 
@@ -209,7 +199,6 @@ export class LoadingScene {
   private draw(frame: StageFrame): void {
     const { renderer, now } = frame;
     this.lastNow = now;
-    this.lastText = frame.text;
     if (!this.startedAt) {
       this.startedAt = now;
       this.titleAt = Infinity;

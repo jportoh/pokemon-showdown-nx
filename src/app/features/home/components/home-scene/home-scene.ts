@@ -3,8 +3,7 @@ import { Router } from '@angular/router';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
 import { Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { TextStyle, iconTexture, pixelTexture } from '@core/gl/gl-textures';
-import { ImagePriority } from '@core/gl/sprite-bitmaps';
+import { iconTexture, pixelTexture } from '@core/gl/gl-textures';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
@@ -15,6 +14,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
 import { HOME_LOGO } from '@features/home/gl/logo-layout';
+import { Chip, NamePlate, TRAINER, drawGround, drawNamePlate, drawPlatformTrainer, drawSlantedButton, drawSprite } from '@features/home/gl/menu-kit';
 import { RegisterView } from '@features/home/gl/login-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
@@ -28,15 +28,10 @@ import { toId } from '@shared/utils/to-id';
 /** The buttons slide in one after another on arrival; everything fades out on leaving. */
 const INTRO_MS = 450;
 const LEAVE_MS = 260;
-/** The buttons' slant: tan(8°), the top edge to the right of the bottom one. */
-const SLANT = 0.14;
 /** Battle's Pokémon while there's no team yet. */
 const NO_TEAM = ['garchomp', 'incineroar'];
 const TRAINER_ID = 'trainer';
 const SETTINGS_ID = 'tile-settings';
-/** The trainer: an 80px sprite at 5x, standing on a platform, with its name plate under it. */
-const TRAINER = { x: 40, y: 112, size: 400 };
-const PLATE = { x: 48, y: 540, w: 400, h: 92 };
 const SETTINGS = { x: 1082, y: 24, w: 150, h: 48 };
 
 /** A slanted button's box on the stage: Battle wide on top, then two rows of two. */
@@ -70,11 +65,6 @@ const ART: Partial<Record<PixelIconName, readonly { sprite: string; size: number
   chats: [{ sprite: 'whimsicott', size: 120, dx: -6 }],
 };
 
-type Tone = 'muted' | 'faded' | 'alert' | 'error';
-interface Chip {
-  text: string;
-  tone: Tone;
-}
 
 /**
  * The home screen, the player at its heart: their trainer large on the left on a platform, with a
@@ -143,7 +133,7 @@ export class HomeScene {
   });
 
   /** The name plate: who we are, and how we're doing. */
-  private readonly plate = computed((): { name: string; status: string; chips: Chip[] } => {
+  private readonly plate = computed((): NamePlate & { chips: Chip[] } => {
     const login = this.login.state();
     if (login.mode === null) return { name: 'Trainer', status: 'Offline', chips: [{ text: 'ZR to log in', tone: 'muted' }] };
     if (login.status !== 'named') return { name: login.name || 'Trainer', status: 'Connecting…', chips: [] };
@@ -205,6 +195,8 @@ export class HomeScene {
   /** Each button's focus (0-1, eased), the trainer's last. */
   private readonly anims = [...BUTTONS, null, null].map(() => ({ focus: 0 }));
   private leaving: { at: number; then: () => void } | null = null;
+  /** Arrived from the entry screen, whose trainer and lit side are already where the menu's are: they don't come in again. */
+  private readonly fromEntry = this.menu.fromEntry();
 
   constructor() {
     const hide = this.stage.show({
@@ -222,6 +214,7 @@ export class HomeScene {
     });
     // Back from a page: the focus on the button that opened it, or the Trainer Card open again on the button that left it.
     this.focus.focus(`tile-${this.menu.lastItem()}`);
+    this.menu.fromEntry.set(false);
     if (this.menu.openCard()) {
       this.menu.openCard.set(false);
       this.boxOpen.set(true);
@@ -381,23 +374,18 @@ export class HomeScene {
   }
 
   private drawMenu(ctx: UiContext, now: number, dt: number): void {
-    const p = ctx.palette;
-    const { renderer } = ctx;
     const ease = 1 - Math.exp(-dt * 14);
     const age = now - this.start;
     const time = now / 1000;
     const focused = this.focus.focused;
-    const light = p.appearance === 'light';
 
     const intro = (delay: number): number => 1 - Math.pow(1 - clamp01((age - delay) / INTRO_MS), 3);
-    // The trainer's side: a deeper tint fading out to the right, and a halo behind them (fading in, from the title's plain backdrop).
-    const lit = intro(0);
-    renderer.rect(0, 0, 600, 720, { fill: withAlpha(p.hero, lit), fillEnd: withAlpha(p.hero, 0) });
-    renderer.rect(-100, 140, 640, 640, { fill: light ? [1, 1, 1, 0.55 * lit] : withAlpha(p.accentText, 0.22 * lit), radius: 320, softness: 220 });
+    // The trainer's side, lit (fading in from the title's plain backdrop; already lit coming from the entry screen).
+    drawGround(ctx, this.fromEntry ? 1 : intro(0));
     // The logo stays put: the title's lands exactly here.
     this.drawLogo(ctx, 1);
     this.drawTopRight(ctx, ease, intro(0));
-    this.drawTrainer(ctx, ease, intro(60), time);
+    this.drawTrainer(ctx, ease, this.fromEntry ? 1 : intro(60), time);
 
     const offline = this.offline();
     BUTTONS.forEach((button, i) => {
@@ -443,79 +431,43 @@ export class HomeScene {
 
   /** The trainer on their platform (a button: the Trainer Card), and the name plate. */
   private drawTrainer(ctx: UiContext, ease: number, arrive: number, time: number): void {
-    const p = ctx.palette;
-    const { renderer } = ctx;
     const anim = this.anims[BUTTONS.length];
     anim.focus += ((this.focus.focused === TRAINER_ID ? 1 : 0) - anim.focus) * ease;
-    const f = anim.focus;
-    const slide = (1 - arrive) * -60;
     const { x, y, size } = TRAINER;
     this.focus.control({ id: TRAINER_ID, x: x + 40, y: y + 20, w: size - 80, h: size - 20, accept: () => this.pressTrainer() });
-
-    // The platform: an ellipse with a lip, ringed while the trainer has the focus.
-    const px = x + 40 + slide;
-    const py = y + size - 52;
-    if (f > 0.01) renderer.rect(px - 10, py - 10, size - 60, 90, { fill: withAlpha(p.accentText, 0.3 * f * arrive), radius: 45, softness: 24 });
-    renderer.rect(px, py, size - 80, 70, { fill: withAlpha(p.rim, arrive), radius: 35 });
-    renderer.rect(px, py, size - 80, 62, {
-      fill: withAlpha(p.panel, arrive),
-      stroke: withAlpha(p.accentText, f * arrive),
-      border: 4 * f,
-      radius: 31,
-    });
-
     const login = this.login.state();
     const avatar = ctx.images.pixelArt(avatarUrl(login.mode === null ? '' : login.avatar));
-    const bob = Math.sin(time * 4) * 3 * f;
-    if (avatar) renderer.rect(x + slide, y - 8 * f + bob, size, size, { fill: [1, 1, 1, arrive], texture: avatar });
-    // No trainer (offline, or still loading): a big faint Poké Ball on the platform.
-    else if (this.ball) renderer.image(this.ball, x + slide + size / 2 - 96, py - 190 + bob, 8, [1, 1, 1, 0.35 * arrive]);
-
-    // The name plate.
-    const plate = this.plate();
-    const { x: bx, y: by, w: bw, h: bh } = PLATE;
-    renderer.rect(bx + slide, by + 10, bw, bh, { fill: withAlpha([0, 0, 0, 1], 0.22 * arrive), radius: 16, softness: 18 });
-    renderer.rect(bx + slide, by, bw, bh, { fill: withAlpha(p.panel, arrive), stroke: withAlpha(p.rim, arrive), border: 1, radius: 16 });
-    const width = label(ctx, plate.name, bx + 20 + slide, by + 28, { size: 28, bold: true }, withAlpha(p.ink, arrive), { maxWidth: 250 });
-    label(ctx, plate.status, bx + 32 + width + slide, by + 30, { size: 15 }, withAlpha(p.muted, arrive), { maxWidth: bw - 52 - width });
-    let cx = bx + 20 + slide;
-    for (const chip of plate.chips) cx += this.drawChip(ctx, chip, cx, by + 66, arrive, 26) + 8;
+    drawPlatformTrainer(ctx, { avatar, ball: this.ball, f: anim.focus, arrive, time });
+    drawNamePlate(ctx, this.plate(), arrive);
   }
 
-  /** A slanted button: its colour, its Pokémon, its icon and name, and its chips. */
+  /** A slanted button: its colour, its Pokémon (Battle's: the player's team), its icon and name, and its chips. */
   private drawButton(ctx: UiContext, button: ButtonBox, f: number, slide: number, alpha: number, faded: boolean): void {
-    if (alpha <= 0.001) return;
-    const p = ctx.palette;
-    const { renderer } = ctx;
-    const { item, w, h, big } = button;
-    const x = button.x + slide;
-    const y = button.y - 6 * f;
-    // Faded (its page needs a connection we don't have): no colour, the panel into the rim.
-    const plate = faded ? p.rim : rgba(item.plate[p.appearance]);
-    /** Where the slanted left edge is at this height (the skew moves rows above the middle right). */
-    const edge = (cy: number): number => x - (cy - (y + h / 2)) * SLANT;
-
-    // The shadow, the body (fading into the button's colour), and the focus border.
-    if (f > 0.01 || p.appearance === 'light') {
-      renderer.rect(x, y + 12, w, h, { fill: withAlpha([0, 0, 0, 1], (0.12 + 0.2 * f) * alpha), radius: 14, softness: 22, skew: SLANT });
-    }
-    renderer.rect(x, y, w, h, {
-      fill: withAlpha(mixRgba(p.panel, p.select, f), alpha),
-      fillEnd: withAlpha(plate, alpha),
-      stroke: withAlpha(mixRgba(p.rim, p.accentText, f), alpha),
-      border: 1 + 3 * f,
-      radius: 14,
-      skew: SLANT,
+    const { item, big } = button;
+    drawSlantedButton(ctx, {
+      x: button.x + slide,
+      y: button.y,
+      w: button.w,
+      h: button.h,
+      f,
+      alpha,
+      title: item.label.toUpperCase(),
+      titleSize: big ? 44 : 25,
+      titleY: big ? 52 : 40,
+      icon: this.icons.get(faded ? `${item.id}-muted` : item.id),
+      // Faded (its page needs a connection we don't have): no colour, the panel into the rim.
+      plate: faded ? ctx.palette.rim : rgba(item.plate[ctx.palette.appearance]),
+      chips: this.chips()[item.id] ?? [],
+      faded,
+      art: (box, artAlpha, grow) => this.drawArt(ctx, item.id, box, artAlpha, grow),
     });
+  }
 
-    // The Pokémon, at the right, cut off at the bottom by the button.
-    renderer.clip({ x, y: y + 4, w: w - 6, h: h - 8 });
-    const artAlpha = alpha * (faded ? 0.3 : (p.appearance === 'light' ? 0.8 : 0.55) + (1 - (p.appearance === 'light' ? 0.8 : 0.55)) * f);
-    const grow = 1 + 0.05 * f;
-    if (item.id === 'battle') {
-      const team = this.summary.team();
+  private drawArt(ctx: UiContext, id: PixelIconName, box: { x: number; y: number; w: number; h: number }, alpha: number, grow: number): void {
+    const { x, y, w, h } = box;
+    if (id === 'battle') {
       // The lead biggest, at the right; the next two smaller, overlapping to its left.
-      const sprites = team?.sprites.slice(0, 3) ?? NO_TEAM;
+      const sprites = this.summary.team()?.sprites.slice(0, 3) ?? NO_TEAM;
       const placed: { sprite: string; x: number; size: number }[] = [];
       let right = x + w - 18;
       sprites.forEach((sprite, i) => {
@@ -523,47 +475,13 @@ export class HomeScene {
         placed.push({ sprite, x: right - size, size });
         right -= size * 0.62;
       });
-      for (const art of placed.reverse()) this.drawSprite(ctx, art.sprite, art.x, y + h - art.size + 18, art.size, artAlpha, false);
-    } else {
-      for (const art of ART[item.id] ?? []) {
-        const size = art.size * grow;
-        this.drawSprite(ctx, art.sprite, x + w - 22 - size + art.dx, y + h - size + 16, size, artAlpha, art.flip ?? false);
-      }
+      for (const art of placed.reverse()) drawSprite(ctx, art.sprite, art.x, y + h - art.size + 18, art.size, alpha);
+      return;
     }
-    renderer.clip(null);
-
-    // The icon and the name, along the slanted edge.
-    const titleY = y + (big ? 52 : 40);
-    const icon = this.icons.get(faded ? `${item.id}-muted` : item.id);
-    const left = edge(titleY) + 26;
-    if (icon) renderer.image(icon, left, titleY - 24, 2, [1, 1, 1, alpha]);
-    const nameStyle: TextStyle = { size: big ? 44 : 25, bold: true };
-    label(ctx, item.label.toUpperCase(), left + 60, titleY, nameStyle, withAlpha(faded ? p.muted : p.ink, alpha), { maxWidth: w - 100 });
-
-    // The chips, at the bottom.
-    const chipY = y + h - (big ? 38 : 30);
-    let cx = edge(chipY) + 24;
-    for (const chip of this.chips()[item.id] ?? []) cx += this.drawChip(ctx, chip, cx, chipY, alpha, 30, w - 60) + 8;
-  }
-
-  private drawSprite(ctx: UiContext, sprite: string, x: number, y: number, size: number, alpha: number, flip: boolean): void {
-    const texture = ctx.images.sprite(sprite, false, ImagePriority.Screen);
-    if (!texture) return;
-    const uv = texture.uv ?? [0, 0, 1, 1];
-    ctx.renderer.rect(x, y, size, size, { fill: [1, 1, 1, alpha], texture, uv: flip ? [uv[2], uv[1], uv[0], uv[3]] : uv });
-  }
-
-  /** A rounded chip with a short text; its width. */
-  private drawChip(ctx: UiContext, chip: Chip, x: number, cy: number, alpha: number, height: number, maxWidth = 360): number {
-    const p = ctx.palette;
-    const style: TextStyle = { size: height > 28 ? 16 : 15, bold: true };
-    const text = ctx.text.fit(chip.text, style, maxWidth - 24);
-    const width = ctx.text.measure(text, style) + 24;
-    const fill = chip.tone === 'alert' ? p.teal : chip.tone === 'error' ? p.danger : p.rim;
-    const ink = chip.tone === 'alert' || chip.tone === 'error' ? p.contrast : chip.tone === 'faded' ? p.muted : p.ink;
-    ctx.renderer.rect(x, cy - height / 2, width, height, { fill: withAlpha(fill, alpha), radius: height / 2 });
-    label(ctx, text, x + 12, cy, style, withAlpha(ink, alpha), { fast: true });
-    return width;
+    for (const art of ART[id] ?? []) {
+      const size = art.size * grow;
+      drawSprite(ctx, art.sprite, x + w - 22 - size + art.dx, y + h - size + 16, size, alpha, art.flip ?? false);
+    }
   }
 
   /** Under the menu: what the focused button is for, what A does there, and ZR. */
