@@ -30,7 +30,6 @@ const LEAVE_MS = 260;
 const TEAM_SLOTS = 6;
 /** An icon plate's tint while its page needs a connection we don't have. */
 const FADED_PLATE = rgba('#232a31');
-const LOGO_YELLOW = rgba('#f2c14e');
 /** The ▶ cursor: 4x7 pixels. */
 const CURSOR_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 
@@ -374,8 +373,8 @@ export class HomeScene {
     const { renderer } = ctx;
     renderer.rect(0, 0, STAGE_W, 76, { fill: p.bar });
     if (this.ball) renderer.image(this.ball, 24, 14, 2);
-    const width = label(ctx, 'POKÉMON', 84, 38, { size: 32, bold: true }, [1, 1, 1, 1]);
-    label(ctx, 'SHOWDOWN!', 84 + width + 10, 38, { size: 32, bold: true }, LOGO_YELLOW);
+    const width = label(ctx, 'POKÉMON', 84, 38, { size: 32, bold: true }, p.logoInk);
+    label(ctx, 'SHOWDOWN!', 84 + width + 10, 38, { size: 32, bold: true }, p.logo);
 
     const named = this.named();
     this.bar.drawStatus(ctx, named ? 1176 : 1256, 38);
@@ -430,7 +429,7 @@ export class HomeScene {
         if (this.summary.challenger()) {
           const pulse = 0.85 + 0.15 * Math.sin(time * 6);
           renderer.rect(x + 418 * s, y + 16 * s, 150 * s, 36 * s, { fill: withAlpha(p.teal, alpha * pulse), radius: 6 * s });
-          this.scaled(ctx, 'Challenge!', x + 493 * s, y + 34 * s, { size: 20, bold: true }, withAlpha(p.bar, alpha), s, 'center');
+          this.scaled(ctx, 'Challenge!', x + 493 * s, y + 34 * s, { size: 20, bold: true }, withAlpha(p.contrast, alpha), s, 'center');
         }
       } else {
         const status = this.randomStatus();

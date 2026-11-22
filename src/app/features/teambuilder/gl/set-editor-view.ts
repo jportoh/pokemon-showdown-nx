@@ -372,7 +372,7 @@ export class SetEditorView {
     segments.forEach((text, i) => {
       const on = (i === 0) === attack;
       if (on) ctx.renderer.rect(sx, cy - 14, widths[i], 28, { fill: i === 0 ? p.accent : p.danger, radius: 4 });
-      label(ctx, text, sx + widths[i] / 2, cy, style, on ? (i === 0 ? WHITE : p.bar) : p.muted, { align: 'center' });
+      label(ctx, text, sx + widths[i] / 2, cy, style, on ? (i === 0 ? WHITE : p.contrast) : p.muted, { align: 'center' });
       sx += widths[i];
     });
     keyPill(ctx, 'ZR', left - 10 - keyPillWidth(ctx, 'ZR'), cy);

@@ -16,10 +16,22 @@ const STAFF_RANKS = ['~', '&', '#', '@'];
  */
 const MAX_LISTED_USERS = 50;
 
-/** A piece of a line: its text, colour (its own, or the theme's) and weight. */
+/** Each user's colour, converted once per appearance (the lines are cached, so they keep only the name). */
+const userColors = new Map<string, Rgba>();
+function userColor(name: string, light: boolean): Rgba {
+  const key = `${light ? 'l' : 'd'}:${name}`;
+  let color = userColors.get(key);
+  if (!color) {
+    color = rgba(usernameColor(name, light));
+    userColors.set(key, color);
+  }
+  return color;
+}
+
+/** A piece of a line: its text, colour (a user's own, or the theme's) and weight. */
 interface Part {
   text: string;
-  color: Rgba | 'ink' | 'muted' | 'danger';
+  color: { user: string } | 'ink' | 'muted' | 'danger';
   bold?: boolean;
 }
 
@@ -80,7 +92,7 @@ class LineList {
       const cy = box.y + PAD_Y + i * LINE_H + LINE_H / 2;
       let x = box.x + PAD_X;
       for (const part of line.parts) {
-        const color = typeof part.color === 'string' ? colors[part.color] : part.color;
+        const color = typeof part.color === 'string' ? colors[part.color] : userColor(part.color.user, p.appearance === 'light');
         x += label(ctx, part.text, x, cy, part.bold ? BOLD : TEXT, withAlpha(color, line.dim ? 0.6 : 1), { fast: true });
       }
     });
@@ -162,7 +174,7 @@ export class ChatLogView {
       return wrap(ctx, message.text, width, width).map((text, i) => ({ key: `${message.id}:${i}`, parts: [{ text, color: 'danger' }] }));
     }
     // A /me reads "author does something", without the colon.
-    const author: Part = { text: `${message.author}${message.action ? ' ' : ': '}`, color: rgba(usernameColor(message.author)), bold: true };
+    const author: Part = { text: `${message.author}${message.action ? ' ' : ': '}`, color: { user: message.author }, bold: true };
     const color = message.action ? 'muted' : 'ink';
     return wrap(ctx, message.text, width - measure(ctx, author.text, BOLD), width).map((text, i) => ({
       key: `${message.id}:${i}`,
@@ -185,7 +197,7 @@ export class ChatUsersView {
       key: user.id,
       parts: [
         { text: user.rank === ' ' ? '  ' : user.rank, color: 'muted' },
-        { text: user.name, color: rgba(usernameColor(user.name)), bold: STAFF_RANKS.includes(user.rank) },
+        { text: user.name, color: { user: user.name }, bold: STAFF_RANKS.includes(user.rank) },
       ],
       dim: user.away,
     }));

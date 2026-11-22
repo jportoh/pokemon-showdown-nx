@@ -1,4 +1,4 @@
-import { Align, CanvasFocus, FOCUS_RING, drawText } from '../canvas-ui';
+import { Align, CanvasFocus, drawText } from '../canvas-ui';
 import { GlRenderer, Rgba, Texture, withAlpha } from '../gl-renderer';
 import { GlSprites } from '../gl-sprites';
 import { TextStyle, TextTextures } from '../gl-textures';
@@ -22,8 +22,6 @@ export interface Box {
   h: number;
 }
 
-/** Disabled controls, the same in every theme (greys 700/600/400). */
-const DISABLED = { fill: [55 / 255, 65 / 255, 81 / 255, 1] as Rgba, border: [75 / 255, 85 / 255, 99 / 255, 1] as Rgba, ink: [156 / 255, 163 / 255, 175 / 255, 1] as Rgba };
 const WHITE: Rgba = [1, 1, 1, 1];
 
 /** Text with its middle at `cy` (see drawText); `fast` for text that changes all the time. */
@@ -39,9 +37,9 @@ export function label(
   return drawText(ctx.renderer, ctx.text, value, x, cy, style, color, options);
 }
 
-/** The yellow focus ring, just inside the box. */
+/** The focus ring (yellow, amber in light), just inside the box. */
 export function focusRing(ctx: UiContext, box: Box, radius = 6): void {
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: FOCUS_RING, radius, border: 3 });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.focus, radius, border: 3 });
 }
 
 /** The retro box: the outline colour around a rim, the panel inside. */
@@ -75,9 +73,9 @@ export interface ButtonOptions {
 export function button(ctx: UiContext, id: string, box: Box, text: string, options: ButtonOptions): boolean {
   const p = ctx.palette;
   const focused = !options.disabled && ctx.focus.control({ id, ...box, accept: options.accept, skip: options.skip });
-  const fill = options.disabled ? DISABLED.fill : options.primary ? p.accent : p.button;
-  const border = options.disabled ? DISABLED.border : options.primary ? p.bar : p.outline;
-  const ink = options.disabled ? DISABLED.ink : options.primary ? WHITE : p.ink;
+  const fill = options.disabled ? p.disabledFill : options.primary ? p.accent : p.button;
+  const border = options.disabled ? p.disabledBorder : options.primary ? p.bar : p.outline;
+  const ink = options.disabled ? p.disabledInk : options.primary ? WHITE : p.ink;
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 6, border: 2 });
   const size = options.size ?? 18;
   if (options.shortcut) {

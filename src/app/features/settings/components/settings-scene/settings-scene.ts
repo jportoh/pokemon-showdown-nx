@@ -8,12 +8,13 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, focusRing, label, retroBox } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
+import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 
 type SettingId =
+  | 'appearance'
   | 'theme'
   | 'musicVolume'
   | 'soundVolume'
@@ -62,7 +63,7 @@ const LEFT_ROWS = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];
 const RIGHT_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 
 /** The row focused when coming back from a page Settings opened (the battle history, the replays). */
-let returnRow: SettingId = 'theme';
+let returnRow: SettingId = 'appearance';
 
 /**
  * Settings, drawn on the stage: a list of rows, each with its value on the right. A changes it (the
@@ -93,6 +94,14 @@ export class SettingsScene {
     const login = this.login.state();
     const registered = login.status === 'named' && login.registered;
     return [
+      {
+        id: 'appearance',
+        label: 'Appearance',
+        detail: settings.appearance === 'light' ? 'Light colours with dark text. It changes as you pick it.' : 'Dark colours with light text. It changes as you pick it.',
+        value: APPEARANCES.find((a) => a.id === settings.appearance)?.name ?? APPEARANCES[0].name,
+        kind: 'cycle',
+        steppable: true,
+      },
       {
         id: 'theme',
         label: 'Theme',
@@ -222,7 +231,7 @@ export class SettingsScene {
       this.rightArrow = maskTexture(renderer, RIGHT_ROWS);
     });
     this.focus.focus(`row-${returnRow}`);
-    returnRow = 'theme';
+    returnRow = 'appearance';
     inject(DestroyRef).onDestroy(() => {
       hide();
       this.stage.whenReady(({ renderer }) => {
@@ -268,6 +277,9 @@ export class SettingsScene {
     if (row.disabled || row.kind === 'link') return false;
     const settings = this.appSettings.settings();
     switch (row.id) {
+      case 'appearance':
+        this.appSettings.set('appearance', cycle(APPEARANCES.map((a) => a.id), settings.appearance, step));
+        break;
       case 'theme':
         this.appSettings.set('theme', cycle(THEMES.map((t) => t.id), settings.theme, step));
         break;

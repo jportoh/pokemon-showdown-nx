@@ -58,15 +58,11 @@ export const BESIDE_HERO_X = EDIT_X + HERO_W + 24;
 export const BESIDE_COMPACT_X = EDIT_X + HERO_COMPACT_W + 20;
 
 export const WHITE: Rgba = [1, 1, 1, 1];
-/** A move card's detail on its type's colour (a light grey). */
-export const ON_TYPE: Rgba = rgba('#d1d5db');
-/** The nature's lowered stat (a #2f5f9e badge and #8fb8ee text). */
+/** The nature's lowered stat's badge (its text is the palette's lowered). */
 export const LOWERED_FILL: Rgba = rgba('#2f5f9e');
-export const LOWERED_INK: Rgba = rgba('#8fb8ee');
-/** The stat bars' fill: yellow, orange once all the points are placed; a segment still free to spend. */
+/** The stat bars' fill: yellow, orange once all the points are placed (a free segment is the palette's segmentFree). */
 export const BAR_FILL: Rgba = rgba('#e8c547');
 export const BAR_FULL: Rgba = rgba('#f0883e');
-export const SEGMENT_FREE: Rgba = rgba('#3d5064');
 
 /** The Battle page's pixel triangles: 4x7 pointing left/right, 7x4 pointing up/down. */
 export const LEFT = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];

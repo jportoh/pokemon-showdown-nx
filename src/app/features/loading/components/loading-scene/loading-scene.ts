@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { BattleMusic } from '@core/audio/battle-music';
 import { AssetPreload } from '@core/gl/asset-preload';
-import { Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { Rgba, Texture, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
@@ -25,7 +25,6 @@ const PRIMES_PER_FRAME = 2;
 const AUDIO_BUDGET_MS = 12;
 /** The longest the loading screen waits for the battle music (offline, or a slow connection): the rest loads when a battle needs it. */
 const MUSIC_WAIT_MS = 20000;
-const LOGO_YELLOW = rgba('#f2c14e');
 const WHITE: Rgba = [1, 1, 1, 1];
 const BAR = { x: 320, y: 392, w: 640, h: 28 };
 /** The logo here, big, and where the home screen's header draws it (HomeScene.drawHeader). */
@@ -194,6 +193,7 @@ export class LoadingScene {
    */
   private drawWordmark({ renderer, text }: StageFrame, fly: number): void {
     const landed = fly >= 1;
+    const { logo, logoInk } = this.theme.palette();
     const style: TextStyle = landed ? HEADER.style : BIG.style;
     const first = text.get('POKÉMON', style);
     const second = text.get('SHOWDOWN!', style);
@@ -209,7 +209,7 @@ export class LoadingScene {
     const cy = lerp(BIG.textCy, HEADER.textCy, fly);
     [first, second].forEach((texture, i) => {
       const x = lerp(from[i], to[i], fly);
-      renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, i === 0 ? WHITE : LOGO_YELLOW);
+      renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, i === 0 ? logoInk : logo);
     });
   }
 

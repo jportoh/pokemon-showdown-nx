@@ -4,6 +4,15 @@ import { PLAYABLE_FORMATS, TEAM_FORMATS } from '@shared/data/formats';
 
 export type ThemeId = 'zafiro' | 'noche' | 'ciruela' | 'esmeralda' | 'pokeball' | 'ocaso';
 
+/** Light (the default) or dark colours: each theme has both. */
+export type Appearance = 'light' | 'dark';
+
+/** The appearances, in the order Settings steps through them. */
+export const APPEARANCES: readonly { id: Appearance; name: string }[] = [
+  { id: 'light', name: 'Light' },
+  { id: 'dark', name: 'Dark' },
+];
+
 export interface Theme {
   id: ThemeId;
   name: string;
@@ -21,6 +30,7 @@ export const THEMES: readonly Theme[] = [
 
 export interface Settings {
   theme: ThemeId;
+  appearance: Appearance;
   /** The format the Battle page starts on. */
   battleFormat: string;
   /** The format new teams are built for. */
@@ -46,6 +56,7 @@ const STORAGE_KEY = 'psb.settings.v1';
 
 const DEFAULTS: Settings = {
   theme: 'zafiro',
+  appearance: 'light',
   battleFormat: PLAYABLE_FORMATS[0].id,
   teamFormat: TEAM_FORMATS[0].id,
   allowSpectators: true,
@@ -77,6 +88,7 @@ function loadSettings(): Settings {
   const settings = { ...DEFAULTS, ...stored };
   return {
     theme: THEMES.some((theme) => theme.id === settings.theme) ? settings.theme : DEFAULTS.theme,
+    appearance: APPEARANCES.some((appearance) => appearance.id === settings.appearance) ? settings.appearance : DEFAULTS.appearance,
     battleFormat: PLAYABLE_FORMATS.some((format) => format.id === settings.battleFormat) ? settings.battleFormat : DEFAULTS.battleFormat,
     teamFormat: TEAM_FORMATS.some((format) => format.id === settings.teamFormat) ? settings.teamFormat : DEFAULTS.teamFormat,
     allowSpectators: settings.allowSpectators !== false,
