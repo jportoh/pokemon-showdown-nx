@@ -170,6 +170,11 @@ export function drawSlantedButton(ctx: UiContext, b: SlantedButton): void {
   for (const chip of chips) cx += drawChip(ctx, chip, cx, chipY, alpha, 30, x + w - 40 - cx) + 8;
 }
 
+/** The menu's focus: an accentText border just inside the box (instead of the old yellow ring). */
+export function menuFocus(ctx: UiContext, box: { x: number; y: number; w: number; h: number }, radius = 14): void {
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, border: 3, radius });
+}
+
 /** A text field as the entry screen draws them: a small caps label over a rounded box; true when focused. */
 export function drawField(
   ctx: UiContext,

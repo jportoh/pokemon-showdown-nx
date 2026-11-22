@@ -1,5 +1,5 @@
 import { Signal, computed, inject, signal } from '@angular/core';
-import { ROLE_KEYS } from '@core/input/console-keys';
+import { ROLE_KEYS, SLOT_KEYS } from '@core/input/console-keys';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
@@ -55,7 +55,7 @@ export class SetEditorView {
   /** The field whose list is open, or null. */
   private readonly field = signal<DetailsField | null>(null);
   /** Remove, filling while ZR is held. */
-  private readonly remove = new HoldAction(inject(KeyboardNavigation), 'buttonZR');
+  private readonly remove = new HoldAction(inject(KeyboardNavigation), ROLE_KEYS.removePokemon.button);
 
   private readonly pokemon = computed(() => this.team()?.sets[this.index()]);
   private readonly choosers = new SetChoosers(this.pokemon, this.field);
@@ -158,6 +158,40 @@ export class SetEditorView {
     if (team) this.store.removePokemon(team.id, this.index());
     this.closed();
     return true;
+  }
+
+  /**
+   * ZL/ZR on the native .nro (SLOT_KEYS): the team's previous or next Pokémon, round and round, on the
+   * same tab. Not while a list, the natures, the field or the rival's editing is open.
+   */
+  pressSlot(by: 1 | -1): boolean {
+    const count = this.team()?.sets.length ?? 0;
+    if (!this.pokemon() || this.spec() || this.field() || this.stats.isOpen || this.calcs.isOpen) return false;
+    if (count < 2) return true;
+    this.index.set((this.index() + by + count) % count);
+    this.remove.reset();
+    this.stats.reset();
+    // The focus stays where it was when the new card has it; else on the species.
+    if (this.focus.focused && !this.focus.has(this.focus.focused)) this.focus.focus(SPECIES_ID);
+    return true;
+  }
+
+  /**
+   * X on the native .nro (ROLE_KEYS.clear): the open list's "none", Stats' undo, and on Calcs the
+   * field's reset or the rival editor's own; false elsewhere on Calcs (X edits the rival there).
+   */
+  pressOption(): boolean {
+    const team = this.team();
+    if (this.tab() !== 'calcs') return this.pressClear();
+    if (!team || !this.pokemon() || !(this.calcs.fieldOpen || this.calcs.isEditing)) return false;
+    return this.calcs.pressField(team.format);
+  }
+
+  /** + on the native .nro (ROLE_KEYS.calcsField): Calcs' field, opened. */
+  pressFieldOpen(): boolean {
+    const team = this.team();
+    if (this.tab() !== 'calcs' || !team || !this.pokemon() || this.calcs.isOpen) return false;
+    return this.calcs.pressField(team.format);
   }
 
   /** R3: the open list's (or the rival list's) search, wherever the focus is in it. */
@@ -308,7 +342,7 @@ export class SetEditorView {
     }
     if (pokemon) {
       const removeW = 150;
-      shortcutButton(ctx, 'editor-remove', { x: EDIT_RIGHT - removeW, y: TOP + 7, w: removeW, h: 38 }, 'ZR', 'Remove', {
+      shortcutButton(ctx, 'editor-remove', { x: EDIT_RIGHT - removeW, y: TOP + 7, w: removeW, h: 38 }, ROLE_KEYS.removePokemon.label, 'Remove', {
         size: 18,
         accept: () => this.pressRemove(),
         held: { progress: this.remove.progress, color: HOLD_FILL },
@@ -318,7 +352,9 @@ export class SetEditorView {
 
   /** What the buttons do now, for the legend. */
   private legend(spec: ChooserSpec | null, stats: boolean): LegendEntry[] {
-    const remove = { keys: ['ZR'], text: 'Hold to remove' };
+    const remove = { keys: [ROLE_KEYS.removePokemon.label], text: 'Hold to remove' };
+    // ZL/ZR through the team's Pokémon (native), when there's more than one.
+    const slots: LegendEntry[] = SLOT_KEYS && (this.team()?.sets.length ?? 0) > 1 ? [{ keys: ['ZL', 'ZR'], text: 'Pokémon' }] : [];
     if (spec) {
       const current = this.currentValue();
       const entries: LegendEntry[] = [
@@ -328,7 +364,7 @@ export class SetEditorView {
       if (spec.searchable && !spec.unavailable) entries.push({ keys: [ROLE_KEYS.search.label], text: 'Search' });
       if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
       const clear = this.clearLabel();
-      if (clear) entries.push({ keys: ['ZL'], text: clear });
+      if (clear) entries.push({ keys: [ROLE_KEYS.clear.label], text: clear });
       return entries;
     }
     if (stats) {
@@ -338,14 +374,14 @@ export class SetEditorView {
       }
       const action = this.stats.rowAction;
       const entries: LegendEntry[] = action ? [{ keys: ['◀▶'], text: 'Points' }, { keys: ['A'], text: action }] : [{ keys: ['A'], text: 'Choose' }];
-      if (this.stats.canUndo) entries.push({ keys: ['ZL'], text: 'Undo' });
-      entries.push({ keys: ['L', 'R'], text: 'Details / Stats' }, { keys: ['B'], text: 'Back to team' }, remove);
+      if (this.stats.canUndo) entries.push({ keys: [ROLE_KEYS.clear.label], text: 'Undo' });
+      entries.push(...slots, { keys: ['L', 'R'], text: 'Tabs' }, { keys: ['B'], text: 'Back to team' }, remove);
       return entries;
     }
     const focused = this.focus.focused;
     const action = { keys: ['A'], text: focused === 'hero-nickname' ? 'Type' : 'Change' };
     const entries: LegendEntry[] = [action, { keys: ['B'], text: 'Back to team' }];
-    if (this.pokemon()) entries.push({ keys: ['L', 'R'], text: 'Details / Stats' }, remove);
+    if (this.pokemon()) entries.push(...slots, { keys: ['L', 'R'], text: 'Tabs' }, remove);
     return entries;
   }
 
@@ -361,8 +397,8 @@ export class SetEditorView {
     let x = EDIT_RIGHT - summaryW;
     label(ctx, summary, x, cy, { size: 16 }, p.muted, { maxWidth: summaryW });
     x -= 8 + label(ctx, 'Field', x - 8, cy, style, p.ink, { align: 'right' });
-    x -= 8 + keyPillWidth(ctx, 'ZL');
-    keyPill(ctx, 'ZL', x, cy);
+    x -= 8 + keyPillWidth(ctx, ROLE_KEYS.calcsField.label);
+    keyPill(ctx, ROLE_KEYS.calcsField.label, x, cy);
     x -= 24;
     const segments = ['You attack', 'They attack'];
     const widths = segments.map((text) => ctx.text.measure(text, style) + 24);
@@ -375,7 +411,7 @@ export class SetEditorView {
       label(ctx, text, sx + widths[i] / 2, cy, style, on ? (i === 0 ? WHITE : p.contrast) : p.muted, { align: 'center' });
       sx += widths[i];
     });
-    keyPill(ctx, 'ZR', left - 10 - keyPillWidth(ctx, 'ZR'), cy);
+    keyPill(ctx, ROLE_KEYS.calcsSwap.label, left - 10 - keyPillWidth(ctx, ROLE_KEYS.calcsSwap.label), cy);
   }
 
   /**
@@ -407,7 +443,7 @@ export class SetEditorView {
   private calcsLegend(): LegendEntry[] {
     if (this.calcs.isEditing) return this.calcs.editor.legend();
     if (this.calcs.fieldOpen) {
-      return [{ keys: ['L', 'R'], text: 'Change' }, { keys: ['A'], text: 'Next' }, { keys: ['ZL'], text: 'Reset' }, { keys: ['B'], text: 'Done' }];
+      return [{ keys: ['L', 'R'], text: 'Change' }, { keys: ['A'], text: 'Next' }, { keys: [ROLE_KEYS.clear.label], text: 'Reset' }, { keys: ['B'], text: 'Done' }];
     }
     if (this.calcs.isPicking) {
       return [{ keys: ['A'], text: this.calcs.pickerAction }, { keys: ['B'], text: 'Keep the rival' }, { keys: [ROLE_KEYS.search.label], text: 'Search' }, { keys: ['L', 'R'], text: 'Filter' }];
@@ -416,11 +452,11 @@ export class SetEditorView {
     if (this.calcs.onRival) entries.push({ keys: ['A'], text: 'Change rival' }, { keys: ['◀▶'], text: 'Its sets' });
     entries.push({ keys: [ROLE_KEYS.editRival.label], text: 'Edit rival' });
     entries.push(
-      { keys: ['ZR'], text: this.calcState.mode() === 'attack' ? 'They attack' : 'You attack' },
-      { keys: ['ZL'], text: 'Field' },
-      { keys: ['L', 'R'], text: 'Tabs' },
-      { keys: ['B'], text: 'Back to team' },
+      { keys: [ROLE_KEYS.calcsSwap.label], text: this.calcState.mode() === 'attack' ? 'They attack' : 'You attack' },
+      { keys: [ROLE_KEYS.calcsField.label], text: 'Field' },
     );
+    if (SLOT_KEYS && (this.team()?.sets.length ?? 0) > 1) entries.push({ keys: ['ZL', 'ZR'], text: 'Pokémon' });
+    entries.push({ keys: ['L', 'R'], text: 'Tabs' }, { keys: ['B'], text: 'Back to team' });
     return entries;
   }
 

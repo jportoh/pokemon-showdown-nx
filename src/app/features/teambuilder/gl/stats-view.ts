@@ -1,6 +1,7 @@
 import { StatTable } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { Box, UiContext, focusRing, label, modal } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label, modal } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { MAX_STAT_POINTS, MAX_TOTAL_STAT_POINTS, NATURES, STAT_IDS, STAT_NAMES, calcStat, totalStatPoints } from '@features/teambuilder/data/game-rules';
 import { PokemonSet, StatId, StatSpread } from '@features/teambuilder/models/team';
 import { BAR_FILL, BAR_FULL, LEFT, LOWERED_FILL, RIGHT, WHITE, arrow, card, ring } from './tb-draw';
@@ -228,7 +229,7 @@ export class StatsView {
       const stroke = chosen ? p.accentText : cell.neutral ? p.rim : p.outline;
       ctx.renderer.rect(cellBox.x, cellBox.y, cellBox.w, cellBox.h, { fill, stroke, radius: 8, border: chosen ? 3 : 2 });
       label(ctx, cell.name, cellBox.x + cellW / 2, cellBox.y + cellH / 2, { size: 24, bold: true }, cell.neutral && !chosen ? p.muted : p.ink, { align: 'center', maxWidth: cellW - 12 });
-      if (focused) focusRing(ctx, cellBox, 8);
+      if (focused) menuFocus(ctx, cellBox, 8);
     }
   }
 

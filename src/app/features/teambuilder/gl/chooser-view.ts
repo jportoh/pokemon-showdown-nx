@@ -2,7 +2,8 @@ import { inject } from '@angular/core';
 import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, ListView, UiContext, focusRing, label, textField } from '@core/gl/ui/retro-kit';
+import { Box, ListView, UiContext, label, textField } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { toId } from '@shared/utils/to-id';
 import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
 import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, keyPillWidth, typeRgba } from './tb-draw';
@@ -212,7 +213,7 @@ export class ChooserView {
     label(ctx, option.name, left, cy, { size: 22, bold: true }, p.ink, { maxWidth: end - left - 12 });
     // The current choice: a bar at the row's end.
     if (chosen) renderer.rect(box.x + box.w - 5, box.y + 8, 4, box.h - 16, { fill: p.accentText, radius: 2 });
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 
   /**

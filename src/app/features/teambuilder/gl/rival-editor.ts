@@ -178,7 +178,7 @@ export class RivalEditor {
       if (spec.searchable && !spec.unavailable) entries.push({ keys: [ROLE_KEYS.search.label], text: 'Search' });
       if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
       const clear = this.choosers.clearLabel();
-      if (clear) entries.push({ keys: ['ZL'], text: clear });
+      if (clear) entries.push({ keys: [ROLE_KEYS.clear.label], text: clear });
       return entries;
     }
     if (this.page() === 'stats') {
@@ -196,7 +196,7 @@ export class RivalEditor {
             { keys: ['A'], text: action },
           ]
         : [{ keys: ['A'], text: 'Choose' }];
-      if (this.stats.canUndo) entries.push({ keys: ['ZL'], text: 'Undo' });
+      if (this.stats.canUndo) entries.push({ keys: [ROLE_KEYS.clear.label], text: 'Undo' });
       entries.push({ keys: ['L', 'R'], text: 'Set / Stats' }, { keys: ['B'], text: 'Done' });
       return entries;
     }

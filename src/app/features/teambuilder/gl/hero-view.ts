@@ -1,11 +1,12 @@
 import { inject } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { STAT_IDS } from '@features/teambuilder/data/game-rules';
 import { MAX_MOVES, PokemonSet } from '@features/teambuilder/models/team';
 import { SpriteStage } from './sprite-stage';
-import { CardTop, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, TEAM_BODY_Y, typePills } from './tb-draw';
+import { CardTop, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_X, HERO_COMPACT_W, HERO_W, TEAM_BODY_Y, menuCard, typePills } from './tb-draw';
 
 export type Gender = '' | 'M' | 'F';
 
@@ -78,7 +79,7 @@ export class HeroView {
     const top = this.top.at(now, EDIT_BODY_Y);
     const box = { x: EDIT_X, y: top, w: width, h: EDIT_BODY_BOTTOM - top };
     const p = ctx.palette;
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: model.choosingSpecies ? p.accentText : p.outline, radius: 12, border: 2 });
+    menuCard(ctx, box, model.choosingSpecies);
 
     // Resizing: only the card and its sprite, moving between where each layout has it.
     const k = (HERO_W - width) / (HERO_W - HERO_COMPACT_W);
@@ -127,7 +128,7 @@ export class HeroView {
       move: (direction) => direction === 'right' && ctx.focus.has(ITEM_ID) && (ctx.focus.focus(ITEM_ID), true),
     });
     drawHeroName(ctx, box, form, set?.species || 'New Pokémon');
-    if (focused) focusRing(ctx, speciesBox, 10);
+    if (focused) menuFocus(ctx, speciesBox, 10);
     drawHeroTypes(ctx, box, form);
 
     const fieldW = (box.w - 48 - 12) / 2;
@@ -156,7 +157,7 @@ export class HeroView {
     field(ctx, box, focused, !set);
     label(ctx, 'Nickname', box.x + 14, box.y + 18, { size: 16 }, p.muted);
     label(ctx, set?.name || 'None', box.x + 14, box.y + 44, { size: 22, bold: !!set?.name }, set?.name ? p.ink : p.muted, { maxWidth: box.w - 28 });
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 
   private drawGender(ctx: UiContext, box: Box, model: HeroModel): void {
@@ -172,7 +173,7 @@ export class HeroView {
     field(ctx, box, focused, !canChange);
     label(ctx, 'Gender', box.x + 14, box.y + 18, { size: 16 }, p.muted);
     label(ctx, genderName(model), box.x + 14, box.y + 44, { size: 22, bold: true }, p.ink, { maxWidth: box.w - 28 });
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 
   private drawCompact(ctx: UiContext, box: Box, model: HeroModel): void {

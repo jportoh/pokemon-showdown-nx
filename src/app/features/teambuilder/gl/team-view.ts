@@ -1,10 +1,12 @@
 import { inject } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
+import { withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { MAX_MOVES, MAX_TEAM_SIZE, PokemonSet, Team } from '@features/teambuilder/models/team';
 import { TEAM_FORMATS } from '@shared/data/formats';
@@ -25,6 +27,7 @@ import {
   arrow,
   entrance,
   fadeIn,
+  menuCard,
   shortcutButton,
   typePills,
   typeRgba,
@@ -193,13 +196,13 @@ export class TeamView {
   private chip(ctx: UiContext, id: string, box: Box, name: string, value: string, accept: () => void, steps = false): void {
     const p = ctx.palette;
     const focused = ctx.focus.control({ id, ...box, accept });
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 8, border: 2 });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: p.rim, radius: 14, border: 1 });
     const cy = box.y + box.h / 2;
     const valueX = box.x + 14 + (name ? label(ctx, name, box.x + 14, cy, { size: 17 }, p.muted) + 10 : 0);
     const right = box.x + box.w - (steps ? 30 : 14);
     label(ctx, value, valueX, cy, { size: 18, bold: true }, p.ink, { maxWidth: right - valueX });
     if (steps) arrow(ctx, RIGHT, box.x + box.w - 20, cy - 7, 2, p.muted);
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 14);
   }
 
   /**
@@ -210,7 +213,7 @@ export class TeamView {
     const p = ctx.palette;
     const top = this.cardTop.at(ctx.now, TEAM_BODY_Y);
     const box = { x: EDIT_X, y: top, w: HERO_W, h: EDIT_BODY_BOTTOM - top };
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: p.outline, radius: 12, border: 2 });
+    menuCard(ctx, box);
     const form = this.form(set);
     this.stage.draw(ctx, heroStage(box, false), form, set ? `${set.species}?` : 'A: choose its species');
     if (!set) {
@@ -235,11 +238,11 @@ export class TeamView {
       const name = set.moves[i] ?? '';
       const color = name ? typeRgba(this.dex.move(name)?.type ?? '') : null;
       if (!name) {
-        ctx.renderer.rect(mx, my, moveW, 30, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 6, border: 2 });
+        ctx.renderer.rect(mx, my, moveW, 30, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 10, border: 2 });
         label(ctx, '—', mx + 14, my + 15, { size: 18 }, p.muted);
         continue;
       }
-      ctx.renderer.rect(mx, my, moveW, 30, { fill: color ?? p.rim, radius: 6 });
+      ctx.renderer.rect(mx, my, moveW, 30, { fill: color ?? p.rim, radius: 10 });
       label(ctx, name, mx + 12, my + 15, { size: 18, bold: true }, WHITE, { maxWidth: moveW - 24 });
     }
   }
@@ -259,7 +262,8 @@ export class TeamView {
   private drawRow(ctx: UiContext, box: Box, set: PokemonSet, focused: boolean): void {
     const p = ctx.palette;
     const { renderer, now } = ctx;
-    renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 10, border: 2 });
+    if (focused) renderer.rect(box.x, box.y + 8, box.w, box.h, { fill: [0, 0, 0, 0.16], radius: 14, softness: 16 });
+    renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: p.rim, radius: 14, border: 1 });
     const cy = box.y + box.h / 2;
     if (focused) arrow(ctx, RIGHT, box.x + 12 + 3 * (0.5 + 0.5 * Math.sin(now / 160)), cy - 10, 3, p.accentText);
 
@@ -287,18 +291,18 @@ export class TeamView {
     if (item) ctx.images.drawItem(item.id, left, box.y + 44, 24);
     const textX = item ? left + 30 : left;
     label(ctx, `${set.item || 'No item'} · ${set.ability || 'No ability'}`, textX, box.y + 57, { size: 18 }, p.muted, { maxWidth: width - (textX - left) });
-    if (focused) focusRing(ctx, box, 10);
+    if (focused) menuFocus(ctx, box, 14);
   }
 
   /** The slot after the last Pokémon (A adds one there), or a place for one later. */
   private drawEmpty(ctx: UiContext, box: Box, next: boolean, focused: boolean): void {
     const p = ctx.palette;
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : [0, 0, 0, 0], stroke: next ? p.outline : p.rim, radius: 10, border: 2 });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : withAlpha(p.panel, next ? 0.6 : 0.3), stroke: p.rim, radius: 14, border: 1 });
     if (!next) return;
     const cy = box.y + box.h / 2;
     if (focused) arrow(ctx, RIGHT, box.x + 12 + 3 * (0.5 + 0.5 * Math.sin(ctx.now / 160)), cy - 10, 3, p.accentText);
     label(ctx, '+ Add Pokémon', box.x + 40, cy, { size: 22, bold: focused }, focused ? p.ink : p.muted);
-    if (focused) focusRing(ctx, box, 10);
+    if (focused) menuFocus(ctx, box, 14);
   }
 
   /** The form it battles in: what it Mega Evolves into when it holds its Mega Stone. */

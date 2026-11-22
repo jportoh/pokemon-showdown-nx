@@ -24,6 +24,7 @@ export type InputAction =
   | 'buttonR3'
   | 'buttonL3'
   | 'buttonPlus'
+  | 'buttonMinus'
   | 'buttonX'
   | 'buttonY'
   | 'first'
@@ -33,7 +34,7 @@ export type InputAction =
  * The shoulder buttons, R3 and L3 (the sticks pressed), whose meaning depends on the screen (see
  * KeyboardNavigation.registerButton).
  */
-export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3' | 'buttonPlus' | 'buttonX' | 'buttonY';
+export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3' | 'buttonPlus' | 'buttonMinus' | 'buttonX' | 'buttonY';
 
 /**
  * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
@@ -58,12 +59,13 @@ export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
   [14, 'left'],
   [15, 'right'],
   // Only the native .nro has them: on Brewser, X, Y and + are the browser's own (restart, exit).
-  // nx.js numbers them by position like A and B: Y=2, X=3, +=9 (test x1). + no longer exits there
+  // nx.js numbers them by position like A and B: Y=2, X=3, -=8, +=9 (test x1). + no longer exits there
   // (native/app/plus-button.ts): leaving is the console's HOME button.
   ...(PLATFORM === 'native'
     ? ([
         [2, 'buttonY'],
         [3, 'buttonX'],
+        [8, 'buttonMinus'],
         [9, 'buttonPlus'],
       ] as const)
     : []),
@@ -170,4 +172,19 @@ export const ROLE_KEYS = {
   previewDone: { button: NATIVE ? 'buttonPlus' : 'buttonL', label: NATIVE ? '+' : 'L' },
   /** A chat room's message, written (the on-screen keyboard, whose OK is + too). */
   chatWrite: { button: NATIVE ? 'buttonPlus' : 'buttonZR', label: NATIVE ? '+' : 'ZR' },
+  /** The teambuilder editor's "none" (No item, No move), Stats' undo, the Calcs field's reset: the option of what's open. */
+  clear: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
+  /** The teambuilder editor's Remove (held), so ZL/ZR go through the team's Pokémon on native. */
+  removePokemon: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  /** Calcs: who attacks, swapped. */
+  calcsSwap: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  /** Calcs: the field (weather, terrain, screens…). */
+  calcsField: { button: NATIVE ? 'buttonPlus' : 'buttonZL', label: NATIVE ? '+' : 'ZL' },
 } as const satisfies Record<string, RoleKey>;
+
+/**
+ * The teambuilder editor's previous and next Pokémon of the team: ZL and ZR on the native .nro, whose
+ * X, − and + take those buttons' other jobs there (ROLE_KEYS.clear, removePokemon, calcsSwap,
+ * calcsField). Brewser has no spare buttons, so there they keep them and the slots are clicked.
+ */
+export const SLOT_KEYS: { prev: PageButton; next: PageButton } | null = NATIVE ? { prev: 'buttonZL', next: 'buttonZR' } : null;
