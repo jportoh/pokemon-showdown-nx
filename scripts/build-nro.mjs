@@ -57,7 +57,7 @@ const TARGETS = {
     // A placeholder made from the app's pixel-art Poké Ball (logo-ball.ts); replace the file to change it.
     icon: path.join(root, 'native/icon.jpg'),
     entry: () => appEntry(),
-    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await renderedAudio())],
+    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await renderedAudio())],
   },
   probe: {
     output: 'psb-native-x1.nro',
@@ -114,7 +114,7 @@ async function main() {
   const romfs = Object.create(null);
   for (const name of ENGINE_FILES) if (engineRomfs[name] instanceof Blob) romfs[name] = engineRomfs[name];
   const files = await target.files();
-  romfs['main.js'] = new Blob([await bundle(target.entry(), bundledSpritesDefine(files))]);
+  romfs['main.js'] = new Blob([await bundle(target.entry(), bundledShowdownDefine(files))]);
   let assetBytes = 0;
   const predecode = target === TARGETS.app ? await loadPngDecoder() : null;
   for (const [name, source] of files) {
@@ -208,19 +208,47 @@ async function loadPngDecoder() {
 }
 
 /**
- * Showdown's images every session loads, bundled (native/app/bundled-sprites.ts reads them from the
+ * Showdown's images every session loads, bundled (native/app/bundled-showdown.ts reads them from the
  * RomFS in place of the network): the item sheet and every trainer avatar the app knows by name.
  * Downloaded once into dist/nro-cache/showdown and refreshed when older than a week (the item sheet
  * grows with new items).
  */
-const SHOWDOWN_SPRITES = 'https://play.pokemonshowdown.com/sprites/';
-const SHOWDOWN_LOCAL = 'showdown/sprites/';
-const SHOWDOWN_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+const SHOWDOWN = 'https://play.pokemonshowdown.com/';
+const SHOWDOWN_LOCAL = 'showdown/';
+const SPRITES_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 async function showdownSprites() {
   const { AVATAR_ALIASES } = await importTs('src/app/features/trainer-card/data/avatar-aliases.ts');
   const avatars = [...new Set(['unknown', ...Object.values(AVATAR_ALIASES)])].filter((name) => !name.includes('.') && !name.startsWith('#')); // Custom ones live elsewhere.
-  const wanted = ['itemicons-sheet.png', ...avatars.map((name) => `trainers/${name}.png`)];
+  const wanted = ['itemicons-sheet.png', ...avatars.map((name) => `trainers/${name}.png`)].map((name) => `sprites/${name}`);
+  return cachedShowdownFiles(wanted, SPRITES_MAX_AGE_MS);
+}
+
+/**
+ * Every Pokémon's cry (Showdown's mp3s, ~1250 files, ~11 MiB), bundled like the sprites: BattleCries
+ * fetched the two teams' together when a battle started, and their TLS handshakes held the console's
+ * main thread ~0.6–0.7 s (test x13). The list comes from Showdown's directory index; a cry once
+ * downloaded is kept (they don't change), and without the index the cached ones are used.
+ */
+const CRIES_DIR = 'audio/cries/';
+
+async function showdownCries() {
+  let names;
+  try {
+    const response = await fetch(SHOWDOWN + CRIES_DIR);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    names = [...(await response.text()).matchAll(/href="\.\/([^"/]+\.mp3)"/g)].map((match) => decodeURIComponent(match[1]));
+    if (!names.length) throw new Error('no mp3 in the index');
+  } catch (error) {
+    const cached = path.join(cacheDir, 'showdown', CRIES_DIR);
+    names = fs.existsSync(cached) ? fs.readdirSync(cached).filter((name) => name.endsWith('.mp3')) : [];
+    console.warn(`Showdown's cries index failed (${error instanceof Error ? error.message : error}): bundling the ${names.length} cached cries`);
+  }
+  return cachedShowdownFiles([...new Set(names)].map((name) => CRIES_DIR + name), Infinity);
+}
+
+/** Showdown's files (paths relative to its root), downloaded into dist/nro-cache/showdown unless a copy younger than maxAgeMs is there. */
+async function cachedShowdownFiles(wanted, maxAgeMs) {
   const cache = path.join(cacheDir, 'showdown');
   const list = [];
   const missing = [];
@@ -229,10 +257,10 @@ async function showdownSprites() {
     while (next < wanted.length) {
       const relative = wanted[next++];
       const file = path.join(cache, relative);
-      const fresh = fs.existsSync(file) && Date.now() - fs.statSync(file).mtimeMs < SHOWDOWN_MAX_AGE_MS;
+      const fresh = fs.existsSync(file) && Date.now() - fs.statSync(file).mtimeMs < maxAgeMs;
       if (!fresh) {
         try {
-          const response = await fetch(SHOWDOWN_SPRITES + relative.split('/').map(encodeURIComponent).join('/'));
+          const response = await fetch(SHOWDOWN + relative.split('/').map(encodeURIComponent).join('/'));
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()));
@@ -248,7 +276,7 @@ async function showdownSprites() {
     }
   };
   await Promise.all(Array.from({ length: 8 }, worker));
-  if (missing.length) console.warn(`Showdown sprites not bundled (${missing.length}): ${missing.slice(0, 5).join(', ')}`);
+  if (missing.length) console.warn(`Showdown files not bundled (${missing.length}): ${missing.slice(0, 5).join(', ')}`);
   return list.sort(([a], [b]) => a.localeCompare(b));
 }
 
@@ -294,10 +322,10 @@ async function decodeMusic(bytes, name) {
   }
 }
 
-/** The bundled Showdown sprites' paths, for native/app/bundled-sprites.ts. */
-function bundledSpritesDefine(files) {
+/** The bundled Showdown files' paths, for native/app/bundled-showdown.ts. */
+function bundledShowdownDefine(files) {
   const paths = files.filter(([name]) => name.startsWith(SHOWDOWN_LOCAL)).map(([name]) => name.slice(SHOWDOWN_LOCAL.length));
-  return { __PSB_BUNDLED_SPRITES__: JSON.stringify(paths) };
+  return { __PSB_BUNDLED_SHOWDOWN__: JSON.stringify(paths) };
 }
 
 /** One of the app's modules (TypeScript without path aliases), bundled and loaded in Node. */

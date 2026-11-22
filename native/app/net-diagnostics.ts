@@ -30,7 +30,7 @@ setInterval(() => {
   const lag = now - expected;
   netStats.lagMs = Math.max(netStats.lagMs, lag);
   // Each long block on its own line, to line it up with the fetches and uploads logged around it.
-  if (lag > 300) nativeLog(`[lag] main thread held ~${lag.toFixed(0)} ms`);
+  if (lag > 100) nativeLog(`[lag] main thread held ~${lag.toFixed(0)} ms`);
   expected = now + 100;
 }, 100);
 
@@ -43,7 +43,7 @@ globalThis.requestAnimationFrame = (callback: FrameRequestCallback) =>
       callback(time);
     } finally {
       const took = performance.now() - started;
-      if (took > 200) nativeLog(`[frame] a frame callback took ${took.toFixed(0)} ms`);
+      if (took > 100) nativeLog(`[frame] a frame callback took ${took.toFixed(0)} ms`);
     }
   });
 
