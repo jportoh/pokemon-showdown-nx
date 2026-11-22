@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
 import { Texture, withAlpha } from '@core/gl/gl-renderer';
@@ -32,7 +33,7 @@ const CURSOR = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 /**
  * Chats, drawn on the stage: a Gen 3 menu of rooms on the left and the room joined on the right (one
  * at a time), with its log, or its users on demand (ZL), and a field to write in with the canvas
- * keyboard (ZR). L leaves the room, as does picking another one or leaving the page (a room joined
+ * keyboard (ZR, + on the native .nro). L leaves the room, as does picking another one or leaving the page (a room joined
  * off this page would only cost the console the work of its traffic). The d-pad scrolls the log or
  * the users while they have the focus, and goes on past their ends.
  */
@@ -88,13 +89,15 @@ export class ChatsScene {
     this.stage.whenReady(({ renderer }) => (this.chatsIcon = iconTexture(renderer, 'chats', true)));
     // Focus starts on the room joined, or the first one.
     this.focus.focus(`room-${this.store.room()?.id ?? CHAT_ROOMS[0].id}`);
-    // The console buttons, while in a room: ZR writes (offline, it opens the login box), ZL shows or hides the users, L leaves.
+    // The console buttons, while in a room: ROLE_KEYS.chatWrite writes (ZR, + on the native .nro;
+    // offline, ZR opens the login box), ZL shows or hides the users, L leaves.
+    const write = () => {
+      if (this.joined()) this.write();
+      return true;
+    };
     const release = [
-      this.navigation.registerButton('buttonZR', () => {
-        if (this.loginBox.pressZR()) return true;
-        if (this.joined()) this.write();
-        return true;
-      }),
+      this.navigation.registerButton('buttonZR', () => this.loginBox.pressZR() || (ROLE_KEYS.chatWrite.button === 'buttonZR' ? write() : true)),
+      ...(ROLE_KEYS.chatWrite.button === 'buttonZR' ? [] : [this.navigation.registerButton(ROLE_KEYS.chatWrite.button, write)]),
       this.navigation.registerButton('buttonZL', () => {
         if (this.joined()) this.toggleUsers(true);
         return true;
@@ -299,7 +302,7 @@ export class ChatsScene {
       this.log.draw(ctx, VIEW_BOX, this.store.messages());
     }
 
-    pill(ctx, 'ZR', ROOM_BOX.x + 12, ROOM_BOX.y + 534, 28);
+    pill(ctx, ROLE_KEYS.chatWrite.label, ROOM_BOX.x + 12, ROOM_BOX.y + 534, 28);
     textField(ctx, 'message', { x: ROOM_BOX.x + 56, y: ROOM_BOX.y + 508, w: 824, h: 52 }, this.draft, {
       placeholder: `Say something in ${this.roomTitle()}`,
       edit: () => this.write(),

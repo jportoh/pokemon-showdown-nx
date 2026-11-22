@@ -1,4 +1,5 @@
 import { inject } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, ListView, UiContext, focusRing, label, textField } from '@core/gl/ui/retro-kit';
@@ -162,7 +163,7 @@ export class ChooserView {
     const focusedIndex = this.focusedIndex(list);
     const shown = focusedIndex !== null ? results[focusedIndex] : spec.options.find((option) => option.id === spec.selectedId);
     if (shown && !spec.unavailable) spec.describe(ctx, panel, shown.id);
-    else this.wraps.draw(ctx, `Pick from the list, or press R3 to search ${spec.noun}.`, panel.x + 24, panel.y + 24, panel.w - 48, 28, { size: 20 }, p.muted, 4);
+    else this.wraps.draw(ctx, `Pick from the list, or press ${ROLE_KEYS.search.label} to search ${spec.noun}.`, panel.x + 24, panel.y + 24, panel.w - 48, 28, { size: 20 }, p.muted, 4);
   }
 
   private drawRow(ctx: UiContext, spec: ChooserSpec, option: ChooserOption, box: Box, focused: boolean): void {

@@ -1,4 +1,5 @@
 import { computed, inject, linkedSignal } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { abilityName, itemName } from '@core/dex/names';
 import { speciesInfo } from '@core/dex/species';
@@ -254,7 +255,7 @@ export class TeamSelectView {
       write(ctx, 'Sent', box.x + box.w / 2, cy, { size: 22, bold: true }, INK.gray400, 'center');
     } else {
       renderer.rect(box.x + 18, cy - 13, 26, 26, { fill: ready ? INK.header : INK.gray600, radius: 3 });
-      write(ctx, 'L', box.x + 31, cy, { size: 16, bold: true }, INK.white, 'center');
+      write(ctx, ROLE_KEYS.previewDone.label, box.x + 31, cy, { size: 16, bold: true }, INK.white, 'center');
       write(ctx, 'Done', box.x + 52 + (box.w - 52) / 2 - 6, cy, { size: 22, bold: true }, ready ? INK.white : INK.gray400, 'center');
     }
     if (focused) ring(ctx, box, 8);

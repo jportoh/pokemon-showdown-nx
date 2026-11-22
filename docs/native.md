@@ -162,6 +162,13 @@ or once everything else has loaded, and the loading screen waits for it.
   for leaving. +, X and Y are page buttons on the native build only (`buttonPlus`, `buttonX`,
   `buttonY` in console-keys; nx.js numbers them Y=2, X=3, +=9). On Brewser they stay the browser's.
   + is OK on the on-screen keyboard, as on the console's own keyboard; Brewser keeps ZR.
+- **Button roles** (`ROLE_KEYS` in console-keys): on native each new button has one meaning across
+  the app, and the screens register the role's button and draw its label, so Brewser keeps its keys:
+  - **Y searches**: an open list in the teambuilder, Calcs and the rival's editor. R3 still works.
+  - **X is the option of what's shown**: the teambuilder grid's favourite (R then only means "next
+    team"), editing the Calcs rival and the battle timer, all formerly on R3.
+  - **+ confirms or sends**: the keyboard's OK, team preview's Done (L then only Mega Evolves or
+    Terastallizes) and writing in a chat room.
 
 ## Known limitations (tests x14–x15, 2026-11-22)
 

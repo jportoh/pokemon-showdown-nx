@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
@@ -123,8 +124,9 @@ export class GlBattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
-      // L sends team preview's picks (Done); while choosing moves it's BattleScreen's (Mega, Tera).
-      this.navigation.registerButton('buttonL', () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
+      // Team preview's picks, sent (Done): L, or + on the native .nro; while choosing moves L is
+      // BattleScreen's (Mega, Tera).
+      this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
     ];
 
     this.stage.whenReady((resources) => {

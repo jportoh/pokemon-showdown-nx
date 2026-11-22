@@ -142,3 +142,32 @@ export function inputAction(event: KeyboardEvent): InputAction | null {
   return (key && BY_KEY[key]) || BY_CODE[event.code] || BY_KEY_CODE[event.keyCode] || null;
 }
 
+
+/** A role a button has across the app, and the key the legends show for it. */
+export interface RoleKey {
+  readonly button: PageButton;
+  readonly label: string;
+}
+
+const NATIVE = PLATFORM === 'native';
+
+/**
+ * The buttons with one meaning across the app on the native .nro, which has X, Y and + to give
+ * them (Brewser keeps those for itself, so it keeps the older keys): Y searches, X is the focused
+ * thing's option (favourite, edit the rival, the battle timer), + confirms or sends. Screens register
+ * a role's button and draw its label, so both builds show the key that works.
+ */
+export const ROLE_KEYS = {
+  /** An open list's search (R3 still searches on native too). */
+  search: { button: NATIVE ? 'buttonY' : 'buttonR3', label: NATIVE ? 'Y' : 'R3' },
+  /** The teambuilder grid's favourite team, so R only ever means "next" there. */
+  favourite: { button: NATIVE ? 'buttonX' : 'buttonR', label: NATIVE ? 'X' : 'R' },
+  /** Calcs: edit the rival's set. */
+  editRival: { button: NATIVE ? 'buttonX' : 'buttonR3', label: NATIVE ? 'X' : 'R3' },
+  /** A battle's timer, on or off. */
+  timer: { button: NATIVE ? 'buttonX' : 'buttonR3', label: NATIVE ? 'X' : 'R3' },
+  /** Team preview's picks, sent (Done); L then only Mega Evolves or Terastallizes. */
+  previewDone: { button: NATIVE ? 'buttonPlus' : 'buttonL', label: NATIVE ? '+' : 'L' },
+  /** A chat room's message, written (the on-screen keyboard, whose OK is + too). */
+  chatWrite: { button: NATIVE ? 'buttonPlus' : 'buttonZR', label: NATIVE ? '+' : 'ZR' },
+} as const satisfies Record<string, RoleKey>;

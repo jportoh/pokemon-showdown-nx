@@ -1,4 +1,5 @@
 import { computed, inject } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { BattleStore, timerSecondsLeft } from '@features/battle/state/battle-store';
 import { rgba } from '@core/gl/gl-renderer';
 import { HOLD_FILL } from '@core/gl/ui/hold-action';
@@ -103,7 +104,7 @@ export class HeaderView {
 
   /**
    * Our time left this turn while the battle timer is on ("2:30"): green while it runs, red when it's
-   * running low, grey and still while we wait for the opponent. Off, a button that turns it on (R3),
+   * running low, grey and still while we wait for the opponent. Off, a button that turns it on (ROLE_KEYS.timer: R3, X on the native .nro),
    * or how long until the server allows it again.
    */
   private drawTimer(ctx: ScreenContext, toggle: () => void): void {
@@ -121,9 +122,10 @@ export class HeaderView {
       if (canToggle) ctx.focus.control({ id: 'header-timer', ...box, accept: toggle, skip: true });
       renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 14, border: 1 });
       if (canToggle) {
-        // R3, the right stick pressed: a round chip with an R.
-        renderer.rect(box.x + 8, box.y + 4, 22, 22, { fill: INK.header, stroke: INK.gray400, radius: 11, border: 1.5 });
-        write(ctx, 'R', box.x + 19, box.y + 15, { size: 13, bold: true }, INK.white, 'center');
+        // Its key: R3 (the right stick pressed) a round chip with an R, X (native) a square one.
+        const stick = ROLE_KEYS.timer.label === 'R3';
+        renderer.rect(box.x + 8, box.y + 4, 22, 22, { fill: INK.header, stroke: INK.gray400, radius: stick ? 11 : 4, border: 1.5 });
+        write(ctx, stick ? 'R' : ROLE_KEYS.timer.label, box.x + 19, box.y + 15, { size: 13, bold: true }, INK.white, 'center');
       }
       // A clock whose hand ticks every second while it runs; two pause bars while it's stopped.
       const cx = box.x + 44;
@@ -144,7 +146,7 @@ export class HeaderView {
     if (canToggle && !this.store.result()) {
       const until = this.store.timerCooldownUntil();
       const cooldown = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
-      hint(ctx, 'header-timer', { x: 798, y: 6, w: 106, h: 32 }, 'R3', cooldown ? `Wait ${cooldown}s` : 'Timer', false, toggle);
+      hint(ctx, 'header-timer', { x: 798, y: 6, w: 106, h: 32 }, ROLE_KEYS.timer.label, cooldown ? `Wait ${cooldown}s` : 'Timer', false, toggle);
     }
   }
 }

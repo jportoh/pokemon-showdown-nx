@@ -1,4 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
 import { HoldAction } from '@core/gl/ui/hold-action';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -150,7 +151,7 @@ export class BattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
       this.navigation.registerButton('buttonR', () => this.pressForfeit()),
-      this.navigation.registerButton('buttonR3', () => this.toggleTimer()),
+      this.navigation.registerButton(ROLE_KEYS.timer.button, () => this.toggleTimer()),
     ];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());

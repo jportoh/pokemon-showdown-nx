@@ -1,4 +1,5 @@
 import { Signal, computed, inject, signal } from '@angular/core';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
@@ -166,6 +167,11 @@ export class SetEditorView {
     return this.tab() === 'calcs' && this.calcs.pressSearch();
   }
 
+  /** Calcs: edit the rival (ROLE_KEYS.editRival). */
+  pressEditRival(): boolean {
+    return this.tab() === 'calcs' && !this.spec() && this.calcs.pressEditRival();
+  }
+
   /** Home/End: the open list's ends, or the focused stat's none/max. */
   jump(to: 'first' | 'last'): boolean {
     if (this.tab() === 'stats') return this.stats.jump(to);
@@ -319,7 +325,7 @@ export class SetEditorView {
         { keys: ['A'], text: 'Pick' },
         { keys: ['B'], text: !this.pokemon() ? 'Back to team' : current ? `Keep ${current}` : 'Close' },
       ];
-      if (spec.searchable && !spec.unavailable) entries.push({ keys: ['R3'], text: 'Search' });
+      if (spec.searchable && !spec.unavailable) entries.push({ keys: [ROLE_KEYS.search.label], text: 'Search' });
       if (spec.filters.length > 1) entries.push({ keys: ['L', 'R'], text: 'Filter' });
       const clear = this.clearLabel();
       if (clear) entries.push({ keys: ['ZL'], text: clear });
@@ -404,11 +410,11 @@ export class SetEditorView {
       return [{ keys: ['L', 'R'], text: 'Change' }, { keys: ['A'], text: 'Next' }, { keys: ['ZL'], text: 'Reset' }, { keys: ['B'], text: 'Done' }];
     }
     if (this.calcs.isPicking) {
-      return [{ keys: ['A'], text: this.calcs.pickerAction }, { keys: ['B'], text: 'Keep the rival' }, { keys: ['R3'], text: 'Search' }, { keys: ['L', 'R'], text: 'Filter' }];
+      return [{ keys: ['A'], text: this.calcs.pickerAction }, { keys: ['B'], text: 'Keep the rival' }, { keys: [ROLE_KEYS.search.label], text: 'Search' }, { keys: ['L', 'R'], text: 'Filter' }];
     }
     const entries: LegendEntry[] = [];
     if (this.calcs.onRival) entries.push({ keys: ['A'], text: 'Change rival' }, { keys: ['◀▶'], text: 'Its sets' });
-    entries.push({ keys: ['R3'], text: 'Edit rival' });
+    entries.push({ keys: [ROLE_KEYS.editRival.label], text: 'Edit rival' });
     entries.push(
       { keys: ['ZR'], text: this.calcState.mode() === 'attack' ? 'They attack' : 'You attack' },
       { keys: ['ZL'], text: 'Field' },
