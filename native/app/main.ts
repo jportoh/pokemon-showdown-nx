@@ -4,6 +4,8 @@
 import './native-log';
 import './net-diagnostics';
 import './bundled-sprites';
+import './touch-bridge';
+import './plus-button';
 import './dom-shim';
 import { registerBoldFace } from './bold-font';
 

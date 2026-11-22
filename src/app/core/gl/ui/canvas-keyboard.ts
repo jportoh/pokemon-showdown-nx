@@ -3,6 +3,7 @@ import { CanvasFocus, focusInput } from '../canvas-ui';
 import { GlStage, StageFrame } from '../gl-stage';
 import { TextStyle, TextTextures } from '../gl-textures';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { PLATFORM } from '@core/runtime/platform';
 import { GlTheme } from './gl-theme';
 import { UiContext, button, label, pill } from './retro-kit';
 
@@ -43,20 +44,23 @@ const FOOTER_WIDTH = 1152;
 /** Texts made per call of warm(), so the loading screen keeps its pace. */
 const WARM_PER_FRAME = 12;
 
+/** OK: + on the native .nro, as the console's own keyboard (Brewser keeps + for itself), else ZR. */
+const OK_BUTTON = PLATFORM === 'native' ? 'buttonPlus' : 'buttonZR';
+
 type BottomKey = 'shift' | 'space' | 'delete' | 'cancel' | 'ok';
 const BOTTOM: readonly { id: BottomKey; text: string; button: string }[] = [
   { id: 'shift', text: 'Shift', button: 'L' },
   { id: 'space', text: 'Space', button: 'R' },
   { id: 'delete', text: 'Delete', button: 'B' },
   { id: 'cancel', text: 'Cancel', button: 'ZL' },
-  { id: 'ok', text: 'OK', button: 'ZR' },
+  { id: 'ok', text: 'OK', button: OK_BUTTON === 'buttonPlus' ? '+' : 'ZR' },
 ];
 
 /**
  * The app's on-screen keyboard, drawn on the canvas over the whole stage (for the screens' text
  * fields): the field's name, the text, and the
  * keys, which the d-pad walks (round each row) and A types. B deletes (held, it repeats), L is
- * Shift, R a space, ZR OK and ZL Cancel; the mouse clicks keys, and a computer's keyboard types.
+ * Shift, R a space, ZR OK (+ on the native .nro) and ZL Cancel; the mouse clicks keys, and a computer's keyboard types.
  * It never opens on its own (the console's own keyboard must not open either): a field opens it on A.
  */
 @Service()
@@ -102,7 +106,7 @@ export class CanvasKeyboard {
       () => (this.navigation.repeatBack = false),
       this.navigation.registerButton('buttonL', () => ((this.shift = !this.shift), true)),
       this.navigation.registerButton('buttonR', () => (this.type(' '), true)),
-      this.navigation.registerButton('buttonZR', () => (this.close(this.text), true)),
+      this.navigation.registerButton(OK_BUTTON, () => (this.close(this.text), true)),
       this.navigation.registerButton('buttonZL', () => (this.close(null), true)),
       this.navigation.registerButton('buttonR3', () => true),
       this.navigation.registerTextInput((event) => this.onComputerKey(event)),
