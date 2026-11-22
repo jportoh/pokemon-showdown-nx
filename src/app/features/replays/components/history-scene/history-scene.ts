@@ -10,8 +10,9 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { HomeMenu } from '@features/home/state/home-menu';
 import { ReplayApi } from '@features/replays/data/replay-api';
 import { ReplayGame } from '@features/replays/data/replay-game';
-import { errorText, fromSecondPlayer, gameDetail, timeAgo } from '@features/replays/data/replay-rows';
+import { errorText, fromSecondPlayer, ratingChip, replayDetails, timeAgo } from '@features/replays/data/replay-rows';
 import { PLAYABLE_FORMATS } from '@shared/data/formats';
+import { BattleSummary } from '@shared/utils/battle-summary';
 import { RowLookup, RowLookups } from '@shared/utils/row-lookups';
 import { toId } from '@shared/utils/to-id';
 
@@ -76,6 +77,9 @@ export class HistoryScene {
   /** The games' winners and ratings, as their logs tell them (by replay ID). */
   private readonly games = new RowLookups<ReplayGame>((id) => this.api.game(id), LOOKUPS_AT_ONCE, () => undefined);
 
+  /** The focused battle's players, teams and result, from its log (one at a time, kept once read). */
+  private readonly summaries = new RowLookups<BattleSummary>((id) => this.api.summary(id), 1, () => undefined);
+
   private readonly formatLabel = computed(() => FORMAT_OPTIONS.find((option) => option.id === this.format())?.title ?? this.format());
 
   private readonly message = computed(() => {
@@ -99,13 +103,14 @@ export class HistoryScene {
     const allFormats = this.format() === ALL_FORMATS;
     return this.replays().map((row) => {
       const game = games.get(row.id);
-      const detail =
-        opening === row.id
-          ? ['Loading the replay…']
-          : failed?.id === row.id
-            ? [failed.text]
-            : [...(allFormats ? [formatName(row.format)] : []), ...ratingDetail(row, game), row.age];
-      return { title: row.title, badge: resultBadge(game, userId), detail: detail.join(' · ') };
+      const news = opening === row.id ? 'Loading the replay…' : failed?.id === row.id ? failed.text : '';
+      return {
+        title: allFormats ? `${row.title} · ${formatName(row.format)}` : row.title,
+        badge: resultBadge(game, userId),
+        rating: ratingChip(row.rating, row.rating ? undefined : game),
+        age: row.age,
+        detail: news,
+      };
     });
   });
 
@@ -126,7 +131,19 @@ export class HistoryScene {
     message: () => this.message(),
     rows: () => this.rows(),
     detailX: 420,
+    openLabel: 'Watch',
     open: (index) => void this.open(this.replays()[index]),
+    details: {
+      mode: 'side',
+      request: (index) => {
+        const id = this.replays()[index]?.id;
+        if (id) this.summaries.show([id]);
+      },
+      get: (index) => {
+        const row = this.replays()[index];
+        return row ? replayDetails(this.summaries.results().get(row.id), row.players, formatName(row.format), this.userId()) : null;
+      },
+    },
     shown: (from, to) => this.games.show(this.replays().slice(from, to).map((row) => row.id)),
   });
 
@@ -195,11 +212,6 @@ function resultBadge(game: RowLookup<ReplayGame> | undefined, userId: string): F
   return toId(game.end.winner) === userId ? { text: 'Won', tone: 'good' } : { text: 'Lost', tone: 'bad' };
 }
 
-/** The list's rating, else what the replay's log tells. */
-function ratingDetail(row: HistoryRow, game: RowLookup<ReplayGame> | undefined): string[] {
-  if (row.rating) return [`Rating ${row.rating}`];
-  return game && game !== 'loading' && game !== 'failed' ? gameDetail(game) : [];
-}
 
 /** "[Gen 9] Random Battle" as the app labels it, else the server's name without brackets ("Gen 7 Random Battle"). */
 function formatName(name: string): string {

@@ -7,10 +7,11 @@ import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-co
 import { BattleStore } from '@features/battle/state/battle-store';
 import { ReplayApi } from '@features/replays/data/replay-api';
 import { ReplayGame } from '@features/replays/data/replay-game';
-import { errorText, gameDetail, timeAgo } from '@features/replays/data/replay-rows';
+import { errorText, ratingChip, replayDetails, timeAgo } from '@features/replays/data/replay-rows';
 import { PickerOption } from '@core/gl/ui/option-picker';
 import { PLAYABLE_FORMATS, PlayableFormat } from '@shared/data/formats';
-import { RowLookup, RowLookups } from '@shared/utils/row-lookups';
+import { BattleSummary } from '@shared/utils/battle-summary';
+import { RowLookups } from '@shared/utils/row-lookups';
 
 /** Replay logs downloaded at once to rate the best-of-3 games shown (the list rates only a set's last one). */
 const LOOKUPS_AT_ONCE = 2;
@@ -75,10 +76,14 @@ export class ReplaysScene {
     const games = this.games.results();
     return this.replays().map((row) => ({
       title: row.title,
-      detail:
-        opening === row.id ? 'Loading the replay…' : failed?.id === row.id ? failed.text : [...ratingDetail(row, games.get(row.id)), row.age].join(' · '),
+      players: [row.players[0] ?? '', row.players[1] ?? ''],
+      rating: ratingChip(row.rating, row.rating ? undefined : games.get(row.id)) ?? { text: 'Unrated', high: false },
+      age: row.age,
+      detail: opening === row.id ? 'Loading the replay…' : failed?.id === row.id ? failed.text : '',
     }));
   });
+  /** The focused replay's players, teams and result, from its log (one at a time, kept once read). */
+  private readonly summaries = new RowLookups<BattleSummary>((id) => this.api.summary(id), 1, () => undefined);
 
   private readonly screen = new FormatListScreen({
     page: { title: 'Replays', icon: 'replays' },
@@ -92,7 +97,19 @@ export class ReplaysScene {
     message: () => this.message(),
     rows: () => this.rows(),
     detailX: 760,
+    openLabel: 'Watch',
     open: (index) => void this.open(this.replays()[index]),
+    details: {
+      mode: 'side',
+      request: (index) => {
+        const id = this.replays()[index]?.id;
+        if (id) this.summaries.show([id]);
+      },
+      get: (index) => {
+        const row = this.replays()[index];
+        return row ? replayDetails(this.summaries.results().get(row.id), row.players, this.format().label) : null;
+      },
+    },
     shown: (from, to) => {
       const ids = this.format().id.endsWith('bo3') ? this.replays().slice(from, to).filter((row) => !row.rating).map((row) => row.id) : [];
       this.games.show(ids);
@@ -102,7 +119,10 @@ export class ReplaysScene {
   constructor() {
     // The battle opened from here plays its music sooner: its download starts while the list shows.
     inject(BattleMusic).prepareNext();
-    inject(DestroyRef).onDestroy(() => this.games.stop());
+    inject(DestroyRef).onDestroy(() => {
+      this.games.stop();
+      this.summaries.stop();
+    });
     void this.refresh();
   }
 
@@ -152,13 +172,6 @@ export class ReplaysScene {
   }
 }
 
-/** The list's rating, else what the replay's log tells (looked up for best-of-3 games only). */
-function ratingDetail(row: ReplayRow, game: RowLookup<ReplayGame> | undefined): string[] {
-  if (row.rating) return [`Rating ${row.rating}`];
-  if (game === 'loading') return ['Rating…'];
-  if (game === 'failed') return [];
-  return game ? gameDetail(game) : ['Unrated'];
-}
 
 function toRow(replay: ReplaySummary, now: number): ReplayRow {
   const [p1, p2] = replay.players;
