@@ -1,12 +1,13 @@
 import { inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { Rgba, withAlpha } from '@core/gl/gl-renderer';
+import { Rgba, mixRgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+
 import { MAX_TEAM_SIZE, Team } from '@features/teambuilder/models/team';
 import { formatLabel } from '@shared/data/formats';
-import { BAR_FILL, EDIT_X, TOP, WHITE, arrow, entrance, fadeIn } from './tb-draw';
+import { BAR_FILL, EDIT_X, TOP, WHITE, arrow, entrance, fadeIn, typeRgba } from './tb-draw';
 
 const BLACK: Rgba = [0, 0, 0, 1];
 
@@ -18,7 +19,7 @@ const GAP = 16;
 const ROWS_SHOWN = 3;
 const GRID_Y = TOP + 20;
 const ROW_STEP = CARD_H + GAP;
-const MINI = 54;
+const MINI = 60;
 /** How long the grid takes to scroll a row, and the cards to come in, one after another. */
 const SCROLL_MS = 180;
 const STAGGER_MS = 45;
@@ -276,58 +277,83 @@ export class TeamGridView {
     return this.scroll.from + (this.firstRow - this.scroll.from) * (1 - (1 - t) * (1 - t));
   }
 
+  /** New team: a card like the teams', an accent disc with a plus, and how else to add one. */
   private drawNew(ctx: UiContext, box: Box, focused: boolean): void {
     const p = ctx.palette;
     const { renderer } = ctx;
-    renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: p.outline, radius: 12, border: 2 });
-    const cx = box.x + box.w / 2;
-    const cy = box.y + 66;
+    const card = this.cardShape(ctx, box, focused, null);
+    const cx = card.x + card.w / 2;
+    const cy = card.y + 62;
     renderer.rect(cx - 28, cy - 28, 56, 56, { fill: p.accent, radius: 28 });
     renderer.rect(cx - 14, cy - 2, 28, 4, { fill: WHITE, radius: 2 });
     renderer.rect(cx - 2, cy - 14, 4, 28, { fill: WHITE, radius: 2 });
-    label(ctx, 'New team', cx, box.y + 128, { size: 22, bold: true }, p.ink, { align: 'center' });
-    if (focused) focusRing(ctx, box, 12);
+    label(ctx, 'New team', cx, card.y + 118, { size: 22, bold: true }, p.ink, { align: 'center' });
+    label(ctx, 'or ZR to import a PokePaste', cx, card.y + 148, { size: 15 }, p.muted, { align: 'center' });
   }
 
+  /**
+   * A team: its name (a star on its format's favourite) and how many Pokémon, its format in a chip, and
+   * its six standing on little platforms; focused, the card lifts and takes its lead's type colour.
+   */
   private drawTeam(ctx: UiContext, box: Box, team: Team, focused: boolean): void {
     const p = ctx.palette;
     const { renderer, now } = ctx;
-    renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.outline : p.rim, radius: 12, border: 2 });
+    const lead = team.sets[0] ? (this.dex.mega(team.sets[0].species, team.sets[0].item) ?? this.dex.species(team.sets[0].species)) : undefined;
+    const card = this.cardShape(ctx, box, focused, lead?.types[0] ? (typeRgba(lead.types[0]) ?? null) : null);
     const count = `${team.sets.length}/${MAX_TEAM_SIZE}`;
-    let right = box.x + box.w - 20;
-    right -= label(ctx, count, right, box.y + 32, { size: 18 }, p.muted, { align: 'right' });
+    let right = card.x + card.w - 20;
+    right -= label(ctx, count, right, card.y + 32, { size: 18, bold: true }, p.muted, { align: 'right' });
     if (team.favourite) {
       right -= 12 + STAR_W;
-      favouriteStar(ctx, right, box.y + 32 - STAR_W / 2 - 1);
+      favouriteStar(ctx, right, card.y + 32 - STAR_W / 2 - 1);
     }
-    label(ctx, team.name, box.x + 20, box.y + 32, { size: 24, bold: true }, p.ink, { maxWidth: right - box.x - 36 });
-    label(ctx, shortFormat(team.format), box.x + 20, box.y + 64, { size: 18 }, p.muted, { maxWidth: box.w - 40 });
+    label(ctx, team.name, card.x + 20, card.y + 32, { size: 24, bold: true }, p.ink, { maxWidth: right - card.x - 36 });
+    const format = shortFormat(team.format);
+    const chipW = Math.min(card.w - 40, ctx.text.measure(format, { size: 14, bold: true }) + 24);
+    renderer.rect(card.x + 20, card.y + 50, chipW, 26, { fill: p.rim, radius: 13 });
+    label(ctx, format, card.x + 32, card.y + 63, { size: 14, bold: true }, p.ink, { maxWidth: chipW - 24 });
 
+    const step = (card.w - 28) / MAX_TEAM_SIZE;
+    const ground = card.y + card.h - 22;
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
-      const slot = { x: box.x + 20 + i * (MINI + 8), y: box.y + box.h - 18 - MINI, w: MINI, h: MINI };
+      const cx = card.x + 14 + step * i + step / 2;
       const set = team.sets[i];
       if (!set) {
-        renderer.rect(slot.x, slot.y, slot.w, slot.h, { fill: [0, 0, 0, 0], stroke: p.rim, radius: 8, border: 2 });
+        renderer.rect(cx - 6, ground - 10, 12, 12, { fill: p.rim, radius: 6 });
         continue;
       }
-      renderer.rect(slot.x, slot.y, slot.w, slot.h, { fill: p.bg, radius: 8 });
+      renderer.rect(cx - 20, ground - 2, 40, 8, { fill: withAlpha(BLACK, 0.14), radius: 4, softness: 4 });
       const form = this.dex.mega(set.species, set.item) ?? this.dex.species(set.species);
       const sprite = form ? ctx.images.sprite(form.sprite, false, ImagePriority.Screen) : null;
       if (!sprite) continue;
       // The focused team's Pokémon hop, one after another.
       const hop = focused ? -3 * Math.abs(Math.sin(now / 260 - i * 0.5)) : 0;
-      renderer.rect(slot.x + 1, slot.y + 1 + hop, MINI - 2, MINI - 2, { fill: WHITE, texture: sprite });
+      renderer.rect(cx - MINI / 2, ground - MINI + 4 + hop, MINI, MINI, { fill: WHITE, texture: sprite });
     }
-    if (focused) focusRing(ctx, box, 12);
+  }
+
+  /** A card's body in the menu's style (a soft shadow, rounded; focused: lifted, ringed in the accent, tinted); its box as drawn. */
+  private cardShape(ctx: UiContext, box: Box, focused: boolean, tint: Rgba | null): Box {
+    const p = ctx.palette;
+    const card = { ...box, y: box.y - (focused ? 4 : 0) };
+    ctx.renderer.rect(card.x, card.y + 10, card.w, card.h, { fill: withAlpha(BLACK, focused ? 0.24 : 0.12), radius: 18, softness: 20 });
+    ctx.renderer.rect(card.x, card.y, card.w, card.h, {
+      fill: focused ? p.select : p.panel,
+      fillEnd: focused && tint ? mixRgba(p.select, tint, 0.3) : focused ? p.select : p.panel,
+      stroke: focused ? p.accentText : p.rim,
+      border: focused ? 4 : 1,
+      radius: 18,
+    });
+    return card;
   }
 
   /** The card carried: lifted over a shadow, bobbing a little, ringed in the accent. */
   private drawHeld(ctx: UiContext, box: Box, team: Team): void {
     const bob = 2 * Math.sin(ctx.now / 180);
-    ctx.renderer.rect(box.x + 6, box.y + 8, box.w, box.h, { fill: withAlpha(BLACK, 0.35), radius: 12 });
+    ctx.renderer.rect(box.x + 6, box.y + 8, box.w, box.h, { fill: withAlpha(BLACK, 0.35), radius: 18, softness: 16 });
     const lifted = { ...box, y: box.y - LIFT + bob };
     this.drawTeam(ctx, lifted, team, true);
-    ctx.renderer.rect(lifted.x - 4, lifted.y - 4, lifted.w + 8, lifted.h + 8, { fill: [0, 0, 0, 0], stroke: ctx.palette.accent, radius: 15, border: 3 });
+    ctx.renderer.rect(lifted.x - 4, lifted.y - 8, lifted.w + 8, lifted.h + 8, { fill: [0, 0, 0, 0], stroke: ctx.palette.accent, radius: 21, border: 3 });
   }
 }
 

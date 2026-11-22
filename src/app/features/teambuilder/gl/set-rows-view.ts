@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { ChampionsDex, DexMega, DexSpecies } from '@core/dex/champions-dex';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { PokemonSet } from '@features/teambuilder/models/team';
 import { GENDER_ID, NICKNAME_ID, SPECIES_ID } from './hero-view';
 import { InfoPanel } from './info-panel';
@@ -81,7 +82,7 @@ export class SetRowsView {
         label(ctx, move.type, type.x + type.w / 2, cy, { size: 16, bold: true }, WHITE, { align: 'center' });
       }
     }
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 
   /** The info box: what the focused row or card field is. */

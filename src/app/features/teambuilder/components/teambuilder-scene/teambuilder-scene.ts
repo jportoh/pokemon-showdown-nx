@@ -1,5 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { PageButton, ROLE_KEYS } from '@core/input/console-keys';
+import { PageButton, ROLE_KEYS, SLOT_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
@@ -8,6 +8,7 @@ import { withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { GlTheme } from '@core/gl/ui/gl-theme';
+import { drawGround } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { UiContext, label } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
@@ -100,18 +101,29 @@ export class TeambuilderScene {
         if (this.leaving) return true;
         if (this.view === 'teams') return this.pressMove();
         if (this.view === 'team') return this.validate();
-        return this.view === 'edit' && this.editor.pressClear();
+        if (this.view !== 'edit') return false;
+        return SLOT_KEYS ? this.editor.pressSlot(-1) : this.editor.pressClear();
       }),
       this.navigation.registerButton('buttonZR', () => {
         if (this.leaving) return true;
         if (this.view === 'teams') return this.grid.isMoving() || this.askPaste();
         if (this.view === 'team') return this.pressDelete();
-        return this.view === 'edit' && this.editor.pressRemove();
+        if (this.view !== 'edit') return false;
+        return SLOT_KEYS ? this.editor.pressSlot(1) : this.editor.pressRemove();
       }),
+      // On the native .nro ZL/ZR's editor jobs move to X (the open thing's option), − (Remove, or who
+      // attacks on Calcs) and + (Calcs' field); X tries before ROLE_KEYS.editRival (the later registered goes first).
+      ...(SLOT_KEYS
+        ? [
+            this.navigation.registerButton(ROLE_KEYS.removePokemon.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressRemove())),
+            this.navigation.registerButton(ROLE_KEYS.calcsField.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressFieldOpen())),
+          ]
+        : []),
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
       this.navigation.registerButton('buttonR', () => this.view !== 'teams' && this.pressLR(1)),
       this.navigation.registerButton(ROLE_KEYS.favourite.button, () => this.view === 'teams' && this.pressFavourite()),
       this.navigation.registerButton(ROLE_KEYS.editRival.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressEditRival())),
+      ...(SLOT_KEYS ? [this.navigation.registerButton(ROLE_KEYS.clear.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressOption()))] : []),
       // An open list's search, without walking up to its box first.
       ...[...new Set<PageButton>(['buttonR3', ROLE_KEYS.search.button])].map((button) =>
         this.navigation.registerButton(button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),
@@ -314,6 +326,7 @@ export class TeambuilderScene {
     if (this.teamView.stepDelete(now, this.view === 'team' && !!shown && !this.leaving) && shown) this.deleteTeam(shown.id);
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
+    drawGround(ctx, 1);
     const team = this.team();
 
     // The pages first: the grid scrolls under the bar and the legend.
@@ -358,15 +371,15 @@ export class TeambuilderScene {
    */
   private drawBar(ctx: UiContext): void {
     const team = this.team();
-    const page = { title: 'Teambuilder', icon: 'teambuilder' as const, back: () => this.onAction('back') };
+    const page = { title: 'TEAMBUILDER', icon: 'teambuilder' as const };
     if (this.view === 'edit' && team) {
-      this.bar.draw(ctx, { ...page, crumbs: this.editor.crumbs(), trailing: (c, right, cy) => this.editor.drawSlots(c, right, cy) });
+      this.bar.drawHeader(ctx, { ...page, crumbs: this.editor.crumbs(), trailing: (c, right, cy) => this.editor.drawSlots(c, right, cy) });
     } else if (this.view !== 'teams' && team) {
-      this.bar.draw(ctx, { ...page, crumbs: [team.name], trailing: (c, right, cy) => this.drawPlace(c, team.id, right, cy) });
+      this.bar.drawHeader(ctx, { ...page, crumbs: [team.name], trailing: (c, right, cy) => this.drawPlace(c, team.id, right, cy) });
     } else {
       const count = this.store.teams().length;
       const text = `${count} team${count === 1 ? '' : 's'}`;
-      this.bar.draw(ctx, { ...page, crumbs: [], trailing: (c, right, cy) => right - label(c, text, right, cy, { size: 20 }, c.palette.muted, { align: 'right' }) });
+      this.bar.drawHeader(ctx, { ...page, trailing: (c, right, cy) => right - label(c, text, right, cy, { size: 20 }, c.palette.muted, { align: 'right' }) });
     }
   }
 

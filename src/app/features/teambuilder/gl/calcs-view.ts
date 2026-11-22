@@ -5,7 +5,8 @@ import { CanvasFocus } from '@core/gl/canvas-ui';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { CalcMode, CalcState, freshField } from '@features/teambuilder/calc/calc-state';
 import { CalcBoosts, CalcField, CalcOutcome, CalcRun, DamageCalc, MoveCalc, percent } from '@features/teambuilder/calc/damage-calc';
 import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
@@ -276,7 +277,7 @@ export class CalcsView {
     ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: p.outline, radius: 10, border: 2 });
     if (!rival) {
       label(ctx, 'A: choose a rival', box.x + 24, box.y + box.h / 2, { size: 24, bold: true }, p.muted);
-      if (focused) focusRing(ctx, box, 10);
+      if (focused) menuFocus(ctx, box, 10);
       return;
     }
     const form = this.form(rival.set);
@@ -324,7 +325,7 @@ export class CalcsView {
 
     // On the right, the rival as it battles here, like your card: HP, stages, its Speed.
     drawBattleState(ctx, stateX, box.y + 22, 236, battleState(field, outcome, mode, 'rival'));
-    if (focused) focusRing(ctx, box, 10);
+    if (focused) menuFocus(ctx, box, 10);
   }
 
   /**
@@ -447,7 +448,7 @@ export class CalcsView {
       const text =
         move.kind === 'pending' ? '…' : move.kind === 'status' ? 'No damage' : move.kind === 'immune' ? "It doesn't affect the target" : 'Not in the calc';
       label(ctx, text, x, cy, { size: 18 }, p.muted);
-      if (focused) focusRing(ctx, box, 8);
+      if (focused) menuFocus(ctx, box, 8);
       return;
     }
 
@@ -472,7 +473,7 @@ export class CalcsView {
     const ink = ko.tier === 3 ? p.muted : ko.tier === 1 ? p.contrast : KO_DARK_INK;
     label(ctx, ko.title, koBox.x + koW / 2, cy - 7, { size: 18, bold: true }, ink, { align: 'center' });
     label(ctx, ko.detail, koBox.x + koW / 2, cy + 11, { size: 12, bold: true }, ink, { align: 'center', maxWidth: koW - 8 });
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 
   // ---------------------------------------------------------------- the detail box

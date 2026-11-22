@@ -1,7 +1,8 @@
 import { computed, inject } from '@angular/core';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
-import { ListView, UiContext, button, focusRing, label, retroBox } from '@core/gl/ui/retro-kit';
+import { ListView, UiContext, button, label, retroBox } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { Team } from '@features/teambuilder/models/team';
 import { TeamValidation } from '@features/teambuilder/state/team-validation';
 import { WrapCache, entrance } from './tb-draw';
@@ -71,7 +72,7 @@ export class ValidationView {
           // One line or two, in the middle of the row.
           const lines = this.wraps.get(ctx, problems[row.index], { size: 18 }, rowBox.w - 32, 2).length;
           this.wraps.draw(ctx, problems[row.index], rowBox.x + 16, rowBox.y + (rowBox.h - lines * 24) / 2, rowBox.w - 32, 24, { size: 18 }, p.ink, 2);
-          if (row.focused) focusRing(ctx, rowBox, 8);
+          if (row.focused) menuFocus(ctx, rowBox, 8);
         },
         () => undefined,
       );

@@ -14,7 +14,7 @@ always goes back one step (editor → team → grid → home menu):
 | --- | --- | --- |
 | **Grid** | `gl/team-grid-view.ts` | The teams as cards, New team first, newest first. ZR imports a PokePaste |
 | **Team** | `gl/team-view.ts` | A team as the games' party screen: the focused Pokémon's card, six slot rows. Rename and format in the header, L/R go through the teams, ZL validates, ZR (held) deletes |
-| **Editor** | `gl/set-editor-view.ts` | One Pokémon across the page: its card, and Details, Stats or Calcs beside it (L/R switch tabs). ZR (held) removes it |
+| **Editor** | `gl/set-editor-view.ts` | One Pokémon across the page: its card, and Details, Stats or Calcs beside it (L/R switch tabs). On the native .nro ZL/ZR go through the team's Pokémon and - (held) removes it, X is the open list's none / Stats' undo, + opens the Calcs field and - swaps who attacks there; on Brewser (no X, - or +) ZL/ZR keep those jobs (see `ROLE_KEYS`, `SLOT_KEYS`) |
 
 ### The editor's parts
 
@@ -26,7 +26,7 @@ always goes back one step (editor → team → grid → home menu):
 | `gl/chooser-view.ts` | The list to pick a species, item, ability or move: search (keyboard), filters (L/R), detail panel. Picking walks on to the next field, like Showdown's teambuilder |
 | `gl/info-panel.ts` | What a move, item, ability or species is, for the info box and the detail panel |
 | `gl/stats-view.ts` | Stats: points per stat (0–32, 66 in all) and the nature grid |
-| `gl/calcs-view.ts` | Calcs: what your moves do to a rival, or the rival's to you (ZR) |
+| `gl/calcs-view.ts` | Calcs: what your moves do to a rival, or the rival's to you (`ROLE_KEYS.calcsSwap`) |
 | `gl/rival-picker.ts`, `gl/field-modal.ts` | The rival and field modals of the Calcs tab |
 | `gl/rival-editor.ts` | Calcs: the rival's set edited (R3): item, ability and moves as the Details rows, points and nature as the Stats; the first change makes it a Custom set |
 | `gl/set-choosers.ts` | The lists' options, filters and picks for a set (the editor's and the edited rival's) |

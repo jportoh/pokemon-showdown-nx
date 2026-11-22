@@ -117,7 +117,19 @@ export class PageBar {
    * The header of a page in the menu's style (no bar, the lit side under it): its icon and title top
    * left, our name and connection and a round Back button (B) top right, a challenge's notice between.
    */
-  drawHeader(ctx: UiContext, page: { title: string; icon: PixelIconName; back: () => void }): void {
+  drawHeader(
+    ctx: UiContext,
+    page: {
+      title: string;
+      icon: PixelIconName;
+      /** The round Back (B) top right; none when the page's legend has B. */
+      back?: () => void;
+      /** Where the page is after the title ("▸ Sun Offense ▸ Garchomp"). */
+      crumbs?: readonly string[];
+      /** What the page shows top right instead of our name and connection; returns where it starts. */
+      trailing?: (ctx: UiContext, right: number, cy: number) => number;
+    },
+  ): void {
     const p = ctx.palette;
     const { renderer } = ctx;
     let icon = this.icons.get(page.icon);
@@ -126,10 +138,18 @@ export class PageBar {
       this.icons.set(page.icon, icon);
     }
     renderer.image(icon, 40, 24, 2);
-    label(ctx, page.title, 100, 48, { size: 34, bold: true }, p.ink, { maxWidth: 360 });
-    const back = { x: 1232 - 128, y: 26, w: 128, h: 44 };
-    drawKeyButton(ctx, 'bar-back', back, 'B', 'Back', page.back);
-    const statusLeft = this.drawStatus(ctx, back.x - 20, 48);
+    const titleW = label(ctx, page.title, 100, 48, { size: 34, bold: true }, p.ink, { maxWidth: 360 });
+    let right = 1232;
+    if (page.back) {
+      const back = { x: right - 128, y: 26, w: 128, h: 44 };
+      drawKeyButton(ctx, 'bar-back', back, 'B', 'Back', page.back);
+      right = back.x - 20;
+    }
+    const statusLeft = page.trailing ? page.trailing(ctx, right, 48) : this.drawStatus(ctx, right, 48);
+    if (page.crumbs?.length) {
+      this.drawCrumbs(ctx, page.crumbs, 100 + titleW + 16, statusLeft - 24, 48);
+      return;
+    }
     const notice = this.challengeNotice();
     if (notice) {
       const w = Math.min(420, statusLeft - 24 - 480);
@@ -141,15 +161,15 @@ export class PageBar {
   }
 
   /** The crumbs from `left` (after the title), "▶" before each, cut to end before `right`. */
-  private drawCrumbs(ctx: UiContext, crumbs: readonly string[], left: number, right: number): void {
+  private drawCrumbs(ctx: UiContext, crumbs: readonly string[], left: number, right: number, cy = 38): void {
     const p = ctx.palette;
     let x = left;
     crumbs.forEach((crumb, i) => {
       const last = i === crumbs.length - 1;
-      x += label(ctx, '▶', x, 38, { size: 14 }, p.outline) + 12;
+      x += label(ctx, '▶', x, cy, { size: 14 }, p.outline) + 12;
       const room = right - x;
       if (room < 40) return;
-      x += label(ctx, crumb, x, 38, { size: last ? 22 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: Math.min(room, last ? 300 : 220) }) + 12;
+      x += label(ctx, crumb, x, cy, { size: last ? 22 : 20, bold: last }, last ? p.ink : p.muted, { maxWidth: Math.min(room, last ? 300 : 220) }) + 12;
     });
   }
 

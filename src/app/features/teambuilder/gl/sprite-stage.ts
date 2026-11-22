@@ -1,5 +1,5 @@
 import { DexMega, DexSpecies } from '@core/dex/champions-dex';
-import { Rgba, withAlpha } from '@core/gl/gl-renderer';
+import { withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
 
@@ -29,9 +29,14 @@ export class SpriteStage {
   draw(ctx: UiContext, stage: Box & { size: number }, form: DexSpecies | DexMega | undefined, empty: string): void {
     const p = ctx.palette;
     const { renderer, now } = ctx;
-    renderer.rect(stage.x, stage.y, stage.w, stage.h, { fill: p.bg, radius: 10 });
     const cx = stage.x + stage.w / 2;
     const ground = stage.y + stage.h - stage.size * 0.17;
+    // The menu's platform: a lit glow behind, an ellipse with a lip to stand on.
+    renderer.rect(stage.x, stage.y, stage.w, stage.h, { fill: withAlpha(p.hero, 0.45), radius: 18 });
+    const platformW = Math.min(stage.w - 24, stage.size * 1.05);
+    const platformH = stage.size * 0.2;
+    renderer.rect(cx - platformW / 2, ground - platformH / 2 + 4, platformW, platformH, { fill: p.rim, radius: platformH / 2 });
+    renderer.rect(cx - platformW / 2, ground - platformH / 2, platformW, platformH - 4, { fill: p.panel, radius: (platformH - 4) / 2 });
     if (!form) {
       this.sprite = '';
       label(ctx, empty, cx, stage.y + stage.h / 2, { size: 20 }, p.muted, { align: 'center', maxWidth: stage.w - 24 });
@@ -46,7 +51,7 @@ export class SpriteStage {
     const motion = spriteMotion(now - this.appearedAt);
     const shadowW = stage.size * 0.8 * motion.shadow;
     const shadowH = stage.size * 0.11;
-    renderer.rect(cx - shadowW / 2, ground - shadowH / 2, shadowW, shadowH, { fill: shadowColor(p.input, motion.alpha), radius: shadowH / 2, softness: 6 });
+    renderer.rect(cx - shadowW / 2, ground - shadowH / 2, shadowW, shadowH, { fill: [0, 0, 0, 0.18 * motion.alpha], radius: shadowH / 2, softness: 8 });
     if (!texture) return;
     const w = stage.size * motion.sx;
     const h = stage.size * motion.sy;
@@ -70,6 +75,3 @@ function spriteMotion(ms: number): { dy: number; sx: number; sy: number; alpha: 
   return { dy: 0, sx: 1 - 0.008 * breath, sy: 1 + 0.015 * breath, alpha: 1, shadow: 1 };
 }
 
-function shadowColor(color: Rgba, alpha: number): Rgba {
-  return withAlpha(color, 0.9 * alpha);
-}

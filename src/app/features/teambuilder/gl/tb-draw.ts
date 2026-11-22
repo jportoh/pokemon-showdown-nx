@@ -2,7 +2,8 @@ import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
 import { textSkeleton } from '@core/gl/canvas-ui';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { TextStyle } from '@core/gl/gl-textures';
 import { maskOf } from '@core/gl/ui/masks';
 import { typeColor } from '@shared/data/type-colors';
@@ -126,12 +127,17 @@ export interface LegendEntry {
   text: string;
 }
 
-/** The legend at the bottom of the page: each control's buttons, and what it does. */
+/** A card in the menu's style: a soft shadow, the panel rounded, ringed in the accent when `lit`. */
+export function menuCard(ctx: UiContext, box: Box, lit = false): void {
+  const p = ctx.palette;
+  ctx.renderer.rect(box.x, box.y + 12, box.w, box.h, { fill: [0, 0, 0, 0.16], radius: 18, softness: 24 });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: lit ? p.accentText : p.rim, border: lit ? 3 : 1, radius: 18 });
+}
+
+/** The legend at the bottom of the page, on the backdrop as the menu's: each control's buttons, and what it does. */
 export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]): void {
   const p = ctx.palette;
   const top = STAGE_H - LEGEND_H;
-  ctx.renderer.rect(0, top, STAGE_W, LEGEND_H, { fill: p.bar });
-  ctx.renderer.rect(0, top, STAGE_W, 2, { fill: p.rim });
   const cy = top + LEGEND_H / 2 + 1;
   let x = EDIT_X;
   for (const entry of entries) {
@@ -146,7 +152,7 @@ export function keyPill(ctx: UiContext, key: string, x: number, cy: number): num
   const width = keyPillWidth(ctx, key);
   // R3 (the right stick pressed) is a round chip with an R.
   const stick = key === 'R3';
-  ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.button, stroke: p.outline, radius: stick ? 14 : 6, border: 2 });
+  ctx.renderer.rect(x, cy - 14, width, 28, { fill: p.select, stroke: p.outline, border: 1, radius: stick ? 14 : 6 });
   label(ctx, stick ? 'R' : key, x + width / 2, cy, { size: 16, bold: true }, p.ink, { align: 'center' });
   return width;
 }
@@ -178,13 +184,11 @@ export function tabStrip(ctx: UiContext, tabs: readonly TabSpec[], keys: boolean
   for (const tab of tabs) {
     const box = { x, y, w: TAB_W, h: TAB_H };
     const focused = !tab.disabled && ctx.focus.control({ id: tab.id, ...box, accept: tab.accept, skip: true });
-    // Taller than shown, so the bottom's rounded corners hide under the line.
-    renderer.rect(x, y, TAB_W, TAB_H + 8, { fill: tab.on ? p.select : focused ? p.button : p.panel, stroke: tab.on ? p.outline : p.rim, radius: 8, border: 3 });
+    // Round tabs as the menu's buttons: the one shown lit and ringed in the accent.
+    renderer.rect(x, y + 4, TAB_W, TAB_H - 8, { fill: tab.on ? p.select : focused ? p.button : p.panel, stroke: tab.on ? p.accentText : p.rim, radius: (TAB_H - 8) / 2, border: tab.on ? 3 : 1 });
     label(ctx, tab.text, x + TAB_W / 2, cy + 1, { size: 20, bold: true }, tab.on ? p.ink : tab.disabled ? p.rim : p.muted, { align: 'center', maxWidth: TAB_W - 16 });
     x += TAB_W + 8;
   }
-  renderer.rect(0, line, STAGE_W, 8, { fill: p.bg });
-  renderer.rect(EDIT_X, line, EDIT_RIGHT - EDIT_X, 3, { fill: p.outline });
   if (keys) x += 2 + keyPill(ctx, 'R', x + 2, cy);
   return x;
 }
@@ -204,7 +208,7 @@ export function card(ctx: UiContext, box: Box, state: { active?: boolean; focuse
 }
 
 export function ring(ctx: UiContext, box: Box, focused: boolean): void {
-  if (focused) focusRing(ctx, box, 8);
+  if (focused) menuFocus(ctx, box, 8);
 }
 
 /**
@@ -270,26 +274,27 @@ export function shortcutButton(
 ): void {
   const p = ctx.palette;
   const focused = !options.disabled && ctx.focus.control({ id, ...box, accept: options.accept, skip: true });
-  const fill = options.disabled ? p.bg : options.primary ? p.accent : focused ? p.select : p.button;
-  const stroke = options.disabled ? p.rim : options.primary ? p.bar : p.outline;
+  const fill = options.disabled ? p.rim : options.primary ? p.accent : focused ? p.select : p.panel;
+  const stroke = options.disabled ? p.rim : options.primary ? p.accentHover : focused ? p.accentText : p.rim;
   const held = options.held && options.held.progress > 0 ? options.held : null;
   // Over halfway filled, the text sits on the fill.
   const ink = options.disabled ? p.muted : options.primary || (held && held.progress > 0.5) ? WHITE : p.ink;
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke, radius: 6, border: 2 });
+  // Round, as the menu's buttons.
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke, radius: box.h / 2, border: focused ? 3 : 1 });
   if (held) {
     const width = (box.w - 4) * Math.min(1, held.progress);
-    ctx.renderer.rect(box.x + 2, box.y + 2, width, box.h - 4, { fill: held.color, radius: Math.min(4, width / 2) });
+    ctx.renderer.rect(box.x + 2, box.y + 2, width, box.h - 4, { fill: held.color, radius: Math.min((box.h - 4) / 2, width / 2) });
   }
   const pillH = Math.min(24, box.h - 10);
   const pillW = Math.max(28, ctx.text.measure(key, { size: 14, bold: true }) + 12);
-  ctx.renderer.rect(box.x + 7, box.y + (box.h - pillH) / 2, pillW, pillH, { fill: options.primary ? p.accentHover : p.bg, radius: 3 });
-  label(ctx, key, box.x + 7 + pillW / 2, box.y + box.h / 2, { size: 14, bold: true }, options.primary ? WHITE : p.ink, { align: 'center' });
+  ctx.renderer.rect(box.x + 9, box.y + (box.h - pillH) / 2, pillW, pillH, { fill: options.primary ? p.accentHover : p.select, radius: 6 });
+  label(ctx, key, box.x + 9 + pillW / 2, box.y + box.h / 2, { size: 14, bold: true }, options.primary ? WHITE : p.ink, { align: 'center' });
   const textLeft = box.x + 7 + pillW + 4;
   label(ctx, text, textLeft + (box.x + box.w - 6 - textLeft) / 2, box.y + box.h / 2, { size: options.size ?? 16, bold: !!options.primary }, ink, {
     align: 'center',
     maxWidth: box.x + box.w - 6 - textLeft,
   });
-  if (focused) focusRing(ctx, box);
+  if (focused) menuFocus(ctx, box);
 }
 
 /** How far an entrance has come, 0 to 1 (easing out): `delay` ms after `since`, over `ms`. */

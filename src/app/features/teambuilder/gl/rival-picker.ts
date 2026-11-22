@@ -3,7 +3,8 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, ListView, UiContext, focusRing, label, modal, textField } from '@core/gl/ui/retro-kit';
+import { Box, ListView, UiContext, label, modal, textField } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
 import { toId } from '@shared/utils/to-id';
 import { ChooserOption, filterChips, matching, searchKey, searchWords } from './chooser-view';
@@ -185,7 +186,7 @@ export class RivalPicker {
     label(ctx, option.name, box.x + 62, cy, { size: 20, bold: true }, p.ink, { maxWidth: box.w - 62 - valueW - 28 });
     // The rival now: a bar at the row's end.
     if (chosen) ctx.renderer.rect(box.x + box.w - 5, box.y + 8, 4, box.h - 16, { fill: p.accentText, radius: 2 });
-    if (focused) focusRing(ctx, box, 6);
+    if (focused) menuFocus(ctx, box, 6);
   }
 
   /**
@@ -300,7 +301,7 @@ export class RivalPicker {
     label(ctx, moves, x, box.y + 68, { size: 15 }, set.moves.length ? p.ink : p.muted, { maxWidth: right - x });
     // The rival now: a bar at the card's end.
     if (chosen) renderer.rect(box.x + box.w - 6, box.y + 10, 4, box.h - 20, { fill: p.accentText, radius: 2 });
-    if (focused) focusRing(ctx, box, 6);
+    if (focused) menuFocus(ctx, box, 6);
   }
 
   /** From a species to its sets: on the rival's set when it's this species, else the first. */

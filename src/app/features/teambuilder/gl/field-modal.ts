@@ -1,5 +1,6 @@
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { Box, UiContext, focusRing, label, modal } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, label, modal } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
 import { CalcMode } from '@features/teambuilder/calc/calc-state';
 import { CalcField, CalcOutcome, CalcSide, TerrainChoice, WeatherChoice } from '@features/teambuilder/calc/damage-calc';
 import { PokemonSet } from '@features/teambuilder/models/team';
@@ -201,7 +202,7 @@ export class FieldModal {
       keyPill(ctx, 'R', valueX + valueW - keyPillWidth(ctx, 'R'), cy);
     }
     label(ctx, row.value, valueX + valueW / 2, cy, { size: 19, bold: !row.plain }, row.plain ? p.muted : p.accentText, { align: 'center', maxWidth: valueW - 84 });
-    if (focused) focusRing(ctx, box, 8);
+    if (focused) menuFocus(ctx, box, 8);
   }
 }
 
