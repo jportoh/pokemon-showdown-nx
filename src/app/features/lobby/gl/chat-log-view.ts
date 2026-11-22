@@ -1,7 +1,9 @@
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { TextStyle } from '@core/gl/gl-textures';
-import { Box, UiContext, focusRing, label } from '@core/gl/ui/retro-kit';
+import { menuFocus } from '@core/gl/ui/menu-kit';
+import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
 import { ChatMessage, ChatUser } from '@features/lobby/models/chat';
+import { toId } from '@shared/utils/to-id';
 import { usernameColor } from '@shared/utils/username-color';
 
 const LINE_H = 28;
@@ -9,6 +11,7 @@ const PAD_X = 12;
 const PAD_Y = 8;
 const TEXT: TextStyle = { size: 18 };
 const BOLD: TextStyle = { size: 18, bold: true };
+const HEADING: TextStyle = { size: 13, bold: true };
 const STAFF_RANKS = ['~', '&', '#', '@'];
 /**
  * Users listed: the lobby has ~600, sorted by rank, so staff always show. Drawn a page at a time, but
@@ -33,13 +36,24 @@ interface Part {
   text: string;
   color: { user: string } | 'ink' | 'muted' | 'danger';
   bold?: boolean;
+  /** Where it starts, from the line's left (a column); right after the part before it otherwise. */
+  at?: number;
+  /** Cut to this width (a column's). */
+  maxWidth?: number;
+  /** Small bold text: a section's heading. */
+  heading?: boolean;
 }
 
-/** One line as drawn, its parts one after another; dim (an away user) at 60%. */
+/**
+ * One line as drawn, its parts one after another; dim (an away user) at 60%. `mine` (our own
+ * message) is drawn on the selection colour, `named` (a message that says our name) on amber with a
+ * bar at its left.
+ */
 interface Line {
   key: string;
   parts: Part[];
   dim?: boolean;
+  tone?: 'mine' | 'named';
 }
 
 /**
@@ -86,19 +100,27 @@ class LineList {
         return true;
       },
     });
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.input, radius: 6 });
     const colors = { ink: p.ink, muted: p.muted, danger: p.danger };
+    const light = p.appearance === 'light';
     lines.slice(this.start, this.start + visible).forEach((line, i) => {
-      const cy = box.y + PAD_Y + i * LINE_H + LINE_H / 2;
+      const top = box.y + PAD_Y + i * LINE_H;
+      const cy = top + LINE_H / 2;
+      if (line.tone === 'mine') ctx.renderer.rect(box.x + 4, top, box.w - 32, LINE_H, { fill: p.select, radius: 8 });
+      if (line.tone === 'named') {
+        ctx.renderer.rect(box.x + 4, top, box.w - 32, LINE_H, { fill: withAlpha(p.teal, light ? 0.16 : 0.2), radius: 8 });
+        ctx.renderer.rect(box.x + 4, top + 4, 4, LINE_H - 8, { fill: p.teal, radius: 2 });
+      }
       let x = box.x + PAD_X;
       for (const part of line.parts) {
-        const color = typeof part.color === 'string' ? colors[part.color] : userColor(part.color.user, p.appearance === 'light');
-        x += label(ctx, part.text, x, cy, part.bold ? BOLD : TEXT, withAlpha(color, line.dim ? 0.6 : 1), { fast: true });
+        const color = typeof part.color === 'string' ? colors[part.color] : userColor(part.color.user, light);
+        if (part.at !== undefined) x = box.x + PAD_X + part.at;
+        const style = part.heading ? HEADING : part.bold ? BOLD : TEXT;
+        x += label(ctx, part.text, x, cy, style, withAlpha(color, line.dim ? 0.6 : 1), part.maxWidth ? { fast: true, maxWidth: part.maxWidth } : { fast: true });
       }
     });
-    if (this.start > 0) label(ctx, '▲', box.x + box.w - 18, box.y + 14, { size: 14 }, p.muted, { align: 'center' });
-    if (this.start < max) label(ctx, '▼', box.x + box.w - 18, box.y + box.h - 14, { size: 14 }, p.muted, { align: 'center' });
-    if (focused) focusRing(ctx, box);
+    if (this.start > 0) label(ctx, '▲', box.x + box.w - 14, box.y + 14, { size: 14 }, p.accentText, { align: 'center' });
+    if (this.start < max) label(ctx, '▼', box.x + box.w - 14, box.y + box.h - 14, { size: 14 }, p.accentText, { align: 'center' });
+    if (focused) menuFocus(ctx, { x: box.x - 6, y: box.y - 6, w: box.w + 12, h: box.h + 12 });
   }
 }
 
@@ -142,16 +164,21 @@ export class ChatLogView {
   /** Each message's lines, by its ID (they never change once received). */
   private readonly layouts = new Map<number, Line[]>();
   private width = 0;
+  private me = '';
+  private mention: RegExp | null = null;
 
   reset(): void {
     this.list.reset();
     this.layouts.clear();
   }
 
-  draw(ctx: UiContext, box: Box, messages: readonly ChatMessage[]): void {
+  /** `me`: our own name, to mark our messages and the ones that say it (empty as a guest). */
+  draw(ctx: UiContext, box: Box, messages: readonly ChatMessage[], me: string): void {
     const width = box.w - PAD_X * 2 - 24;
-    if (width !== this.width) {
+    if (width !== this.width || me !== this.me) {
       this.width = width;
+      this.me = me;
+      this.mention = mentionPattern(me);
       this.layouts.clear();
     }
     const lines: Line[] = [];
@@ -176,9 +203,12 @@ export class ChatLogView {
     // A /me reads "author does something", without the colon.
     const author: Part = { text: `${message.author}${message.action ? ' ' : ': '}`, color: { user: message.author }, bold: true };
     const color = message.action ? 'muted' : 'ink';
+    const mine = this.me !== '' && toId(message.author) === toId(this.me);
+    const tone = mine ? 'mine' : this.mention?.test(message.text) ? 'named' : undefined;
     return wrap(ctx, message.text, width - measure(ctx, author.text, BOLD), width).map((text, i) => ({
       key: `${message.id}:${i}`,
       parts: i === 0 ? [author, { text, color }] : [{ text, color }],
+      tone,
     }));
   }
 }
@@ -191,18 +221,48 @@ export class ChatUsersView {
     this.list.reset();
   }
 
-  draw(ctx: UiContext, box: Box, users: readonly ChatUser[], count: number): void {
+  /**
+   * The staff first, then everyone else (voices too), each under its heading and in `columns`
+   * columns, a line per row of them. An away user's name is muted and followed by "zZ".
+   */
+  draw(ctx: UiContext, box: Box, users: readonly ChatUser[], count: number, columns = 3): void {
     const listed = users.slice(0, MAX_LISTED_USERS);
-    const lines: Line[] = listed.map((user) => ({
-      key: user.id,
-      parts: [
-        { text: user.rank === ' ' ? '  ' : user.rank, color: 'muted' },
-        { text: user.name, color: { user: user.name }, bold: STAFF_RANKS.includes(user.rank) },
-      ],
-      dim: user.away,
-    }));
+    const staff = listed.filter((user) => user.rank !== ' ' && user.rank !== '+');
+    const others = listed.filter((user) => user.rank === ' ' || user.rank === '+');
+    const columnW = Math.floor((box.w - PAD_X * 2 - 24) / columns);
+    const lines: Line[] = [];
+    const section = (key: string, heading: string, group: readonly ChatUser[]): void => {
+      if (group.length === 0) return;
+      lines.push({ key: `h-${key}`, parts: [{ text: heading, color: 'muted', heading: true }] });
+      for (let i = 0; i < group.length; i += columns) {
+        const row = group.slice(i, i + columns);
+        lines.push({
+          key: `${key}-${row[0].id}`,
+          parts: row.flatMap((user, c): Part[] => [
+            { text: user.rank === ' ' ? '' : user.rank, color: 'muted', bold: true, at: c * columnW },
+            {
+              text: user.away ? `${user.name} zZ` : user.name,
+              color: user.away ? 'muted' : { user: user.name },
+              bold: STAFF_RANKS.includes(user.rank),
+              at: c * columnW + 24,
+              maxWidth: columnW - 34,
+            },
+          ]),
+        });
+      }
+    };
+    section('staff', `STAFF · ${staff.length}`, staff);
+    section('users', `EVERYONE ELSE · ${Math.max(others.length, count - staff.length)}`, others);
     const hidden = Math.max(0, count - listed.length);
     if (hidden > 0) lines.push({ key: 'more', parts: [{ text: `…and ${hidden} more`, color: 'muted' }] });
     this.list.draw(ctx, box, lines);
   }
+}
+
+/** Our name as a whole word, in any case (how Showdown highlights a message); none without a name. */
+function mentionPattern(name: string): RegExp | null {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) return null;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`, 'i');
 }
