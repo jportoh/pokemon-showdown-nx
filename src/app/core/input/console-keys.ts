@@ -178,6 +178,8 @@ export const ROLE_KEYS = {
   removePokemon: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
   /** Calcs: who attacks, swapped. */
   calcsSwap: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  /** The Trainer Card's battle history (it has a button too). */
+  cardHistory: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
   /** Calcs: the field (weather, terrain, screens…). */
   calcsField: { button: NATIVE ? 'buttonPlus' : 'buttonZL', label: NATIVE ? '+' : 'ZL' },
 } as const satisfies Record<string, RoleKey>;
