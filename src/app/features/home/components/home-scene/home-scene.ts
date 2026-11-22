@@ -14,7 +14,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
 import { HOME_LOGO } from '@features/home/gl/logo-layout';
-import { Chip, NamePlate, TRAINER, drawGround, drawNamePlate, drawPlatformTrainer, drawSlantedButton, drawSprite } from '@features/home/gl/menu-kit';
+import { Chip, NamePlate, TRAINER, drawGround, drawNamePlate, drawPlatformTrainer, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { RegisterView } from '@features/home/gl/login-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';

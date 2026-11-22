@@ -26,7 +26,7 @@ import {
   drawSlantedButton,
   drawSprite,
   drawSwitch,
-} from '@features/home/gl/menu-kit';
+} from '@core/gl/ui/menu-kit';
 import { HOME_MENU_ITEMS, HomeMenu } from '@features/home/state/home-menu';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRatings } from '@features/trainer-card/state/ladder-ratings';

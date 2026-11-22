@@ -39,7 +39,7 @@ plate, slanted buttons, the logo in the same corner), so entering the menu only 
 
 The menu opens once the server calls the player by a name. Logging out of the menu (ZR held) comes
 back here, and so does a login left without a name (the automatic one refused). The shared drawing
-(`gl/menu-kit.ts`) is used by both screens.
+(`core/gl/ui/menu-kit.ts`) is used by both screens.
 
 ## Home (`/`)
 
@@ -49,7 +49,7 @@ back here, and so does a login left without a name (the automatic one refused). 
 | --- | --- |
 | `components/home-scene/home-scene.ts` | The scene: the player's trainer on a platform with a name plate (name, best rating, win rate), the menu as slanted buttons with Pokémon art, Settings at the top, the focused button's description and the controls |
 | `components/start-scene/start-scene.ts` | The entry screen (above) |
-| `gl/menu-kit.ts` | What the menu and the entry screen share: the lit side, the trainer and name plate, slanted buttons, chips, fields, switches |
+| `core/gl/ui/menu-kit.ts` | What the menu and the entry screen share: the lit side, the trainer and name plate, slanted buttons, chips, fields, switches |
 | `state/home-menu.ts` | The menu items, each with its colour per appearance, description and A's action |
 | `state/home-summary.ts` | The live facts in each button's chips (format and team, a challenge, number of teams…) |
 | `gl/login-view.ts` | The login box over other pages (`LoginView`) and registration (`RegisterView`) |

@@ -2,7 +2,7 @@ import { Service, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { PLAYABLE_FORMATS, TEAM_FORMATS } from '@shared/data/formats';
 
-export type ThemeId = 'zafiro' | 'noche' | 'ciruela' | 'esmeralda' | 'pokeball' | 'ocaso';
+export type ThemeId = 'zafiro' | 'noche' | 'grafito' | 'esmeralda' | 'pokeball' | 'ocaso';
 
 /** Light (the default) or dark colours: each theme has both. */
 export type Appearance = 'light' | 'dark';
@@ -22,7 +22,7 @@ export interface Theme {
 export const THEMES: readonly Theme[] = [
   { id: 'zafiro', name: 'Sapphire' },
   { id: 'noche', name: 'Night' },
-  { id: 'ciruela', name: 'Plum' },
+  { id: 'grafito', name: 'Graphite' },
   { id: 'esmeralda', name: 'Emerald' },
   { id: 'pokeball', name: 'Poké Ball' },
   { id: 'ocaso', name: 'Sunset' },
@@ -86,6 +86,8 @@ function loadSettings(): Settings {
   const stored = readJson<Partial<Settings> | null>(STORAGE_KEY, null);
   if (!stored || typeof stored !== 'object') return DEFAULTS;
   const settings = { ...DEFAULTS, ...stored };
+  // Plum became Graphite (a neutral theme), in the same place in the list.
+  if ((settings.theme as string) === 'ciruela') settings.theme = 'grafito';
   return {
     theme: THEMES.some((theme) => theme.id === settings.theme) ? settings.theme : DEFAULTS.theme,
     appearance: APPEARANCES.some((appearance) => appearance.id === settings.appearance) ? settings.appearance : DEFAULTS.appearance,

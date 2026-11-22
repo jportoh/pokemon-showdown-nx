@@ -108,6 +108,8 @@ export interface SlantedButton {
   /** The title's centre from the top; centred in the button when absent. */
   titleY?: number;
   icon?: Texture | null;
+  /** How much bigger the icon is drawn (2: a 24px menu icon at 48px). */
+  iconScale?: number;
   /** The colour the body fades into, at the right. */
   plate: Rgba;
   chips?: readonly Chip[];
@@ -153,7 +155,8 @@ export function drawSlantedButton(ctx: UiContext, b: SlantedButton): void {
   const titleY = y + (b.titleY ?? (chips.length > 0 ? h / 2 - 18 : h / 2));
   let left = edge(titleY) + 26;
   if (b.icon) {
-    renderer.image(b.icon, left, titleY - 24, 2, [1, 1, 1, alpha]);
+    const scale = b.iconScale ?? 2;
+    renderer.image(b.icon, left + 24 - (b.icon.width * scale) / 2, titleY - (b.icon.height * scale) / 2, scale, [1, 1, 1, alpha]);
     left += 60;
   }
   const ink = b.primary ? ([1, 1, 1, 1] as Rgba) : b.faded ? p.muted : p.ink;

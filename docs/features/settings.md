@@ -2,8 +2,12 @@
 
 `features/settings/components/settings-scene/settings-scene.ts`, `core/settings/app-settings.ts`
 
-A list of rows, each with its value on the right. A or left/right change the value; the last rows
-open the battle history and the replays.
+In the menu's style: the groups (Look, Sound, Battles, Account, History) as slanted buttons on the
+left, each with a chip that sums up its values, and the focused group's settings in a panel on the
+right, each with its own control (a switch, a volume's bars, the themes' swatches, ◀ value ▶). Right
+or A goes into a group; left/right change a value; A flips a switch or opens the battle history or
+the replays; B goes back to the groups, then to the menu. The page header is `PageBar.drawHeader`
+(the menu-style header: icon and title, our name, a round Back), the pieces are `core/gl/ui/menu-kit.ts`.
 
 ## The settings
 
@@ -12,7 +16,7 @@ open the battle history and the replays.
 
 | Setting | Values | Used by |
 | --- | --- | --- |
-| `theme` | Sapphire, Night, Plum, Emerald, Poké Ball, Sunset | `GlTheme` (every screen) |
+| `theme` | Sapphire, Night, Graphite, Emerald, Poké Ball, Sunset (Plum, replaced by Graphite, loads as it) | `GlTheme` (every screen) |
 | `musicVolume`, `soundVolume` | 0–100 in steps of 10 | `AudioEngine` |
 | `battleFormat` | `PLAYABLE_FORMATS` | The Battle lobby's starting format, Watch Live |
 | `teamFormat` | `TEAM_FORMATS` | New teams |
