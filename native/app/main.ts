@@ -3,7 +3,7 @@
 
 import './native-log';
 import './net-diagnostics';
-import './bundled-sprites';
+import './bundled-showdown';
 import './touch-bridge';
 import './plus-button';
 import './dom-shim';
