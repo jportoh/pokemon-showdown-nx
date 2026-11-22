@@ -112,6 +112,36 @@ export class PageBar {
     }
   }
 
+  /**
+   * The header of a page in the menu's style (no bar, the lit side under it): its icon and title top
+   * left, our name and connection and a round Back button (B) top right, a challenge's notice between.
+   */
+  drawHeader(ctx: UiContext, page: { title: string; icon: PixelIconName; back: () => void }): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    let icon = this.icons.get(page.icon);
+    if (!icon) {
+      icon = iconTexture(renderer, page.icon, false);
+      this.icons.set(page.icon, icon);
+    }
+    renderer.image(icon, 40, 24, 2);
+    label(ctx, page.title, 100, 48, { size: 34, bold: true }, p.ink, { maxWidth: 360 });
+    const back = { x: 1232 - 128, y: 26, w: 128, h: 44 };
+    const focused = ctx.focus.control({ id: 'bar-back', ...back, accept: page.back, skip: true });
+    renderer.rect(back.x, back.y, back.w, back.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.rim, border: focused ? 3 : 1, radius: back.h / 2 });
+    const width = pill(ctx, 'B', back.x + 14, back.y + back.h / 2, 28);
+    label(ctx, 'Back', back.x + 22 + width, back.y + back.h / 2, { size: 18, bold: true }, p.ink);
+    const statusLeft = this.drawStatus(ctx, back.x - 20, 48);
+    const notice = this.challengeNotice();
+    if (notice) {
+      const w = Math.min(420, statusLeft - 24 - 480);
+      if (w > 120) {
+        renderer.rect(480, 30, w, 36, { fill: p.accent, radius: 18 });
+        label(ctx, notice, 496, 48, { size: 16, bold: true }, [1, 1, 1, 1], { maxWidth: w - 32 });
+      }
+    }
+  }
+
   /** The crumbs from `left` (after the title), "▶" before each, cut to end before `right`. */
   private drawCrumbs(ctx: UiContext, crumbs: readonly string[], left: number, right: number): void {
     const p = ctx.palette;

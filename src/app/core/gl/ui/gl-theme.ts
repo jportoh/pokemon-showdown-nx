@@ -33,9 +33,9 @@ const THEME_HEX: Record<Appearance, Record<ThemeId, Record<ThemeRole, string>>> 
       bg: '#121821', bar: '#0b1016', panel: '#1c2632', outline: '#5b7690', rim: '#2b3a4a', select: '#2c4157', button: '#26374a', input: '#0f151c',
       ink: '#e8eef3', muted: '#a9b8c6', accent: '#c94e39', accentHover: '#a83e2c', accentText: '#ff9a85', danger: '#ff8a80', teal: '#7fd1b9', hero: '#2c4157',
     },
-    ciruela: {
-      bg: '#16111e', bar: '#0d0913', panel: '#221a2e', outline: '#8467b0', rim: '#352946', select: '#3c2d55', button: '#2d2240', input: '#110c17',
-      ink: '#f1ebf8', muted: '#bcb0cf', accent: '#b8336a', accentHover: '#982955', accentText: '#ff8cc0', danger: '#ff8a80', teal: '#f3c56b', hero: '#3c2d55',
+    grafito: {
+      bg: '#131517', bar: '#0b0c0e', panel: '#1d2023', outline: '#70767e', rim: '#2d3135', select: '#363b40', button: '#272b2f', input: '#0e1011',
+      ink: '#ececee', muted: '#b3b8be', accent: '#56616d', accentHover: '#46505a', accentText: '#c3ccd6', danger: '#ff8a80', teal: '#f0c86b', hero: '#363b40',
     },
     esmeralda: {
       bg: '#0e1915', bar: '#08110d', panel: '#15261e', outline: '#4f8f6d', rim: '#22392d', select: '#23432f', button: '#1d3427', input: '#0a130f',
@@ -59,9 +59,9 @@ const THEME_HEX: Record<Appearance, Record<ThemeId, Record<ThemeRole, string>>> 
       bg: '#c6ced6', bar: '#dde3e9', panel: '#fafbfc', outline: '#5b7690', rim: '#d3dbe3', select: '#d5e0ea', button: '#e6ebf0', input: '#ffffff',
       ink: '#141c25', muted: '#344352', accent: '#c94e39', accentHover: '#a83e2c', accentText: '#943727', danger: '#a4231b', teal: '#16604a', hero: '#a0b2c5',
     },
-    ciruela: {
-      bg: '#cfc1dd', bar: '#e4dced', panel: '#fcfafd', outline: '#8467b0', rim: '#ddd2e8', select: '#e3d6f0', button: '#ece4f3', input: '#ffffff',
-      ink: '#1e1428', muted: '#433554', accent: '#b8336a', accentHover: '#982955', accentText: '#922752', danger: '#9d211a', teal: '#764700', hero: '#b294d1',
+    grafito: {
+      bg: '#c7c9cc', bar: '#dfe1e3', panel: '#fafafa', outline: '#6f747b', rim: '#d6d8db', select: '#dde0e3', button: '#e8e9eb', input: '#ffffff',
+      ink: '#17191b', muted: '#3d4146', accent: '#56616d', accentHover: '#46505a', accentText: '#3e4751', danger: '#9b211a', teal: '#6d4a00', hero: '#a8adb3',
     },
     esmeralda: {
       bg: '#bed9ca', bar: '#d5e8dd', panel: '#f8fcf9', outline: '#4f8f6d', rim: '#c8e0d2', select: '#cde6d6', button: '#e2f0e7', input: '#ffffff',
@@ -104,6 +104,15 @@ const PALETTES = Object.fromEntries(
     Object.fromEntries((Object.keys(THEME_HEX[appearance]) as ThemeId[]).map((theme) => [theme, buildPalette(appearance, theme)])),
   ]),
 ) as Record<Appearance, Record<ThemeId, Palette>>;
+
+/**
+ * A theme's swatch, where Settings shows the themes to choose from: its hue (the outline, which tints
+ * its panels and borders) and its accent (the buttons, the highlights).
+ */
+export function themeSwatch(appearance: Appearance, theme: ThemeId): { hue: Rgba; accent: Rgba } {
+  const palette = PALETTES[appearance][theme];
+  return { hue: palette.outline, accent: palette.accent };
+}
 
 /** The palette of the theme and appearance chosen in Settings, for everything drawn on the canvas. */
 @Service()

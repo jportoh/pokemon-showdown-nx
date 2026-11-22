@@ -1,16 +1,20 @@
-import { Component, DestroyRef, computed, inject } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
-import { Rgba, Texture, mixRgba, withAlpha } from '@core/gl/gl-renderer';
+import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { maskTexture } from '@core/gl/gl-textures';
-import { GlTheme } from '@core/gl/ui/gl-theme';
+import { iconTexture, maskTexture } from '@core/gl/gl-textures';
+import { GlTheme, themeSwatch } from '@core/gl/ui/gl-theme';
+import { Chip, drawGround, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { UiContext, focusRing, label, retroBox } from '@core/gl/ui/retro-kit';
-import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { PixelIconName } from '@core/gl/ui/pixel-icons';
+import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { CanvasAction } from '@core/input/keyboard-navigation';
 import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
+import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
+import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 
 type SettingId =
@@ -42,33 +46,34 @@ interface SettingRow {
   disabled?: boolean;
 }
 
-/** The rows' box and each row in it. */
-const BOX = { x: 32, y: 100, w: 1216, h: 596 };
-const ROW_X = BOX.x + 24;
-const ROW_W = 1162;
-const ROW_H = 80;
-const ROW_STEP = 89;
-/** Rows shown at once, big enough to read: the list scrolls under them, with arrows when there's more. */
-const ROWS_SHOWN = 6;
-/** The rows sit in the middle of the box: the same room above and below them for the "more" arrows. */
-const ROWS_MARGIN = Math.round((BOX.h - (ROWS_SHOWN - 1) * ROW_STEP - ROW_H) / 2);
-const rowY = (index: number): number => BOX.y + ROWS_MARGIN + index * ROW_STEP;
-/** Rows slide in one after another on arrival; the page fades out on leaving. */
-const INTRO_MS = 320;
+/** The settings' groups, as the slanted buttons on the left: each its rows, its colours (a menu item's) and its Pokémon. */
+const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconName; art: string; rows: readonly SettingId[] }[] = [
+  { title: 'LOOK', icon: 'settings', colours: 'live', art: 'gardevoir', rows: ['appearance', 'theme'] },
+  { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
+  { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
+  { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
+  { title: 'HISTORY', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays'] },
+];
+const GROUP = { x: 40, y: 98, w: 420, h: 94, step: 106 };
+const PANEL = { x: 500, y: 98, w: 732, h: 518 };
+const ROW = { x: 512, y: 168, w: 708, h: 80, step: 90 };
+/** The groups slide in one after another on arrival; the page fades out on leaving. */
+const INTRO_MS = 380;
 const LEAVE_MS = 180;
-/** A changed value flashes this long. */
-const FLASH_MS = 400;
-/** The value's ◀ ▶: 4x7 pixels each, drawn 4 times bigger (16x28). */
+/** The value's ◀ ▶: 4x7 pixels each, drawn 3 times bigger. */
 const LEFT_ROWS = ['...x', '..xx', '.xxx', 'xxxx', '.xxx', '..xx', '...x'];
 const RIGHT_ROWS = ['x...', 'xx..', 'xxx.', 'xxxx', 'xxx.', 'xx..', 'x...'];
 
 /** The row focused when coming back from a page Settings opened (the battle history, the replays). */
-let returnRow: SettingId = 'appearance';
+let returnRow: SettingId | null = null;
 
 /**
- * Settings, drawn on the stage: a list of rows, each with its value on the right. A changes it (the
- * next value, or on/off), and so do left/right (back for left); the theme applies at once. The last two
- * rows open the battle history and the replays, whose B comes back here. B goes back to the menu.
+ * Settings, drawn on the stage in the menu's style: the groups (Look, Sound, Battles, Account, History)
+ * as slanted buttons on the left, each with a chip that sums up its values, and the focused group's
+ * settings in a panel on the right, each with its own control (a switch, a volume's bars, the themes'
+ * swatches, ◀ value ▶). Right (or A) goes into the group's settings; left/right change a value; A flips
+ * a switch or opens a page (the battle history, the replays, whose B comes back here); left on a switch
+ * or B goes back to the groups. B on the groups goes back to the menu.
  */
 @Component({
   selector: 'app-settings-scene',
@@ -79,12 +84,13 @@ export class SettingsScene {
   private readonly stage = inject(GlStage);
   private readonly theme = inject(GlTheme);
   private readonly bar = inject(PageBar);
-  private readonly navigation = inject(KeyboardNavigation);
   private readonly appSettings = inject(AppSettings);
   private readonly login = inject(ShowdownLogin);
   private readonly saved = inject(SavedLogin);
 
   private readonly focus = new CanvasFocus();
+  /** The group whose settings the panel shows: the focused one, or the one last focused. */
+  private readonly shown = signal(0);
 
   private readonly rows = computed((): SettingRow[] => {
     const settings = this.appSettings.settings();
@@ -209,15 +215,30 @@ export class SettingsScene {
     ];
   });
 
+  /** What each group's chip says: its values at a glance. */
+  private readonly summaries = computed((): string[] => {
+    const settings = this.appSettings.settings();
+    const login = this.login.state();
+    const appearance = APPEARANCES.find((a) => a.id === settings.appearance)?.name ?? '';
+    const theme = THEMES.find((t) => t.id === settings.theme)?.name ?? '';
+    const account = login.status === 'named' ? login.name : 'Not logged in';
+    const keep = settings.autoLogin ? 'automatic login' : settings.rememberName ? 'name remembered' : 'nothing kept';
+    return [
+      `${appearance} · ${theme}`,
+      `Music ${volumeLabel(settings.musicVolume)} · Effects ${volumeLabel(settings.soundVolume)}`,
+      `${formatLabel(settings.battleFormat)} · ${settings.allowSpectators ? 'spectators on' : 'invite only'}`,
+      `${account} · ${keep}`,
+      'Your battles · replays',
+    ];
+  });
+
   // Drawing state, outside Angular.
   private leftArrow: Texture | null = null;
   private rightArrow: Texture | null = null;
+  private readonly icons = new Map<PixelIconName, Texture>();
   private readonly start = performance.now();
-  private readonly focusAnim = new Map<SettingId, number>();
-  private readonly changedAt = new Map<SettingId, number>();
+  private readonly focusAnim = new Map<string, number>();
   private leaving: { at: number; then: () => void } | null = null;
-  /** The first row shown. */
-  private rowStart = 0;
 
   constructor() {
     const hide = this.stage.show({
@@ -229,13 +250,21 @@ export class SettingsScene {
     this.stage.whenReady(({ renderer }) => {
       this.leftArrow = maskTexture(renderer, LEFT_ROWS);
       this.rightArrow = maskTexture(renderer, RIGHT_ROWS);
+      for (const group of GROUPS) this.icons.set(group.icon, iconTexture(renderer, group.icon, false));
     });
-    this.focus.focus(`row-${returnRow}`);
-    returnRow = 'appearance';
+    // Back from a page a row opened: on that row, its group shown.
+    if (returnRow) {
+      const back = returnRow;
+      this.shown.set(Math.max(0, GROUPS.findIndex((g) => g.rows.includes(back))));
+      this.focus.focus(`row-${back}`);
+    } else {
+      this.focus.focus('group-0');
+    }
+    returnRow = null;
     inject(DestroyRef).onDestroy(() => {
       hide();
       this.stage.whenReady(({ renderer }) => {
-        for (const texture of [this.leftArrow, this.rightArrow]) if (texture) renderer.deleteTexture(texture);
+        for (const texture of [this.leftArrow, this.rightArrow, ...this.icons.values()]) if (texture) renderer.deleteTexture(texture);
       });
     });
   }
@@ -245,10 +274,18 @@ export class SettingsScene {
   private onAction(action: CanvasAction): boolean {
     if (this.leaving) return true;
     if (action === 'back') {
-      this.leave('/');
+      // In a group's settings: back to the group; on the groups: back to the menu.
+      if (this.focus.focused?.startsWith('row-')) this.focus.focus(`group-${this.shown()}`);
+      else this.leave('/');
       return true;
     }
     return focusInput(this.focus, action) ?? false;
+  }
+
+  /** Into a group's settings: its first row. */
+  private enterGroup(index: number): void {
+    this.shown.set(index);
+    this.focus.focus(`row-${GROUPS[index].rows[0]}`);
   }
 
   private activate(row: SettingRow): void {
@@ -258,10 +295,10 @@ export class SettingsScene {
       this.leave(row.id === 'history' ? '/history?from=settings' : '/replays');
       return;
     }
-    this.change(row, 1);
+    this.change(row, 1, true);
   }
 
-  /** Fades out, then opens `path` (the menu focuses the Settings tile). */
+  /** Fades out, then opens `path` (the menu focuses the Settings button). */
   private leave(path: string): void {
     if (this.leaving) return;
     this.leaving = {
@@ -272,8 +309,11 @@ export class SettingsScene {
     };
   }
 
-  /** Steps a row's value; false when there's nothing to change (so left/right move the focus as usual). */
-  private change(row: SettingRow, step: 1 | -1): boolean {
+  /**
+   * Steps a row's value; false when there's nothing to change. `wrap` (A) goes round from the last value
+   * to the first; the d-pad stops a volume at its ends.
+   */
+  private change(row: SettingRow, step: 1 | -1, wrap = false): boolean {
     if (row.disabled || row.kind === 'link') return false;
     const settings = this.appSettings.settings();
     switch (row.id) {
@@ -284,9 +324,11 @@ export class SettingsScene {
         this.appSettings.set('theme', cycle(THEMES.map((t) => t.id), settings.theme, step));
         break;
       case 'musicVolume':
-      case 'soundVolume':
-        this.appSettings.set(row.id, cycle(VOLUMES, settings[row.id], step));
+      case 'soundVolume': {
+        const next = settings[row.id] + step * VOLUME_STEP;
+        this.appSettings.set(row.id, wrap ? cycle(VOLUMES, settings[row.id], step) : Math.max(0, Math.min(100, next)));
         break;
+      }
       case 'battleFormat':
         this.appSettings.set('battleFormat', cycle(PLAYABLE_FORMATS.map((f) => f.id), settings.battleFormat, step));
         break;
@@ -309,7 +351,6 @@ export class SettingsScene {
       default:
         return false;
     }
-    this.changedAt.set(row.id, performance.now());
     return true;
   }
 
@@ -321,27 +362,55 @@ export class SettingsScene {
     const { renderer, now, dt } = frame;
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
-    this.bar.draw(ctx, { title: 'Settings', icon: 'settings', back: () => this.leave('/') });
-    retroBox(ctx, BOX);
-    const ease = 1 - Math.exp(-dt * 16);
-    const rows = this.rows();
-    const focusedIndex = rows.findIndex((row) => this.focus.focused === `row-${row.id}`);
-    if (focusedIndex !== -1) this.revealRow(focusedIndex, rows.length);
-    const end = Math.min(rows.length, this.rowStart + ROWS_SHOWN);
-    rows.slice(this.rowStart, end).forEach((row, shown) => {
-      const i = this.rowStart + shown;
-      const intro = clamp01((now - this.start - shown * 40) / INTRO_MS);
-      const arrive = 1 - Math.pow(1 - intro, 3);
-      const target = this.focus.focused === `row-${row.id}` ? 1 : 0;
-      const f = (this.focusAnim.get(row.id) ?? target) + (target - (this.focusAnim.get(row.id) ?? target)) * ease;
-      this.focusAnim.set(row.id, f);
-      this.drawRow(ctx, row, rowY(shown), f, arrive, {
-        up: i === this.rowStart && i > 0 ? rows[i - 1].id : null,
-        down: i === end - 1 && i < rows.length - 1 ? rows[i + 1].id : null,
+    const ease = 1 - Math.exp(-dt * 14);
+    const age = now - this.start;
+    const intro = (delay: number): number => 1 - Math.pow(1 - clamp01((age - delay) / INTRO_MS), 3);
+
+    drawGround(ctx, 1);
+    this.bar.drawHeader(ctx, { title: 'SETTINGS', icon: 'settings', back: () => this.leave('/') });
+
+    // The focused group is the one shown; in its rows, the one last focused stays.
+    const focused = this.focus.focused ?? '';
+    if (focused.startsWith('group-')) this.shown.set(Number(focused.slice(6)));
+    const shown = this.shown();
+    const inRows = focused.startsWith('row-');
+    const summaries = this.summaries();
+    const login = this.login.state();
+    const avatar = login.status === 'named' ? ctx.images.pixelArt(avatarUrl(login.avatar)) : null;
+    GROUPS.forEach((group, i) => {
+      const id = `group-${i}`;
+      const box = { x: GROUP.x, y: GROUP.y + i * GROUP.step, w: GROUP.w, h: GROUP.h };
+      this.focus.control({
+        id,
+        ...box,
+        accept: () => this.enterGroup(i),
+        move: (direction) => {
+          if (direction !== 'right') return false;
+          this.enterGroup(i);
+          return true;
+        },
+      });
+      const arrive = intro(i * 50);
+      // The shown group stands out a little while its settings have the focus.
+      const nudge = inRows && i === shown ? 14 : 0;
+      drawSlantedButton(ctx, {
+        ...box,
+        x: box.x + nudge - (1 - arrive) * 60,
+        f: this.eased(id, ease, inRows && i === shown ? 0.35 : 0),
+        alpha: arrive,
+        title: group.title,
+        titleSize: 24,
+        // Account's icon is the player's own trainer, once there's one.
+        ...(group.title === 'ACCOUNT' && avatar ? { icon: avatar, iconScale: 0.6 } : { icon: this.icons.get(group.icon) }),
+        plate: this.plate(group.colours, p.appearance),
+        chips: [{ text: summaries[i], tone: 'muted' } satisfies Chip],
+        art: (b, artAlpha, grow) => drawSprite(ctx, group.art, b.x + b.w - 20 - 96 * grow, b.y + b.h - 96 * grow + 10, 96 * grow, artAlpha),
       });
     });
-    if (this.rowStart > 0) label(ctx, `▲ ${this.rowStart} more`, BOX.x + BOX.w / 2, BOX.y + ROWS_MARGIN / 2, { size: 18, bold: true }, p.accentText, { align: 'center' });
-    if (end < rows.length) label(ctx, `▼ ${rows.length - end} more`, BOX.x + BOX.w / 2, BOX.y + BOX.h - ROWS_MARGIN / 2, { size: 18, bold: true }, p.accentText, { align: 'center' });
+
+    this.drawPanel(ctx, shown, ease, intro(120));
+    this.drawFooter(ctx);
+
     if (this.leaving) {
       const t = clamp01((now - this.leaving.at) / LEAVE_MS);
       renderer.rect(0, 0, STAGE_W, 720, { fill: withAlpha(p.bg, t) });
@@ -355,57 +424,132 @@ export class SettingsScene {
     renderer.end();
   }
 
-  /** Moves the rows' window so row `index` shows. */
-  private revealRow(index: number, count: number): void {
-    if (index < this.rowStart) this.rowStart = index;
-    if (index >= this.rowStart + ROWS_SHOWN) this.rowStart = index - ROWS_SHOWN + 1;
-    this.rowStart = Math.max(0, Math.min(this.rowStart, count - ROWS_SHOWN));
+  /** A control's eased focus (`rest`: where it settles unfocused). */
+  private eased(id: string, ease: number, rest = 0): number {
+    const previous = this.focusAnim.get(id) ?? 0;
+    const value = previous + ((this.focus.focused === id ? 1 : rest) - previous) * ease;
+    this.focusAnim.set(id, value);
+    return value;
   }
 
-  /** `beyond`: the row up or down past the window's edge, which the d-pad goes on to (the window follows). */
-  private drawRow(ctx: UiContext, row: SettingRow, y: number, f: number, arrive: number, beyond: { up: SettingId | null; down: SettingId | null }): void {
+  private plate(item: PixelIconName, appearance: 'light' | 'dark'): Rgba {
+    const found = HOME_MENU_ITEMS.find((it) => it.id === item);
+    return found ? rgba(found.plate[appearance]) : this.theme.palette().rim;
+  }
+
+  /** The shown group's settings, in a panel with the group's colour. */
+  private drawPanel(ctx: UiContext, index: number, ease: number, alpha: number): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const group = GROUPS[index];
+    const { x, y, w, h } = PANEL;
+    renderer.rect(x, y + 12, w, h, { fill: [0, 0, 0, 0.2 * alpha], radius: 22, softness: 30 });
+    renderer.rect(x, y, w, h, {
+      fill: withAlpha(mixRgba(this.plate(group.colours, p.appearance), p.panel, 0.35), alpha),
+      fillEnd: withAlpha(p.panel, alpha),
+      stroke: withAlpha(p.rim, alpha),
+      border: 1,
+      radius: 22,
+    });
+    const icon = this.icons.get(group.icon);
+    if (icon) renderer.image(icon, x + 26, y + 16, 1.5, [1, 1, 1, alpha]);
+    label(ctx, group.title, x + 72, y + 34, { size: 26, bold: true }, withAlpha(p.ink, alpha));
+    const rows = this.rows();
+    group.rows.forEach((id, i) => {
+      const row = rows.find((r) => r.id === id);
+      if (row) this.drawRow(ctx, row, ROW.y + i * ROW.step, this.eased(`row-${id}`, ease), alpha);
+    });
+  }
+
+  /** One setting: its name and detail, its control at the right. Left/right change it; left on a switch goes back to the groups. */
+  private drawRow(ctx: UiContext, row: SettingRow, y: number, f: number, alpha: number): void {
     const p = ctx.palette;
     const { renderer, now } = ctx;
-    const box = { x: ROW_X, y, w: ROW_W, h: ROW_H };
-    const focused = ctx.focus.control({
+    const box = { x: ROW.x, y, w: ROW.w, h: ROW.h };
+    ctx.focus.control({
       id: `row-${row.id}`,
       ...box,
       accept: () => this.activate(row),
       move: (direction) => {
-        if (direction === 'left' || direction === 'right') return this.change(row, direction === 'right' ? 1 : -1);
-        const next = beyond[direction];
-        if (!next) return false;
-        ctx.focus.focus(`row-${next}`);
+        if (direction === 'up' || direction === 'down') return false;
+        const steps = row.kind === 'cycle' && !row.disabled;
+        if (steps && this.change(row, direction === 'right' ? 1 : -1)) return true;
+        if (direction === 'left') {
+          ctx.focus.focus(`group-${this.shown()}`);
+          return true;
+        }
         return true;
       },
     });
-    const alpha = arrive;
-    const x = box.x + (1 - arrive) * 32;
-    const a = (color: Rgba): Rgba => withAlpha(color, alpha);
-    renderer.rect(x, y, ROW_W, ROW_H, { fill: a(mixRgba(p.button, p.select, f)), stroke: a(p.rim), radius: 8, border: 2 });
+    const a = (color: Rgba, extra = 1): Rgba => withAlpha(color, alpha * extra);
+    if (f > 0.01) renderer.rect(box.x, y, box.w, box.h, { fill: a(p.select, f), stroke: a(p.accentText, f), border: 3, radius: 14 });
+    label(ctx, row.label, box.x + 22, y + 28, { size: 22, bold: true }, a(row.disabled ? p.muted : p.ink));
+    label(ctx, row.detail, box.x + 22, y + 56, { size: 15 }, a(p.muted), { maxWidth: 400 });
 
-    label(ctx, row.label, x + 22, y + 26, { size: 28, bold: true }, a(row.disabled ? p.muted : p.ink), { maxWidth: 640 });
-    label(ctx, row.detail, x + 22, y + 56, { size: 19 }, a(p.muted), { maxWidth: 720 });
-
-    // The value, flashing white for a moment when it changes, its ◀ ▶ nudging the way it went.
-    const valueColor = row.disabled ? p.muted : row.kind === 'toggle' ? (row.on ? p.teal : p.muted) : p.accentText;
-    const flash = 1 - clamp01((now - (this.changedAt.get(row.id) ?? -Infinity)) / FLASH_MS);
-    const pop = 1 + 0.12 * flash * flash;
-    const valueStyle = { size: 28, bold: true };
-    const shown = ctx.text.fit(row.value, valueStyle, 320);
-    const texture = ctx.text.get(shown, valueStyle);
-    if (texture) {
-      const cx = x + 954;
-      const cy = y + ROW_H / 2;
-      renderer.image(texture, cx - (texture.width * pop) / 2, cy - (texture.height * pop) / 2, pop, a(mixRgba(valueColor, [1, 1, 1, 1], flash * 0.6)));
-    }
-    const arrowColor = a(mixRgba(p.muted, p.accentText, f));
+    const right = box.x + box.w - 22;
+    const cy = y + box.h / 2;
     const nudge = Math.max(0, Math.sin((now / 1000) * 6)) * 3 * f;
-    if (row.steppable && this.leftArrow) renderer.image(this.leftArrow, x + 762 - nudge, y + (ROW_H - 28) / 2, 4, arrowColor);
-    if ((row.steppable || row.kind === 'link') && this.rightArrow) renderer.image(this.rightArrow, x + 1126 + nudge, y + (ROW_H - 28) / 2, 4, arrowColor);
-    if (focused) focusRing(ctx, { ...box, x }, 8);
+    const arrows = (left: number, rightEdge: number): void => {
+      const color = a(mixRgba(p.muted, p.accentText, f));
+      if (this.leftArrow) renderer.image(this.leftArrow, left - nudge, cy - 10.5, 3, color);
+      if (this.rightArrow) renderer.image(this.rightArrow, rightEdge - 12 + nudge, cy - 10.5, 3, color);
+    };
+    const settings = this.appSettings.settings();
+    if (row.id === 'theme') {
+      // The six themes' swatches (each its hue over its accent), the chosen one ringed.
+      THEMES.forEach((theme, i) => {
+        const sx = right - 6 * 40 + i * 40;
+        const swatch = themeSwatch(p.appearance, theme.id);
+        if (theme.id === settings.theme) renderer.rect(sx - 4, cy - 19, 38, 38, { fill: a(p.accentText), radius: 10 });
+        renderer.rect(sx, cy - 15, 30, 30, { fill: a(swatch.accent), radius: 8 });
+        renderer.rect(sx, cy - 15, 30, 18, { fill: a(swatch.hue), radius: 8 });
+        renderer.rect(sx, cy - 5, 30, 8, { fill: a(swatch.hue) });
+      });
+    } else if (row.id === 'musicVolume' || row.id === 'soundVolume') {
+      // Ten bars rising left to right, lit up to the volume.
+      const volume = settings[row.id];
+      label(ctx, volumeLabel(volume), right, cy, { size: 20, bold: true }, a(p.ink), { align: 'right' });
+      for (let i = 0; i < 10; i++) {
+        const bh = 12 + i * 2;
+        renderer.rect(right - 70 - (10 - i) * 18, cy + 15 - bh, 14, bh, { fill: a(i < volume / 10 ? p.accent : p.rim), radius: 3 });
+      }
+    } else if (row.kind === 'toggle') {
+      const on = row.on ?? false;
+      const sw = { x: right - 58, y: cy - 16, w: 58, h: 32 };
+      renderer.rect(sw.x, sw.y, sw.w, sw.h, { fill: a(on ? p.accent : p.rim, row.disabled ? 0.5 : 1), radius: 16 });
+      renderer.rect(sw.x + (on ? 30 : 4), sw.y + 4, 24, 24, { fill: a([1, 1, 1, 1], row.disabled ? 0.6 : 1), radius: 12 });
+    } else if (row.kind === 'link') {
+      label(ctx, 'Open', right - 24, cy, { size: 19, bold: true }, a(row.disabled ? p.muted : p.accentText), { align: 'right' });
+      if (this.rightArrow) renderer.image(this.rightArrow, right - 12 + nudge, cy - 10.5, 3, a(row.disabled ? p.muted : p.accentText));
+    } else {
+      // ◀ value ▶, the value centred between.
+      const mid = right - 130;
+      label(ctx, row.value, mid, cy, { size: 20, bold: true }, a(row.disabled ? p.muted : p.accentText), { align: 'center', maxWidth: 220 });
+      if (row.steppable) arrows(right - 260, right);
+    }
+  }
+
+  /** Under the page: what the focused setting is for (or the group), and the buttons. */
+  private drawFooter(ctx: UiContext): void {
+    const p = ctx.palette;
+    const y = 668;
+    const focused = this.focus.focused ?? '';
+    const row = focused.startsWith('row-') ? this.rows().find((r) => `row-${r.id}` === focused) : null;
+    label(ctx, row ? row.detail : 'Right or A to change these settings.', 48, y, { size: 16 }, p.muted, { maxWidth: 720 });
+    const keys: [string, string][] = row
+      ? [[row.kind === 'cycle' ? '◀▶' : 'A', row.kind === 'toggle' ? 'Turn on/off' : row.kind === 'link' ? 'Open' : 'Change'], ['B', 'Groups']]
+      : [['A', 'Open'], ['B', 'Menu']];
+    let x = 1232;
+    for (const [key, text] of [...keys].reverse()) {
+      x -= ctx.text.measure(text, { size: 18 });
+      label(ctx, text, x, y, { size: 18 }, p.ink);
+      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
+      pill(ctx, key, x, y, 28);
+      x -= 24;
+    }
   }
 }
+
 
 /** The volumes to step through: 0 (Off) to 100. */
 const VOLUMES = Array.from({ length: 100 / VOLUME_STEP + 1 }, (_, i) => i * VOLUME_STEP);
