@@ -4,15 +4,17 @@ import { Router } from '@angular/router';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { BattleMusic } from '@core/audio/battle-music';
 import { AssetPreload } from '@core/gl/asset-preload';
-import { Rgba, Texture, withAlpha } from '@core/gl/gl-renderer';
+import { GlRenderer, Rgba, Texture, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
-import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
-import { TEXT_PAD, TextStyle, pixelTexture } from '@core/gl/gl-textures';
+import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
+import { TEXT_PAD, TextStyle, TextTextures, pixelTexture } from '@core/gl/gl-textures';
 import { ImagePriority, SpriteBitmaps } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { categoryIcon } from '@core/gl/ui/category-icons';
 import { GlTheme } from '@core/gl/ui/gl-theme';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
+import { PLATFORM } from '@core/runtime/platform';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { BALL } from '@features/home/gl/logo-ball';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
@@ -23,26 +25,66 @@ const LOADING_UPLOADS = 8;
 const PRIMES_PER_FRAME = 2;
 /** Time per frame for synthesizing the sounds and the menu theme (AudioEngine.prepare). */
 const AUDIO_BUDGET_MS = 12;
-/** The longest the loading screen waits for the battle music (offline, or a slow connection): the rest loads when a battle needs it. */
+/** The longest the title waits for the battle music (offline, or a slow connection): the rest loads when a battle needs it. */
 const MUSIC_WAIT_MS = 20000;
 const WHITE: Rgba = [1, 1, 1, 1];
-const BAR = { x: 320, y: 392, w: 640, h: 28 };
-/** The logo here, big, and where the home screen's header draws it (HomeScene.drawHeader). */
-const BIG = { ballX: (STAGE_W - 120) / 2, ballY: 116, ballScale: 5, textCy: 310, gap: 16, style: { size: 64, bold: true } };
-const HEADER = { ballX: 24, ballY: 14, ballScale: 2, textX: 84, textCy: 38, gap: 10, style: { size: 32, bold: true }, height: 76 };
-/** The logo's flight into the header, once everything is loaded. */
+const STUDIO_INK: Rgba = [0.07, 0.07, 0.09, 1];
+
+/** The studio's card, the first thing a launch shows, as a game shows its studio: its logo (bundled, a
+ * small PNG asked for before anything else) and name, on white. */
+const STUDIO = 'WANDA PRODUCTIONS';
+const STUDIO_LINE = 'presents';
+const STUDIO_LOGO = 'studio/wanda.png';
+const STUDIO_LOGO_W = 320;
+const STUDIO_LOGO_H = 285;
+/** The glasses' blue, for the line under the name. */
+const STUDIO_BLUE: Rgba = [0.11, 0.3, 0.85, 1];
+/** The card waits this long at most for its logo (it starts as soon as the logo is in). */
+const LOGO_WAIT_MS = 1200;
+/** The card: fading in, held, fading out; then the title. A or START skips it. */
+const INTRO_MS = 2600;
+const INTRO_FADE_MS = 500;
+/** The title's arrival: a white flash, the Poké Ball dropping in with a bounce, the logo fading up. */
+const FLASH_MS = 600;
+const DROP_MS = 900;
+/** START pressed: a quick flash, then the logo flies to the menu's header. */
+const PRESS_FLASH_MS = 250;
 const OUTRO_MS = 700;
 
+/** The logo on the title, big, and where the home screen's header draws it (HomeScene.drawHeader). */
+const BIG = { ballX: (STAGE_W - 120) / 2, ballY: 96, ballScale: 5, textCy: 290, gap: 16, style: { size: 64, bold: true } };
+const HEADER = { ballX: 24, ballY: 14, ballScale: 2, textX: 84, textCy: 38, gap: 10, style: { size: 32, bold: true }, height: 76 };
+const PROMPT_CY = 420;
+/** The edition: a red sticker, tilted, under SHOWDOWN!'s end; it pops in after the logo. */
+const EDITION = 'NINTENDO SWITCH EDITION';
+const EDITION_STYLE: TextStyle = { size: 17, bold: true };
+const EDITION_RED: Rgba = [0.9, 0, 0.07, 1];
+const EDITION_CY = 350;
+const PROMPT = PLATFORM === 'native' ? 'PRESS START' : 'PRESS A';
+const LEGAL = 'A fan project, not affiliated with Nintendo, Creatures or GAME FREAK. Pokémon © Nintendo / Creatures / GAME FREAK.';
+
+/** The Pokémon walking along the bottom of the title, from the bundled sheets (each shows once its sheet is in). */
+const PARADE = [
+  'pikachu', 'charizard', 'gengar', 'garchomp', 'lucario', 'sylveon', 'dragonite', 'greninja',
+  'snorlax', 'gardevoir', 'tyranitar', 'mimikyu', 'umbreon', 'metagross', 'arcanine', 'incineroar',
+];
+const PARADE_GROUND = 676;
+const PARADE_STEP = 220;
+const PARADE_SPEED = 80;
+/** Drawn twice their size (192 px), whole pixels so they stay crisp. */
+const PARADE_SCALE = 2;
+
 /**
- * The first screen of a launch: the logo, a bar and "Loading assets…" while every image the app
- * shows (preloadList: the item sheet, the move categories and the bundled sheets of Champions sprites)
- * downloads, decodes and becomes a texture, so no screen waits for one later (3.7 s on the console,
- * test p4). A stutter costs nothing here, so decoding runs back to back (SpriteBitmaps.rush) and more
- * textures are made per frame. Meanwhile the interface's sounds and the menu theme are synthesized,
- * a slice each frame (AudioEngine.prepare), and the battle music (bundled) decodes (BattleMusic.preload,
- * up to MUSIC_WAIT_MS), so no battle stutters starting its track. Once done, the menu theme fades in and the logo shrinks
- * and flies to its place in the home screen's header, the header's bar fading in behind it, and the
- * menu takes over from there.
+ * The first screen of a launch, as a Pokémon game opens: the studio's card (Wanda Productions), then the title (a flash,
+ * the Poké Ball dropping in, POKÉMON SHOWDOWN!, Pokémon walking past) waiting for START (+ on the
+ * native build) or A. Behind it every image the app shows loads (preloadList: the item sheet, the move
+ * categories and the bundled sheets of Champions sprites), downloading, decoding and becoming a
+ * texture, so no screen waits for one later; a stutter costs nothing here, so decoding runs back to
+ * back (SpriteBitmaps.rush) and more textures are made per frame. Meanwhile the interface's sounds and
+ * the menu theme are synthesized, a slice each frame (AudioEngine.prepare), and the battle music
+ * (bundled) decodes (BattleMusic.preload, up to MUSIC_WAIT_MS). Until all of that is done a small ball
+ * spins in a corner; then the menu theme starts and PRESS START blinks. Pressed, the logo flies to its
+ * place in the home screen's header, the header's bar fading in behind it, and the menu takes over.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -59,6 +101,7 @@ export class LoadingScene {
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly keyboard = inject(CanvasKeyboard);
   private readonly connection = inject(ShowdownConnection);
+  private readonly navigation = inject(KeyboardNavigation);
   /** The teambuilder's code is set up (see warmTeambuilder). */
   private teambuilderWarm = false;
   private teambuilderWarming = false;
@@ -70,12 +113,18 @@ export class LoadingScene {
   private waiting: PreloadAsset[] = [...this.assets];
   /** Made into textures, not drawn with yet. */
   private readonly priming: PreloadAsset[] = [];
-  /** The bar's fill, easing towards the share loaded (it moves in a few big steps). */
-  private shown = 0;
-  /** When the logo began its flight to the header. */
-  private outroAt = 0;
-  /** The first frame's time, for MUSIC_WAIT_MS. */
+  /** The first frame's time: the card starts there, and MUSIC_WAIT_MS counts from it. */
   private startedAt = 0;
+  /** When the card began (its logo in, or LOGO_WAIT_MS gone); 0 before. */
+  private cardAt = 0;
+  /** When the title arrives (after the card, or when it's skipped). */
+  private titleAt = 0;
+  /** Everything is loaded: START works. */
+  private ready = false;
+  /** The last frame's time: presses are timed on the frames' clock. */
+  private lastNow = 0;
+  /** When START was pressed (the logo's flight to the header begins). */
+  private outroAt = 0;
   /** When the loading began and when its images were done (performance.now), for the diagnostics. */
   private readonly launchedAt = performance.now();
   private imagesAt = 0;
@@ -93,9 +142,11 @@ export class LoadingScene {
     this.bitmaps.rush = true;
     // All at once from the start: waiting for the images first was no faster (test-m2/m3).
     this.music.preload();
+    // The studio's logo first: the card waits for it.
+    this.bitmaps.request(STUDIO_LOGO, ImagePriority.Screen);
     for (const asset of this.assets) this.bitmaps.request(asset.url, ImagePriority.Screen);
-    // The controller does nothing here: the menu comes by itself.
-    const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: () => true });
+    const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: (action) => action === 'accept' && this.press() });
+    const releasePlus = this.navigation.registerButton('buttonPlus', () => this.press());
     this.stage.whenReady(({ renderer, images }) => {
       this.ball = pixelTexture(renderer, BALL);
       images.uploadsPerFrame = LOADING_UPLOADS;
@@ -104,9 +155,23 @@ export class LoadingScene {
     });
     inject(DestroyRef).onDestroy(() => {
       hide();
+      releasePlus();
       this.restore();
       this.stage.whenReady(({ renderer }) => this.ball && renderer.deleteTexture(this.ball));
     });
+  }
+
+  /** START or A: on the card, skips to the title; on the title, once loaded, goes on to the menu. */
+  private press(): boolean {
+    const now = this.lastNow;
+    if (!this.startedAt || this.outroAt) return false;
+    if (now < this.titleAt) {
+      this.titleAt = now;
+      return true;
+    }
+    if (!this.ready || now - this.titleAt < DROP_MS) return false;
+    this.outroAt = now;
+    return true;
   }
 
   /**
@@ -129,56 +194,57 @@ export class LoadingScene {
   }
 
   private draw(frame: StageFrame): void {
-    const p = this.theme.palette();
-    const { renderer, now, dt } = frame;
-    if (this.waiting.length > 0) this.load(frame);
-    // The sounds count as one more asset, and each battle track as one; an image is loaded once it's
-    // been drawn (primed).
-    this.startedAt ||= now;
-    const soundsReady = this.audio.prepare(AUDIO_BUDGET_MS);
-    const tracks = this.music.trackCount;
-    const tracksDone = now - this.startedAt > MUSIC_WAIT_MS ? tracks : this.music.preloaded();
-    const pending = this.waiting.length + this.priming.length;
-    if (pending === 0 && !this.imagesAt) this.imagesAt = performance.now();
-    if (pending === 0 && soundsReady && tracksDone === tracks) this.warmTeambuilder();
-    const warm = this.teambuilderWarm ? 1 : 0;
-    const loaded = (this.assets.length - pending + (soundsReady ? 1 : 0) + tracksDone + warm) / (this.assets.length + 2 + tracks);
-    this.shown += (loaded - this.shown) * (1 - Math.exp(-dt * 10));
-    if (!this.outroAt && pending === 0 && soundsReady && tracksDone === tracks && warm && this.shown > 0.98) {
-      this.outroAt = now;
-      this.restore();
-      this.preload.finished.set(true);
-      this.audio.playMenuTheme();
-      this.diagnostics.loading = this.timings();
+    const { renderer, now } = frame;
+    this.lastNow = now;
+    if (!this.startedAt) {
+      this.startedAt = now;
+      this.titleAt = Infinity;
     }
+    this.loadStep(frame);
+    if (!this.cardAt && (frame.images.image(STUDIO_LOGO, ImagePriority.Screen) || now - this.startedAt > LOGO_WAIT_MS)) {
+      this.cardAt = now;
+      this.titleAt = Math.min(this.titleAt, now + INTRO_MS);
+    }
+
+    if (now < this.titleAt) {
+      renderer.beginPlain(WHITE);
+      this.prime(frame);
+      this.drawCard(frame);
+      this.warmKeyboard(frame);
+      renderer.end();
+      return;
+    }
+
+    const p = this.theme.palette();
+    const age = now - this.titleAt;
     const t = this.outroAt ? Math.min(1, (now - this.outroAt) / OUTRO_MS) : 0;
     const fly = easeInOut(t);
     const fade = 1 - Math.min(1, t / 0.4);
 
     renderer.begin(now / 1000, p.bg, p.rim);
     this.prime(frame);
-    if (!this.keyboardWarm) this.keyboardWarm = this.keyboard.warm(frame.text);
     if (fly > 0) renderer.rect(0, 0, STAGE_W, HEADER.height, { fill: withAlpha(p.bar, fly) });
-
-    // The ball bobs and rocks while loading, and settles as it flies.
-    const time = now / 1000;
-    const settle = 1 - fly;
-    if (this.ball) {
-      const scale = lerp(BIG.ballScale, HEADER.ballScale, fly);
-      const size = this.ball.width * scale;
-      const x = lerp(BIG.ballX, HEADER.ballX, fly);
-      const y = lerp(BIG.ballY, HEADER.ballY, fly) + Math.sin(time * 3) * 6 * settle;
-      renderer.rect(x, y, size, size, { fill: WHITE, texture: this.ball, angle: Math.sin(time * 2.4) * 0.12 * settle });
-    }
-    this.drawWordmark(frame, fly);
+    if (fade > 0) this.drawParade(frame, Math.min(1, age / 1200) * fade);
+    this.drawBall(frame, age, fly);
+    this.drawWordmark(frame, fly, Math.min(1, age / 500));
+    if (fade > 0) this.drawEdition(frame, age, fade);
 
     if (fade > 0) {
-      renderer.rect(BAR.x, BAR.y, BAR.w, BAR.h, { fill: withAlpha(p.input, fade), stroke: withAlpha(p.outline, fade), radius: 8, border: 3 });
-      const filled = Math.round((BAR.w - 12) * Math.min(1, this.shown));
-      if (filled > 0) renderer.rect(BAR.x + 6, BAR.y + 6, filled, BAR.h - 12, { fill: withAlpha(p.accentText, fade), radius: 4 });
-      const label = frame.text.get('Loading assets…', { size: 24 });
-      if (label) renderer.image(label, BAR.x - TEXT_PAD, BAR.y + 60 - label.height / 2, 1, withAlpha(p.ink, fade));
+      if (this.ready && age >= DROP_MS) {
+        // Blinks: on most of the time, off briefly (faster once pressed).
+        const period = this.outroAt ? 120 : 1100;
+        const on = (now % period) / period < (this.outroAt ? 0.5 : 0.72);
+        if (on) say(renderer, frame.text, PROMPT, STAGE_W / 2, PROMPT_CY, { size: 34, bold: true }, withAlpha(p.ink, fade));
+      } else if (!this.ready) {
+        this.drawSpinner(frame, Math.min(1, age / 400));
+      }
+      say(renderer, frame.text, LEGAL, STAGE_W / 2, STAGE_H - 16, { size: 14 }, withAlpha(p.muted, fade));
     }
+
+    // The flashes: white over everything as the title arrives and as START is pressed.
+    const flash = Math.max(1 - age / FLASH_MS, this.outroAt ? 0.7 * (1 - (now - this.outroAt) / PRESS_FLASH_MS) : 0);
+    if (flash > 0) renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: [1, 1, 1, flash] });
+    this.warmKeyboard(frame);
     renderer.end();
 
     if (t >= 1 && !this.leaving) {
@@ -187,11 +253,123 @@ export class LoadingScene {
     }
   }
 
+  /** One frame of loading: textures, sounds, music, the teambuilder's code; `ready` once all are in. */
+  private loadStep(frame: StageFrame): void {
+    if (this.waiting.length > 0) this.load(frame);
+    const soundsReady = this.audio.prepare(AUDIO_BUDGET_MS);
+    const tracks = this.music.trackCount;
+    const tracksDone = frame.now - this.startedAt > MUSIC_WAIT_MS ? tracks : this.music.preloaded();
+    const pending = this.waiting.length + this.priming.length;
+    if (pending === 0 && !this.imagesAt) this.imagesAt = performance.now();
+    const loaded = pending === 0 && soundsReady && tracksDone === tracks;
+    if (loaded) this.warmTeambuilder();
+    if (!this.ready && loaded && this.teambuilderWarm) {
+      this.ready = true;
+      this.restore();
+      this.preload.finished.set(true);
+      this.audio.playMenuTheme();
+      this.diagnostics.loading = this.timings();
+    }
+  }
+
+  /**
+   * The studio's card on white: its logo easing up and in, the name under it with a blue line growing
+   * beneath, then "presents"; all fading out to white, where the title's flash takes over.
+   */
+  private drawCard({ renderer, text, images, now }: StageFrame): void {
+    if (!this.cardAt) return;
+    const age = now - this.cardAt;
+    const out = this.titleAt - now;
+    const alpha = Math.min(1, age / INTRO_FADE_MS, out / INTRO_FADE_MS);
+    if (alpha <= 0) return;
+    const logo = images.image(STUDIO_LOGO, ImagePriority.Screen);
+    if (logo) {
+      const rise = (1 - easeInOut(Math.min(1, age / 700))) * 16;
+      renderer.rect((STAGE_W - STUDIO_LOGO_W) / 2, 120 + rise, STUDIO_LOGO_W, STUDIO_LOGO_H, { fill: withAlpha(WHITE, alpha), texture: logo });
+    }
+    const cy = 468;
+    say(renderer, text, STUDIO, STAGE_W / 2, cy, { size: 40, bold: true }, withAlpha(STUDIO_INK, alpha));
+    const grow = easeInOut(Math.min(1, Math.max(0, (age - 300) / 900)));
+    const width = 420 * grow;
+    renderer.rect(STAGE_W / 2 - width / 2, cy + 32, width, 3, { fill: withAlpha(STUDIO_BLUE, alpha) });
+    const line = Math.min(alpha, Math.max(0, (age - 1000) / 400));
+    if (line > 0) say(renderer, text, STUDIO_LINE, STAGE_W / 2, cy + 64, { size: 22 }, withAlpha(STUDIO_INK, line * 0.6));
+  }
+
+  /** NINTENDO SWITCH EDITION on a red sticker, tilted, under SHOWDOWN!'s end: it pops in after the logo. */
+  private drawEdition({ renderer, text }: StageFrame, age: number, fade: number): void {
+    const label = text.get(EDITION, EDITION_STYLE);
+    if (!label) return;
+    const pop = Math.min(1, Math.max(0, (age - DROP_MS) / 350));
+    if (pop <= 0) return;
+    const scale = backOut(pop);
+    const logoW = text.measure('POKÉMON', BIG.style) + BIG.gap + text.measure('SHOWDOWN!', BIG.style);
+    const right = (STAGE_W + logoW) / 2;
+    const w = (label.width - TEXT_PAD * 2 + 36) * scale;
+    const h = 36 * scale;
+    const cx = right - 150;
+    const angle = -0.06;
+    const alpha = Math.min(1, pop * 2) * fade;
+    renderer.rect(cx - w / 2 + 3, EDITION_CY - h / 2 + 4, w, h, { fill: [0, 0, 0, 0.18 * alpha], radius: h / 2, angle });
+    renderer.rect(cx - w / 2, EDITION_CY - h / 2, w, h, { fill: withAlpha(EDITION_RED, alpha), stroke: withAlpha(WHITE, alpha), border: 3, radius: h / 2, angle });
+    const tw = label.width * scale;
+    const th = label.height * scale;
+    renderer.rect(cx - tw / 2, EDITION_CY - th / 2, tw, th, { fill: withAlpha(WHITE, alpha), texture: label, angle });
+  }
+
+  /** The Poké Ball: dropping in with a bounce, then bobbing and rocking; it settles as it flies. */
+  private drawBall({ renderer, now }: StageFrame, age: number, fly: number): void {
+    if (!this.ball) return;
+    const time = now / 1000;
+    const settle = 1 - fly;
+    const drop = Math.min(1, age / DROP_MS);
+    const fall = (1 - bounceOut(drop)) * -(BIG.ballY + 140);
+    const spin = (1 - drop) * Math.PI * 4;
+    const scale = lerp(BIG.ballScale, HEADER.ballScale, fly);
+    const size = this.ball.width * scale;
+    const x = lerp(BIG.ballX, HEADER.ballX, fly);
+    const bob = drop >= 1 ? Math.sin(time * 3) * 6 * settle : 0;
+    const y = lerp(BIG.ballY + fall, HEADER.ballY, fly) + bob;
+    renderer.rect(x, y, size, size, { fill: WHITE, texture: this.ball, angle: spin + Math.sin(time * 2.4) * 0.12 * settle });
+  }
+
+  /** The Pokémon walking right to left along the bottom, each hopping a little, a shadow under it. */
+  private drawParade({ renderer, images, disc, now }: StageFrame, alpha: number): void {
+    if (alpha <= 0) return;
+    const time = now / 1000;
+    const loop = PARADE.length * PARADE_STEP;
+    PARADE.forEach((species, i) => {
+      const x = STAGE_W + 40 - ((time * PARADE_SPEED + i * PARADE_STEP) % loop);
+      if (x < -200 || x > STAGE_W + 20) return;
+      const sprite = images.sprite(species, false, ImagePriority.Screen);
+      if (!sprite) return;
+      const hop = Math.abs(Math.sin(time * 5 + i * 1.3)) * 12;
+      const size = 96 * PARADE_SCALE;
+      renderer.rect(x + 36, PARADE_GROUND - 12, size - 72, 22, { fill: [0, 0, 0, 0.22 * alpha], texture: disc });
+      renderer.rect(x, PARADE_GROUND - size + 8 - hop, size, size, { fill: [1, 1, 1, alpha], texture: sprite });
+    });
+  }
+
+  /** While loading: a small spinning Poké Ball and "Loading…" where PRESS START comes. */
+  private drawSpinner({ renderer, text, now }: StageFrame, alpha: number): void {
+    const p = this.theme.palette();
+    if (this.ball) renderer.rect(STAGE_W / 2 - 84, PROMPT_CY - 16, 32, 32, { fill: withAlpha(WHITE, alpha), texture: this.ball, angle: (now / 1000) * 6 });
+    say(renderer, text, 'Loading…', STAGE_W / 2 - 40, PROMPT_CY, { size: 22 }, withAlpha(p.muted, alpha), 'left');
+  }
+
+  /**
+   * The on-screen keyboard's texts, made while there's time (CanvasKeyboard.warm): after this
+   * screen's own, so they never hold the card's back.
+   */
+  private warmKeyboard(frame: StageFrame): void {
+    if (!this.keyboardWarm) this.keyboardWarm = this.keyboard.warm(frame.text);
+  }
+
   /**
    * POKÉMON SHOWDOWN!, each word gliding from its place here to its place in the header. In flight
    * the big text is drawn smaller; landed, it's the header's own size, as the home screen draws it.
    */
-  private drawWordmark({ renderer, text }: StageFrame, fly: number): void {
+  private drawWordmark({ renderer, text }: StageFrame, fly: number, alpha: number): void {
     const landed = fly >= 1;
     const { logo, logoInk } = this.theme.palette();
     const style: TextStyle = landed ? HEADER.style : BIG.style;
@@ -209,7 +387,7 @@ export class LoadingScene {
     const cy = lerp(BIG.textCy, HEADER.textCy, fly);
     [first, second].forEach((texture, i) => {
       const x = lerp(from[i], to[i], fly);
-      renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, i === 0 ? logoInk : logo);
+      renderer.image(texture, x - TEXT_PAD * scale, cy - (texture.height * scale) / 2, scale, withAlpha(i === 0 ? logoInk : logo, alpha));
     });
   }
 
@@ -244,4 +422,32 @@ function lerp(from: number, to: number, t: number): number {
 
 function easeInOut(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** A ball dropped on the floor: falls, then two smaller bounces. */
+function bounceOut(t: number): number {
+  const n = 7.5625;
+  const d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75;
+  if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375;
+  return n * (t -= 2.625 / d) * t + 0.984375;
+}
+
+/**
+ * A text of this screen, made at once (not within the frame's budget for new text, as drawText makes
+ * them): they're few, and the card's would otherwise wait behind the on-screen keyboard's (test x19).
+ */
+function say(renderer: GlRenderer, text: TextTextures, value: string, x: number, cy: number, style: TextStyle, color: Rgba, align: 'left' | 'center' = 'center'): void {
+  const texture = text.get(value, style);
+  if (!texture) return;
+  const width = texture.width - TEXT_PAD * 2;
+  const left = align === 'center' ? x - width / 2 : x;
+  renderer.image(texture, left - TEXT_PAD, cy - texture.height / 2, 1, color);
+}
+
+/** Overshoots a little, then settles: a sticker slapped on. */
+function backOut(t: number): number {
+  const c = 1.70158;
+  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
 }
