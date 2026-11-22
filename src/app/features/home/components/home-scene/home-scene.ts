@@ -8,6 +8,7 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ServerStats } from '@features/connection/server-stats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -230,6 +231,7 @@ export class HomeScene {
       this.navigation.registerButton('buttonL', () => (this.box() === 'card' && this.cardView.picking() ? this.cardView.turn(-1) : this.toggleBox())),
       this.navigation.registerButton('buttonR', () => this.box() === 'card' && this.cardView.picking() && this.cardView.turn(1)),
       this.navigation.registerButton('buttonR3', () => (void this.router.navigateByUrl('/gl-kit'), true)),
+      this.navigation.registerButton(ROLE_KEYS.cardHistory.button, () => this.box() === 'card' && !this.cardView.picking() && (this.openHistory(), true)),
       this.stats.watch(),
     ];
     inject(DestroyRef).onDestroy(() => {
@@ -273,6 +275,11 @@ export class HomeScene {
     if (this.search.searching()) this.search.cancel();
     else if (this.login.state().mode === null) this.toEntry();
     else if (this.named()) this.search.search(RANDOM_BATTLE_FORMAT);
+  }
+
+  /** Our battle history, from the Trainer Card (its B comes back to the card). */
+  private openHistory(): void {
+    this.leave(() => void this.router.navigateByUrl('/history?from=card'));
   }
 
   /** The trainer: the Trainer Card, registering our name, or logging in while offline. */
@@ -354,8 +361,10 @@ export class HomeScene {
       this.drawLogo(ctx, 1);
       this.registerView.draw(ctx);
     } else if (box === 'card') {
+      // Our card beside our trainer, who stays where the menu has them.
+      drawGround(ctx, 1);
       this.drawLogo(ctx, 1);
-      this.cardView.draw(ctx, () => this.boxOpen.set(false), () => this.leave(() => void this.router.navigateByUrl('/history?from=card')));
+      this.cardView.draw(ctx, () => this.boxOpen.set(false), () => this.openHistory(), this.ball);
     } else {
       this.drawMenu(ctx, now, dt);
     }

@@ -83,14 +83,19 @@ box closes itself once the server calls the player by a name. The login logic is
 
 `features/trainer-card/`
 
-A Gen 3 style card: the avatar, the name, totals across every ladder (battles, wins, losses, win
-rate) and the best ladder ratings, loaded each time it's shown.
+The totals across every ladder (battles, wins – losses, win rate) as three big numbers, the latest
+results as W/L tiles (from the player's public replays, `state/recent-results.ts`) and the best
+ladder ratings as rows with a bar (1000 to 2000, amber from 1500), loaded each time it's shown. The
+player's own card opens beside the menu's trainer, who stays where the menu has them (A on them
+picks another avatar; `ROLE_KEYS.cardHistory` or its button opens the battle history); someone
+else's (a challenger's, from Battle) is a licence over the page, their avatar framed.
 
 | File | Role |
 | --- | --- |
 | `gl/trainer-card-view.ts` | The card and the avatar picker (10×4 avatars a page) |
 | `state/ladder-ratings.ts` | A player's ratings from Showdown's ladder API |
 | `state/player-details.ts` | Another player's name and avatar (`/cmd userdetails`) |
+| `state/recent-results.ts` | A player's latest results, from their public replays |
 | `data/avatar-*.ts` | Showdown's avatar list and how its client resolves avatar names to sprites |
 
 The card is shown for the player (from the home menu: A on the trainer, or **L**) and for a challenger (from the
