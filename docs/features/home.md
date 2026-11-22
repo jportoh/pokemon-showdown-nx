@@ -26,10 +26,20 @@ Then the logo flies to its place in the home screen's header and the entry scree
 
 The menu is the player's, so it needs to know who they are first: the home route's guard sends the
 app here unless a connection was asked for (Settings' automatic login) or the player chose to play
-offline. The screen is the `LoginView` with a third choice: connect as a guest, log in with a name,
-or **Play offline** (`HomeMenu.offlineChosen`: the Teambuilder and Settings work without a
-connection). The menu opens once the server calls the player by a name. Logging out of the menu (ZR
-held) comes back here, and so does a login left without a name (the automatic one refused).
+offline. The screen is built like the menu (the lit side, the trainer on their platform with a name
+plate, slanted buttons, the logo in the same corner), so entering the menu only brings its buttons in
+(`HomeMenu.fromEntry`). Its steps:
+
+- **Welcome**, when Settings remembers a name: its last trainer (`ShowdownLogin.knownAvatar`), its
+  ratings, the password and one button to continue; under an OR, another name, a guest or offline.
+- **Doors**, otherwise: connect as a guest, log in, or **play offline** (`HomeMenu.offlineChosen`:
+  the Teambuilder and Settings work without a connection).
+- **Form**, from Log in or Another name: name, password, *Remember me* (on by default) and, on the
+  console, *Log in automatically*. B goes back.
+
+The menu opens once the server calls the player by a name. Logging out of the menu (ZR held) comes
+back here, and so does a login left without a name (the automatic one refused). The shared drawing
+(`gl/menu-kit.ts`) is used by both screens.
 
 ## Home (`/`)
 
@@ -39,9 +49,10 @@ held) comes back here, and so does a login left without a name (the automatic on
 | --- | --- |
 | `components/home-scene/home-scene.ts` | The scene: the player's trainer on a platform with a name plate (name, best rating, win rate), the menu as slanted buttons with Pokémon art, Settings at the top, the focused button's description and the controls |
 | `components/start-scene/start-scene.ts` | The entry screen (above) |
+| `gl/menu-kit.ts` | What the menu and the entry screen share: the lit side, the trainer and name plate, slanted buttons, chips, fields, switches |
 | `state/home-menu.ts` | The menu items, each with its colour per appearance, description and A's action |
 | `state/home-summary.ts` | The live facts in each button's chips (format and team, a challenge, number of teams…) |
-| `gl/login-view.ts` | The login box (`LoginView`) and registration (`RegisterView`) |
+| `gl/login-view.ts` | The login box over other pages (`LoginView`) and registration (`RegisterView`) |
 | `gl/login-overlay.ts` | The same login box opened over other pages (Chats, Watch Live) with ZR |
 | `gl/logo-ball.ts` | The header's pixel-art Poké Ball |
 

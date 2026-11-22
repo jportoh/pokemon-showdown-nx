@@ -51,6 +51,8 @@ interface Credentials {
  * registered name, by its ID, and one for guest names (GUEST_AVATAR). v1 kept a single one for all.
  */
 const AVATAR_STORAGE_KEY = 'psb.avatars.v2';
+/** The avatar each of the player's own names last had (by ID), for the entry screen to show before connecting. */
+const LAST_AVATAR_STORAGE_KEY = 'psb.last-avatars.v1';
 const GUEST_AVATAR = '';
 
 /** Names tried in a row before giving up: registered ones, or ones someone is already using. */
@@ -116,6 +118,8 @@ export class ShowdownLogin {
   private credentials: Credentials | null = null;
   /** The avatars the player chose, by name (see AVATAR_STORAGE_KEY): the server gives a random one to each new connection. */
   private readonly chosenAvatars = readAvatars();
+  /** The avatar each of the player's own names last had (see LAST_AVATAR_STORAGE_KEY). */
+  private readonly lastAvatars = readAvatars(LAST_AVATAR_STORAGE_KEY);
   /** Whose chosen avatar was last asked for on this connection (a registered name's ID, or GUEST_AVATAR). */
   private avatarAppliedFor: string | null = null;
 
@@ -284,6 +288,12 @@ export class ShowdownLogin {
     this.connection.send('', `/avatar ${avatar}`);
     // Shown at once: the server's own update may come later, or not at all.
     this.setState({ avatar });
+  }
+
+  /** The avatar a name of the player's had last (chosen here, or the server's), or '' if none is known. */
+  knownAvatar(name: string): string {
+    const id = toId(name);
+    return (id && (this.chosenAvatars[id] ?? this.lastAvatars[id])) || '';
   }
 
   /** The name as Showdown's user ID ("brewser1234"), to recognise our own messages. */
@@ -478,6 +488,10 @@ export class ShowdownLogin {
     // Just logged in (or registered): kept as Settings say.
     const previous = this.stateSignal();
     if (ownName && this.credentials && (previous.loggingIn || previous.registering)) this.saved.loggedIn(name, this.credentials.password);
+    if (ownName && this.lastAvatars[toId(name)] !== avatar) {
+      this.lastAvatars[toId(name)] = avatar;
+      writeJson(LAST_AVATAR_STORAGE_KEY, this.lastAvatars);
+    }
     this.setState({
       status: 'named',
       name,
@@ -599,8 +613,8 @@ function avatarOwner(name: string, registered: boolean): string {
   return registered ? toId(name) : GUEST_AVATAR;
 }
 
-function readAvatars(): Record<string, string> {
-  const stored = readJson<unknown>(AVATAR_STORAGE_KEY, {});
+function readAvatars(key = AVATAR_STORAGE_KEY): Record<string, string> {
+  const stored = readJson<unknown>(key, {});
   if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {};
   return Object.fromEntries(Object.entries(stored).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
 }
