@@ -2,7 +2,10 @@ import { Component, DestroyRef, computed, effect, inject, signal, untracked } fr
 import { BattleMusic } from '@core/audio/battle-music';
 import { Router } from '@angular/router';
 import { AppSettings } from '@core/settings/app-settings';
-import { FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
+import { BattleDetails, BattleDetailsState, FormatListRow, FormatListScreen } from '@core/gl/ui/format-list-screen';
+import { ROLE_KEYS } from '@core/input/console-keys';
+import { LivePeek } from '@features/live/state/live-peek';
+import { BattleSummary } from '@shared/utils/battle-summary';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { LoginOverlay } from '@features/home/gl/login-overlay';
@@ -37,6 +40,9 @@ export class LiveScene {
   private readonly connection = inject(ShowdownConnection);
   private readonly live = inject(LiveBattles);
   private readonly playerRatings = inject(PlayerRatings);
+  private readonly livePeek = inject(LivePeek);
+  /** The battles looked at for their details, by room. */
+  private readonly peeks = signal<ReadonlyMap<string, { kind: 'loading' } | { kind: 'error'; text: string } | { kind: 'ready'; summary: BattleSummary }>>(new Map());
   /**
    * Best-of-3 battles' average rating, by room: the room list rates none of them (no `minElo`), so it's
    * the players' ratings in the format now.
@@ -58,7 +64,12 @@ export class LiveScene {
 
   private readonly rows = computed((): FormatListRow[] => {
     const averages = this.averages.results();
-    return this.battles().map((battle) => ({ title: `${battle.p1} vs ${battle.p2}`, detail: ratingText(battle, averages.get(battle.roomId)) }));
+    return this.battles().map((battle) => ({
+      title: `${battle.p1} vs ${battle.p2}`,
+      players: [battle.p1, battle.p2] as const,
+      rating: ratingChip(battle, averages.get(battle.roomId)),
+      detail: '',
+    }));
   });
 
   private readonly screen = new FormatListScreen({
@@ -73,7 +84,14 @@ export class LiveScene {
     message: () => this.message(),
     rows: () => this.rows(),
     detailX: 880,
+    openLabel: 'Watch',
     open: (index) => this.watch(this.battles()[index]),
+    details: {
+      mode: 'popup',
+      key: ROLE_KEYS.battleDetails,
+      request: (index) => this.peek(this.battles()[index]),
+      get: (index) => this.peekState(this.battles()[index]),
+    },
     shown: (from, to) => this.showRatings(from, to),
     // Offline, ZR opens the menu's login box here.
     overlay: (focus) => new LoginOverlay(focus),
@@ -120,6 +138,40 @@ export class LiveScene {
     return Math.round((ratings[0] + ratings[1]) / 2);
   }
 
+  /** Looks at a battle for its details (its room joined and left at once); asked again each time. */
+  private peek(battle: LiveBattle | undefined): void {
+    if (!battle) return;
+    const roomId = battle.roomId;
+    this.peeks.update((peeks) => new Map(peeks).set(roomId, { kind: 'loading' }));
+    this.livePeek.peek(roomId).then(
+      (summary) => this.peeks.update((peeks) => new Map(peeks).set(roomId, { kind: 'ready', summary })),
+      (error: unknown) => this.peeks.update((peeks) => new Map(peeks).set(roomId, { kind: 'error', text: error instanceof Error ? error.message : String(error) })),
+    );
+  }
+
+  private peekState(battle: LiveBattle | undefined): BattleDetailsState | null {
+    if (!battle) return null;
+    const peek = this.peeks().get(battle.roomId);
+    if (!peek || peek.kind !== 'ready') return peek ?? null;
+    const { summary } = peek;
+    const rating = (value: number | null) => (value ? { text: `★ ${value}`, high: value >= 1500 } : { text: 'Unrated', high: false });
+    const label = PLAYABLE_FORMATS.find((format) => format.id === this.shownFormat())?.label ?? this.shownFormat();
+    const status: BattleDetails['status'] =
+      summary.end === null
+        ? { chip: { text: 'LIVE', tone: 'live' }, text: summary.turn === 0 ? 'Team preview' : `Turn ${summary.turn}` }
+        : { chip: { text: 'Over', tone: 'neutral' }, text: summary.end === 'tie' ? 'A tie' : `${summary.end.winner} won` };
+    return {
+      kind: 'ready',
+      details: {
+        players: [summary.players[0] || battle.p1, summary.players[1] || battle.p2],
+        ratings: [rating(summary.ratings[0]), rating(summary.ratings[1])],
+        teams: summary.teams,
+        format: label,
+        status,
+      },
+    };
+  }
+
   /** Opens the battle on the battle screen, as a spectator. */
   private watch(battle: LiveBattle | undefined): void {
     if (!battle || this.session.active()) return;
@@ -128,10 +180,11 @@ export class LiveScene {
   }
 }
 
-function ratingText(battle: LiveBattle, average: number | 'loading' | 'failed' | undefined): string {
-  if (battle.tournament) return 'Tournament';
-  if (battle.rating !== null) return `Rating ${battle.rating}`;
-  if (average === undefined) return 'Unrated';
-  if (average === 'loading') return 'Rating…';
-  return average === 'failed' ? 'Rating unknown' : `Avg rating ${average}`;
+/** The row's rating chip: the room list's, else the players' average (best-of-3), amber from 1500. */
+function ratingChip(battle: LiveBattle, average: number | 'loading' | 'failed' | undefined): FormatListRow['rating'] {
+  if (battle.tournament) return { text: 'Tournament', high: false };
+  if (battle.rating !== null) return { text: `★ ${battle.rating}`, high: battle.rating >= 1500 };
+  if (average === undefined) return { text: 'Unrated', high: false };
+  if (average === 'loading') return { text: '★ …', high: false };
+  return average === 'failed' ? { text: 'Rating ?', high: false } : { text: `Avg ★ ${average}`, high: average >= 1500 };
 }

@@ -183,6 +183,8 @@ export const ROLE_KEYS = {
   removePokemon: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
   /** Calcs: who attacks, swapped. */
   calcsSwap: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  /** Watch Live: the focused battle's details (its teams and turn), in a box over the list. */
+  battleDetails: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
   /** The Trainer Card's battle history (it has a button too). */
   cardHistory: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
   /** Calcs: the field (weather, terrain, screens…). */

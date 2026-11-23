@@ -1,6 +1,10 @@
 import { Replay } from '@features/battle/models/battle';
 import { swapSidesInLine } from '@features/battle/live/side-swap';
+import { BattleDetails, BattleDetailsState, FormatListRow } from '@core/gl/ui/format-list-screen';
 import { ReplayGame } from '@features/replays/data/replay-game';
+import { BattleSummary } from '@shared/utils/battle-summary';
+import { RowLookup } from '@shared/utils/row-lookups';
+import { toId } from '@shared/utils/to-id';
 
 /**
  * "Game 2 · Avg rating 1190": the game's number in its set, and the average of the players' ratings as
@@ -36,4 +40,48 @@ export function errorText(error: unknown): string {
 export function fromSecondPlayer(replay: Replay): Replay {
   const [p1, p2] = replay.players;
   return { ...replay, players: [p2, p1], log: replay.log.split('\n').map(swapSidesInLine).join('\n') };
+}
+
+/** A rating worth a look from here up (its chip is amber). */
+export const HIGH_RATING = 1500;
+
+/** A row's rating chip: the list's rating, else the log's (best-of-3 games), "…" while it's read. */
+export function ratingChip(rating: number | null | undefined, game: RowLookup<ReplayGame> | undefined): FormatListRow['rating'] {
+  if (rating) return { text: `★ ${rating}`, high: rating >= HIGH_RATING };
+  if (game === 'loading') return { text: '★ …', high: false };
+  if (!game || game === 'failed') return undefined;
+  if (!game.rated) return { text: 'Unrated', high: false };
+  if (game.ratings.length === 0) return { text: 'Rated', high: false };
+  const average = Math.round(game.ratings.reduce((sum, value) => sum + value, 0) / game.ratings.length);
+  return { text: `${game.game ? `G${game.game} · ` : ''}★ ${average}`, high: average >= HIGH_RATING };
+}
+
+/**
+ * A replay's details for the list's panel: its players and their ratings as it started, both teams,
+ * and how it ended (from `userId`'s side when given: Won or Lost; else who won).
+ */
+export function replayDetails(lookup: RowLookup<BattleSummary> | undefined, players: readonly string[], format: string, userId = ''): BattleDetailsState | null {
+  if (lookup === undefined) return null;
+  if (lookup === 'loading') return { kind: 'loading' };
+  if (lookup === 'failed') return { kind: 'error', text: "Couldn't read this replay." };
+  const summary = lookup;
+  const rating = (value: number | null) => (value ? { text: `★ ${value}`, high: value >= HIGH_RATING } : { text: 'Unrated', high: false });
+  const turns = summary.turn === 1 ? '1 turn' : `${summary.turn} turns`;
+  let status: BattleDetails['status'];
+  if (summary.end === null) status = { chip: { text: 'Unfinished', tone: 'neutral' }, text: `Saved on turn ${summary.turn}` };
+  else if (summary.end === 'tie') status = { chip: { text: 'Tie', tone: 'neutral' }, text: turns };
+  else if (userId) {
+    const won = toId(summary.end.winner) === userId;
+    status = { chip: { text: won ? 'Won' : 'Lost', tone: won ? 'good' : 'bad' }, text: `in ${turns}` };
+  } else status = { chip: { text: 'Winner', tone: 'good' }, text: `${summary.end.winner} · ${turns}` };
+  return {
+    kind: 'ready',
+    details: {
+      players: [summary.players[0] || players[0] || 'Player 1', summary.players[1] || players[1] || 'Player 2'],
+      ratings: [rating(summary.ratings[0]), rating(summary.ratings[1])],
+      teams: summary.teams,
+      format,
+      status,
+    },
+  };
 }

@@ -240,14 +240,15 @@ export function drawKeyButton(
   text: string,
   accept: () => void,
   skip = true,
+  disabled = false,
 ): void {
   const p = ctx.palette;
-  const focused = ctx.focus.control({ id, ...box, accept, skip });
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.rim, border: focused ? 3 : 1, radius: box.h / 2 });
+  const focused = !disabled && ctx.focus.control({ id, ...box, accept, skip });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: withAlpha(focused ? p.select : p.panel, disabled ? 0.5 : 1), stroke: focused ? p.accentText : p.rim, border: focused ? 3 : 1, radius: box.h / 2 });
   const keyW = Math.max(28, ctx.text.measure(key, { size: 14, bold: true }) + 14);
   ctx.renderer.rect(box.x + 12, box.y + box.h / 2 - 14, keyW, 28, { fill: p.select, radius: 6 });
   label(ctx, key, box.x + 12 + keyW / 2, box.y + box.h / 2, { size: 14, bold: true }, p.ink, { align: 'center' });
-  label(ctx, text, box.x + 20 + keyW, box.y + box.h / 2, { size: 18, bold: true }, p.ink, { maxWidth: box.w - keyW - 32 });
+  label(ctx, text, box.x + 20 + keyW, box.y + box.h / 2, { size: 18, bold: true }, disabled ? p.muted : p.ink, { maxWidth: box.w - keyW - 32 });
 }
 
 /** A round button with a short text (the entry screen's other ways in). */
