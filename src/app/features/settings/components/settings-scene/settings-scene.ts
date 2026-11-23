@@ -11,6 +11,9 @@ import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
+import { codeSource } from '@core/runtime/code-source';
+import { AppUpdater, UpdateStatus } from '@core/update/app-updater';
+import { RELEASES_PAGE } from '@core/update/update-config';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
@@ -31,15 +34,18 @@ type SettingId =
   | 'rememberName'
   | 'autoLogin'
   | 'history'
-  | 'replays';
+  | 'replays'
+  | 'appVersion';
 
 interface SettingRow {
   id: SettingId;
   label: string;
   detail: string;
   value: string;
-  /** Cycles through values (A, left/right), switches on and off, or opens a page. */
-  kind: 'cycle' | 'toggle' | 'link';
+  /** Cycles through values (A, left/right), switches on and off, opens a page, or does something (A). */
+  kind: 'cycle' | 'toggle' | 'link' | 'action';
+  /** An action's name, for the footer (A). */
+  actionText?: string;
   /** A switch that's on. */
   on?: boolean;
   /** More than one value to step through (the ◀ ▶ triangles show). */
@@ -54,7 +60,7 @@ const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconN
   { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
   { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
   { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
-  { title: 'HISTORY', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays'] },
+  { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion'] },
 ];
 const GROUP = { x: 40, y: 98, w: 420, h: 94, step: 106 };
 const PANEL = { x: 500, y: 98, w: 732, h: 518 };
@@ -89,6 +95,7 @@ export class SettingsScene {
   private readonly appSettings = inject(AppSettings);
   private readonly login = inject(ShowdownLogin);
   private readonly saved = inject(SavedLogin);
+  private readonly updater = inject(AppUpdater);
 
   private readonly focus = new CanvasFocus();
   /** The group whose settings the panel shows: the focused one, or the one last focused. */
@@ -222,6 +229,7 @@ export class SettingsScene {
         value: 'Open',
         kind: 'link',
       },
+      versionRow(this.updater.status()),
     ];
   });
 
@@ -238,7 +246,7 @@ export class SettingsScene {
       `Music ${volumeLabel(settings.musicVolume)} · Effects ${volumeLabel(settings.soundVolume)}`,
       `${formatLabel(settings.battleFormat)} · ${settings.allowSpectators ? 'spectators on' : 'invite only'}`,
       `${account} · ${keep}`,
-      'Your battles · replays',
+      `Your battles · replays · ${codeSource()?.version ?? 'web'}`,
     ];
   });
 
@@ -299,6 +307,10 @@ export class SettingsScene {
   }
 
   private activate(row: SettingRow): void {
+    if (row.kind === 'action') {
+      if (!row.disabled && row.id === 'appVersion') this.updater.setAside();
+      return;
+    }
     if (row.kind === 'link') {
       if (row.disabled) return;
       returnRow = row.id;
@@ -324,7 +336,7 @@ export class SettingsScene {
    * to the first; the d-pad stops a volume at its ends.
    */
   private change(row: SettingRow, step: 1 | -1, wrap = false): boolean {
-    if (row.disabled || row.kind === 'link') return false;
+    if (row.disabled || row.kind === 'link' || row.kind === 'action') return false;
     const settings = this.appSettings.settings();
     switch (row.id) {
       case 'appearance':
@@ -542,6 +554,12 @@ export class SettingsScene {
     }
   }
 
+  /** The focused row's buttons in the footer: what A (or the d-pad) does there, if anything. */
+  private rowKeys(row: SettingRow): [string, string][] {
+    if (row.kind === 'action') return row.disabled || !row.actionText ? [] : [['A', row.actionText]];
+    return [[row.kind === 'cycle' ? '◀▶' : 'A', row.kind === 'toggle' ? 'Turn on/off' : row.kind === 'link' ? 'Open' : 'Change']];
+  }
+
   /** Under the page: what the focused setting is for (or the group), and the buttons. */
   private drawFooter(ctx: UiContext): void {
     const p = ctx.palette;
@@ -549,9 +567,7 @@ export class SettingsScene {
     const focused = this.focus.focused ?? '';
     const row = focused.startsWith('row-') ? this.rows().find((r) => `row-${r.id}` === focused) : null;
     label(ctx, row ? row.detail : 'Right or A to change these settings.', 48, y, { size: 16 }, p.muted, { maxWidth: 720 });
-    const keys: [string, string][] = row
-      ? [[row.kind === 'cycle' ? '◀▶' : 'A', row.kind === 'toggle' ? 'Turn on/off' : row.kind === 'link' ? 'Open' : 'Change'], ['B', 'Groups']]
-      : [['A', 'Open'], ['B', 'Menu']];
+    const keys: [string, string][] = row ? [...this.rowKeys(row), ['B', 'Groups']] : [['A', 'Open'], ['B', 'Menu']];
     let x = 1232;
     for (const [key, text] of [...keys].reverse()) {
       x -= ctx.text.measure(text, { size: 18 });
@@ -563,6 +579,47 @@ export class SettingsScene {
   }
 }
 
+
+/**
+ * The app's version (MORE): which code runs (the .nro's or an online update) and what the updater
+ * found. While an update runs, A goes back to the .nro's code (from the next start).
+ */
+function versionRow(status: UpdateStatus): SettingRow {
+  const code = codeSource();
+  const row = { id: 'appVersion', label: 'App version', kind: 'action' } as const;
+  if (!code) return { ...row, value: 'Web', detail: 'The web version is always the latest.', disabled: true };
+  if (status.kind === 'set-aside') return { ...row, value: code.version, detail: `From the next start, the .nro's own ${code.builtInVersion}.`, disabled: true };
+  const news = updateNews(status);
+  if (code.source === 'update' && status.kind !== 'ready') {
+    return {
+      ...row,
+      value: code.version,
+      detail: `An online update over the .nro's ${code.builtInVersion}. A goes back to the .nro's version.`,
+      actionText: `Use ${code.builtInVersion}`,
+    };
+  }
+  return { ...row, value: code.version, detail: news ?? 'New versions download by themselves.', disabled: true };
+}
+
+/** What the updater is doing or found, in a sentence; null when there's nothing to say. */
+function updateNews(status: UpdateStatus): string | null {
+  switch (status.kind) {
+    case 'checking':
+      return 'Looking for updates…';
+    case 'downloading':
+      return `Downloading ${status.version}… ${Math.round((status.received / Math.max(1, status.total)) * 100)}%`;
+    case 'ready':
+      return `${status.version} is downloaded: it starts the next time you open the app.`;
+    case 'needs-nro':
+      return `${status.version} is out: it needs a new .nro, from ${RELEASES_PAGE}.`;
+    case 'failed':
+      return "Couldn't look for updates this time.";
+    case 'up-to-date':
+      return 'Up to date.';
+    default:
+      return null;
+  }
+}
 
 /** The volumes to step through: 0 (Off) to 100. */
 const VOLUMES = Array.from({ length: 100 / VOLUME_STEP + 1 }, (_, i) => i * VOLUME_STEP);

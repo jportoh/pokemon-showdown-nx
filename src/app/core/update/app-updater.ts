@@ -14,7 +14,9 @@ export type UpdateStatus =
   | { kind: 'ready'; version: string }
   /** A newer version that needs a new .nro (other engine or assets). */
   | { kind: 'needs-nro'; version: string }
-  | { kind: 'failed'; reason: string };
+  | { kind: 'failed'; reason: string }
+  /** The player went back to the .nro's code: from the next start. */
+  | { kind: 'set-aside'; version: string };
 
 /** A release's update.json (scripts/build-nro.mjs, writeUpdate). */
 interface Manifest {
@@ -76,7 +78,7 @@ export class AppUpdater {
     if (!state || state.failed) return;
     writeState({ ...state, failed: 'set aside by the player' });
     log(`update ${state.version} set aside by the player`);
-    this.statusSignal.set({ kind: 'up-to-date' });
+    this.statusSignal.set({ kind: 'set-aside', version: state.version });
   }
 
   private start(): void {
