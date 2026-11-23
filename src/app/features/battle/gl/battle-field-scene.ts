@@ -7,9 +7,9 @@ import { LungeStyle, MoveStage, StageActor, StageTarget, Visual } from '@feature
 import { BITE_SNAP_MS, contactMark, drainLights, signatureMove } from '@features/battle/gl/signature-moves';
 import { BattleCamera, CameraFocus, REST_FOCUS, depthOf } from '@features/battle/gl/battle-camera';
 import { CAMERA_DEPTHS, CAMERA_TUNING } from '@features/battle/gl/camera-tuning';
+import { Backdrop, BackdropPainter, GroundColours, scenerySheet } from '@features/battle/gl/backdrops/backdrop';
+import { BACKDROPS } from '@features/battle/gl/backdrops/backdrops';
 import {
-  DEFAULT_GROUND,
-  DEFAULT_SKY,
   BOX_H,
   BOX_W,
   DOUBLES,
@@ -34,7 +34,9 @@ import { BattlePokemon, EffectPopup, FieldEvent, HpChange, MoveAction, SideId, S
 import { BattleStore, signed } from '@features/battle/state/battle-store';
 import { STATUS } from '@features/battle/state/status-conditions';
 import { Align, drawText } from '@core/gl/canvas-ui';
-import { GlRenderer, Rgba, Texture, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { AppSettings } from '@core/settings/app-settings';
+import { battlefieldFor } from '@shared/data/battlefields';
 import { TextStyle, TextTextures } from '@core/gl/gl-textures';
 import { typeColor } from '@shared/data/type-colors';
 import { spriteSource } from '@core/gl/sprite-sheets';
@@ -223,8 +225,13 @@ export class BattleFieldScene {
   private readonly bitmaps = inject(SpriteBitmaps);
   private readonly cries = inject(BattleCries);
   private readonly audio = inject(AudioEngine);
+  private readonly settings = inject(AppSettings);
   /** The last move's effectiveness on each slot: its hits sound by it (a multi-hit's later ones too). */
   private hitEffectiveness: MoveAction['effectiveness'] = {};
+
+  /** Where this battle is fought: picked from its room (or as Settings says), the same for everyone watching it. */
+  private readonly backdrop = computed<Backdrop>(() => BACKDROPS[battlefieldFor(this.store.battleRoom(), this.settings.settings().battlefield)]);
+  private painter: BackdropPainter | null = null;
 
   private readonly layout = computed<FieldLayout>(() => (this.store.gameType() === 'singles' ? SINGLES : DOUBLES));
 
@@ -349,6 +356,7 @@ export class BattleFieldScene {
     this.text = text;
     this.sprites = sprites;
     this.disc = disc;
+    this.painter = new BackdropPainter(renderer, scenerySheet(renderer), this.camera);
     sprites.prefetch(SUBSTITUTE_FRONT);
     sprites.prefetch(SUBSTITUTE_BACK);
   }
@@ -827,8 +835,15 @@ export class BattleFieldScene {
     }
 
     const { weather, terrain, rooms } = this.store.field();
-    const ground = (terrain && TERRAIN_COLORS[terrain.id]) || DEFAULT_GROUND;
-    const sky = rgba((weather && WEATHER_SKY[weather.id]) || (terrain && TERRAIN_SKY[terrain.id]) || DEFAULT_SKY);
+    const backdrop = this.backdrop();
+    const painter = this.painter;
+    if (!painter) return;
+    painter.t = now / 1000;
+    painter.groundY = this.groundY = this.camera.place(FIELD_W / 2, GROUND_Y, CAMERA_DEPTHS.groundEdge).y;
+    // The weather (or else a terrain) washes its colour over the sky and what stands in it, lightly at night.
+    const washHex = (weather && WEATHER_SKY[weather.id]) || (terrain && TERRAIN_SKY[terrain.id]) || null;
+    const washAlpha = (weather && WEATHER_SKY[weather.id] ? 0.5 : 0.3) * (backdrop.dark ? 0.5 : 1);
+    const wash = washHex ? rgba(washHex, washAlpha) : null;
 
     const baseX = renderer.originX;
     let shakeX = 0;
@@ -837,11 +852,11 @@ export class BattleFieldScene {
       if (p >= 1) this.shake = null;
       else shakeX = Math.sin(p * QUAKE_SHAKES * 2 * Math.PI) * QUAKE_PX * (1 - p);
     }
-    renderer.rect(0, 0, FIELD_W, FIELD_H, { fill: sky });
+    this.drawSky(painter, backdrop);
     renderer.originX = baseX + shakeX;
     const timings = this.timings;
     let mark = performance.now();
-    this.drawScenery(renderer, now, ground, rooms.some((room) => room.id === 'Trick Room'));
+    this.drawScenery(renderer, now, backdrop, (terrain && TERRAIN_COLORS[terrain.id]) || null, wash, rooms.some((room) => room.id === 'Trick Room'));
     this.drawMotes(renderer, dt, terrain?.id ?? null, now);
     mark = lap(timings, 'scenery', mark);
     for (const slot of this.slots()) this.drawPokemon(renderer, slot, now);
@@ -1001,42 +1016,50 @@ export class BattleFieldScene {
     if (this.text) drawText(renderer, this.text, value, x, cy, style, color, { align, maxWidth });
   }
 
+  /** The backdrop's sky, from the top of the field to the horizon, then its last colour below (the ground covers it). */
+  private drawSky(p: BackdropPainter, backdrop: Backdrop): void {
+    const stops = backdrop.sky;
+    const band = p.groundY / (stops.length - 1);
+    p.at(null);
+    for (let i = 0; i < stops.length - 1; i++) p.gradient(0, i * band, FIELD_W, band + 1, rgba(stops[i]), rgba(stops[i + 1]));
+    p.rect(0, p.groundY, FIELD_W, Math.max(0, FIELD_H - p.groundY), rgba(stops[stops.length - 1]));
+  }
+
   /**
-   * Sky, drifting clouds, the light on the horizon, the ground and the platforms, each where the camera
-   * shows it: the clouds far off barely move, the platforms go with their Pokémon. The one choosing (or
-   * the target) has a ring of light around its platform.
+   * What stands beyond the ground (the backdrop's), the weather's wash over it, the light on the horizon,
+   * the ground and what's on it, and the platforms, each where the camera shows it: far things barely
+   * move, the platforms go with their Pokémon. The one choosing (or the target) has a ring of light
+   * around its platform. A terrain colours the platforms and half the ground.
    */
-  private drawScenery(renderer: GlRenderer, now: number, ground: typeof DEFAULT_GROUND, trickRoom: boolean): void {
-    const disc = this.disc!;
-    const t = now / 1000;
-    for (let i = 0; i < 4; i++) {
-      const restW = 260 + i * 60;
-      const restX = ((t * (8 + i * 4) + i * 300) % (FIELD_W + restW)) - restW;
-      const at = this.camera.place(restX + restW / 2, 40 + ((i * 67) % 180), CAMERA_DEPTHS.clouds);
-      const w = restW * at.scale;
-      const x = at.x - w / 2;
-      const y = at.y;
-      renderer.rect(x, y, w, w * 0.32, { fill: [1, 1, 1, 0.35], texture: disc });
-      renderer.rect(x + w * 0.25, y - w * 0.08, w * 0.5, w * 0.3, { fill: [1, 1, 1, 0.3], texture: disc });
-    }
-    const groundY = this.camera.place(FIELD_W / 2, GROUND_Y, CAMERA_DEPTHS.groundEdge).y;
-    this.groundY = groundY;
+  private drawScenery(renderer: GlRenderer, now: number, backdrop: Backdrop, terrain: GroundColours | null, wash: Rgba | null, trickRoom: boolean): void {
+    const p = this.painter!;
+    backdrop.far(p);
+    p.at(null);
+    if (wash) p.rect(0, 0, FIELD_W, p.groundY, wash);
+    const groundY = p.groundY;
     // A soft light along the horizon.
-    renderer.rect(-100, groundY - 40, FIELD_W + 200, 80, { fill: [1, 1, 1, 0.1], texture: disc, additive: true });
-    renderer.rect(0, groundY, FIELD_W, Math.max(0, FIELD_H - groundY), { fill: rgba(ground.ground) });
-    renderer.rect(0, groundY, FIELD_W, 6, { fill: withAlpha(rgba(ground.edge), 0.35) });
+    p.oval(FIELD_W / 2, groundY, FIELD_W / 2 + 100, 40, [1, 1, 1, backdrop.dark ? 0.05 : 0.1], true);
+    const own = rgba(backdrop.ground.ground);
+    p.rect(0, groundY, FIELD_W, Math.max(0, FIELD_H - groundY), terrain ? mixRgba(own, rgba(terrain.ground), 0.5) : own);
+    backdrop.floor?.(p);
+    p.at(null);
+    const colours = terrain ?? backdrop.ground;
+    const edge = rgba(colours.edge);
+    const platform = rgba(colours.platform);
+    p.rect(0, groundY, FIELD_W, 6, withAlpha(rgba(backdrop.ground.edge), 0.35));
     if (trickRoom) this.drawTrickRoomGrid(renderer, now);
     for (const slot of this.slots()) {
       const width = Math.round(slot.own ? slot.size * 1.25 : slot.size);
       const height = Math.round(slot.size * (slot.own ? 0.32 : 0.27));
-      const top = Math.round(slot.feetY - height / 2);
-      const left = Math.round(slot.feetX - width / 2);
+      const cx = slot.feetX;
+      const cy = slot.feetY;
       const glow = this.camera.look(slot.key).glow;
-      if (glow > 0.01) renderer.rect(left - 6, top - 4, width + 12, height + 8, { fill: withAlpha(CHOOSER_LIGHT, glow), texture: disc });
-      renderer.rect(left, top, width, height, { fill: rgba(ground.edge), texture: disc });
-      renderer.rect(left + 3, top + 3, width - 6, height - 6, { fill: rgba(ground.platform), texture: disc });
-      renderer.rect(left + width * 0.15, top + height * 0.12, width * 0.5, height * 0.35, { fill: [1, 1, 1, 0.12], texture: disc, additive: true });
+      if (glow > 0.01) p.oval(cx, cy, width / 2 + 6, height / 2 + 4, withAlpha(CHOOSER_LIGHT, glow));
+      p.oval(cx, cy, width / 2, height / 2, edge);
+      p.oval(cx, cy, width / 2 - 3, height / 2 - 3, platform);
+      p.oval(cx - width * 0.1, cy - height * 0.2, width * 0.25, height * 0.175, [1, 1, 1, 0.12], true);
     }
+    backdrop.ambient?.(p);
   }
 
   /**

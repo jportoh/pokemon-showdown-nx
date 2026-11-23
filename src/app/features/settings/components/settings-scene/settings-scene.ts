@@ -15,11 +15,13 @@ import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
+import { BATTLEFIELD_CHOICES } from '@shared/data/battlefields';
 import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
 
 type SettingId =
   | 'appearance'
   | 'theme'
+  | 'battlefield'
   | 'musicVolume'
   | 'soundVolume'
   | 'battleFormat'
@@ -48,7 +50,7 @@ interface SettingRow {
 
 /** The settings' groups, as the slanted buttons on the left: each its rows, its colours (a menu item's) and its Pokémon. */
 const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconName; art: string; rows: readonly SettingId[] }[] = [
-  { title: 'LOOK', icon: 'settings', colours: 'live', art: 'gardevoir', rows: ['appearance', 'theme'] },
+  { title: 'LOOK', icon: 'settings', colours: 'live', art: 'gardevoir', rows: ['appearance', 'theme', 'battlefield'] },
   { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
   { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
   { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
@@ -113,6 +115,14 @@ export class SettingsScene {
         label: 'Theme',
         detail: `The app's colours, ${THEMES.indexOf(theme) + 1} of ${THEMES.length}. They change as you pick them.`,
         value: theme.name,
+        kind: 'cycle',
+        steppable: true,
+      },
+      {
+        id: 'battlefield',
+        label: 'Battlefield',
+        detail: settings.battlefield === 'random' ? 'A different place for each battle, the same for both players and anyone watching.' : 'Every battle is fought here.',
+        value: BATTLEFIELD_CHOICES.find((field) => field.id === settings.battlefield)?.name ?? BATTLEFIELD_CHOICES[0].name,
         kind: 'cycle',
         steppable: true,
       },
@@ -322,6 +332,9 @@ export class SettingsScene {
         break;
       case 'theme':
         this.appSettings.set('theme', cycle(THEMES.map((t) => t.id), settings.theme, step));
+        break;
+      case 'battlefield':
+        this.appSettings.set('battlefield', cycle(BATTLEFIELD_CHOICES.map((f) => f.id), settings.battlefield, step));
         break;
       case 'musicVolume':
       case 'soundVolume': {

@@ -247,6 +247,7 @@ export class BattleStore {
   private readonly teamSignal = signal<readonly RequestPokemon[]>([]);
   private readonly activeMovesSignal = signal<readonly RequestActive[]>([]);
   private readonly battleIdSignal = signal(0);
+  private readonly battleRoomSignal = signal<string | null>(null);
   private readonly replaySignal = signal<Replay | null>(null);
   private readonly instantReplaySignal = signal(false);
   private readonly spectatingSignal = signal(false);
@@ -304,6 +305,11 @@ export class BattleStore {
   readonly activeMoves = this.activeMovesSignal.asReadonly();
   /** Changes with every new battle, so per-battle state elsewhere can start over. */
   readonly battleId = this.battleIdSignal.asReadonly();
+  /**
+   * Which battle this is on the server: its room, or the replay's id (the room's without "battle-").
+   * An instant replay keeps its battle's. It picks the battlefield.
+   */
+  readonly battleRoom = this.battleRoomSignal.asReadonly();
   /** The replay being watched; null in a battle the player plays. */
   readonly replay = this.replaySignal.asReadonly();
   /** A live battle watched as a spectator. */
@@ -467,6 +473,7 @@ export class BattleStore {
     this.reset();
     this.frames = [];
     this.battleIdSignal.update((id) => id + 1);
+    this.battleRoomSignal.set(connection.roomId ?? connection.replay?.id ?? null);
     this.replaySignal.set(connection.replay ?? null);
     // Only replays have a speed control: a live battle after one at x2 or x4 plays at normal speed.
     if (!connection.replay) this.speedSignal.set(1);

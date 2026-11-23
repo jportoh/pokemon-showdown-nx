@@ -1,5 +1,6 @@
 import { Service, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
+import { BATTLEFIELD_CHOICES, BattlefieldChoice } from '@shared/data/battlefields';
 import { PLAYABLE_FORMATS, TEAM_FORMATS } from '@shared/data/formats';
 
 export type ThemeId = 'zafiro' | 'noche' | 'grafito' | 'esmeralda' | 'pokeball' | 'ocaso';
@@ -31,6 +32,8 @@ export const THEMES: readonly Theme[] = [
 export interface Settings {
   theme: ThemeId;
   appearance: Appearance;
+  /** Where battles are fought: a field picked for each battle, or always the same one. */
+  battlefield: BattlefieldChoice;
   /** The format the Battle page starts on. */
   battleFormat: string;
   /** The format new teams are built for. */
@@ -57,6 +60,7 @@ const STORAGE_KEY = 'psb.settings.v1';
 const DEFAULTS: Settings = {
   theme: 'zafiro',
   appearance: 'light',
+  battlefield: 'random',
   battleFormat: PLAYABLE_FORMATS[0].id,
   teamFormat: TEAM_FORMATS[0].id,
   allowSpectators: true,
@@ -91,6 +95,7 @@ function loadSettings(): Settings {
   return {
     theme: THEMES.some((theme) => theme.id === settings.theme) ? settings.theme : DEFAULTS.theme,
     appearance: APPEARANCES.some((appearance) => appearance.id === settings.appearance) ? settings.appearance : DEFAULTS.appearance,
+    battlefield: BATTLEFIELD_CHOICES.some((field) => field.id === settings.battlefield) ? settings.battlefield : DEFAULTS.battlefield,
     battleFormat: PLAYABLE_FORMATS.some((format) => format.id === settings.battleFormat) ? settings.battleFormat : DEFAULTS.battleFormat,
     teamFormat: TEAM_FORMATS.some((format) => format.id === settings.teamFormat) ? settings.teamFormat : DEFAULTS.teamFormat,
     allowSpectators: settings.allowSpectators !== false,
