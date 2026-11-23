@@ -1,6 +1,6 @@
 import { STAGE_H, STAGE_W } from './gl-stage';
 
-/** The events a tap or a click can arrive as: browsers send several for one press, Brewser maybe only some. */
+/** The events a tap or a click can arrive as: browsers send several for one press, a console engine maybe only some. */
 const PRESS_EVENTS = ['touchstart', 'pointerdown', 'mousedown', 'touchend', 'pointerup', 'mouseup', 'click'] as const;
 type Family = 'touch' | 'pointer' | 'mouse';
 const FAMILY: Record<string, Family> = {
@@ -44,7 +44,7 @@ type Point = { x: number; y: number };
 /**
  * The touchscreen and the mouse on the stage's canvas, turned into stage coordinates (1280x720).
  * Listens on the window, not the canvas, as a console may not aim its touch events at the canvas.
- * The Brewser console tells each moment of a press as a burst: on lift, touchend ×3, pointerup ×2,
+ * A console engine may tell each moment of a press as a burst (seen on the console): on lift, touchend ×3, pointerup ×2,
  * click ×2 and mouseup within 1 ms, all different objects (L3 log, test-x4). So a burst is ONE
  * moment, decided by its first event: a down presses (the tap: the control under it is focused and
  * pressed, like A), an up or click lifts the held press, and an up or click with nothing held (a

@@ -220,7 +220,7 @@ export class BattleStore {
 
   constructor() {
     // The server turns some messages down outside the battle's room: a popup, or an error as a PM
-    // (`|pm|~|Brewser1234|/error Due to spam from your internet provider…`).
+    // (`|pm|~|Player1234|/error Due to spam from your internet provider…`).
     inject(ShowdownConnection).frames.subscribe((frame) => {
       if (this.chatAnswer === null) return;
       for (const line of frame.lines) {
@@ -882,16 +882,16 @@ export class BattleStore {
 
   /**
    * Showdown's timer notices (`|inactive|…`, `|inactiveoff|…`). Ours: "Time left: 150 sec this turn |
-   * 280 sec total" with each request, and "Brewser1234 has 20 seconds left." as it runs low (also in the
+   * 280 sec total" with each request, and "Player1234 has 20 seconds left." as it runs low (also in the
    * log, for either player, watching too). Turning it
-   * on or off also goes to the log, with who asked for it ("(requested by Brewser1234)", "X also wants
+   * on or off also goes to the log, with who asked for it ("(requested by Player1234)", "X also wants
    * the timer to be on.", "X no longer wants the timer on, but…"). Turned on while we wait, our time
    * only comes with our next request, so until then it shows as on without a time.
    */
   private updateTimer(line: string): void {
     const off = line.startsWith('|inactiveoff|');
     const text = line.slice(line.indexOf('|', 1) + 1);
-    // "Brewser1234 has 20 seconds left.": either player's, in the log as on Showdown.
+    // "Player1234 has 20 seconds left.": either player's, in the log as on Showdown.
     const secondsLeft = / has \d+ seconds? left/.test(text);
     // Watching: the timer isn't ours to show, only its news for the log.
     if (this.watching()) {

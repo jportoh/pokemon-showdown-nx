@@ -8,7 +8,7 @@ import { toId } from '@shared/utils/to-id';
 
 /**
  * "Game 2 · Avg rating 1190": the game's number in its set, and the average of the players' ratings as
- * it started. In words: Brewser's font draws "~" as a raised accent.
+ * it started. In words: the console's font draws "~" as a raised accent.
  */
 export function gameDetail(game: ReplayGame): string[] {
   const rating = !game.rated

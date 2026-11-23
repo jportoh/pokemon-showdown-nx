@@ -130,7 +130,7 @@ function toChampionsSet(set: PokemonSet): PokemonSet {
   return { name, species, item, ability, gender, shiny, happiness, evs: toStatPoints(set.evs ?? {}), nature, moves };
 }
 
-// crypto.randomUUID isn't guaranteed on the Brewser console; uniqueness within one device is enough.
+// crypto.randomUUID isn't guaranteed on the console; uniqueness within one device is enough.
 function createId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

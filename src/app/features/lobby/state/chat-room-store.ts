@@ -7,7 +7,7 @@ import { ChatMessage, ChatRoom, ChatUser } from '@features/lobby/models/chat';
 import { filter } from 'rxjs';
 import { compareUsers, parseUserEntry } from './chat-users';
 
-// Rendering budget for slow devices (the Brewser console): busy rooms send many small frames,
+// Rendering budget for slow devices (the console): busy rooms send many small frames,
 // so server lines are buffered and applied in batches, and the user list is republished less often.
 /** Buffered lines are applied at most this often. */
 const FLUSH_INTERVAL_MS = 150;

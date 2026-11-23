@@ -48,8 +48,8 @@ type Section = (typeof SECTIONS)[number];
  * info (ZR; ZL opens it on the opponent's team): both teams, the field's conditions and the log; and
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
- * R (Mega/Tera) is BattleScreen's, but Done in team preview; the menu (+, L on Brewser), the field view
- * (Y, R3 on Brewser), the party screen (X), the timer (−) and the last turn's log (L held) are this
+ * R (Mega/Tera) is BattleScreen's, but Done in team preview; the menu (+), the field view
+ * (Y), the party screen (X), the timer (−) and the last turn's log (L held) are this
  * screen's (the chat is written from Battle info's log), and the mouse clicks what's under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
@@ -104,7 +104,7 @@ export class GlBattleScreen {
   /** The opponent's Trainer Card, from the menu. */
   private readonly card = new TrainerCardView(this.focus);
 
-  /** The menu is open (+, L on Brewser), and the focus under it when it opened. */
+  /** The menu is open (+), and the focus under it when it opened. */
   private menuOpen = false;
   private focusBeforeMenu: string | null = null;
   /** The opponent's card is open over the battle (from the menu). */
@@ -112,7 +112,7 @@ export class GlBattleScreen {
   /** B while watching asks first: leaving the replay or the live battle (null: not asking), and the focus under it. */
   private leaveAsk: LeaveKind | null = null;
   private focusBeforeLeave: string | null = null;
-  /** The Pokémon on the field at a glance (Y, R3 on Brewser), and the focus under it. */
+  /** The Pokémon on the field at a glance (Y), and the focus under it. */
   private fieldOpen = false;
   private focusBeforeField: string | null = null;
 
@@ -156,15 +156,10 @@ export class GlBattleScreen {
       this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && !this.menuOpen && !this.cardOpen && this.teamSelect.pressDone()),
       this.navigation.registerButton(ROLE_KEYS.battleMenu.button, unlessAsking(() => this.pressMenu())),
       this.navigation.registerButton(ROLE_KEYS.fieldView.button, unlessAsking(() => this.pressField())),
-      // Only the native .nro has buttons for these (Brewser has them on screen or in the menu): X opens
-      // the party screen, − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
-      ...(BATTLE_SHORTCUTS
-        ? [
-            this.navigation.registerButton(BATTLE_SHORTCUTS.party.button, () => this.pressParty()),
-            this.navigation.registerButton(BATTLE_SHORTCUTS.timer.button, () => this.pressTimer()),
-            this.navigation.registerButton(BATTLE_SHORTCUTS.log.button, () => this.store.turn() > 0),
-          ]
-        : []),
+      // X opens the party screen, − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
+      this.navigation.registerButton(BATTLE_SHORTCUTS.party.button, () => this.pressParty()),
+      this.navigation.registerButton(BATTLE_SHORTCUTS.timer.button, () => this.pressTimer()),
+      this.navigation.registerButton(BATTLE_SHORTCUTS.log.button, () => this.store.turn() > 0),
     ];
 
     this.stage.whenReady((resources) => {
@@ -245,8 +240,8 @@ export class GlBattleScreen {
       fieldOpen: this.fieldOpen,
       // The field view once the battle is on (not during team preview).
       toggleField: this.store.started() && !picking ? () => this.pressField() : null,
-      // L held (native): the last turn's log, once there's a turn to look back on.
-      logHeld: BATTLE_SHORTCUTS && this.store.turn() > 0 && !covered && !party ? this.navigation.isHeld(BATTLE_SHORTCUTS.log.button) : null,
+      // L held: the last turn's log, once there's a turn to look back on.
+      logHeld: this.store.turn() > 0 && !covered && !party ? this.navigation.isHeld(BATTLE_SHORTCUTS.log.button) : null,
       forfeitState: this.forfeitState(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
@@ -300,7 +295,7 @@ export class GlBattleScreen {
     else if (this.fieldOpen) {
       this.focus.begin();
       this.info.drawActive(ctx);
-    } else if (!covered && !party && BATTLE_SHORTCUTS && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
+    } else if (!covered && !party && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
       this.drawLogPeek(ctx);
     }
     if (this.cardOpen) {
@@ -356,7 +351,7 @@ export class GlBattleScreen {
   }
 
   /**
-   * L held (native): the last turn's log over the field, in a panel at its top, to read again what
+   * L held: the last turn's log over the field, in a panel at its top, to read again what
    * happened (the bar only shows the latest message). While a turn plays, that turn so far.
    */
   private drawLogPeek(ctx: ScreenContext): void {
@@ -376,7 +371,7 @@ export class GlBattleScreen {
     const shown = lines.slice(-14);
     box.h = 56 + shown.length * 26;
     menuPanel(ctx, box, undefined, 0.96);
-    const keyW = BATTLE_SHORTCUTS ? write(ctx, `${BATTLE_SHORTCUTS.log.label} held`, box.x + 24, box.y + 24, { size: 13, bold: true }, p.muted) : 0;
+    const keyW = write(ctx, `${BATTLE_SHORTCUTS.log.label} held`, box.x + 24, box.y + 24, { size: 13, bold: true }, p.muted);
     write(ctx, 'LAST TURN', box.x + 36 + keyW, box.y + 24, { size: 13, bold: true }, p.muted);
     if (shown.length === 0) write(ctx, 'Nothing has happened yet.', box.x + 24, box.y + 64, { size: 18 }, p.muted);
     shown.forEach((line, i) => write(ctx, line.text, box.x + 24, box.y + 56 + i * 26, { size: line.bold ? 20 : 18, bold: line.bold }, withAlpha(line.color, 1), 'left', box.w - 48));
@@ -420,7 +415,7 @@ export class GlBattleScreen {
     return !this.store.result() && !this.store.lost() && !this.store.watching() && this.forfeitState() === 'idle';
   }
 
-  /** + (L on Brewser): the menu, or closed again (team preview too: Done is R). */
+  /** +: the menu, or closed again (team preview too: Done is R). */
   private pressMenu(): boolean {
     if (this.cardOpen) this.closeCard();
     else if (this.menuOpen) this.closeMenu();
@@ -451,7 +446,7 @@ export class GlBattleScreen {
     this.focus.focus(`${MENU_PREFIX}card`);
   }
 
-  /** Y (R3 on Brewser): the Pokémon on the field, or closed again. */
+  /** Y: the Pokémon on the field, or closed again. */
   private pressField(): boolean {
     if (!this.store.started() || this.menuOpen || this.cardOpen) return this.store.started();
     if (this.fieldOpen) {
@@ -473,7 +468,7 @@ export class GlBattleScreen {
   }
 
   /**
-   * X (native): while choosing a move, the party screen to switch (as A on Switch), or closed again.
+   * X: while choosing a move, the party screen to switch (as A on Switch), or closed again.
    * A forced switch has it open already.
    */
   private pressParty(): boolean {
@@ -488,7 +483,7 @@ export class GlBattleScreen {
     return true;
   }
 
-  /** − (native): the battle timer on or off. */
+  /** −: the battle timer on or off. */
   private pressTimer(): boolean {
     if (!this.store.canToggleTimer() || this.store.result() || this.store.lost()) return false;
     this.toggleTimer.emit();

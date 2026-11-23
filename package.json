@@ -1,12 +1,10 @@
 {
-  "name": "pokemon-showdown-brewser",
+  "name": "pokemon-showdown-nx",
   "version": "0.3.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "build:brewser": "ng build && node scripts/build-brewser.mjs",
-    "build:brewser:diag": "ng build && node scripts/build-brewser.mjs --diag",
     "build:nro": "ng build && node scripts/build-nro.mjs",
     "build:nro:probe": "node scripts/build-nro.mjs --probe",
     "watch": "ng build --watch --configuration development",

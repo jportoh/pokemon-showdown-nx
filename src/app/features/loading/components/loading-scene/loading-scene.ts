@@ -14,7 +14,6 @@ import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { categoryIcon } from '@core/gl/ui/category-icons';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
-import { PLATFORM } from '@core/runtime/platform';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { BALL } from '@features/home/gl/logo-ball';
 import { HOME_LOGO } from '@features/home/gl/logo-layout';
@@ -61,7 +60,7 @@ const EDITION = 'NINTENDO SWITCH EDITION';
 const EDITION_STYLE: TextStyle = { size: 17, bold: true };
 const EDITION_RED: Rgba = [0.9, 0, 0.07, 1];
 const EDITION_CY = 350;
-const PROMPT = PLATFORM === 'native' ? 'PRESS START' : 'PRESS A';
+const PROMPT = 'PRESS START';
 const LEGAL = 'A fan project, not affiliated with Nintendo, Creatures or GAME FREAK. Pokémon © Nintendo / Creatures / GAME FREAK.';
 
 /** The Pokémon walking along the bottom of the title, from the bundled sheets (each shows once its sheet is in). */

@@ -66,7 +66,7 @@ export class ShowdownConnection {
   readonly frames: Observable<ProtocolFrame> = this.framesSubject.asObservable();
   /**
    * Emits each time the socket opens (including reconnections). Room joins belong here rather than
-   * in an effect on `state`: effects only run when Angular renders, which is exactly what stalled on Brewser.
+   * in an effect on `state`: effects only run when Angular renders, which is exactly what stalled on the console.
    */
   readonly opened: Observable<void> = this.openedSubject.asObservable();
   /** Emits when the connection is closed on purpose (`disconnect()`): no reconnection follows. */

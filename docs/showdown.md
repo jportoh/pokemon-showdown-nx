@@ -20,8 +20,6 @@ as the existing code does.
 | `https://replay.pokemonshowdown.com` | Replay search and logs | `features/replays/data/replay-api.ts` |
 | `https://pokepast.es` | Importing teams from PokePaste | `features/teambuilder/data` |
 
-Every origin must be on the Brewser allow-list ([brewser.md](brewser.md#network)).
-
 ## The connection
 
 `ShowdownConnection` (`features/connection/showdown-connection.ts`) is the app's **single WebSocket**.
@@ -58,7 +56,7 @@ Every origin must be on the Brewser allow-list ([brewser.md](brewser.md#network)
 card and only while "Log in automatically" is on, a registered name's password.
 
 The login server only allows CORS from Showdown's own site, so in a desktop browser logging in needs
-web security disabled ([brewser.md](brewser.md#developing-in-a-desktop-browser)). The console doesn't
+web security disabled ([native.md](native.md#developing-in-a-desktop-browser)). The console doesn't
 enforce CORS.
 
 ## Finding a battle

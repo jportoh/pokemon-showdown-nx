@@ -1,4 +1,4 @@
-// Packages the app as a native Nintendo Switch homebrew app (.nro) that runs without Brewser.
+// Packages the app as a native Nintendo Switch homebrew app (.nro).
 //
 // The engine is nx.js_extended (MIT, natureglass/nx.js_extended): V8 + Skia + WebGL2 + Web Audio,
 // published as a prebuilt `nxjs.nro`. An nx.js app is that engine's code segment plus a RomFS holding
@@ -44,10 +44,10 @@ const DEFAULT_ENGINE = 'beta6';
 const ENGINE_FILES = ['GeistMono.ttf', 'runtime.js.map'];
 const cacheDir = path.join(root, 'dist/nro-cache');
 const outDir = path.join(root, 'dist/nro');
-const browserDir = path.join(root, 'dist/pokemon-showdown-brewser/browser');
+const browserDir = path.join(root, 'dist/pokemon-showdown-nx/browser');
 const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
-// Homebrew title ids outside Nintendo's application range (high byte 0x05, like Brewser's forwarders).
+// Homebrew title ids outside Nintendo's application range (high byte 0x05, as homebrew forwarders use).
 const TARGETS = {
   app: {
     output: 'pokemon-showdown.nro',
@@ -77,7 +77,7 @@ const TARGETS = {
     files: () => [],
   },
 };
-const AUTHOR = 'pokemon-showdown-brewser';
+const AUTHOR = 'pokemon-showdown-nx';
 
 /** Which feature crashes the app on sleep and wake? `--sleep-probe=ws|wsplain|audio|pad` (native/poc/sleep-probe.ts). */
 function sleepProbe(mode) {

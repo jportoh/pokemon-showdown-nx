@@ -9,7 +9,7 @@
   sentence ("Teambuilder: skeleton placeholders while texts load"). Head branches are deleted after
   merging.
 - Changes that affect what the player sees or how the app performs are confirmed on a console before
-  merging ([brewser.md](brewser.md#testing-on-a-console)).
+  merging ([native.md](native.md#testing-on-a-console)).
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the whole contribution flow.
 
@@ -18,12 +18,12 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the whole contribution flow.
 `.github/workflows/ci.yml` runs on every pull request, every push to `main` and every `v*` tag:
 
 1. `npm ci`
-2. `npm run build:brewser`: the Angular production build plus the console re-bundle and zip
-   ([brewser.md](brewser.md#the-console-build)).
-3. The zip is renamed after the commit (`brewser-<short sha>.zip`) or the tag
-   (`brewser-vX.Y.Z.zip`) and **uploaded as a build artifact** (kept 30 days). Download it from the
-   run's summary page and upload it to Brewser to test that exact commit.
-4. On a tag, a **GitHub release** is published with the zip attached and notes generated from the
+2. `npm run build:nro`: the Angular production build packaged as the Switch app
+   ([native.md](native.md#building-it)).
+3. The `.nro` is renamed after the commit (`pokemon-showdown-<short sha>.nro`) or the tag
+   (`pokemon-showdown-vX.Y.Z.nro`) and **uploaded as a build artifact** (kept 30 days). Download it
+   from the run's summary page and copy it to the console's `sdmc:/switch/` to test that exact commit.
+4. On a tag, a **GitHub release** is published with the `.nro` attached and notes generated from the
    merged pull requests.
 
 CI doesn't run unit tests: the suite is almost empty for now (see
@@ -46,7 +46,7 @@ To release:
    git push origin vX.Y.Z
    ```
 
-3. CI builds `brewser-vX.Y.Z.zip` and publishes the release. Upload that zip to Brewser, with the
-   network allow-list ([brewser.md](brewser.md#network)) updated if the release talks to a new origin.
+3. CI builds `pokemon-showdown-vX.Y.Z.nro` and publishes the release.
 
-The repository's Releases page lists every version with its notes and zip.
+The repository's Releases page lists every version with its notes and `.nro`. Releases up to v0.3.0
+also shipped a zip for the Brewser browser; that build lives on in the `brewser-support` branch.

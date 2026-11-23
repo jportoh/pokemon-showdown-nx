@@ -15,7 +15,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
   templateUrl: './app.html',
 })
 export class App {
-  protected readonly title = signal('pokemon-showdown-brewser');
+  protected readonly title = signal('pokemon-showdown-nx');
 
   constructor() {
     const router = inject(Router);

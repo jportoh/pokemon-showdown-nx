@@ -5,9 +5,9 @@ out. Read it first; the other guides go deeper into each part.
 
 ## The big idea: one canvas, Angular as the skeleton
 
-The app runs on the **Brewser console**, a custom browser engine (not Chrome) with a 1280×720 screen
-and a controller. Its HTML/CSS layout is slow and fragile, so the app doesn't use the DOM for UI at
-all. The whole UI is drawn with WebGL on **one 1280×720 canvas**:
+The app runs on the **Nintendo Switch** as a homebrew `.nro` on the nx.js engine
+([native.md](native.md)): a 1280×720 screen and a controller, and no HTML/CSS layout at all, so the
+app doesn't use the DOM for UI. The whole UI is drawn with WebGL on **one 1280×720 canvas**:
 
 - **`GlStage`** (`src/app/core/gl/gl-stage.ts`) owns the renderer, the text and image caches and the
   frame loop.
@@ -93,8 +93,9 @@ finds sprites and texts already uploaded.
 - **`RenderScheduler`** forces an Angular tick after state changes from outside Angular events
   (WebSocket messages, timers). On the console, Angular's own scheduling sometimes never ran.
 - **Persistence** goes through `core/persistence/device-storage.ts` (`readJson` / `writeJson`). On the
-  console each key is a JSON file on the SD card (`sdmc:/switch/pokemon-showdown-brewser/`), because
-  `localStorage` didn't survive a full reload there. In a browser it's `localStorage`.
+  console each key is a JSON file on the SD card (`sdmc:/switch/pokemon-showdown-nx/`), which always
+  survives (the engine's `localStorage` doesn't, on the very first launch). In a browser it's
+  `localStorage`.
 - **Settings** (theme, volumes, default formats…) live in `AppSettings` (`core/settings`).
 
 ## Code layout
@@ -122,7 +123,8 @@ src/
         data/                        HTTP clients, parsers, storage for the feature
         models/                      types
     shared/                          code used by several features (formats, type colours, utils)
-scripts/                             Brewser build and game-data update scripts
+native/                              the .nro's entry and engine shims (app/) and console probes (poc/)
+scripts/                             the .nro build and game-data update scripts
 public/                              static assets copied as-is (sprite sheets, audio, icons)
 ```
 
@@ -144,7 +146,8 @@ Path aliases: `@core/*`, `@features/*` and `@shared/*` (see `tsconfig.json`).
 | `/settings` | `SettingsScene` | Settings |
 | `/gl-kit` | `GlKitScreen` | Developer showcase of the UI kit (R3 on the home menu) |
 
-The router uses hash URLs (`withHashLocation`), since the console loads the app from a zip.
+The router uses hash URLs (`withHashLocation`): on the console the location only lives in memory
+(`native/app/dom-shim.ts`).
 
 ### App-wide services
 
@@ -159,7 +162,6 @@ rooms); the battle protocol is parsed in `features/battle/state`. See [showdown.
 
 ## Building for the console
 
-`ng build` produces ES modules, which Brewser can't run. `scripts/build-brewser.mjs` re-bundles the
-build into one classic `app.js`, adds polyfills and zips it for upload. See [brewser.md](brewser.md)
-for the engine's limits and how to test on the console. A native `.nro` that runs without Brewser
-is in progress ([native.md](native.md)).
+`npm run build:nro` runs `ng build`, then `scripts/build-nro.mjs` bundles Angular's output after the
+engine shims in `native/app` and packages it, with the assets, as the Switch app. See
+[native.md](native.md) for the engine's limits and how to test on the console.

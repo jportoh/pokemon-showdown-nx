@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "pokemon-showdown-brewser": {
+    "pokemon-showdown-nx": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -63,10 +63,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "pokemon-showdown-brewser:build:production"
+              "buildTarget": "pokemon-showdown-nx:build:production"
             },
             "development": {
-              "buildTarget": "pokemon-showdown-brewser:build:development"
+              "buildTarget": "pokemon-showdown-nx:build:development"
             }
           },
           "defaultConfiguration": "development"

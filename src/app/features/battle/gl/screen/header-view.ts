@@ -27,7 +27,7 @@ export interface HeaderActions {
   fieldOpen: boolean;
   /** The field view; null while there's none to show (team preview), and no button for it. */
   toggleField: (() => void) | null;
-  /** The last turn's log (L held, native): whether it's held now; null where there's none to show. */
+  /** The last turn's log (L held): whether it's held now; null where there's none to show. */
   logHeld: boolean | null;
   forfeitState: ForfeitState;
   toggleTimer: () => void;
@@ -42,8 +42,8 @@ export function foeInk(p: Palette): Rgba {
  * The top bar, 1280x44, in the menu's style: the format (with a replay's rating, or a best-of set's
  * game and score) on the left, "p1 VS p2" in the sides' colours, the turn and our battle timer (or a
  * LIVE / REPLAY badge), then round buttons for what works everywhere in battle: the last turn's log
- * (L held, native), the field view (Y, R3 on Brewser; not in team preview), Battle info (ZR) and the
- * menu (+, L on Brewser). The controller has its own buttons for them; these are for clicks.
+ * (L held), the field view (Y; not in team preview), Battle info (ZR) and the
+ * menu (+). The controller has its own buttons for them; these are for clicks.
  */
 export class HeaderView {
   private readonly store = inject(BattleStore);
@@ -90,9 +90,9 @@ export class HeaderView {
       this.drawTimer(ctx, actions.toggleTimer);
     }
 
-    // The round buttons, from the right: Menu, Info, Field, Last turn (native, held: a click does nothing).
+    // The round buttons, from the right: Menu, Info, Field, Last turn (held: a click does nothing).
     const buttons: { id: string; key: string; label: string; active: boolean; press: () => void }[] = [
-      ...(actions.logHeld !== null && BATTLE_SHORTCUTS ? [{ id: 'header-log', key: BATTLE_SHORTCUTS.log.label, label: 'Last turn', active: actions.logHeld, press: () => undefined }] : []),
+      ...(actions.logHeld !== null ? [{ id: 'header-log', key: BATTLE_SHORTCUTS.log.label, label: 'Last turn', active: actions.logHeld, press: () => undefined }] : []),
       ...(actions.toggleField ? [{ id: 'header-field', key: ROLE_KEYS.fieldView.label, label: 'Field', active: actions.fieldOpen, press: actions.toggleField }] : []),
       { id: 'header-info', key: 'ZR', label: 'Info', active: actions.infoOpen, press: actions.toggleInfo },
       { id: 'header-menu', key: ROLE_KEYS.battleMenu.label, label: 'Menu', active: actions.menuOpen, press: actions.toggleMenu },
@@ -128,7 +128,7 @@ export class HeaderView {
   /**
    * Our time left this turn while the battle timer is on ("2:30"): a clock that ticks while it runs
    * (red when it's running low), paused while we wait for the opponent; clicking it turns it off. Off,
-   * on the native .nro, a round button with − (the menu has it too, and is where Brewser has it).
+   * a round button with − (the menu has it too).
    */
   private drawTimer(ctx: ScreenContext, toggle: () => void): void {
     const p = ctx.palette;
@@ -159,7 +159,7 @@ export class HeaderView {
       write(ctx, text, box.x + 36, cy, { size: 15, bold: true }, ink);
       return;
     }
-    if (canToggle && !this.store.result() && BATTLE_SHORTCUTS) {
+    if (canToggle && !this.store.result()) {
       const until = this.store.timerCooldownUntil();
       const cooldown = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
       // Refused (asked again too soon after turning it off): the wait, greyed, so it isn't taken for the timer.

@@ -1,6 +1,6 @@
 // The touchscreen on the native .nro. nx.js only turns the touchscreen on once something listens for
 // touches on `screen`, and dispatches them there, not on the window: the app's PointerInput listens
-// on the window (as Brewser's touches came), so nothing reached it. Each touch event is passed on to
+// on the window, so nothing reached it. Each touch event is passed on to
 // the window as a copy, with the same touches (in screen pixels, 1280x720 like the stage).
 
 const TOUCH_EVENTS = ['touchstart', 'touchmove', 'touchend'] as const;

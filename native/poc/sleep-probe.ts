@@ -18,7 +18,7 @@ interface SleepSwitch {
 }
 
 const MODE = __SLEEP_MODE__;
-const LOG = 'sdmc:/switch/pokemon-showdown-brewser/sleep-probe.log';
+const LOG = 'sdmc:/switch/pokemon-showdown-nx/sleep-probe.log';
 const sw = (globalThis as unknown as { Switch: SleepSwitch }).Switch;
 const t0 = Date.now();
 

@@ -27,8 +27,7 @@ export function baseSprite(sprite: string): string | null {
 const SPRITES_URL ='https://play.pokemonshowdown.com/sprites';
 
 /**
- * A sprite's URL, from its file name (96x96 PNGs; play.pokemonshowdown.com is allow-listed in the
- * Brewser submission). Some sprites have no back view (the Megas new in Champions): those fall back to
+ * A sprite's URL, from its file name (96x96 PNGs). Some sprites have no back view (the Megas new in Champions): those fall back to
  * the front one where they're drawn.
  */
 export function spriteUrl(sprite: string, back = false, set: SpriteSet = 'gen5'): string {

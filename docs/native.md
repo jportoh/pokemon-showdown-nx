@@ -1,31 +1,76 @@
-# Native app (.nro, work in progress)
+# The Switch app (.nro)
 
-Besides the Brewser zip, the app is being made into its own Switch homebrew app (`.nro`) that runs
-without Brewser. This guide records how it is built and what the engine can do; it grows with each
-phase.
+The app is a standalone Switch homebrew app (`.nro`). This guide records how it is built, what the
+engine can and can't do, and how to test on a console. The rest of the docs explain the app itself;
+much of its design (one WebGL canvas, files on the SD card, work moved out of the frame loop) follows
+from the findings here.
 
 ## The engine
 
-The `.nro` runs on [nx.js_extended](https://github.com/natureglass/nx.js_extended) (MIT), the engine
-Brewser itself is built on: V8, Skia (Canvas 2D), WebGL2 through Mesa, Web Audio (FFmpeg), the
-Gamepad API, `fetch`, `WebSocket` and the `Switch.*` file API. It has no DOM and no HTML/CSS layout.
-Brewser's own DOM layer is private, so the app can't reuse it; it only needs a canvas anyway.
+The `.nro` runs on [nx.js_extended](https://github.com/natureglass/nx.js_extended) (MIT): V8, Skia
+(Canvas 2D), WebGL2 through Mesa, Web Audio (FFmpeg), the Gamepad API, `fetch`, `WebSocket` and the
+`Switch.*` file API. It has no DOM and no HTML/CSS layout; the app only needs a canvas anyway, and
+`native/app/dom-shim.ts` gives Angular the little DOM it asks for (see phase 1 below).
+
+## Building it
+
+```bash
+npm run build:nro            # → dist/nro/pokemon-showdown.nro
+```
 
 An nx.js app is the prebuilt engine's code plus a RomFS holding `main.js` and the assets, an icon and
-NACP metadata. `npm run build:nro` (`scripts/build-nro.mjs`) downloads the engine release once
-(pinned by version and sha256, cached in `dist/nro-cache/`), bundles the entry with esbuild and
-splices everything into `dist/nro/<name>.nro`. No devkitPro or C toolchain is needed.
+NACP metadata. `npm run build:nro` runs `ng build`, then `scripts/build-nro.mjs` downloads the
+engine release once (pinned by version and sha256, cached in `dist/nro-cache/`), bundles the entry
+with esbuild and splices everything into `dist/nro/<name>.nro`. No devkitPro or C toolchain is
+needed.
 
 ## Running it
 
 Copy the `.nro` to `sdmc:/switch/` and open it from the Homebrew Menu **in application mode** (hold
 R while launching a game). In applet mode (from the Album) there isn't enough memory for the GL
-driver and `getContext('webgl2')` returns null.
+driver and `getContext('webgl2')` returns null. A forwarder installed on the HOME menu always runs in
+application mode (see phase 3).
+
+The app keeps its data (teams, settings, a saved login) as JSON files in
+`sdmc:/switch/pokemon-showdown-nx/` (`core/persistence/device-storage.ts`), next to its error log
+`native.log`. Earlier versions used `sdmc:/switch/pokemon-showdown-brewser/`: a key with no file in
+the new folder yet is read from there and copied over.
+
+## Testing on a console
+
+1. Get a `.nro`:
+   - **From CI**: every pull request and every push to `main` uploads
+     `pokemon-showdown-<commit>.nro` as a build artifact (see [releases.md](releases.md)). Releases
+     attach `pokemon-showdown-vX.Y.Z.nro`.
+   - **Locally**: `npm run build:nro`.
+2. Copy it to `sdmc:/switch/` and open it in application mode.
+3. Check with the controller only, docked and handheld if you can.
+4. Press **L3** for the HUD: 60 fps, no long frames when opening the screen you changed. Errors go to
+   `native.log` on the SD card.
+
+If you don't have a console, say so in your PR: a maintainer will test it on one. Most work can be
+developed and checked in a desktop browser (`npm start`), keeping these limits in mind.
+
+## Developing in a desktop browser
+
+- `npm start` serves the app at `http://localhost:4200`. The keyboard stands in for the controller
+  ([input.md](input.md#the-buttons)), and any gamepad works (by position, as on the console: the
+  bottom button is B, the right one A).
+- **Logging in** to Showdown needs `play.pokemonshowdown.com/api`, which only allows CORS from
+  Showdown's own site. To play online from a desktop browser, start one with web security disabled
+  (for example Chrome with `--disable-web-security --user-data-dir=<a temp dir>`), and use it only for
+  this.
+- **Showdown's own sprites** (Random Battle, Gen 3) don't show in a normal desktop browser, for the
+  same reason (no CORS headers). The bundled Champions sprites always show.
+- In the browser the interface sounds and themes are synthesized at start instead of read from the
+  build's files, and private values (a saved password) can't be kept: there is no SD card.
+- The browser is far faster than the console: something smooth on a desktop can still drop frames on
+  the device. Test there before calling performance work done.
 
 ## Phase 0 probe (test-x1, 2026-11-21)
 
 `native/poc/main.ts` checks every engine feature the app relies on and logs to
-`sdmc:/switch/pokemon-showdown-brewser/native-probe.log`. Results on the console:
+`sdmc:/switch/pokemon-showdown-nx/native-probe.log`. Results on the console:
 
 - **WebGL2**: `WebGL 2.0 (OpenGL ES 3.2 Mesa 20.1.0-rc3)`, renderer `NV120`, a steady 60 fps.
 - **Text**: a full-screen 2D canvas uploaded as a texture costs ~16 ms (the engine reads the pixels
@@ -33,13 +78,13 @@ driver and `getContext('webgl2')` returns null.
 - **Fonts**: the system font draws Latin accents, ▶ ◀ ● ★ ♂ ♀ arrows, … · ×, but **not ✓ or ✕**
   (missing-glyph boxes). Text is wider than in Chrome (`Showdown` at 24px: 134.5px vs ≈104px).
 - **Network**: `wss://sim3.psim.us` opens in ~1 s and sends `|challstr|`; https images download and
-  decode with `createImageBitmap`. No allow-list or CORS.
+  decode with `createImageBitmap`. No CORS.
 - **Audio**: a 24 kHz ogg decodes in ~250 ms and plays; generated buffers play. The engine has
   buffer sources, gain and panner nodes, but no oscillator.
 - **Storage**: files on the SD card persist across launches; so does `localStorage`, except on the
-  very first launch (keep using the SD files, as on Brewser).
-- **Controller**: one pad, `standard` mapping, 16 buttons by **position**, so B=0, A=1, Y=2, X=3
-  (Brewser reports A=0, B=1), then L=4, R=5, ZL=6, ZR=7, −=8, +=9, L3=10, R3=11, d-pad 12–15.
+  very first launch (keep using the SD files).
+- **Controller**: one pad, `standard` mapping, 16 buttons by **position**, so B=0, A=1, Y=2, X=3,
+  then L=4, R=5, ZL=6, ZR=7, −=8, +=9, L3=10, R3=11, d-pad 12–15.
   **+ exits the app** by default (the engine's `beforeunload`, which can be cancelled).
 - **Missing globals**: `document`, `location`, `history`, `MutationObserver`, `structuredClone`,
   `Intl`. Angular needs a minimal `document` and a location for its router (phase 1).
@@ -50,7 +95,7 @@ driver and `getContext('webgl2')` returns null.
 included) after the native entry, `native/app/main.ts`, which first installs:
 
 - **`native-log.ts`**: errors, unhandled rejections and `console.error` (Angular's error handler)
-  go to `sdmc:/switch/pokemon-showdown-brewser/native.log`. There are no developer tools, and
+  go to `sdmc:/switch/pokemon-showdown-nx/native.log`. There are no developer tools, and
   nothing printed shows once WebGL owns the screen.
 - **`dom-shim.ts`**: a minimal DOM for Angular: a node tree (elements, text, comments) with
   attributes, classes, inline styles, events and simple selectors (`tag`, `#id`, `.class`,
@@ -67,8 +112,8 @@ included) after the native entry, `native/app/main.ts`, which first installs:
 
 The static files (sprites, audio, category icons) go in the RomFS at the same paths: nx.js resolves
 a relative `fetch` against `romfs:/main.js`. `PLATFORM` (`core/runtime/platform.ts`) tells the
-app it is native (`nx.js/` in the user agent): A and B swap indices, and text is typed with the
-on-screen keyboard, as on Brewser.
+app it is native (`nx.js/` in the user agent): there, keys are ignored while a controller is
+connected and the build's prepared files (audio, sprites) are read.
 
 ### The bold font leak (tests x3–x6, 2026-11-21)
 
@@ -159,7 +204,7 @@ or once everything else has loaded, and the loading screen waits for it.
 - **Icon**: `native/icon.jpg`, a 256×256 JPEG made from the app's pixel-art Poké Ball. Replace the file
   to change it. The NACP has the title "Pokémon Showdown", the author, `package.json`'s version and
   the title id.
-- **CI**: the workflow builds the `.nro` after the Brewser zip, from the same `ng build`, uploads it
+- **CI**: the workflow builds the `.nro` for every pull request and push to `main`, uploads it
   as `pokemon-showdown-<commit>.nro` and adds it to tagged releases.
 - **HOME menu**: no NSP is built here. Installing a title needs the console's own keys, which can't
   go to CI. sphaira makes a forwarder to the `.nro` on the console itself, and the icon carries over.
@@ -169,18 +214,17 @@ or once everything else has loaded, and the loading screen waits for it.
 
 - **Touch**: nx.js turns the touchscreen on only once something listens on `screen`, and dispatches
   touches there, not on the window. `touch-bridge.ts` copies them to the window, where
-  `PointerInput` listens, as it does on Brewser.
+  `PointerInput` listens.
 - **+** no longer exits. `plus-button.ts` cancels nx.js's `beforeunload`; the console's HOME button is
-  for leaving. +, X and Y are page buttons on the native build only (`buttonPlus`, `buttonX`,
-  `buttonY` in console-keys; nx.js numbers them Y=2, X=3, +=9). On Brewser they stay the browser's.
-  + is OK on the on-screen keyboard, as on the console's own keyboard; Brewser keeps ZR.
-- **Button roles** (`ROLE_KEYS` in console-keys): on native each new button has one meaning across
-  the app, and the screens register the role's button and draw its label, so Brewser keeps its keys:
+  for leaving. +, −, X and Y are page buttons (`buttonPlus`, `buttonMinus`, `buttonX`, `buttonY` in
+  console-keys; nx.js numbers them Y=2, X=3, −=8, +=9). + is OK on the on-screen keyboard, as on the
+  console's own keyboard.
+- **Button roles** (`ROLE_KEYS` in console-keys): each of these buttons has one meaning across the
+  app, and the screens register the role's button and draw its label:
   - **Y searches**: an open list in the teambuilder, Calcs and the rival's editor. R3 still works.
   - **X is the option of what's shown**: the teambuilder grid's favourite (R then only means "next
     team"), editing the Calcs rival and the battle timer, all formerly on R3.
-  - **+ confirms or sends**: the keyboard's OK, team preview's Done (L then only Mega Evolves or
-    Terastallizes) and writing in a chat room.
+  - **+ confirms or sends**: the keyboard's OK, writing in a chat room, and opens the battle's menu.
 
 ## Known limitations (tests x14–x15, 2026-11-22)
 
@@ -197,8 +241,8 @@ or once everything else has loaded, and the loading screen waits for it.
   - `2345-0008`: libnx `NotInitialized` in the engine's controller polling (HID shared memory gone).
   - `2168-0002`: a data abort in native code.
 
-  The engine gives no notice before sleeping, so the app can't close its socket first. Brewser, built
-  on its own engine, survives. Until the engine is fixed: leave the app with HOME before putting the
+  The engine gives no notice before sleeping, so the app can't close its socket first. Until the
+  engine is fixed: leave the app with HOME before putting the
   console to sleep. **Pending:** report it to natureglass/nx.js_extended, with the minimal repro
   (the `ws` sleep probe), the results by feature and the crash reports, and ask for a "going to
   sleep" event as an alternative: with one, the app could close its socket and reconnect on wake.

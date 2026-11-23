@@ -33,8 +33,8 @@ const LEAVE_MS = 260;
 const NO_TEAM = ['garchomp', 'incineroar'];
 const TRAINER_ID = 'trainer';
 const SETTINGS_ID = 'tile-settings';
-/** Settings, top right; wider on native, for X's chip. */
-const SETTINGS = HOME_SETTINGS_KEY ? { x: 1046, y: 24, w: 186, h: 48 } : { x: 1082, y: 24, w: 150, h: 48 };
+/** Settings, top right, with X's chip. */
+const SETTINGS = { x: 1046, y: 24, w: 186, h: 48 };
 
 /** A slanted button's box on the stage: Battle wide on top, then two rows of two. */
 interface ButtonBox {
@@ -75,7 +75,7 @@ const ART: Partial<Record<PixelIconName, readonly { sprite: string; size: number
  * Settings is a small button at the top, by Showdown's counts. The trainer is a button too: the
  * Trainer Card (or registering the player's name). Under the menu, what the focused button is for and
  * the controller's buttons. ZR held logs out (or disconnects) and goes back to the entry screen; offline,
- * ZR goes there to log in. L opens the Trainer Card too; B closes it. X (native) opens Settings. R3 opens the UI kit gallery.
+ * ZR goes there to log in. L opens the Trainer Card too; B closes it. X opens Settings. R3 opens the UI kit gallery.
  */
 @Component({
   selector: 'app-home-scene',
@@ -232,8 +232,8 @@ export class HomeScene {
       this.navigation.registerButton('buttonL', () => (this.box() === 'card' && this.cardView.picking() ? this.cardView.turn(-1) : this.toggleBox())),
       this.navigation.registerButton('buttonR', () => this.box() === 'card' && this.cardView.picking() && this.cardView.turn(1)),
       this.navigation.registerButton('buttonR3', () => (void this.router.navigateByUrl('/gl-kit'), true)),
-      // X (native): Settings, but for the Trainer Card's history (registered after, so it's asked first).
-      ...(HOME_SETTINGS_KEY ? [this.navigation.registerButton(HOME_SETTINGS_KEY.button, () => this.box() === null && (this.open(SETTINGS_ITEM), true))] : []),
+      // X: Settings, but for the Trainer Card's history (registered after, so it's asked first).
+      this.navigation.registerButton(HOME_SETTINGS_KEY.button, () => this.box() === null && (this.open(SETTINGS_ITEM), true)),
       this.navigation.registerButton(ROLE_KEYS.cardHistory.button, () => this.box() === 'card' && !this.cardView.picking() && (this.openHistory(), true)),
       this.stats.watch(),
     ];
@@ -439,11 +439,9 @@ export class HomeScene {
     const icon = this.icons.get('settings');
     if (icon) renderer.image(icon, x + 16, y + 12, 1, [1, 1, 1, alpha]);
     label(ctx, 'Settings', x + 50, y + h / 2, { size: 18, bold: true }, withAlpha(p.ink, alpha));
-    if (HOME_SETTINGS_KEY) {
-      const keyX = x + w - 14 - 28;
-      renderer.rect(keyX, y + h / 2 - 14, 28, 28, { fill: withAlpha(p.select, alpha), stroke: withAlpha(p.rim, alpha), border: 1, radius: 14 });
-      label(ctx, HOME_SETTINGS_KEY.label, keyX + 14, y + h / 2, { size: 14, bold: true }, withAlpha(p.ink, alpha), { align: 'center' });
-    }
+    const keyX = x + w - 14 - 28;
+    renderer.rect(keyX, y + h / 2 - 14, 28, 28, { fill: withAlpha(p.select, alpha), stroke: withAlpha(p.rim, alpha), border: 1, radius: 14 });
+    label(ctx, HOME_SETTINGS_KEY.label, keyX + 14, y + h / 2, { size: 14, bold: true }, withAlpha(p.ink, alpha), { align: 'center' });
   }
 
   /** The trainer on their platform (a button: the Trainer Card), and the name plate. */

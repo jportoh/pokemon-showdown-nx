@@ -1,4 +1,4 @@
-// Phase 0 probe for the native .nro (no Brewser): checks, on the console, every engine feature the
+// Phase 0 probe for the native .nro: checks, on the console, every engine feature the
 // app relies on, on one diagnostics screen, and appends the results to a log on the SD card.
 //
 //  - WebGL2 on the screen, and a 2D OffscreenCanvas uploaded as a texture (how the app draws text).
@@ -11,7 +11,7 @@
 
 const W = 1280;
 const H = 720;
-const SD_DIR = 'sdmc:/switch/pokemon-showdown-brewser/';
+const SD_DIR = 'sdmc:/switch/pokemon-showdown-nx/';
 const LOG_PATH = `${SD_DIR}native-probe.log`;
 const WS_URL = 'wss://sim3.psim.us/showdown/websocket';
 const SPRITE_URL = 'https://play.pokemonshowdown.com/sprites/gen5/pikachu.png';

@@ -339,11 +339,11 @@ export class PlayPanelView {
       radius: 14,
       skew: SLANT,
     });
-    // Well inside the slanted edge (it leans out under the middle): X's chip on native, then the title;
+    // Well inside the slanted edge (it leans out under the middle): X's chip, then the title;
     // under it the team as balls (the ones that could come in bright), or why none can.
     const ink = switches > 0 ? p.ink : p.disabledInk;
     let tx = switchBox.x + 20;
-    if (BATTLE_SHORTCUTS) tx += keyChip(ctx, BATTLE_SHORTCUTS.party.label, tx, y + 26, 24) + 8;
+    tx += keyChip(ctx, BATTLE_SHORTCUTS.party.label, tx, y + 26, 24) + 8;
     write(ctx, 'SWITCH', tx, y + 26, { size: 21, bold: true }, ink, 'left', switchBox.x + switchBox.w - 12 - tx);
     const trapped = this.choices.trapped();
     if (switches > 0) {

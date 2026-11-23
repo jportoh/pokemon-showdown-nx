@@ -315,8 +315,7 @@ export function filterChips(ctx: UiContext, box: Box, names: readonly string[], 
   }
   keyPill(ctx, 'R', x + 2, cy);
 }
-/** Inside a search box's right end: the search key's chip (R3 on Brewser, Y on native), which opens the keyboard from the list, after `range`. */
-/** Inside a search box's right end: the search key's chip (R3 on Brewser, Y on native) (it opens the keyboard from the list), after `range`. */
+/** Inside a search box's right end: the search key's chip (Y), which opens the keyboard from the list, after `range`. */
 export function searchKey(ctx: UiContext, field: Box, range: string): void {
   const cy = field.y + field.h / 2;
   const keyX = field.x + field.w - 10 - keyPillWidth(ctx, ROLE_KEYS.search.label);

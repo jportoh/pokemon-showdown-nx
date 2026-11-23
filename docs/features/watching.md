@@ -24,8 +24,7 @@ Refresh and when a row is opened. `LiveScene` is a good example of how little a 
   Best-of-3 games (the room list doesn't rate them). Downloaded only for the rows shown
   (`shared/utils/row-lookups.ts`), a couple at a time.
 - `components/live-scene/live-scene.ts`: the page. Opening a row asks `BattleSession` to spectate the
-  room and navigates to `/battle`. View details (`ROLE_KEYS.battleDetails`: X on the native .nro, ZL on
-  Brewser) shows the teams and the turn.
+  room and navigates to `/battle`. View details (`ROLE_KEYS.battleDetails`, X) shows the teams and the turn.
 - `state/live-peek.ts`: that look: joins the room as a spectator (listening first, so it never opens
   the battle screen), reads its history (`|init|battle` and the log so far) and leaves at once.
 

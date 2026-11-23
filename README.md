@@ -1,9 +1,10 @@
-# Pokémon Showdown for Brewser
+# Pokémon Showdown NX
 
-A [Pokémon Showdown](https://pokemonshowdown.com) client for the **Brewser** console. It connects to
-Showdown's main server, is played with a controller on a 1280×720 screen (1920×1080 docked), and has
-a Gen 3 style retro look. It's built with Angular, and the whole UI is drawn with WebGL on a single
-canvas.
+A [Pokémon Showdown](https://pokemonshowdown.com) client for the **Nintendo Switch**, as a standalone
+homebrew app (`.nro`). It connects to Showdown's main server, is played with a controller on a
+1280×720 screen, and has a Gen 3 style retro look. It's built with Angular and runs on the
+[nx.js_extended](https://github.com/natureglass/nx.js_extended) engine; the whole UI is drawn with
+WebGL on a single canvas.
 
 ## Features
 
@@ -30,8 +31,12 @@ canvas.
 | D-pad | Arrows / WASD | Move between controls |
 | A / B | Enter / Escape (J / K) | Confirm / back |
 | L / R, ZL / ZR | Q / E, Z / C | Page actions, shown on screen (switch formats and teams, Battle info, Mega Evolution…) |
-| R3 | R | Page action (battle timer, search) |
+| X / Y | X / Y | X: the focused thing's option (favourite, Settings, the party in battle); Y: search, the field in battle |
+| + / − | + / − | +: confirm or send (the battle menu, the keyboard's OK, chat); −: the battle timer, remove |
+| R3 | R | Page action (search) |
 | L3 | F | Performance overlay |
+
+To leave the app, use the console's HOME button.
 
 The console's touchscreen and a mouse also work.
 
@@ -44,20 +49,20 @@ npm install
 npm start          # dev server at http://localhost:4200
 ```
 
-Logging in to Showdown needs `play.pokemonshowdown.com/api`, which only allows CORS from Showdown's
-own site, so in a desktop browser online play needs web security disabled (for example Chrome
-started with `--disable-web-security`). The Brewser console doesn't enforce CORS.
+The browser is for development. Logging in to Showdown needs `play.pokemonshowdown.com/api`, which
+only allows CORS from Showdown's own site, so in a desktop browser online play needs web security
+disabled (for example Chrome started with `--disable-web-security`). The console doesn't enforce
+CORS.
 
-## Building for Brewser
+## Building the Switch app
 
 ```bash
-npm run build:brewser        # → dist/pokemon-showdown-brewser/brewser.zip
-npm run build:brewser:diag   # the same, with an on-screen boot report
+npm run build:nro            # → dist/nro/pokemon-showdown.nro
 ```
 
-Upload `brewser.zip` to Brewser, with these origins on the network allow-list:
-`wss://sim3.psim.us`, `https://play.pokemonshowdown.com`, `https://replay.pokemonshowdown.com` and
-`https://pokepast.es`. CI builds the zip for every pull request and attaches it to every release.
+Copy the `.nro` to `sdmc:/switch/` and open it from the Homebrew Menu in **application mode** (hold R
+while launching a game), or install a forwarder to it. See [docs/native.md](docs/native.md). CI
+builds the `.nro` for every pull request and attaches it to every release.
 
 ## Documentation
 
@@ -67,7 +72,7 @@ Developer documentation lives in [docs/](docs/):
 - [UI kit](docs/ui-kit.md): building screens on the canvas, step by step
 - [Input](docs/input.md): controller, keyboard, touch and focus
 - [Rendering](docs/rendering.md): the renderer, text and image caches, performance
-- [Running on Brewser](docs/brewser.md): the console's engine, the console build, testing on a device
+- [The Switch app](docs/native.md): the engine, the `.nro` build, testing on a console
 - [Talking to Showdown](docs/showdown.md): connection, login, battles
 - [Game data and assets](docs/data.md): bundled data, update scripts, formats
 - [Features](docs/features/README.md): one page per area of the app
@@ -83,5 +88,5 @@ The license covers this project's code only. Pokémon, its names, sprites, music
 Nintendo, Game Freak and The Pokémon Company; game data and many assets come from Pokémon Showdown
 and its contributors. They are not covered by this license.
 
-This is an unofficial fan project. It is not affiliated with Pokémon Showdown, Brewser, Nintendo, Game
-Freak or The Pokémon Company.
+This is an unofficial fan project. It is not affiliated with Pokémon Showdown, Nintendo, Game Freak or
+The Pokémon Company.

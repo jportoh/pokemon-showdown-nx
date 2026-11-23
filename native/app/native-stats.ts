@@ -1,5 +1,5 @@
 // Timings of the native-only steps (text drawing, pixel reads, uploads), summed and written to the
-// native log every few seconds with the engine's memory figures, to compare with Brewser and to see
+// native log every few seconds with the engine's memory figures, to see
 // memory growing before a crash.
 
 import { fontFaceCount } from './bold-font';

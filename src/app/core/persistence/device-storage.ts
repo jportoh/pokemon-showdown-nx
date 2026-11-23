@@ -1,6 +1,6 @@
-// JSON persistence that never throws. On the Brewser console, each key is also a JSON file on the
-// SD card, written through the runtime's `Switch` file API (nx.js; needs the app's file system
-// read/write permission): localStorage didn't survive a full reload of the engine there. The file
+// JSON persistence that never throws. On the console, each key is also a JSON file on the SD card,
+// written through the engine's `Switch` file API (nx.js), so it survives anything that happens to
+// localStorage. The file
 // wins when reading; localStorage is the fallback, and the only storage in a regular browser.
 // Storage can also be unavailable (private modes, restricted webviews), full, or hold data written
 // by an older version.
@@ -12,8 +12,13 @@ interface SwitchFileApi {
   removeSync?(path: string): void;
 }
 
-/** A folder of our own, outside Brewser's, so app updates never touch it. */
-const DATA_DIR = 'sdmc:/switch/pokemon-showdown-brewser/';
+/** A folder of our own, next to the .nro, so app updates never touch it. */
+const DATA_DIR = 'sdmc:/switch/pokemon-showdown-nx/';
+/**
+ * Where the files were kept before (when the app was also built for the Brewser browser). A key read
+ * that has no file yet in DATA_DIR is looked for there, and copied over once found.
+ */
+const LEGACY_DATA_DIR = 'sdmc:/switch/pokemon-showdown-brewser/';
 
 export function readJson<T>(key: string, fallback: T): T {
   const files = switchFiles();
@@ -63,8 +68,8 @@ export function writeJson(key: string, value: unknown): boolean {
 }
 
 /**
- * Private values (a saved password) go ONLY to the app's file on the SD card: Brewser shares
- * localStorage between its apps. Without the console's file API (a regular browser) they can't be
+ * Private values (a saved password) go ONLY to the app's file on the SD card, never to localStorage.
+ * Without the console's file API (a regular browser) they can't be
  * kept at all.
  */
 export function canStorePrivately(): boolean {
@@ -98,11 +103,13 @@ export function writePrivateJson(key: string, value: unknown): boolean {
 export function removePrivate(key: string): void {
   const files = switchFiles();
   if (!files) return;
-  try {
-    if (files.removeSync) files.removeSync(filePath(key));
-    else files.writeFileSync(filePath(key), 'null');
-  } catch {
-    // Already gone, or not writable: nothing more to do.
+  for (const path of [filePath(key), filePath(key, LEGACY_DATA_DIR)]) {
+    try {
+      if (files.removeSync) files.removeSync(path);
+      else files.writeFileSync(path, 'null');
+    } catch {
+      // Already gone, or not writable: nothing more to do.
+    }
   }
 }
 
@@ -111,15 +118,31 @@ function switchFiles(): SwitchFileApi | null {
   return typeof api?.readFileSync === 'function' && typeof api.writeFileSync === 'function' ? (api as SwitchFileApi) : null;
 }
 
-/** "psb.teams.v1" → "sdmc:/switch/pokemon-showdown-brewser/psb.teams.v1.json" */
-function filePath(key: string): string {
-  return `${DATA_DIR}${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`;
+/** "psb.teams.v1" → "sdmc:/switch/pokemon-showdown-nx/psb.teams.v1.json" */
+function filePath(key: string, dir = DATA_DIR): string {
+  return `${dir}${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`;
 }
 
-/** The file's text, or null when it doesn't exist or can't be read. */
+/**
+ * The key's file's text, or null when it doesn't exist or can't be read. A key with no file yet in
+ * DATA_DIR is read from LEGACY_DATA_DIR and copied over (the old file is left as it was).
+ */
 function readFile(files: SwitchFileApi, key: string): string | null {
+  const text = readPath(files, filePath(key));
+  if (text !== null) return text;
+  const legacy = readPath(files, filePath(key, LEGACY_DATA_DIR));
+  if (legacy === null || legacy === 'null') return null;
   try {
-    const contents = files.readFileSync(filePath(key));
+    files.writeFileSync(filePath(key), legacy);
+  } catch {
+    // Not writable: it's read from the old folder again next time.
+  }
+  return legacy;
+}
+
+function readPath(files: SwitchFileApi, path: string): string | null {
+  try {
+    const contents = files.readFileSync(path);
     if (typeof contents === 'string') return contents;
     return contents ? new TextDecoder().decode(contents) : null;
   } catch {

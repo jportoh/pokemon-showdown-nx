@@ -1,6 +1,6 @@
 # Input: controller, keyboard and touch
 
-The app is played with a controller on the Brewser console. Everything goes through
+The app is played with a controller on the Switch. Everything goes through
 `KeyboardNavigation` (`src/app/core/input/keyboard-navigation.ts`), which turns the controller and
 the keyboard into a small set of actions and hands them to the screen that's showing.
 
@@ -14,12 +14,15 @@ the keyboard into a small set of actions and hands them to the screen that's sho
 | | Home, End | `first`, `last` | The top scene |
 | ZL / ZR | Z / C | `buttonZL` / `buttonZR` | Handlers registered with `registerButton` |
 | L / R | Q / E | `buttonL` / `buttonR` | Handlers registered with `registerButton` |
+| X / Y | X / Y | `buttonX` / `buttonY` | Handlers registered with `registerButton` |
+| + / − | + (or =) / - | `buttonPlus` / `buttonMinus` | Handlers registered with `registerButton` |
 | R3 | R | `buttonR3` | Handlers registered with `registerButton` |
 | L3 | F | `buttonL3` | The performance HUD, on every screen (`GlStage`) |
 
-**X and Y belong to Brewser** (restart and exit) and never reach the app. The mapping lives in
-`core/input/console-keys.ts`, with the Gamepad API indices as Brewser reports them (A=0, B=1, L=4,
-R=5, ZL=6, ZR=7, L3=10, R3=11, d-pad 12–15).
+The mapping lives in `core/input/console-keys.ts`, with the Gamepad API indices by position, as
+nx.js reports them (B=0, A=1, Y=2, X=3, L=4, R=5, ZL=6, ZR=7, −=8, +=9, L3=10, R3=11, d-pad 12–15).
++ doesn't exit the app (`native/app/plus-button.ts`): the console's HOME button does. X, Y, + and −
+have one meaning across the app (`ROLE_KEYS`): see [native.md](native.md#controls-test-x14).
 
 ## Two channels
 
@@ -74,10 +77,10 @@ the player nothing happened.
 
 Findings from the console shaped this:
 
-- A, B, ZL and ZR **only** reach the page through the Gamepad API, so the controller is **polled every
-  animation frame**. Brewser's timers only fire 20–25 times a second, too slow to poll with.
-- The d-pad also sends key events (both its arrow and a mapped letter). On Brewser, key events are
-  ignored while a controller is connected, so a press doesn't count twice. In a desktop browser both
+- The buttons reach the app through the Gamepad API, so the controller is **polled every animation
+  frame**. The console's timers fire too seldom to poll with.
+- On the console, key events are ignored while a controller is connected, so a press doesn't count
+  twice. In a desktop browser both
   the keyboard and a gamepad work, and the same action from both within 150 ms counts once.
 - Held directions **repeat**: after 350 ms, then faster and faster (120 ms down to 35 ms). A and the
   shoulder buttons never repeat. B repeats only while `repeatBack` is set (the keyboard's Delete).
@@ -92,7 +95,7 @@ wraps both: see [ui-kit.md](ui-kit.md#patterns-used-across-the-app).
 
 Text is typed only with the canvas `CanvasKeyboard`. While it's open it registers a text input
 (`registerTextInput`), so on a computer the physical keyboard types into it; on the console the
-controller drives it (A types, B deletes (or cancels once empty), L Shift, R space, ZR OK, ZL cancel).
+controller drives it (A types, B deletes (or cancels once empty), L Shift, R space, + OK, ZL cancel).
 
 Never focus a text field automatically: it must open on A.
 
@@ -112,5 +115,5 @@ last raw events are listed and a dot marks where the last tap landed.
 
 - Keyboard: the table above. `npm start` and play with the keys.
 - Any gamepad works in Chrome or Edge through the Gamepad API (standard mapping).
-- The Brewser-only paths (`/Brewser/.test(navigator.userAgent)`) only run on the console; see
-  [brewser.md](brewser.md) for testing there.
+- The console-only paths (`PLATFORM === 'native'`, `nx.js/` in the user agent) only run there; see
+  [native.md](native.md#testing-on-a-console) for testing on one.
