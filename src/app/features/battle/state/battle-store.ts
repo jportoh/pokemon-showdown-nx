@@ -751,6 +751,17 @@ export class BattleStore {
   }
 
   /**
+   * Skip to end, as Showdown's button, in our own battles: what's left of the turn being played is
+   * applied at once, so the next choice (or the end) shows straight away.
+   */
+  skipToEnd(): void {
+    if (this.watching() || !this.playingSignal()) return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.catchUp();
+  }
+
+  /**
    * Watching live or back in a battle we left, the battle so far: applied at once with nothing left animating, so the screen shows
    * the battle as it stands and only what happens from now on plays out.
    */

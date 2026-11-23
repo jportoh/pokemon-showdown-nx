@@ -7,7 +7,7 @@ import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
 import { SLANT } from '@core/gl/ui/menu-kit';
 import { BATTLE_SHORTCUTS } from '@core/input/console-keys';
-import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
+import { BAR_H, BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { typeColor } from '@shared/data/type-colors';
@@ -46,6 +46,9 @@ const TAB_MAX_W = 900;
 /** A slanted card's lean (its top edge to the right of its bottom one). */
 const LEAN = Math.round((MOVE_H / 2) * SLANT);
 const WHITE: Rgba = [1, 1, 1, 1];
+/** Skip to end, on the bar's right while the turn plays (as Cancel while the opponent chooses). */
+const SKIP_ID = 'skip-to-end';
+const SKIP = { x: RIGHT - 190, y: BAR_TOP + Math.round(BAR_H / 2) - 21, w: 190, h: 42 };
 
 /** What the bar's buttons do beyond the battle's own state. */
 export interface PlayActions {
@@ -154,8 +157,19 @@ export class PlayPanelView {
       return this.choices.pendingMove() ? this.drawTargets(ctx) : this.drawMoves(ctx, actions);
     }
     if (!this.store.playing() && this.choices.submitted().length > 0) return this.drawWaiting(ctx);
-    drawMessage(ctx, this.store.log());
-    return [];
+    if (!this.store.playing()) {
+      drawMessage(ctx, this.store.log());
+      return [];
+    }
+    // The turn playing out: its message, and Skip to end on the bar's right.
+    drawMessage(ctx, this.store.log(), { x: 28, w: SKIP.x - 28 - GAP });
+    const focused = ctx.focus.control({ id: SKIP_ID, ...SKIP, accept: () => this.store.skipToEnd() });
+    const p = ctx.palette;
+    ctx.renderer.rect(SKIP.x, SKIP.y, SKIP.w, SKIP.h, { fill: focused ? p.select : p.panel, stroke: focused ? p.accentText : p.rim, radius: SKIP.h / 2, border: focused ? 3 : 1 });
+    const keyW = keyChip(ctx, 'A', SKIP.x + 8, SKIP.y + SKIP.h / 2, 28);
+    write(ctx, 'Skip to end', SKIP.x + keyW + 18, SKIP.y + SKIP.h / 2, { size: 17, bold: true }, p.ink);
+    if (focused) ring(ctx, SKIP, SKIP.h / 2);
+    return [SKIP_ID];
   }
 
   /** A control's eased focus, 0 to 1 (`target` 1 while it has the focus). */
