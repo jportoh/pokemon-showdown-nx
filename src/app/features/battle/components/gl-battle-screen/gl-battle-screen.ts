@@ -68,6 +68,7 @@ export class GlBattleScreen {
   readonly leaveReplay = output<void>();
   readonly leaveLive = output<void>();
   readonly rematch = output<void>();
+  readonly instantReplay = output<void>();
   readonly leave = output<void>();
   /** B in our own battle, with nothing of the screen's own to close: takes back choices (BattleScreen.back). */
   readonly back = output<void>();
@@ -267,6 +268,7 @@ export class GlBattleScreen {
         rematchLabel: this.rematchLabel(),
         rematchNote: this.rematchNote(),
         rematch: () => this.rematch.emit(),
+        instantReplay: () => this.instantReplay.emit(),
         leave: () => this.leave.emit(),
         openParty: () => (this.partyOpen = this.choices.slot()),
       });

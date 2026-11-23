@@ -8,6 +8,7 @@ import { formatName } from '@shared/data/formats';
 import { toId } from '@shared/utils/to-id';
 import { BattleRooms } from './battle-rooms';
 import { ShowdownConnection } from './showdown-connection';
+import { SentTeams } from './sent-teams';
 import { ShowdownLogin } from './showdown-login';
 import { spectatorsCommand, splitLine } from './showdown-protocol';
 
@@ -52,6 +53,7 @@ export class ShowdownChallenges {
   private readonly render = inject(RenderScheduler);
   private readonly rooms = inject(BattleRooms);
   private readonly settings = inject(AppSettings);
+  private readonly sentTeams = inject(SentTeams);
   private readonly audio = inject(AudioEngine);
   private readonly incomingSignal = signal<readonly Challenge[]>([]);
   private readonly errorSignal = signal<string | null>(null);
@@ -105,6 +107,7 @@ export class ShowdownChallenges {
     this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/challenge ${id}, ${format}`);
+    this.sentTeams.remember(format, team);
     this.music.prepareNext();
     this.setOutgoing({ to, toId: id, format });
     // Silence isn't an answer either: said, so it shows (the challenge may still go out).
@@ -130,6 +133,7 @@ export class ShowdownChallenges {
     this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${team ?? 'null'}`);
     this.connection.send('', `/accept ${challenge.fromId}`);
+    this.sentTeams.remember(challenge.format, team);
     this.music.prepareNext();
     this.setAccepted(challenge);
     // No battle room by then, and no refusal either: it isn't coming.

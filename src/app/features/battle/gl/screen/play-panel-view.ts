@@ -53,6 +53,8 @@ export interface PlayActions {
   rematchLabel: string;
   rematchNote: string;
   rematch: () => void;
+  /** The battle again from its start, as a replay. */
+  instantReplay: () => void;
   leave: () => void;
   /** Switch: opens the party screen. */
   openParty: () => void;
@@ -66,7 +68,7 @@ export interface PlayActions {
  * and a name plate over the bar with who's choosing (its item and ability, and the first slot's order
  * while the second chooses); picking a target, the move and the targets as cards (the field marks
  * the one pointed at); while the opponent chooses, each order and Cancel; at the end, the result with
- * Rematch and Back to Home. `draw` returns the ids of the view's buttons in order, so a new view can
+ * Rematch, Instant replay and Back to Home. `draw` returns the ids of the view's buttons in order, so a new view can
  * focus its first.
  */
 export class PlayPanelView {
@@ -170,17 +172,26 @@ export class PlayPanelView {
     // Cut off from the battle after a reconnection: why, in the result's place.
     const lost = result ? null : this.store.lost();
     const text = lost !== null ? 'Disconnected' : result === 'win' ? 'You won!' : result === 'loss' ? 'You lost.' : 'A tie.';
-    const buttonW = 340;
-    const textW = RIGHT - X - 2 * (buttonW + GAP) - GAP;
+    const rematch = actions.canRematch && lost === null;
+    // Instant replay and Back to Home, and Rematch when there is one: narrower, three in the row.
+    const buttonW = rematch ? 270 : 340;
+    const buttons = lost === null ? (rematch ? 3 : 2) : 1;
+    const textW = RIGHT - X - buttons * (buttonW + GAP) - GAP;
     write(ctx, text, X + 12, BAR_TOP + 32, { size: 28, bold: true }, result === 'win' ? p.accentText : p.ink, 'left', textW);
     const note = lost ?? actions.rematchNote;
     const lines = ctx.text.wrap(note, { size: 16 }, textW).slice(0, 2);
     lines.forEach((line, i) => write(ctx, line, X + 12, BAR_TOP + 64 + i * 24, { size: 16 }, p.muted, 'left', textW));
     const picks: string[] = [];
     const leave = { x: RIGHT - buttonW, y: MOVE_Y, w: buttonW, h: MOVE_H };
-    if (actions.canRematch && lost === null) {
-      button(ctx, 'result-rematch', { ...leave, x: leave.x - buttonW - GAP }, actions.rematchLabel, 'primary', actions.rematch);
+    const replay = { ...leave, x: leave.x - buttonW - GAP };
+    if (rematch) {
+      button(ctx, 'result-rematch', { ...replay, x: replay.x - buttonW - GAP }, actions.rematchLabel, 'primary', actions.rematch);
       picks.push('result-rematch');
+    }
+    // Cut off from the battle, there's no end to watch again.
+    if (lost === null) {
+      button(ctx, 'result-replay', replay, 'Instant replay', rematch ? 'plain' : 'primary', actions.instantReplay);
+      picks.push('result-replay');
     }
     button(ctx, 'result-leave', leave, 'Back to Home', 'plain', actions.leave);
     picks.push('result-leave');

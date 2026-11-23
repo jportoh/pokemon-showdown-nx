@@ -3,6 +3,7 @@ import { BattleMusic } from '@core/audio/battle-music';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { AppSettings } from '@core/settings/app-settings';
 import { merge } from 'rxjs';
+import { SentTeams } from './sent-teams';
 import { ShowdownConnection } from './showdown-connection';
 import { LOBBY_ROOM_ID, spectatorsCommand, splitLine } from './showdown-protocol';
 
@@ -25,6 +26,7 @@ export class ShowdownSearch {
   private readonly music = inject(BattleMusic);
   private readonly render = inject(RenderScheduler);
   private readonly settings = inject(AppSettings);
+  private readonly sentTeams = inject(SentTeams);
   private readonly searchingSignal = signal<string | null>(null);
   private readonly errorSignal = signal<string | null>(null);
   private readonly cancellingSignal = signal(false);
@@ -60,6 +62,7 @@ export class ShowdownSearch {
     this.connection.send('', spectatorsCommand(this.settings.settings().allowSpectators));
     this.connection.send('', `/utm ${packedTeam ?? 'null'}`);
     this.connection.send('', `/search ${format}`);
+    this.sentTeams.remember(format, packedTeam);
     this.music.prepareNext();
     // Shown at once; the server's `updatesearch` confirms it (or a popup refuses it).
     this.set(format, null);
