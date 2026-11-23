@@ -246,3 +246,23 @@ or once everything else has loaded, and the loading screen waits for it.
   console to sleep. **Pending:** report it to natureglass/nx.js_extended, with the minimal repro
   (the `ws` sleep probe), the results by feature and the crash reports, and ask for a "going to
   sleep" event as an alternative: with one, the app could close its socket and reconnect on wake.
+
+## Online updates probe (test u1, 2026-11-23)
+
+Could the `.nro` update its own code instead of everyone copying a new one? `native/poc/update-probe.ts`
+(`node scripts/build-nro.mjs --update-probe`) checks what an updater needs and logs to
+`sdmc:/switch/pokemon-showdown-nx/update-probe.log`. Results on the console:
+
+- **Loading code**: `import()` works from the RomFS (`'./x.js'`) and from an absolute SD path
+  (`sdmc:/…/x.mjs`), but **not with a query string** (`?v=1`: "Cannot find module"), and not from
+  `data:` or `blob:` URLs. `new Function` and indirect `eval` work. A 655 KiB ES module (three.js)
+  read from the SD card imports in 126 ms with all its exports.
+- **Files**: `Switch` has `readDirSync`, `statSync`, `renameSync`, `removeSync` and async versions
+  (`writeFile`, `rename`…). Writing 655 KiB takes 20 ms; 26.6 MiB with `writeFileSync`, 1.1 s (it
+  blocks the frame loop). `fetch('sdmc:/…')` reads SD files.
+- **Network**: a GitHub release download follows the 302 to `release-assets.githubusercontent.com`;
+  the GitHub API answers without a token (60 requests an hour per IP). Each new https host costs a
+  ~100 ms frame (the TLS handshake on the main thread, see phase 2). A big download streams at
+  ~1.85 MiB/s in ~40 KiB chunks.
+- **Integrity**: `crypto.subtle` has SHA-256 (67 ms for 655 KiB; a plain JS version takes 222 ms) and
+  ECDSA P-256 verification (126 ms). **Ed25519 is not supported** ("Unrecognized algorithm name").

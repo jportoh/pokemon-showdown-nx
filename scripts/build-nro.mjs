@@ -10,6 +10,7 @@
 //   npm run build:nro         the app: `ng build`, then this script bundles Angular's output after the
 //                             native shims (native/app) and puts the static files in the RomFS.
 //   npm run build:nro:probe   the phase 0 engine probe (native/poc/main.ts).
+//   node scripts/build-nro.mjs --update-probe   the online updates probe (native/poc/update-probe.ts).
 // Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/.
 
 import fs from 'node:fs';
@@ -76,6 +77,15 @@ const TARGETS = {
     entry: () => ({ entryPoints: [path.join(root, 'native/poc/res-probe.ts')] }),
     files: () => [],
   },
+  // Can the app update its code online? (native/poc/update-probe.ts)
+  updateProbe: {
+    output: 'psb-update-probe.nro',
+    title: 'PSB Update Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000003n,
+    entry: () => ({ entryPoints: [path.join(root, 'native/poc/update-probe.ts')] }),
+    files: () => [['update-probe-mod.js', path.join(root, 'native/poc/update-probe-mod.js')]],
+  },
 };
 const AUTHOR = 'pokemon-showdown-nx';
 
@@ -96,7 +106,9 @@ async function main() {
   const sleepMode = option('sleep-probe');
   const target = sleepMode
     ? sleepProbe(sleepMode)
-    : process.argv.includes('--res-probe')
+    : process.argv.includes('--update-probe')
+      ? TARGETS.updateProbe
+      : process.argv.includes('--res-probe')
       ? TARGETS.resProbe
       : process.argv.includes('--probe')
         ? TARGETS.probe
