@@ -73,11 +73,8 @@ export function feetGap(size: number): number {
   return Math.round((10 * size) / 96);
 }
 
-export const DEFAULT_SKY = '#d8ecc0';
-export const DEFAULT_GROUND = { ground: '#b0d890', platform: '#90c070', edge: '#6a9a50' };
-
 /** Terrains colour the ground and the platforms. */
-export const TERRAIN_COLORS: Record<string, typeof DEFAULT_GROUND> = {
+export const TERRAIN_COLORS: Record<string, { ground: string; platform: string; edge: string }> = {
   'Grassy Terrain': { ground: '#7cc860', platform: '#58a838', edge: '#3c7a22' },
   'Psychic Terrain': { ground: '#d8a0d8', platform: '#c078c0', edge: '#8c4c8c' },
   'Electric Terrain': { ground: '#f0d860', platform: '#e0c040', edge: '#a88c20' },

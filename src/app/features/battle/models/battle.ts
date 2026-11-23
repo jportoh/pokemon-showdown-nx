@@ -303,6 +303,8 @@ export interface BattleConnection {
    * so far, applied at once so the screen catches up.
    */
   readonly spectating?: boolean;
+  /** The battle's room ("battle-gen9ou-123456"), where there is one (not in a replay). */
+  readonly roomId?: string;
   start(onMessage: (frame: string) => void): void;
   choose(choice: string): void;
   forfeit(): void;
