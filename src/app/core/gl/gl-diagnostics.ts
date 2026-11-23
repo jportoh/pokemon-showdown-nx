@@ -47,6 +47,8 @@ export class GlDiagnostics {
   private pendingUpload = false;
   private pendingArrival = false;
   readonly frames: FrameSample[] = [];
+  /** The connection to Showdown's lines on L3 (its attempts, why it can't connect): ShowdownConnection sets it. */
+  connection: () => string[] = () => [];
   /** How the launch's loading screen went (LoadingScene), once it's done: shown on L3. */
   loading: string[] = [];
 

@@ -9,7 +9,7 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { AppSettings } from '@core/settings/app-settings';
-import { connectionNotice } from '@features/connection/connection-notice';
+import { connectingText, connectionNotice, troubleChip } from '@features/connection/connection-notice';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -110,16 +110,27 @@ export class StartScene {
     const state = this.login.state();
     return state.mode === 'guest' && state.status === 'unavailable' ? state.error : null;
   });
-  /** How the login is going, for the form's and the welcome's footer (an error in red). */
-  private readonly loginStatus = computed((): { text: string; error: boolean } | null => {
+  /**
+   * How the login is going, for the footer (an error in red), worked out each frame: "slow to answer"
+   * and the next try's countdown move with time. On the doors, only the connection's trouble or
+   * slowness (a door's own hint otherwise).
+   */
+  private loginStatus(): { text: string; error: boolean } | null {
     const state = this.login.state();
+    const connection = this.connection.state();
+    const now = Date.now();
+    if (this.canRetry()) return { text: connectionNotice(connection, state, now) ?? '', error: false };
+    const connecting = connection.status !== 'connected' && (state.status === 'connecting' || state.status === 'offline' || this.guestConnecting());
+    if (this.step() === 'doors') {
+      const text = connecting ? connectingText(connection, now) : '';
+      return text && text !== 'Connecting to Showdown…' ? { text, error: false } : null;
+    }
     const error = this.submitted() ? state.loginError : null;
     if (error) return { text: error, error: true };
-    if (this.canRetry()) return { text: connectionNotice(this.connection.state(), state) ?? '', error: false };
     if (state.loggingIn) return { text: 'Logging in…', error: false };
-    if (state.status === 'connecting' || state.status === 'offline') return { text: 'Connecting to Showdown…', error: false };
+    if (connecting) return { text: connectingText(connection, now), error: false };
     return null;
-  });
+  }
 
   /** The remembered name's ratings, for the welcome's name plate. */
   private readonly ratings = computed(() => {
@@ -206,6 +217,11 @@ export class StartScene {
   }
 
   private submit(name: string): void {
+    // While attempts keep failing, Continue and LOG IN try again at once (the footer says why).
+    if (this.canRetry()) {
+      this.connection.retryNow();
+      return;
+    }
     const trimmed = name.trim();
     if (!this.canSubmit() || !trimmed) return;
     // Remember me: kept (or forgotten) before the login, which saves the name as Settings say.
@@ -367,7 +383,7 @@ export class StartScene {
       if (this.guestConnecting()) return { text: 'Connecting…', tone: 'alert' };
       const error = this.guestError();
       if (error) return { text: error, tone: 'error' };
-      if (this.canRetry()) return { text: 'No connection · A to try again', tone: 'error' };
+      if (this.canRetry()) return { text: troubleChip(this.connection.state()), tone: 'error' };
       return { text: 'A random name · battle and chat now', tone: 'muted' };
     }
     if (index === 1) return { text: this.remembered ? `Last time: ${this.remembered}` : 'Your name, avatar and ratings', tone: 'muted' };
@@ -416,8 +432,8 @@ export class StartScene {
     drawSlantedButton(ctx, {
       ...box,
       f: this.eased('form-submit', ease),
-      alpha: alpha * (ready ? 1 : 0.5),
-      title: this.login.state().loggingIn ? 'LOGGING IN…' : 'LOG IN',
+      alpha: alpha * (ready || this.canRetry() ? 1 : 0.5),
+      title: this.canRetry() ? 'TRY AGAIN NOW' : this.login.state().loggingIn ? 'LOGGING IN…' : 'LOG IN',
       titleSize: 30,
       plate: p.accent,
       primary: true,
@@ -442,8 +458,8 @@ export class StartScene {
     drawSlantedButton(ctx, {
       ...box,
       f: this.eased('welcome-continue', ease),
-      alpha: alpha * (this.canSubmit() ? 1 : 0.5),
-      title: this.login.state().loggingIn ? 'LOGGING IN…' : `CONTINUE AS ${this.remembered.toUpperCase()}`,
+      alpha: alpha * (this.canSubmit() || this.canRetry() ? 1 : 0.5),
+      title: this.canRetry() ? 'TRY AGAIN NOW' : this.login.state().loggingIn ? 'LOGGING IN…' : `CONTINUE AS ${this.remembered.toUpperCase()}`,
       titleSize: 30,
       plate: p.accent,
       primary: true,
@@ -463,9 +479,11 @@ export class StartScene {
   private drawFooter(ctx: UiContext, alpha: number): void {
     const p = ctx.palette;
     const y = 680;
-    const status = this.step() !== 'doors' ? this.loginStatus() : null;
+    const status = this.loginStatus();
     const hint = status?.text ?? HINTS[this.focus.focused ?? ''] ?? '';
-    label(ctx, hint, 520, y, { size: 16, bold: status?.error ?? false }, withAlpha(status?.error ? p.danger : p.muted, alpha), { maxWidth: 520 });
+    // The connection's story can take two lines (why, and when it tries again).
+    const lines = ctx.text.wrap(hint, { size: 16 }, 520).slice(0, 2);
+    lines.forEach((line, i) => label(ctx, line, 520, y + (i - (lines.length - 1) / 2) * 20, { size: 16, bold: status?.error ?? false }, withAlpha(status?.error ? p.danger : p.muted, alpha), { maxWidth: 520 }));
     const focused = this.focus.focused ?? '';
     const keys: [string, string][] = [['A', focused.endsWith('-name') || focused.endsWith('-password') ? 'Type' : 'Select']];
     if (this.step() === 'form') keys.push(['B', 'Back']);
