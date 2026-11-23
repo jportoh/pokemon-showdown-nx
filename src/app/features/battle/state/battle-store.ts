@@ -125,9 +125,6 @@ function isRejoin(frame: string): boolean {
   return lines.includes('|init|battle') && lines.some((line) => line.startsWith('|turn|') && Number(line.slice('|turn|'.length)) > 1);
 }
 
-/** Showdown won't let a player turn the timer back on this soon after turning it off. */
-const TIMER_COOLDOWN_MS = 20_000;
-
 /** Seconds left this turn on the timer at `now`; null until the server has told them. */
 export function timerSecondsLeft(timer: BattleTimer, now: number): number | null {
   if (timer.turnSeconds === null) return null;
@@ -341,7 +338,7 @@ export class BattleStore {
   readonly canUndo = this.canUndoSignal.asReadonly();
   /** The battle timer can be turned on and off from here (real battles only). */
   readonly canToggleTimer = this.canToggleTimerSignal.asReadonly();
-  /** Until when the server won't let us turn the timer back on (20 s after we turned it off). */
+  /** Until when the server won't let us turn the timer back on, once it has refused (asked too soon after turning it off). */
   readonly timerCooldownUntil = this.timerCooldownUntilSignal.asReadonly();
   /**
    * Each side's open team sheet (Open Team Sheets formats): the packed team the server shows at team
@@ -572,9 +569,9 @@ export class BattleStore {
     const on = this.timerSignal() === null;
     this.connection?.setTimer?.(on);
     if (on) return;
-    // Ours to turn off when we asked for it, or when nobody we know of did (the server ignores it otherwise).
-    const ours = this.timerRequesters.delete(me) || this.timerRequesters.size === 0;
-    if (ours) this.timerCooldownUntilSignal.set(Date.now() + TIMER_COOLDOWN_MS);
+    // The server won't let it back on for a while, but that wait isn't shown until it says so (asked
+    // too soon): counting down from here, it looked like the timer still running.
+    this.timerRequesters.delete(me);
     if (this.timerRequesters.size === 0) this.timerSignal.set(null);
     this.renderScheduler.request();
   }

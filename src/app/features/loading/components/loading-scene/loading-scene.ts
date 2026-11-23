@@ -148,7 +148,8 @@ export class LoadingScene {
     // The studio's logo first: the card waits for it.
     this.bitmaps.request(STUDIO_LOGO, ImagePriority.Screen);
     for (const asset of this.assets) this.bitmaps.request(asset.url, ImagePriority.Screen);
-    const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: (action) => action === 'accept' && this.press() });
+    // A tap anywhere (the console's touch screen, a mouse) presses it too.
+    const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: (action) => action === 'accept' && this.press(), click: () => this.press() });
     const releasePlus = this.navigation.registerButton('buttonPlus', () => this.press());
     this.stage.whenReady(({ renderer, images }) => {
       this.ball = pixelTexture(renderer, BALL);

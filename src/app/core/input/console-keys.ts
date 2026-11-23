@@ -207,3 +207,9 @@ export const SLOT_KEYS: { prev: PageButton; next: PageButton } | null = NATIVE ?
 export const BATTLE_SHORTCUTS: { party: RoleKey; timer: RoleKey; log: RoleKey } | null = NATIVE
   ? { party: { button: 'buttonX', label: 'X' }, timer: { button: 'buttonMinus', label: '-' }, log: { button: 'buttonL', label: 'L' } }
   : null;
+
+/**
+ * The home menu's Settings, straight from anywhere on it: X on the native .nro (its chip on the button).
+ * Brewser keeps X for itself, so there it's only the button. On the Trainer Card, X is its history.
+ */
+export const HOME_SETTINGS_KEY: RoleKey | null = NATIVE ? { button: 'buttonX', label: 'X' } : null;

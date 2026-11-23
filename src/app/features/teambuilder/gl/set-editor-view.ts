@@ -285,21 +285,42 @@ export class SetEditorView {
     return crumbs;
   }
 
-  /** The team's six slots for the page bar, their sprites small, the one edited lit; ends at `right`. */
+  /**
+   * The team's six slots for the page bar, their sprites small, the one edited lit; ends at `right`.
+   * A tap (or click) on a Pokémon opens it; on the native .nro, ZL and ZR's chips either side say they
+   * go through them.
+   */
   drawSlots(ctx: UiContext, right: number, cy: number): number {
     const p = ctx.palette;
     const sets = this.team()?.sets ?? [];
+    const keys = SLOT_KEYS && sets.length > 1;
+    if (keys) right -= keyPill(ctx, 'ZR', right - keyPillWidth(ctx, 'ZR'), cy) + 8;
     const left = right - MAX_TEAM_SIZE * (SLOT + SLOT_GAP) + SLOT_GAP;
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
       const box = { x: left + i * (SLOT + SLOT_GAP), y: cy - SLOT / 2, w: SLOT, h: SLOT };
       const set = sets[i];
+      if (set) ctx.focus.control({ id: `editor-slot-${i}`, ...box, accept: () => this.openSlot(i), skip: true });
       const edited = i === this.index();
       ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: edited ? p.select : set ? p.button : [0, 0, 0, 0], stroke: edited ? p.accentText : p.rim, radius: 6, border: 2 });
       const form = set ? (this.dex.mega(set.species, set.item) ?? this.dex.species(set.species)) : undefined;
       const sprite = form ? ctx.images.sprite(form.sprite, false, ImagePriority.Screen) : null;
       if (sprite) ctx.renderer.rect(box.x + 2, box.y + 2, SLOT - 4, SLOT - 4, { fill: WHITE, texture: sprite });
     }
-    return left;
+    if (!keys) return left;
+    const zlW = keyPillWidth(ctx, 'ZL');
+    keyPill(ctx, 'ZL', left - 8 - zlW, cy);
+    return left - 8 - zlW;
+  }
+
+  /** A tap on one of the team's slots: that Pokémon, as ZL/ZR would get there. */
+  private openSlot(index: number): void {
+    const count = this.team()?.sets.length ?? 0;
+    if (index === this.index() || index >= count) return;
+    if (!this.pokemon() || this.spec() || this.field() || this.stats.isOpen || this.calcs.isOpen) return;
+    this.index.set(index);
+    this.remove.reset();
+    this.stats.reset();
+    if (this.focus.focused && !this.focus.has(this.focus.focused)) this.focus.focus(SPECIES_ID);
   }
 
   /**

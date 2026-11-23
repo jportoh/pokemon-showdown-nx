@@ -1,3 +1,4 @@
+import { drawWaiting } from '@core/gl/ui/waiting';
 import { DestroyRef, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { RoleKey } from '@core/input/console-keys';
@@ -443,9 +444,12 @@ export class FormatListScreen {
     const p = ctx.palette;
     const { renderer } = ctx;
     if (panel) menuPanel(ctx, box);
-    if (!state || state.kind !== 'ready') {
-      const text = !state || state.kind === 'loading' ? 'Loading the battle…' : state.text;
-      label(ctx, text, box.x + box.w / 2, box.y + box.h / 2, { size: 19, bold: state?.kind === 'error' }, state?.kind === 'error' ? p.danger : p.muted, { align: 'center', maxWidth: box.w - 60 });
+    if (!state || state.kind === 'loading') {
+      drawWaiting(ctx, 'Loading the battle', box.x + box.w / 2, box.y + box.h / 2, { size: 20, color: p.muted });
+      return;
+    }
+    if (state.kind !== 'ready') {
+      label(ctx, state.text, box.x + box.w / 2, box.y + box.h / 2, { size: 19, bold: state.kind === 'error' }, state.kind === 'error' ? p.danger : p.muted, { align: 'center', maxWidth: box.w - 60 });
       return;
     }
     const d = state.details;

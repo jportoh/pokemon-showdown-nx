@@ -38,7 +38,9 @@ const KEY_STYLE: TextStyle = { size: 30, bold: true };
 const KEY_FIT = 88;
 const BOTTOM_STYLE: TextStyle = { size: 24, bold: true };
 const PILL_STYLE: TextStyle = { size: 14, bold: true };
-const FOOTER = 'A types the key pointed at · B deletes (hold it to keep deleting) · ZL cancels';
+const FOOTER = 'A types the key pointed at · B deletes (held, it keeps deleting), or cancels once empty · ZL cancels';
+/** B cancels an empty entry only when pressed this long after the last B (longer than a held B's first repeat). */
+const BACK_PAUSE_MS = 500;
 const FOOTER_STYLE: TextStyle = { size: 20 };
 const FOOTER_WIDTH = 1152;
 /** Texts made per call of warm(), so the loading screen keeps its pace. */
@@ -59,7 +61,7 @@ const BOTTOM: readonly { id: BottomKey; text: string; button: string }[] = [
 /**
  * The app's on-screen keyboard, drawn on the canvas over the whole stage (for the screens' text
  * fields): the field's name, the text, and the
- * keys, which the d-pad walks (round each row) and A types. B deletes (held, it repeats), L is
+ * keys, which the d-pad walks (round each row) and A types. B deletes (held, it repeats; pressed with nothing written, it cancels), L is
  * Shift, R a space, ZR OK (+ on the native .nro) and ZL Cancel; the mouse clicks keys, and a computer's keyboard types.
  * It never opens on its own (the console's own keyboard must not open either): a field opens it on A.
  */
@@ -73,6 +75,8 @@ export class CanvasKeyboard {
   readonly entry = signal<KeyboardEntry | null>(null);
   private text = '';
   private shift = false;
+  /** When B was last pressed (or repeated), so a held B doesn't cancel. */
+  private lastBack = -1e9;
   private readonly focus = new CanvasFocus();
   private release: (() => void)[] = [];
   /** The keyboard's texts still to make ahead (see warm). */
@@ -114,9 +118,15 @@ export class CanvasKeyboard {
     this.stage.setOverlay({
       draw: (frame) => this.draw(frame),
       input: (action) => {
-        // B only deletes (held, it goes on deleting): a burst of presses mustn't cancel the entry.
+        // B deletes (held, it goes on deleting); pressed afresh with nothing written, it cancels. A held
+        // B that has just emptied the text only stops there: its repeats come closer together than
+        // BACK_PAUSE_MS, so only a new press after a pause closes.
         if (action === 'back') {
-          this.text = this.text.slice(0, -1);
+          const now = performance.now();
+          const fresh = now - this.lastBack > BACK_PAUSE_MS;
+          this.lastBack = now;
+          if (this.text === '' && fresh) this.close(null);
+          else this.text = this.text.slice(0, -1);
           return true;
         }
         if ((action === 'left' || action === 'right') && this.wrap(action)) return true;

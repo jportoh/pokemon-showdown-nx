@@ -1,3 +1,4 @@
+import { drawWaiting } from '@core/gl/ui/waiting';
 import { inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
@@ -131,7 +132,7 @@ export class ChallengePopupView {
     if (this.wasJoining && !joining) this.focus.focus(canAccept ? 'popup-accept' : 'popup-reject');
     this.wasJoining = joining;
     if (joining) {
-      label(ctx, 'Joining battle…', left, buttonsY + 32, { size: 26, bold: true }, p.ink);
+      drawWaiting(ctx, 'Joining battle', left, buttonsY + 32, { size: 26, align: 'left' });
       return;
     }
     if (canAccept) {

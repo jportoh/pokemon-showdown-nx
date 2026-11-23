@@ -1,3 +1,4 @@
+import { drawWaiting } from '@core/gl/ui/waiting';
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
 import { BATTLE_SHORTCUTS, ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
@@ -301,9 +302,12 @@ export class GlBattleScreen {
       this.menu.draw(ctx, this.menuState());
     }
     this.header.drawCountdown(ctx);
-    if (this.joining()) {
+    // Also while team preview's teams have come but not yet our request to pick ours (its log plays
+    // first): the empty field showed for a moment before the team select.
+    const awaitingPick = !this.store.watching() && this.store.teamPreview() && !this.teamSelect.shown() && !this.store.result();
+    if (this.joining() || awaitingPick) {
       renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: ctx.palette.bg });
-      write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, ctx.palette.ink, 'center');
+      drawWaiting(ctx, 'Joining battle', STAGE_W / 2, 360, { size: 32 });
     }
     // Live battles (ours or watched): the connection being got back, over everything.
     const notice = this.store.replay() ? null : connectionNotice(this.connection.state(), this.login.state(), Date.now());
