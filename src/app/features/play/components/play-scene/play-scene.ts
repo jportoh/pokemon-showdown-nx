@@ -543,7 +543,9 @@ export class PlayScene {
       primary: enabled,
       faded: !enabled,
       chips: [{ text: this.battleLine(), tone: 'muted' }],
-      art: lead && !this.randomTeams() ? (b, alpha, grow) => drawSprite(ctx, lead, b.x + b.w - 30 - 112 * grow, b.y + b.h - 112 * grow + 14, 112 * grow, alpha * 0.7) : undefined,
+      // The lead in its own colours, opaque while BATTLE! can be pressed (the kit dims art at rest: over the
+      // accent it read as a button that can't be pressed); faded with it otherwise.
+      art: lead && !this.randomTeams() ? (b, alpha, grow) => drawSprite(ctx, lead, b.x + b.w - 30 - 112 * grow, b.y + b.h - 112 * grow + 14, 112 * grow, enabled ? 1 : alpha) : undefined,
     });
   }
 

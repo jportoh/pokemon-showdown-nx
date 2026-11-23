@@ -92,7 +92,7 @@ wraps both: see [ui-kit.md](ui-kit.md#patterns-used-across-the-app).
 
 Text is typed only with the canvas `CanvasKeyboard`. While it's open it registers a text input
 (`registerTextInput`), so on a computer the physical keyboard types into it; on the console the
-controller drives it (A types, B deletes, L Shift, R space, ZR OK, ZL cancel).
+controller drives it (A types, B deletes (or cancels once empty), L Shift, R space, ZR OK, ZL cancel).
 
 Never focus a text field automatically: it must open on A.
 

@@ -162,7 +162,9 @@ export class HeaderView {
     if (canToggle && !this.store.result() && BATTLE_SHORTCUTS) {
       const until = this.store.timerCooldownUntil();
       const cooldown = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0;
-      hint(ctx, 'header-timer', { x: BADGE.x, y: 6, w: BADGE.w, h: 32 }, BATTLE_SHORTCUTS.timer.label, cooldown ? `${cooldown}s` : 'Timer', false, toggle);
+      // Refused (asked again too soon after turning it off): the wait, greyed, so it isn't taken for the timer.
+      const look = cooldown ? { fill: p.disabledFill, border: p.disabledBorder, ink: p.disabledInk } : undefined;
+      hint(ctx, 'header-timer', { x: BADGE.x, y: 6, w: BADGE.w, h: 32 }, BATTLE_SHORTCUTS.timer.label, cooldown ? `Wait ${cooldown}s` : 'Timer', false, toggle, look);
     }
   }
 }
