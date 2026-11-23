@@ -12,7 +12,7 @@ import { UiContext, focusRing, label, pill } from './retro-kit';
 /** The bar over every page, 76px high. */
 export const PAGE_BAR_H = 76;
 
-type StatusKey = 'offline' | 'connecting' | 'reconnecting' | 'noNetwork' | 'unreachable' | 'loggingIn' | 'online' | 'noName';
+type StatusKey = 'offline' | 'connecting' | 'reconnecting' | 'noNetwork' | 'unreachable' | 'showdownDown' | 'serverBusy' | 'loggingIn' | 'online' | 'noName';
 
 /** The connection as the bars say it: its words and dot. */
 const STATUS: Record<StatusKey, { text: string; dot: string }> = {
@@ -21,6 +21,8 @@ const STATUS: Record<StatusKey, { text: string; dot: string }> = {
   reconnecting: { text: 'Reconnecting…', dot: '#fcd34d' },
   noNetwork: { text: 'No network', dot: '#f87171' },
   unreachable: { text: "Can't reach Showdown", dot: '#f87171' },
+  showdownDown: { text: 'Showdown not answering', dot: '#f87171' },
+  serverBusy: { text: 'Battle server busy', dot: '#f87171' },
   loggingIn: { text: 'Logging in…', dot: '#fcd34d' },
   online: { text: 'Online', dot: '#34d399' },
   noName: { text: 'Online', dot: '#f87171' },
@@ -61,7 +63,7 @@ export class PageBar {
     // Connected to log in, without a name yet: still offline as far as the player is concerned.
     if (!login.mode || status === 'offline' || (login.status === 'ready' && !login.loggingIn)) return 'offline';
     const { trouble } = this.connection.state();
-    if (status !== 'connected' && trouble) return trouble === 'no-network' ? 'noNetwork' : 'unreachable';
+    if (status !== 'connected' && trouble) return trouble === 'no-network' ? 'noNetwork' : trouble === 'showdown-down' ? 'showdownDown' : trouble === 'server-only' ? 'serverBusy' : 'unreachable';
     if (status !== 'connected') return status === 'connecting' ? 'connecting' : 'reconnecting';
     if (login.reclaiming) return 'reconnecting';
     if (login.status === 'named') return 'online';

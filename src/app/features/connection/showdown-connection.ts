@@ -2,12 +2,15 @@ import { DestroyRef, Service, inject, signal } from '@angular/core';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { Observable, Subject } from 'rxjs';
-import { ConnectionState } from './connection.model';
+import { ConnectionAttempt, ConnectionState } from './connection.model';
 import {
   CONNECT_TIMEOUT_MS,
   HEARTBEAT_COMMAND,
   HEARTBEAT_IDLE_MS,
   HEARTBEAT_TIMEOUT_MS,
+  PROBE_EVERY_MS,
+  PROBE_TIMEOUT_MS,
+  PROBE_URL,
   RECONNECT_BASE_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
   SHOWDOWN_WEBSOCKET_URL,
@@ -17,6 +20,11 @@ import { ProtocolFrame, parseFrame, splitLine } from './showdown-protocol';
 
 /** How often the heartbeat checks the connection's silence. */
 const HEARTBEAT_TICK_MS = 5000;
+/** The attempts kept for the diagnostics. */
+const ATTEMPTS_KEPT = 6;
+
+/** Why a socket is let go. */
+type DropReason = 'timeout' | 'closed' | 'abandoned' | 'silent';
 
 /**
  * The app's single WebSocket connection to the Pokémon Showdown server. Connects on demand,
@@ -25,11 +33,13 @@ const HEARTBEAT_TICK_MS = 5000;
  * A drop isn't always told: an attempt that never opens is given up after CONNECT_TIMEOUT_MS, and an
  * open connection that goes quiet is asked something small (the heartbeat) and dropped if it doesn't
  * answer. Attempts that keep failing say why (`trouble`): no network, as the device tells it
- * (`navigator.onLine` and its events, where the engine has them), or Showdown out of reach.
+ * (`navigator.onLine` and its events, where the engine has them), or Showdown out of reach, and then
+ * whether its website still answers (the probe), to tell the internet or Showdown being down from
+ * only its battle server not answering. The last attempts and the probe show on L3.
  */
 @Service()
 export class ShowdownConnection {
-  private readonly stateSignal = signal<ConnectionState>({ status: 'offline', error: null, challstr: null, trouble: null, retryAt: null });
+  private readonly stateSignal = signal<ConnectionState>({ status: 'offline', error: null, challstr: null, trouble: null, retryAt: null, attempt: 1, attemptSince: null });
   private readonly framesSubject = new Subject<ProtocolFrame>();
   private readonly openedSubject = new Subject<void>();
   private readonly endedSubject = new Subject<void>();
@@ -45,6 +55,12 @@ export class ShowdownConnection {
   /** When the last message came, and when the heartbeat's question went out (0: none waiting). */
   private lastMessageAt = 0;
   private heartbeatSentAt = 0;
+  /** The last attempts, newest last (the diagnostics), and the one under way. */
+  private readonly attempts: ConnectionAttempt[] = [];
+  private attemptNow: ConnectionAttempt | null = null;
+  /** The website's last answer to the probe (or its silence), and whether one is out. */
+  private probe: { at: number; ok: boolean; ms: number } | null = null;
+  private probing = false;
 
   readonly state = this.stateSignal.asReadonly();
   readonly frames: Observable<ProtocolFrame> = this.framesSubject.asObservable();
@@ -63,7 +79,9 @@ export class ShowdownConnection {
       window.addEventListener('online', online);
       window.addEventListener('offline', offline);
     }
+    this.diagnostics.connection = () => this.diagnosticLines();
     inject(DestroyRef).onDestroy(() => {
+      this.diagnostics.connection = () => [];
       this.disconnect();
       window.removeEventListener?.('online', online);
       window.removeEventListener?.('offline', offline);
@@ -78,29 +96,35 @@ export class ShowdownConnection {
       return;
     }
     this.clearReconnectTimer();
-    this.setState({ status: 'connecting', error: null, retryAt: null });
+    const now = Date.now();
+    this.setState({ status: 'connecting', error: null, retryAt: null, attempt: this.failedAttempts + 1, attemptSince: now });
+    this.attemptNow = { at: now, outcome: 'opening', ms: 0 };
+    this.attempts.push(this.attemptNow);
+    if (this.attempts.length > ATTEMPTS_KEPT) this.attempts.shift();
 
     let socket: WebSocket;
     try {
       socket = new WebSocket(SHOWDOWN_WEBSOCKET_URL);
     } catch {
+      this.endAttempt('closed');
       this.onAttemptFailed();
       return;
     }
     this.socket = socket;
     this.connectTimer = setTimeout(() => {
       this.connectTimer = null;
-      if (this.socket === socket && socket.readyState !== WebSocket.OPEN) this.drop(socket);
+      if (this.socket === socket && socket.readyState !== WebSocket.OPEN) this.drop(socket, true, 'timeout');
     }, CONNECT_TIMEOUT_MS);
     socket.onopen = () => {
       if (this.socket !== socket) return;
       this.clearConnectTimer();
+      this.endAttempt('opened');
       this.reconnectAttempts = 0;
       this.failedAttempts = 0;
       this.lastMessageAt = Date.now();
       this.heartbeatSentAt = 0;
       this.startHeartbeat();
-      this.setState({ status: 'connected', error: null, trouble: null });
+      this.setState({ status: 'connected', error: null, trouble: null, attempt: 1, attemptSince: null });
       this.openedSubject.next();
     };
     socket.onmessage = (event) => {
@@ -110,10 +134,12 @@ export class ShowdownConnection {
       this.handleMessage(String(event.data));
     };
     socket.onerror = () => {
-      if (this.socket === socket) this.setState({ error: 'Connection error.' });
+      if (this.socket !== socket) return;
+      if (this.attemptNow) this.attemptNow.error = true;
+      this.setState({ error: 'Connection error.' });
     };
-    socket.onclose = () => {
-      if (this.socket === socket) this.drop(socket);
+    socket.onclose = (event) => {
+      if (this.socket === socket) this.drop(socket, true, 'closed', event?.code);
     };
   }
 
@@ -128,7 +154,7 @@ export class ShowdownConnection {
     const status = this.stateSignal().status;
     if (status === 'offline' || status === 'connected' || status === 'error') return;
     this.reconnectAttempts = 0;
-    if (this.socket) this.drop(this.socket, false);
+    if (this.socket) this.drop(this.socket, false, 'abandoned');
     this.connect();
   }
 
@@ -142,7 +168,8 @@ export class ShowdownConnection {
     const socket = this.socket;
     this.socket = null;
     if (socket) closeQuietly(socket);
-    this.setState({ status: 'offline', error: null, challstr: null, trouble: null, retryAt: null });
+    this.attemptNow = null;
+    this.setState({ status: 'offline', error: null, challstr: null, trouble: null, retryAt: null, attempt: 1, attemptSince: null });
     this.endedSubject.next();
   }
 
@@ -163,24 +190,117 @@ export class ShowdownConnection {
    * The socket is gone (closed, never opened, or silent): forgotten, so whatever it still sends is
    * ignored, and a reconnection scheduled unless one is about to start anyway (`reconnect` false).
    */
-  private drop(socket: WebSocket, reconnect = true): void {
+  private drop(socket: WebSocket, reconnect = true, reason: DropReason = 'silent', code?: number): void {
     if (this.socket !== socket) return;
     const opened = this.stateSignal().status === 'connected';
     this.socket = null;
     this.clearConnectTimer();
     this.stopHeartbeat();
     closeQuietly(socket);
-    if (opened) this.setState({ status: 'disconnected', challstr: null });
-    else this.onAttemptFailed(false);
+    if (opened) {
+      this.dropOpened(code);
+      this.setState({ status: 'disconnected', challstr: null, attemptSince: null });
+    } else {
+      this.endAttempt(reason === 'silent' ? 'timeout' : reason, code);
+      this.onAttemptFailed(false);
+    }
     if (reconnect) this.scheduleReconnect();
   }
 
-  /** An attempt that never opened: after a few in a row, the state says why (`trouble`). */
+  /**
+   * An attempt that never opened: after a few in a row, the state says why (`trouble`), first as
+   * unreachable, then as what the website's answer tells (the probe).
+   */
   private onAttemptFailed(reconnect = true): void {
     this.failedAttempts++;
-    const trouble = isDeviceOffline() ? 'no-network' : this.failedAttempts >= UNREACHABLE_AFTER_ATTEMPTS ? 'unreachable' : null;
-    this.setState({ status: 'disconnected', challstr: null, trouble: trouble ?? this.stateSignal().trouble });
+    const known = this.stateSignal().trouble;
+    let trouble = known;
+    if (isDeviceOffline()) trouble = 'no-network';
+    else if (this.failedAttempts >= UNREACHABLE_AFTER_ATTEMPTS) {
+      trouble = known === 'showdown-down' || known === 'server-only' ? known : 'unreachable';
+      this.probeWebsite();
+    }
+    this.setState({ status: 'disconnected', challstr: null, trouble, attempt: this.failedAttempts + 1, attemptSince: null });
     if (reconnect) this.scheduleReconnect();
+  }
+
+  /** The attempt under way is over: how, and after how long. */
+  private endAttempt(outcome: ConnectionAttempt['outcome'], code?: number): void {
+    const attempt = this.attemptNow;
+    if (!attempt) return;
+    attempt.outcome = outcome;
+    attempt.ms = Date.now() - attempt.at;
+    if (code !== undefined) attempt.code = code;
+    if (outcome !== 'opened') this.attemptNow = null;
+  }
+
+  /** The open connection went: its attempt is marked dropped (with the code), the connection's life as its time. */
+  private dropOpened(code?: number): void {
+    const attempt = this.attemptNow;
+    this.attemptNow = null;
+    if (!attempt) return;
+    attempt.outcome = 'dropped';
+    attempt.ms = Date.now() - attempt.at;
+    if (code !== undefined) attempt.code = code;
+  }
+
+  /**
+   * Asks Showdown's website for a small file, to tell why the battle server doesn't answer: if the
+   * website does, the internet is fine and only the server isn't (`server-only`); if it doesn't either,
+   * the internet or Showdown is down (`showdown-down`). At most every PROBE_EVERY_MS.
+   */
+  private probeWebsite(): void {
+    if (this.probing || (this.probe && Date.now() - this.probe.at < PROBE_EVERY_MS)) {
+      // A recent answer still says it.
+      if (this.probe && !this.probing) this.applyProbe(this.probe.ok);
+      return;
+    }
+    this.probing = true;
+    const started = Date.now();
+    void reachable(PROBE_URL, PROBE_TIMEOUT_MS).then((ok) => {
+      this.probing = false;
+      this.probe = { at: Date.now(), ok, ms: Date.now() - started };
+      this.applyProbe(ok);
+    });
+  }
+
+  private applyProbe(ok: boolean): void {
+    const state = this.stateSignal();
+    if (state.status === 'connected' || state.status === 'offline' || state.trouble === 'no-network') return;
+    this.setState({ trouble: ok ? 'server-only' : 'showdown-down' });
+  }
+
+  /**
+   * L3's connection lines: the state, the last attempts ("14 s ago: timeout after 10.0 s", "closed
+   * 1006 after 0.3 s", "opened in 0.5 s") and the website's answer to the probe.
+   */
+  private diagnosticLines(): string[] {
+    const now = Date.now();
+    const state = this.stateSignal();
+    const ago = (at: number) => `${Math.max(0, Math.round((now - at) / 1000))} s ago`;
+    const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+    const describe = (a: ConnectionAttempt): string => {
+      const code = a.code !== undefined ? ` ${a.code}` : '';
+      const error = a.error ? ' (error)' : '';
+      switch (a.outcome) {
+        case 'opening':
+          return `opening for ${secs(now - a.at)}${error}`;
+        case 'opened':
+          return `opened in ${secs(a.ms)}`;
+        case 'dropped':
+          return `dropped${code} after ${secs(a.ms)} open${error}`;
+        default:
+          return `${a.outcome}${code} after ${secs(a.ms)}${error}`;
+      }
+    };
+    const lines = [`Showdown: ${state.status}${state.trouble ? ` · ${state.trouble}` : ''}${state.status !== 'connected' ? ` · attempt ${state.attempt}` : ''}`];
+    const recent = this.attempts.slice(-4).reverse();
+    for (let i = 0; i < recent.length; i += 2) {
+      lines.push(recent.slice(i, i + 2).map((a) => `${ago(a.at)}: ${describe(a)}`).join(' · '));
+    }
+    if (this.probing) lines.push('Website check: asking…');
+    else if (this.probe) lines.push(`Website check ${ago(this.probe.at)}: ${this.probe.ok ? `answered in ${secs(this.probe.ms)}` : `no answer (${secs(this.probe.ms)})`}`);
+    return lines;
   }
 
   private scheduleReconnect(): void {
@@ -257,5 +377,30 @@ function closeQuietly(socket: WebSocket): void {
     socket.close();
   } catch {
     // Closing a socket still connecting can throw on some engines: it's forgotten either way.
+  }
+}
+
+/**
+ * Whether `url` answers within `timeoutMs`: any answer counts (no-cors: an opaque one is enough), only
+ * a network failure or silence doesn't. Never throws.
+ */
+async function reachable(url: string, timeoutMs: number): Promise<boolean> {
+  if (typeof fetch !== 'function') return false;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      controller?.abort();
+      resolve(false);
+    }, timeoutMs);
+  });
+  const request = fetch(`${url}?t=${Date.now()}`, { mode: 'no-cors', cache: 'no-store', signal: controller?.signal }).then(
+    () => true,
+    () => false,
+  );
+  try {
+    return await Promise.race([request, timeout]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
   }
 }

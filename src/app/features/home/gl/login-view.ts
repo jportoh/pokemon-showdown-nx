@@ -4,7 +4,7 @@ import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { Box, UiContext, button, label, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { SavedLogin } from '@features/connection/saved-login';
-import { connectionNotice } from '@features/connection/connection-notice';
+import { connectingText, connectionNotice } from '@features/connection/connection-notice';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 
@@ -63,17 +63,18 @@ export class LoginView {
     return hasChallenge && !state.loggingIn && !this.guestConnecting();
   });
 
-  private readonly statusText = computed(() => {
+  /** What's going on, worked out each frame ("slow to answer" and the countdown move with time). */
+  private statusText(): string {
     const error = this.error();
     if (error) return error;
     const state = this.login.state();
     // Attempts that keep failing: why, rather than "Connecting…" for ever.
-    if (this.canRetry()) return connectionNotice(this.connection.state(), state) ?? '';
-    if (this.guestConnecting()) return 'Connecting as a guest…';
+    if (this.canRetry()) return connectionNotice(this.connection.state(), state, Date.now()) ?? '';
+    if (this.guestConnecting()) return this.connection.state().status === 'connected' ? 'Connecting as a guest…' : connectingText(this.connection.state(), Date.now());
     if (state.loggingIn) return 'Logging in…';
-    if (state.status === 'connecting' || state.status === 'offline') return 'Connecting to Showdown…';
+    if (state.status === 'connecting' || state.status === 'offline') return connectingText(this.connection.state(), Date.now());
     return 'Leave the password empty for an unregistered name.';
-  });
+  }
 
   /** Connected with a name: the box closes. */
   readonly finished = computed(() => {

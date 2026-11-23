@@ -28,6 +28,18 @@ export const HEARTBEAT_COMMAND = '/cmd userdetails brewserheartbeat';
 export const UNREACHABLE_AFTER_ATTEMPTS = 2;
 
 /**
+ * When attempts keep failing, Showdown's website is asked for a small file (its icon) to tell why: if it
+ * answers, the internet works and only the battle server doesn't; if not, the internet or Showdown is
+ * down. Same host as the sprites (allow-listed on Brewser); asked at most every PROBE_EVERY_MS, given
+ * up after PROBE_TIMEOUT_MS.
+ */
+export const PROBE_URL = 'https://play.pokemonshowdown.com/favicon.ico';
+export const PROBE_EVERY_MS = 30_000;
+export const PROBE_TIMEOUT_MS = 8000;
+/** An attempt still not open after this long is called slow (the screens say Showdown is slow to answer). */
+export const SLOW_ATTEMPT_MS = 4000;
+
+/**
  * Showdown's login server: gives the assertion that claims a name on the server (see ShowdownLogin).
  * Same host as the sprites, already in the Brewser network allow-list.
  */
