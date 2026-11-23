@@ -46,7 +46,8 @@ const ENGINE_FILES = ['GeistMono.ttf', 'runtime.js.map'];
 const cacheDir = path.join(root, 'dist/nro-cache');
 const outDir = path.join(root, 'dist/nro');
 const browserDir = path.join(root, 'dist/pokemon-showdown-nx/browser');
-const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+// `--app-version=x.y.z` overrides package.json's version, e.g. to build a test online update.
+const packageVersion = option('app-version') ?? JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 // Homebrew title ids outside Nintendo's application range (high byte 0x05, as homebrew forwarders use).
 const TARGETS = {
@@ -58,6 +59,8 @@ const TARGETS = {
     // A placeholder made from the app's pixel-art Poké Ball (logo-ball.ts); replace the file to change it.
     icon: path.join(root, 'native/icon.jpg'),
     entry: () => appEntry(),
+    // main.js is the loader (native/loader/main.ts), the app goes in app.mjs: see docs/updates.md.
+    loader: true,
     files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await renderedAudio())],
   },
   probe: {
@@ -126,15 +129,28 @@ async function main() {
   const romfs = Object.create(null);
   for (const name of ENGINE_FILES) if (engineRomfs[name] instanceof Blob) romfs[name] = engineRomfs[name];
   const files = await target.files();
-  romfs['main.js'] = new Blob([await bundle(target.entry(), bundledShowdownDefine(files))]);
   let assetBytes = 0;
+  const assetHashes = [];
   const predecode = target === TARGETS.app ? await loadPngDecoder() : null;
   for (const [name, source] of files) {
     let bytes = Buffer.isBuffer(source) ? source : fs.readFileSync(source);
     if (predecode && PREDECODED.test(name)) bytes = predecode(bytes, name);
     if (predecode && DECODED_MUSIC.test(name)) bytes = await decodeMusic(bytes, name);
     assetBytes += bytes.length;
+    assetHashes.push(`${name} ${sha256(bytes)}`);
     place(romfs, name, new Blob([bytes]));
+  }
+  let assetsId = null;
+  if (target.loader) {
+    // The fingerprint an online update must match to run on this .nro: the engine and every asset.
+    assetsId = sha256(Buffer.from([sha256(engine), ...assetHashes.sort()].join('\n'))).slice(0, 16);
+    const defines = { __PSB_VERSION__: JSON.stringify(target.version), __PSB_ASSETS_ID__: JSON.stringify(assetsId) };
+    const app = await bundle({ ...target.entry(), define: defines }, bundledShowdownDefine(files));
+    romfs['app.mjs'] = new Blob([app]);
+    romfs['main.js'] = new Blob([await bundle({ entryPoints: [path.join(root, 'native/loader/main.ts')], define: defines })]);
+    writeUpdate(app, target.version, assetsId);
+  } else {
+    romfs['main.js'] = new Blob([await bundle(target.entry(), bundledShowdownDefine(files))]);
   }
 
   const nacp = new NACP((await base.nacp.arrayBuffer()).slice(0));
@@ -162,9 +178,24 @@ async function main() {
   const outPath = path.join(outDir, suffix ? target.output.replace(/.nro$/, `-${suffix}.nro`) : target.output);
   fs.writeFileSync(outPath, Buffer.from(await nro.arrayBuffer()));
   console.log(`Engine ${label}`);
+  if (romfs['app.mjs']) console.log(`app.mjs ${(romfs['app.mjs'].size / 1024).toFixed(0)} KiB, version ${target.version}, assets id ${assetsId}`);
   console.log(`main.js ${(romfs['main.js'].size / 1024).toFixed(0)} KiB, assets ${(assetBytes / 1048576).toFixed(1)} MiB`);
   console.log(`NRO written to ${path.relative(root, outPath)} (${(nro.size / 1048576).toFixed(1)} MiB)`);
   console.log('Copy it to sdmc:/switch/ and open it from hbmenu in application mode (hold R on a game).');
+}
+
+/**
+ * The online update for this build (docs/updates.md): the app's code bundle and its manifest, in
+ * dist/nro/update/. A .nro with the same assets id runs it once it is on the SD card.
+ */
+function writeUpdate(app, version, assetsId) {
+  const dir = path.join(outDir, 'update');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const file = `app-${version}.mjs`;
+  fs.writeFileSync(path.join(dir, file), app);
+  const manifest = { version, file, assetsId, size: app.length, sha256: sha256(app) };
+  fs.writeFileSync(path.join(dir, 'update.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 /** Angular's production build, run after the native shims (they must exist before any app code). */

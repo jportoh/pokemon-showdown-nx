@@ -3,6 +3,14 @@ import { GRAPH_COLORS, GlDiagnostics, LONG_FRAME_MS } from './gl-diagnostics';
 import { Rgba, rgba } from './gl-renderer';
 import type { StageFrame } from './gl-stage';
 import { SpriteBitmaps } from './sprite-bitmaps';
+import { codeSource } from '../runtime/code-source';
+
+/** The running code's version and where it came from (the .nro or an online update). */
+function codeLine(): string[] {
+  const code = codeSource();
+  if (!code) return [];
+  return [code.source === 'update' ? `Code ${code.version}: online update (.nro ${code.builtInVersion})` : `Code ${code.version}: the .nro's own`];
+}
 
 const TITLE: Rgba = rgba('#a7f3d0');
 const WHITE: Rgba = [1, 1, 1, 1];
@@ -75,6 +83,7 @@ export class PerfHud {
         ...this.diagnostics.loading,
         ...this.diagnostics.connection(),
         ...this.extra(),
+        ...codeLine(),
         'L3 hides this',
       ];
     }

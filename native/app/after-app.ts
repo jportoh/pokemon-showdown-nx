@@ -3,6 +3,7 @@
 // at start (test x11) into evaluating the code and the app's own start.
 
 import { nativeLog } from './native-log';
+import './boot-confirm';
 
 const sinceEngine = () => `${performance.now().toFixed(0)} ms`;
 nativeLog(`[boot] app bundle evaluated at ${sinceEngine()} (engine clock)`);

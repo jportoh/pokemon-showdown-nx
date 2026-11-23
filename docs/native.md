@@ -266,3 +266,5 @@ Could the `.nro` update its own code instead of everyone copying a new one? `nat
   ~1.85 MiB/s in ~40 KiB chunks.
 - **Integrity**: `crypto.subtle` has SHA-256 (67 ms for 655 KiB; a plain JS version takes 222 ms) and
   ECDSA P-256 verification (126 ms). **Ed25519 is not supported** ("Unrecognized algorithm name").
+
+See [updates.md](updates.md) for the loader built on these results.
