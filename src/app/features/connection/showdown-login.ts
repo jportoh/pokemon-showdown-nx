@@ -48,7 +48,8 @@ interface Credentials {
 
 /**
  * The avatars the player chose (a trainer sprite's name), set again on every connection: one per
- * registered name, by its ID, and one for guest names (GUEST_AVATAR). v1 kept a single one for all.
+ * registered name, by its ID. Guests (and unregistered names) get a random one each time instead
+ * (guestAvatar); an entry v2 kept for them (GUEST_AVATAR) is no longer read. v1 kept a single one for all.
  */
 const AVATAR_STORAGE_KEY = 'psb.avatars.v2';
 /** The avatar each of the player's own names last had (by ID), for the entry screen to show before connecting. */
@@ -122,6 +123,11 @@ export class ShowdownLogin {
   private readonly lastAvatars = readAvatars(LAST_AVATAR_STORAGE_KEY);
   /** Whose chosen avatar was last asked for on this connection (a registered name's ID, or GUEST_AVATAR). */
   private avatarAppliedFor: string | null = null;
+  /**
+   * This guest's avatar: a random one each time the player connects as a guest (Showdown would give
+   * the same default one), or the one they picked meanwhile. Kept across reconnections, not saved.
+   */
+  private guestAvatar: string | null = null;
 
   readonly state = this.stateSignal.asReadonly();
   /**
@@ -168,6 +174,8 @@ export class ShowdownLogin {
     this.credentials = null;
     // Another round of names: a try after a failed one gets its own.
     this.tries = 0;
+    // A new guest, a new trainer.
+    this.guestAvatar = randomAvatar();
     this.setState({ mode: 'guest', status: 'connecting', error: null, loginError: null });
     if (this.challstr) this.onChallenge();
     else this.connection.connect();
@@ -276,15 +284,19 @@ export class ShowdownLogin {
 
   /**
    * Changes the player's avatar (a trainer sprite's name, as the client sends it: `/avatar dawn`)
-   * and keeps it, for this and later connections with the same name (registered) or as a guest.
+   * and keeps it: a registered name's for its later connections, a guest's (or an unregistered
+   * name's) only until it leaves, since each new guest gets a random one.
    */
   setAvatar(avatar: string): void {
     const state = this.stateSignal();
     if (state.status !== 'named') return;
     const owner = avatarOwner(state.name, state.registered);
-    this.chosenAvatars[owner] = avatar;
     this.avatarAppliedFor = owner;
-    writeJson(AVATAR_STORAGE_KEY, this.chosenAvatars);
+    if (owner === GUEST_AVATAR) this.guestAvatar = avatar;
+    else {
+      this.chosenAvatars[owner] = avatar;
+      writeJson(AVATAR_STORAGE_KEY, this.chosenAvatars);
+    }
     this.connection.send('', `/avatar ${avatar}`);
     // Shown at once: the server's own update may come later, or not at all.
     this.setState({ avatar });
@@ -373,6 +385,7 @@ export class ShowdownLogin {
 
   private reset(): void {
     this.avatarAppliedFor = null;
+    this.guestAvatar = null;
     this.held = null;
     this.clearReclaimTimer();
     this.setState({
@@ -519,7 +532,11 @@ export class ShowdownLogin {
     if (this.avatarAppliedFor === owner) return;
     const previous = this.avatarAppliedFor;
     this.avatarAppliedFor = owner;
-    const chosen = this.chosenAvatars[owner] ?? (previous !== null && current === this.chosenAvatars[previous] ? randomAvatar() : null);
+    // A guest (or an unregistered name): this session's random trainer, or the one picked meanwhile.
+    const chosen =
+      owner === GUEST_AVATAR
+        ? (this.guestAvatar ??= randomAvatar())
+        : (this.chosenAvatars[owner] ?? (previous !== null && current === this.chosenAvatars[previous] ? randomAvatar() : null));
     if (chosen && current !== chosen) this.connection.send('', `/avatar ${chosen},1`);
   }
 
@@ -533,9 +550,33 @@ export class ShowdownLogin {
   }
 }
 
-/** "Brewser" and 4 digits: short enough for Showdown's 18 characters, unlikely to be taken. */
+/** The guest names' first word. */
+const NAME_ADJECTIVES = [
+  'Brave', 'Swift', 'Sleepy', 'Lucky', 'Mighty', 'Shiny', 'Sneaky', 'Jolly', 'Calm', 'Bold', 'Timid', 'Hasty',
+  'Gentle', 'Quirky', 'Fiery', 'Frosty', 'Stormy', 'Cosmic', 'Turbo', 'Fluffy', 'Grumpy', 'Happy', 'Noble', 'Wild',
+  'Clever', 'Dizzy', 'Spicy', 'Zippy', 'Rusty', 'Golden', 'Silent', 'Rowdy', 'Cheeky', 'Mystic', 'Royal', 'Tiny',
+];
+/** The guest names' second word: Pokémon everyone knows. */
+const NAME_POKEMON = [
+  'Pikachu', 'Snorlax', 'Eevee', 'Gengar', 'Lapras', 'Psyduck', 'Togepi', 'Mudkip', 'Lucario', 'Ditto', 'Jigglypuff',
+  'Bulbasaur', 'Squirtle', 'Charmander', 'Magikarp', 'Gyarados', 'Dragonite', 'Mew', 'Wooper', 'Piplup', 'Totodile',
+  'Garchomp', 'Pichu', 'Slowpoke', 'Vulpix', 'Growlithe', 'Meowth', 'Rowlet', 'Sobble', 'Fuecoco', 'Sprigatito',
+  'Quaxly', 'Zorua', 'Mimikyu', 'Tyrunt', 'Axew', 'Bidoof', 'Spheal', 'Swablu', 'Riolu',
+];
+/** Showdown's longest name. */
+const MAX_NAME_LENGTH = 18;
+
+/**
+ * A guest's name, two words and two digits ("BraveSnorlax42"): fun, within Showdown's 18 characters,
+ * and unlikely to be taken (a registered one is skipped: see claimName).
+ */
 function randomName(): string {
-  return `Brewser${1000 + Math.floor(Math.random() * 9000)}`;
+  const pick = <T>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)];
+  const digits = String(10 + Math.floor(Math.random() * 90));
+  for (;;) {
+    const name = `${pick(NAME_ADJECTIVES)}${pick(NAME_POKEMON)}${digits}`;
+    if (name.length <= MAX_NAME_LENGTH) return name;
+  }
 }
 
 /** The login server's answer: an assertion, ";" for a registered name or ";;message" for an error. */
