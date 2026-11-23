@@ -35,29 +35,36 @@ A battle takes the whole stage, with no page bar. **The route can't be left whil
 
    | View | What |
    | --- | --- |
-   | `header-view.ts` | Top bar: players, turn, timer |
-   | `play-panel-view.ts` | The command bar in our battles: the message while the turn plays; moves, targets, Switch and Mega/Tera while choosing; the result at the end |
+   | `header-view.ts` | Top bar: players, turn, timer, and round buttons for Pokémon, Chat, Info and Menu |
+   | `play-panel-view.ts` | The command bar in our battles: the message while the turn plays; the moves as slanted cards in their types' colours, targets, Switch and Mega/Tera while choosing; the result at the end |
    | `watch-panel-view.ts` | The controls for spectating and replays (pause, speed, skip turn) |
    | `party-view.ts` | The party screen (switching) |
-   | `info-view.ts` | Battle info (ZR): both teams, field conditions, the log |
+   | `info-view.ts` | Battle info (ZR): both teams, field conditions, the log; and the Pokémon on the field at a glance (Y) |
+   | `battle-menu-view.ts` | The battle's menu (+): music and effects volume, light/dark, the timer, open team sheets, the opponent's card, Forfeit (A held) |
    | `team-select-view.ts` | Team preview face to face: pick the Pokémon to bring, in order |
    | `face-off.ts` | The "p1 vs p2" intro |
    | `overlay-views.ts`, `message-box.ts`, `side-strip-view.ts`, `team-card.ts`, `pokemon-info-view.ts` | Smaller pieces used by the above |
 
-   `screen-context.ts` holds what every panel draws with.
+   `screen-context.ts` holds what every panel draws with, including the theme's palette: the menus
+   and buttons follow Settings' look (light or dark) and the menu's style. The battle itself (the
+   field, the status boxes, the animations, the result card) keeps its own colours.
 
 ### Controls
 
-| Button | Action |
-| --- | --- |
-| D-pad, A, B | Choose moves, targets and switches; B steps back |
-| L | Toggle Mega Evolution or Terastallization while choosing a move |
-| R (held) | Forfeit (`HoldAction`) |
-| R3 | Battle timer on/off |
-| ZR | Battle info (ZL opens it on the opponent's team; ZL/ZR change its tabs) |
-| ZL | At team preview: accept open team sheets, or show the opponent's |
+| Button | Native .nro | Brewser |
+| --- | --- | --- |
+| D-pad, A, B | Choose moves, targets and switches; B steps back | Same |
+| R | Mega Evolution or Terastallization while choosing a move | Same |
+| + | The menu (at team preview: Done) | — (L) |
+| L | Held: the last turn's log over the field | The menu (at team preview: Done) |
+| Y | The Pokémon on the field at a glance | — (R3) |
+| X | Write in the battle chat (live battles) | — (in Battle info's log) |
+| − | Battle timer on/off (also in the menu) | — (in the menu) |
+| ZR | Battle info (ZL opens it on the opponent's team; ZL/ZR change its tabs) | Same |
+| ZL | At team preview: accept open team sheets (held), or show the opponent's | Same |
 
-`BattleScreen` owns L, R and R3; `GlBattleScreen` owns ZL and ZR.
+`ROLE_KEYS.battleMenu` and `fieldView` and `BATTLE_SHORTCUTS` (core/input/console-keys.ts) say which
+button does what on each build. `BattleScreen` owns R; `GlBattleScreen` owns the rest.
 
 ## The field
 

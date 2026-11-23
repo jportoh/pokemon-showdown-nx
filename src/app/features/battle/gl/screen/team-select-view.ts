@@ -10,8 +10,7 @@ import { BattleRequest } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { spriteId } from '@shared/utils/sprite-id';
 import { CARD, HeroSet, SLOTS, TOP, drawHalves, drawHero, drawIcon, drawSprite, easeOut, heroFromRow, iconBox } from './face-off';
-import { retroPalette } from './overlay-views';
-import { INK, ScreenContext, hint, ring, write } from './screen-context';
+import { INK, ScreenContext, hint, keyChip, write } from './screen-context';
 
 /** The four we bring along the foot: two leads, two in the back. */
 const BRING_SLOT = { x: 424, y: 616, h: 96, width: 448, gap: 12 };
@@ -40,7 +39,6 @@ export type SheetButton = 'sheet' | 'accept' | 'waiting';
 export class TeamSelectView {
   private readonly store = inject(BattleStore);
   private readonly dex = inject(ChampionsDex);
-  private readonly palette = retroPalette();
 
   /** The server's team preview request, while it waits for our choice. */
   private readonly pending = computed(() => {
@@ -157,7 +155,7 @@ export class TeamSelectView {
   /** `sheet.held`: how full Accept is while ZL is held (accepting open team sheets), 0 to 1. */
   draw(ctx: ScreenContext, sheet: { button: SheetButton; press: () => void; held: number } | null, onAllPicked: () => void): void {
     const { renderer } = ctx;
-    const p = this.palette;
+    const p = ctx.palette;
     this.followFocus(ctx);
     drawHalves(ctx, p, this.standingBy());
 
@@ -218,10 +216,10 @@ export class TeamSelectView {
       const held = sheet.button === 'accept' ? { progress: sheet.held, color: ACCEPT_FILL } : undefined;
       hint(ctx, 'select-sheet', SHEET_BOX, 'ZL', label, false, sheet.press, { fill: p.panel, border: p.outline }, held);
     }
-    const status = standing ? 'Team sent' : ready ? 'Ready! Confirm with L' : `${order.length}/${this.toBring()} chosen`;
+    const status = standing ? 'Team sent' : ready ? `Ready! Confirm with ${ROLE_KEYS.previewDone.label}` : `${order.length}/${this.toBring()} chosen`;
     const nudge = (ctx.now - this.nudgeAt) / NUDGE_MS;
     const shake = nudge < 1 ? Math.sin(nudge * 6 * Math.PI) * 8 * (1 - nudge) : 0;
-    write(ctx, status, CARD.left + shake, 640, { size: 18, bold: true }, nudge < 1 ? INK.red300 : ready || standing ? p.teal : p.ink, 'left', 290);
+    write(ctx, status, CARD.left + shake, 640, { size: 18, bold: true }, nudge < 1 ? p.danger : ready || standing ? p.teal : p.ink, 'left', 290);
     write(ctx, this.hint(sheet?.button ?? null), CARD.left, 672, { size: 14 }, p.muted, 'left', 290);
     write(ctx, standing ? (this.store.canUndo() ? 'B change picks' : '') : 'B undo', CARD.left, 696, { size: 14 }, p.muted, 'left', 290);
   }
@@ -232,7 +230,7 @@ export class TeamSelectView {
    */
   private drawDone(ctx: ScreenContext, ready: boolean, standing: boolean, focused: boolean): void {
     const { renderer } = ctx;
-    const p = this.palette;
+    const p = ctx.palette;
     let box = DONE_BOX;
     if (ready && this.readySince !== null) {
       const phase = ((ctx.now - this.readySince) % DONE_BEAT_MS) / DONE_BEAT_MS;
@@ -249,16 +247,15 @@ export class TeamSelectView {
       const h = box.h * grow;
       box = { x: box.x - (w - box.w) / 2, y: box.y - (h - box.h) / 2, w, h };
     }
-    renderer.rect(box.x, box.y, box.w, box.h, { fill: ready ? p.accent : INK.gray700, stroke: ready ? p.accentText : INK.gray600, radius: 8, border: 2 });
+    renderer.rect(box.x, box.y, box.w, box.h, { fill: ready ? p.accent : p.disabledFill, stroke: focused ? p.accentText : ready ? p.accent : p.disabledBorder, radius: box.h / 2, border: focused ? 3 : 1 });
     const cy = box.y + box.h / 2;
     if (standing) {
-      write(ctx, 'Sent', box.x + box.w / 2, cy, { size: 22, bold: true }, INK.gray400, 'center');
+      write(ctx, 'Sent', box.x + box.w / 2, cy, { size: 22, bold: true }, p.disabledInk, 'center');
     } else {
-      renderer.rect(box.x + 18, cy - 13, 26, 26, { fill: ready ? INK.header : INK.gray600, radius: 3 });
-      write(ctx, ROLE_KEYS.previewDone.label, box.x + 31, cy, { size: 16, bold: true }, INK.white, 'center');
-      write(ctx, 'Done', box.x + 52 + (box.w - 52) / 2 - 6, cy, { size: 22, bold: true }, ready ? INK.white : INK.gray400, 'center');
+      const ink = ready ? INK.white : p.disabledInk;
+      keyChip(ctx, ROLE_KEYS.previewDone.label, box.x + 16, cy, 28, ready ? withAlpha(INK.white, 0.25) : p.rim, ink);
+      write(ctx, 'Done', box.x + 52 + (box.w - 52) / 2 - 6, cy, { size: 22, bold: true }, ink, 'center');
     }
-    if (focused) ring(ctx, box, 8);
   }
 
   /** The side and Pokémon shown follow the focus: a new one slides in. */
@@ -308,7 +305,7 @@ export class TeamSelectView {
   /** The four slots along the foot: Lead, Lead, Back, Back (as many leads as the format sends out). */
   private drawSlots(ctx: ScreenContext, own: readonly HeroSet[]): void {
     const { renderer } = ctx;
-    const p = this.palette;
+    const p = ctx.palette;
     const order = this.order();
     const count = this.toBring();
     // Four fill the row; more (formats that bring all six) share it.

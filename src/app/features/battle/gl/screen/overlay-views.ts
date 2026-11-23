@@ -1,13 +1,15 @@
 import { computed, inject } from '@angular/core';
-import { GlTheme, Palette } from '@core/gl/ui/gl-theme';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { sheetRows } from '@features/battle/gl/screen/sheet-rows';
 import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { Rgba } from '@core/gl/gl-renderer';
 import { TextStyle } from '@core/gl/gl-textures';
 import { CARD, FaceSide, SLOTS, TOP, drawHalves, drawHero, drawIcon, heroFromRow, iconBox } from './face-off';
-import { INK, ScreenContext, write } from './screen-context';
+import { ScreenContext, write } from './screen-context';
+import { foeInk } from './header-view';
+
+/** A log line's colour, as a role of the theme's palette. */
+type LogInk = 'ink' | 'muted' | 'teal';
 
 /** Battle info's Log tab, under its tabs. */
 const LOG_X = 16;
@@ -23,7 +25,7 @@ const CHAT_INDENT = 14;
 
 interface LogStyle {
   style: TextStyle;
-  color: Rgba;
+  color: LogInk;
   lineHeight: number;
   /** Space above and below the entry's lines. */
   before: number;
@@ -32,11 +34,11 @@ interface LogStyle {
 }
 
 const LOG_STYLES: Record<BattleLogEntry['kind'], LogStyle> = {
-  turn: { style: { size: 22, bold: true }, color: INK.white, lineHeight: 34, before: 16, after: 8, width: LOG_TEXT_W - 16 },
-  minor: { style: { size: 18 }, color: INK.gray300, lineHeight: 26, before: 0, after: 0, width: LOG_TEXT_W },
-  result: { style: { size: 22, bold: true }, color: INK.yellow200, lineHeight: 34, before: 10, after: 0, width: LOG_TEXT_W },
-  message: { style: { size: 20 }, color: INK.gray100, lineHeight: 30, before: 0, after: 0, width: LOG_TEXT_W },
-  chat: { style: { size: 20 }, color: INK.white, lineHeight: 30, before: 4, after: 4, width: LOG_TEXT_W - CHAT_INDENT },
+  turn: { style: { size: 22, bold: true }, color: 'ink', lineHeight: 34, before: 16, after: 8, width: LOG_TEXT_W - 16 },
+  minor: { style: { size: 18 }, color: 'muted', lineHeight: 26, before: 0, after: 0, width: LOG_TEXT_W },
+  result: { style: { size: 22, bold: true }, color: 'teal', lineHeight: 34, before: 10, after: 0, width: LOG_TEXT_W },
+  message: { style: { size: 20 }, color: 'ink', lineHeight: 30, before: 0, after: 0, width: LOG_TEXT_W },
+  chat: { style: { size: 20 }, color: 'ink', lineHeight: 30, before: 4, after: 4, width: LOG_TEXT_W - CHAT_INDENT },
 };
 
 /** A chat message's text, after its author's name: "Jorge: gg". */
@@ -89,8 +91,10 @@ export class LogView {
   }
 
   draw(ctx: ScreenContext): void {
+    const p = ctx.palette;
     const { renderer } = ctx;
-    renderer.rect(LOG_X, LOG_Y, LOG_W, LOG_H, { fill: INK.card, radius: 10 });
+    renderer.rect(LOG_X, LOG_Y + 10, LOG_W, LOG_H, { fill: [0, 0, 0, 0.16], radius: 20, softness: 20 });
+    renderer.rect(LOG_X, LOG_Y, LOG_W, LOG_H, { fill: p.panel, stroke: p.rim, radius: 20, border: 1 });
     const log = this.store.log();
     const { start, end } = this.window(ctx);
     let y = LOG_Y + 12;
@@ -99,29 +103,30 @@ export class LogView {
       const look = LOG_STYLES[entry.kind];
       const lines = this.lines(ctx, entry);
       y += look.before;
-      if (entry.kind === 'turn') renderer.rect(LOG_X + 20, y - 2, LOG_TEXT_W, lines.length * look.lineHeight + 4, { fill: INK.stage, radius: 4 });
+      if (entry.kind === 'turn') renderer.rect(LOG_X + 20, y - 2, LOG_TEXT_W, lines.length * look.lineHeight + 4, { fill: p.rim, radius: 10 });
       if (entry.kind === 'chat') this.drawChat(ctx, entry, lines, y);
       else {
         const x = LOG_X + 20 + (entry.kind === 'turn' ? 10 : 0);
-        lines.forEach((line, n) => write(ctx, line, x, y + look.lineHeight * n + look.lineHeight / 2, look.style, look.color));
+        lines.forEach((line, n) => write(ctx, line, x, y + look.lineHeight * n + look.lineHeight / 2, look.style, p[look.color]));
       }
       y += lines.length * look.lineHeight + look.after;
     }
-    if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 14, { size: 16 }, INK.gray400, 'center');
-    if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 14, { size: 16 }, INK.gray400, 'center');
+    if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 16, { size: 16 }, p.accentText, 'center');
+    if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 16, { size: 16 }, p.accentText, 'center');
   }
 
   /** A chat message: a sky-blue mark by its lines, its author's name in sky blue; the server's notices grey. */
   private drawChat(ctx: ScreenContext, entry: BattleLogEntry, lines: string[], top: number): void {
+    const p = ctx.palette;
     const look = LOG_STYLES.chat;
     const x = LOG_X + 20 + CHAT_INDENT;
-    ctx.renderer.rect(LOG_X + 20, top, 4, lines.length * look.lineHeight, { fill: entry.author ? INK.sky300 : INK.gray500, radius: 2 });
-    const color = entry.author ? look.color : INK.gray300;
+    ctx.renderer.rect(LOG_X + 20, top, 4, lines.length * look.lineHeight, { fill: entry.author ? p.accentText : p.rim, radius: 2 });
+    const color = entry.author ? p.ink : p.muted;
     const prefix = entry.author ? `${entry.author}:` : '';
     lines.forEach((line, n) => {
       const cy = top + look.lineHeight * n + look.lineHeight / 2;
       if (n === 0 && prefix && line.startsWith(prefix)) {
-        const width = write(ctx, prefix, x, cy, look.style, INK.sky300);
+        const width = write(ctx, prefix, x, cy, look.style, p.accentText);
         write(ctx, line.slice(prefix.length), x + width, cy, look.style, color);
       } else {
         write(ctx, line, x, cy, look.style, color);
@@ -170,11 +175,6 @@ export class LogView {
   }
 }
 
-/** The retro palette of the theme chosen in Settings (GlTheme); call it in an injection context. */
-export function retroPalette(): Palette {
-  return inject(GlTheme).palette();
-}
-
 /**
  * A spectator's team preview, face to face like our own team select (face-off.ts) but without
  * picks: while the players choose theirs, p1 on the left and p2 on the right, each side's six down
@@ -184,7 +184,6 @@ export function retroPalette(): Palette {
 export class TeamsOverviewView {
   private readonly store = inject(BattleStore);
   private readonly dex = inject(ChampionsDex);
-  private readonly palette = retroPalette();
 
   readonly shown = computed(() => this.store.spectating() && this.store.teamPreview());
 
@@ -210,13 +209,13 @@ export class TeamsOverviewView {
   }
 
   draw(ctx: ScreenContext): void {
-    const p = this.palette;
+    const p = ctx.palette;
     this.followFocus(ctx);
     drawHalves(ctx, p, true);
     const { p1, p2 } = this.store.sides();
     write(ctx, 'Team preview', 640, TOP + 24, { size: 20, bold: true }, p.ink, 'center', 400);
     write(ctx, p1.name, CARD.left, TOP + 24, { size: 20, bold: true }, p.accentText, 'left', 300);
-    write(ctx, p2.name, CARD.right + CARD.w, TOP + 24, { size: 20, bold: true }, INK.red300, 'right', 300);
+    write(ctx, p2.name, CARD.right + CARD.w, TOP + 24, { size: 20, bold: true }, foeInk(p), 'right', 300);
 
     const teams = this.teams();
     for (const side of ['left', 'right'] as const) {

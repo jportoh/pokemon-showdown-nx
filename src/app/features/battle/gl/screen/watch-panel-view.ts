@@ -1,8 +1,7 @@
 import { computed, inject } from '@angular/core';
-import { Rgba } from '@core/gl/gl-renderer';
 import { BAR_TOP } from '@features/battle/gl/field-layout';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { ButtonLook, INK, ScreenContext, ring, write, writeLines } from './screen-context';
+import { ButtonLook, ScreenContext, button, writeLines } from './screen-context';
 import { drawCommandBar, drawMessage } from './message-box';
 
 /** The message on the bar's left; the controls on its right, two by two. */
@@ -20,12 +19,6 @@ export const PANEL_IDS = {
   play: 'replay-play',
   leaveLive: 'live-leave',
 } as const;
-
-const LOOKS: Record<ButtonLook, { fill: Rgba; border: Rgba; ink: Rgba }> = {
-  primary: { fill: INK.blue700, border: INK.blue300, ink: INK.white },
-  plain: { fill: [0.18, 0.22, 0.3, 0.95], border: INK.gray400, ink: INK.white },
-  disabled: { fill: [0.2, 0.23, 0.28, 0.9], border: INK.gray600, ink: INK.gray400 },
-};
 
 /**
  * The command bar while watching: the message on the left and the controls on the right, a replay's (play/pause or watch again, next turn, speed, back to the list), or
@@ -66,15 +59,11 @@ export class WatchPanelView {
 
   private drawLive(ctx: ScreenContext, leave: () => void): void {
     controlButton(ctx, PANEL_IDS.leaveLive, { x: CONTROLS_X, y: ROWS[0], w: RIGHT - CONTROLS_X, h: BUTTON_H }, 'Other live battles', 'plain', leave);
-    writeLines(ctx, this.liveStatus(), CONTROLS_X, ROWS[1], RIGHT - CONTROLS_X, 21, { size: 15 }, INK.gray300, 2);
+    writeLines(ctx, this.liveStatus(), CONTROLS_X, ROWS[1], RIGHT - CONTROLS_X, 21, { size: 15 }, ctx.palette.muted, 2);
   }
 }
 
+/** A control as the app's buttons, in the theme's colours (the accent for the main one). */
 function controlButton(ctx: ScreenContext, id: string, box: { x: number; y: number; w: number; h: number }, label: string, look: ButtonLook, accept: () => void): void {
-  const disabled = look === 'disabled';
-  const focused = disabled ? false : ctx.focus.control({ id, ...box, accept });
-  const { fill, border, ink } = LOOKS[look];
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 10, border: 2 });
-  write(ctx, label, box.x + box.w / 2, box.y + box.h / 2, { size: 20, bold: true }, ink, 'center', box.w - 16);
-  if (focused) ring(ctx, box, 10);
+  button(ctx, id, box, label, look, accept);
 }

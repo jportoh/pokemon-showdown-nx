@@ -124,8 +124,8 @@ export class KeyboardNavigation {
   }
 
   /** Whether a page button is held down right now, on the controller or the keyboard (hold-to-confirm). */
-  isHeld(button: PageButton): boolean {
-    const action = buttonAction(button);
+  isHeld(button: PageButton | 'accept'): boolean {
+    const action = button === 'accept' ? 'accept' : buttonAction(button);
     return !this.consumed.has(action) && (this.held.has(action) || this.keysDown.has(action));
   }
 
@@ -134,8 +134,8 @@ export class KeyboardNavigation {
    * presses (a keyboard's auto-repeat) do nothing, so it can't go on to the next screen's action.
    * It plays the hold's sound (a thud: something was done for good).
    */
-  consume(button: PageButton): void {
-    this.consumed.add(buttonAction(button));
+  consume(button: PageButton | 'accept'): void {
+    this.consumed.add(button === 'accept' ? 'accept' : buttonAction(button));
     this.audio.play('hold');
   }
 

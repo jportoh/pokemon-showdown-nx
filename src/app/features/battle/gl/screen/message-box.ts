@@ -1,16 +1,16 @@
-import { Rgba, rgba } from '@core/gl/gl-renderer';
 import { BAR_H, BAR_TOP } from '@features/battle/gl/field-layout';
 import { BattleLogEntry } from '@features/battle/models/battle';
-import { INK, ScreenContext, write } from './screen-context';
+import { ScreenContext, write } from './screen-context';
 
-export const BAR_FILL: Rgba = rgba('#111a2c');
 const STYLE = { size: 24, bold: true };
 const LINE_GAP = 32;
 
-/** The command bar's ground: along the stage's foot, always there, with a light edge on top. */
+/** The command bar's ground: along the stage's foot, always there, the theme's panel with a soft shadow over the field. */
 export function drawCommandBar(ctx: ScreenContext): void {
-  ctx.renderer.rect(0, BAR_TOP, 1280, BAR_H, { fill: BAR_FILL });
-  ctx.renderer.rect(0, BAR_TOP, 1280, 3, { fill: INK.sky300 });
+  const p = ctx.palette;
+  ctx.renderer.rect(0, BAR_TOP - 10, 1280, 14, { fill: [0, 0, 0, 0.18], softness: 10 });
+  ctx.renderer.rect(0, BAR_TOP, 1280, BAR_H, { fill: p.panel });
+  ctx.renderer.rect(0, BAR_TOP, 1280, 1, { fill: p.rim });
 }
 
 /**
@@ -21,8 +21,9 @@ export function drawCommandBar(ctx: ScreenContext): void {
 export function drawMessage(ctx: ScreenContext, log: readonly BattleLogEntry[], area = { x: 28, w: 1224 }): void {
   const entry = latest(log);
   if (!entry) return;
+  const p = ctx.palette;
   const lines = ctx.text.wrap(entry.text, STYLE, area.w).slice(0, 2);
-  const color = entry.kind === 'result' ? INK.yellow200 : INK.white;
+  const color = entry.kind === 'result' ? p.teal : p.ink;
   const middle = BAR_TOP + BAR_H / 2 + 1;
   lines.forEach((line, i) => write(ctx, line, area.x, middle + (i - (lines.length - 1) / 2) * LINE_GAP, STYLE, color, 'left', area.w));
 }

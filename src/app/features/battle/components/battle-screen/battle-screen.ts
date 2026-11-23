@@ -1,7 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { ROLE_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
-import { HoldAction } from '@core/gl/ui/hold-action';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { GlBattleScreen } from '@features/battle/components/gl-battle-screen/gl-battle-screen';
 import { ShowdownBattleConnection } from '@features/battle/live/showdown-battle-connection';
@@ -23,11 +21,10 @@ import { toId } from '@shared/utils/to-id';
  * replay server. It takes the whole 1280x720 stage (no app header: a battle can't be left until it's
  * over), drawn on one WebGL canvas (GlBattleScreen: top bar, the field over the whole stage, the
  * command panel rising while we choose, and the party screen, Battle info and team preview over
- * them). This component starts the battle and owns what lies beyond the screen: forfeiting (R held
- * down), the rematch or the next game of a set, leaving. The battle itself lives in root services.
- * Controller: L toggles Mega Evolution (or Terastallization) while choosing a move, R forfeits (held
- * down), R3 turns the battle timer on or off (real battles); ZL and ZR (Battle info and its tabs) are
- * the canvas screen's.
+ * them). This component starts the battle and owns what lies beyond the screen: forfeiting (the
+ * menu's Forfeit, A held), the rematch or the next game of a set, leaving. The battle itself lives in
+ * root services. Controller: R toggles Mega Evolution (or Terastallization) while choosing a move;
+ * the rest (the menu, Battle info, the field view, the chat and the timer) are the canvas screen's.
  */
 @Component({
   selector: 'app-battle-screen',
@@ -35,7 +32,6 @@ import { toId } from '@shared/utils/to-id';
   template: `
     <app-gl-battle-screen
       [forfeitState]="forfeitState()"
-      [forfeitHold]="forfeitHold"
       [canRematch]="rematchView().can"
       [rematchLabel]="rematchView().label"
       [rematchNote]="rematchView().note"
@@ -123,8 +119,6 @@ export class BattleScreen {
   );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
-  /** R held down: fills Forfeit (GlBattleScreen steps it and emits forfeit when it's full). */
-  protected readonly forfeitHold = new HoldAction(inject(KeyboardNavigation), 'buttonR');
 
   constructor() {
     // After a ladder match or an accepted challenge: the real battle in its server room. From the list
@@ -148,11 +142,7 @@ export class BattleScreen {
       this.store.markLost(`You're back as ${this.login.state().name}, not ${player}, so this battle can't be played from here.`);
     });
 
-    const unregister = [
-      this.navigation.registerButton('buttonL', () => this.toggleMegaOrTera()),
-      this.navigation.registerButton('buttonR', () => this.pressForfeit()),
-      this.navigation.registerButton(ROLE_KEYS.timer.button, () => this.toggleTimer()),
-    ];
+    const unregister = [this.navigation.registerButton('buttonR', () => this.toggleMegaOrTera())];
     inject(DestroyRef).onDestroy(() => {
       unregister.forEach((fn) => fn());
       rematches.unsubscribe();
@@ -202,7 +192,7 @@ export class BattleScreen {
     else this.choices.back();
   }
 
-  /** L: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */
+  /** R: only while the move buttons are shown and this Pokémon can Mega Evolve or Terastallize. */
   private toggleMegaOrTera(): boolean {
     const choosingMove = this.choices.slot() !== null && !this.choices.pendingMove() && !this.choices.forceSwitch();
     if (!choosingMove) return false;
@@ -212,14 +202,7 @@ export class BattleScreen {
     return true;
   }
 
-  /** R: starts filling Forfeit; further presses do nothing while the server ends the battle. */
-  private pressForfeit(): boolean {
-    if (this.store.result() || this.store.lost() || this.store.watching()) return false;
-    if (this.forfeitState() === 'idle') this.forfeitHold.press();
-    return true;
-  }
-
-  /** Forfeit filled up (R held to the end): the server ends the battle. */
+  /** Forfeit filled up (A held on the menu's row): the server ends the battle. */
   protected forfeit(): void {
     if (this.store.result() || this.store.lost() || this.store.watching() || this.forfeitState() !== 'idle') return;
     this.forfeitState.set('forfeiting');
@@ -227,11 +210,10 @@ export class BattleScreen {
   }
 
   private cancelForfeit(): void {
-    this.forfeitHold.reset();
     this.forfeitState.set('idle');
   }
 
-  /** R3 or the header's timer button: asks the server for the battle timer on or off (real battles only). */
+  /** −, the menu or the header's timer: asks the server for the battle timer on or off (real battles only). */
   protected toggleTimer(): boolean {
     if (!this.store.canToggleTimer() || this.store.result() || this.store.lost()) return false;
     this.store.toggleTimer();

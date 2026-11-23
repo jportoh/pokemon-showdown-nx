@@ -1,14 +1,19 @@
 import { Component, DestroyRef, computed, inject, input, output } from '@angular/core';
-import { ROLE_KEYS } from '@core/input/console-keys';
+import { BATTLE_SHORTCUTS, ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus, isDirection } from '@core/gl/canvas-ui';
+import { withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_H, STAGE_W, StageFrame } from '@core/gl/gl-stage';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
+import { GlTheme } from '@core/gl/ui/gl-theme';
 import { HoldAction } from '@core/gl/ui/hold-action';
+import { menuPanel } from '@core/gl/ui/menu-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { CameraFocus, REST_FOCUS } from '@features/battle/gl/battle-camera';
 import { BattleFieldScene, FIELD_PARTS } from '@features/battle/gl/battle-field-scene';
 import { FIELD_H, FIELD_TOP, FIELD_W } from '@features/battle/gl/field-layout';
+import { BattleMenuView, MENU_PREFIX, MenuState } from '@features/battle/gl/screen/battle-menu-view';
 import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view';
+import { CARD_CLOSE_ID, TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { CARD_PREFIX, INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
 import { TeamsOverviewView, chatText } from '@features/battle/gl/screen/overlay-views';
 import { PartyView } from '@features/battle/gl/screen/party-view';
@@ -41,7 +46,8 @@ type Section = (typeof SECTIONS)[number];
  * info (ZR; ZL opens it on the opponent's team): both teams, the field's conditions and the log; and
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
- * the page buttons (L Mega/Tera, R forfeit, R3 timer) stay BattleScreen's, and the mouse clicks what's
+ * R (Mega/Tera) is BattleScreen's; the menu (+, L on Brewser), the field view (Y, R3 on Brewser), the
+ * chat (X), the timer (−) and the last turn's log (L held) are this screen's, and the mouse clicks what's
  * under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
@@ -49,10 +55,8 @@ type Section = (typeof SECTIONS)[number];
   template: '',
 })
 export class GlBattleScreen {
-  /** Forfeit's state (R): BattleScreen forfeits once its hold fills up. */
+  /** Forfeit's state: BattleScreen forfeits once the menu's Forfeit row fills up (A held). */
   readonly forfeitState = input<ForfeitState>('idle');
-  /** Forfeit's hold (R held down, BattleScreen's): stepped here every frame, `forfeit` emitted when full. */
-  readonly forfeitHold = input<HoldAction | null>(null);
   readonly canRematch = input(false);
   readonly rematchLabel = input('');
   readonly rematchNote = input('');
@@ -76,6 +80,7 @@ export class GlBattleScreen {
   private readonly connection = inject(ShowdownConnection);
   private readonly login = inject(ShowdownLogin);
   private readonly keyboard = inject(CanvasKeyboard);
+  private readonly theme = inject(GlTheme);
 
   private readonly field = new BattleFieldScene();
   private readonly header = new HeaderView();
@@ -89,6 +94,21 @@ export class GlBattleScreen {
   private readonly focus = new CanvasFocus();
   /** Accepting open team sheets, filling in green while ZL is held. */
   private readonly sheetHold = new HoldAction(this.navigation, 'buttonZL');
+  /** The menu's rows held with A (Forfeit, accepting the team sheets), and which one is filling. */
+  private readonly menuHold = new HoldAction(this.navigation, 'accept');
+  private menuHoldRow: 'forfeit' | 'sheets' | null = null;
+  private readonly menu = new BattleMenuView();
+  /** The opponent's Trainer Card, from the menu. */
+  private readonly card = new TrainerCardView(this.focus);
+
+  /** The menu is open (+, L on Brewser), and the focus under it when it opened. */
+  private menuOpen = false;
+  private focusBeforeMenu: string | null = null;
+  /** The opponent's card is open over the battle (from the menu). */
+  private cardOpen = false;
+  /** The Pokémon on the field at a glance (Y, R3 on Brewser), and the focus under it. */
+  private fieldOpen = false;
+  private focusBeforeField: string | null = null;
 
   /** Battle info's tab while it's open; null while it's closed. */
   private infoTab: InfoTab | null = null;
@@ -124,14 +144,25 @@ export class GlBattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
-      // Team preview's picks, sent (Done): L, or + on the native .nro; while choosing moves L is
-      // BattleScreen's (Mega, Tera).
+      // Team preview's picks, sent (Done): + on the native .nro, L on Brewser. The menu shares that
+      // button, so it's registered after: it lets the press through while team preview is up.
       this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
+      this.navigation.registerButton(ROLE_KEYS.battleMenu.button, () => this.pressMenu()),
+      this.navigation.registerButton(ROLE_KEYS.fieldView.button, () => this.pressField()),
+      // Only the native .nro has buttons for these (Brewser has them in the menu): X writes in the chat,
+      // − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
+      ...(BATTLE_SHORTCUTS
+        ? [
+            this.navigation.registerButton(BATTLE_SHORTCUTS.chat.button, () => this.pressChat()),
+            this.navigation.registerButton(BATTLE_SHORTCUTS.timer.button, () => this.pressTimer()),
+            this.navigation.registerButton(BATTLE_SHORTCUTS.log.button, () => this.store.turn() > 0),
+          ]
+        : []),
     ];
 
     this.stage.whenReady((resources) => {
       this.field.attach(resources.renderer, resources.text, resources.images, resources.disc);
-      this.ctx = { renderer: resources.renderer, text: resources.text, images: resources.images, focus: this.focus, disc: resources.disc, now: 0 };
+      this.ctx = { renderer: resources.renderer, text: resources.text, images: resources.images, focus: this.focus, disc: resources.disc, palette: this.theme.palette(), now: 0 };
     });
     const hide = this.stage.show({
       draw: (frame) => this.draw(frame),
@@ -154,12 +185,17 @@ export class GlBattleScreen {
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.now = now;
+    // Settings' look, light or dark (the menu can change it mid-battle).
+    ctx.palette = this.theme.palette();
     const battle = this.store.battleId();
     if (battle !== this.shownBattle) {
       this.shownBattle = battle;
       this.infoTab = null;
       this.info.closeSheet();
       this.partyOpen = null;
+      this.menuOpen = false;
+      this.cardOpen = false;
+      this.fieldOpen = false;
     }
     // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
     const pop = this.store.chatPop();
@@ -167,9 +203,18 @@ export class GlBattleScreen {
     renderer.beginPlain(INK.header);
     this.focus.begin();
 
-    const hold = this.forfeitHold();
-    const canForfeit = !this.store.result() && !this.store.lost() && !this.store.watching() && this.forfeitState() === 'idle';
-    if (hold?.step(now, canForfeit)) this.forfeit.emit();
+    // The menu's held rows: Forfeit, and accepting the team sheets (ZL held does that too).
+    const held = this.menuHoldRow;
+    const holdAllowed = this.menuOpen && this.focus.focused === `${MENU_PREFIX}${held}` && (held === 'forfeit' ? this.canForfeit() : this.sheetButton() === 'accept');
+    if (this.menuHold.step(now, holdAllowed) && held) {
+      this.menuHoldRow = null;
+      if (held === 'forfeit') {
+        this.forfeit.emit();
+        this.closeMenu();
+      } else {
+        this.store.acceptTeamSheets();
+      }
+    }
     if (this.sheetHold.step(now, this.sheetButton() === 'accept')) this.store.acceptTeamSheets();
     // Over the field: the party screen, team preview (ours to pick, or a spectator's view of both), then Battle info.
     const party = this.partyShown();
@@ -187,9 +232,12 @@ export class GlBattleScreen {
     this.header.draw(ctx, {
       infoOpen: this.infoTab !== null,
       toggleInfo: () => this.pressInfo(),
+      menuOpen: this.menuOpen,
+      toggleMenu: () => (this.menuOpen ? this.closeMenu() : this.openMenu()),
+      fieldOpen: this.fieldOpen,
+      toggleField: () => this.pressField(),
+      chat: this.store.canChat() ? () => this.pressChat() : null,
       forfeitState: this.forfeitState(),
-      forfeitProgress: hold?.progress ?? 0,
-      forfeit: () => hold?.press(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
     if (!covered) {
@@ -238,10 +286,23 @@ export class GlBattleScreen {
       this.overview.draw(ctx);
     }
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
+    else if (this.fieldOpen) {
+      this.focus.begin();
+      this.info.drawActive(ctx);
+    } else if (!covered && !party && BATTLE_SHORTCUTS && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
+      this.drawLogPeek(ctx);
+    }
+    if (this.cardOpen) {
+      this.focus.begin();
+      this.card.draw(ctx, () => this.closeCard());
+    } else if (this.menuOpen) {
+      this.focus.begin();
+      this.menu.draw(ctx, this.menuState());
+    }
     this.header.drawCountdown(ctx);
     if (this.joining()) {
-      renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: INK.header });
-      write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, INK.white, 'center');
+      renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: ctx.palette.bg });
+      write(ctx, 'Joining battle…', STAGE_W / 2, 360, { size: 36, bold: true }, ctx.palette.ink, 'center');
     }
     // Live battles (ours or watched): the connection being got back, over everything.
     const notice = this.store.replay() ? null : connectionNotice(this.connection.state(), this.login.state(), Date.now());
@@ -249,7 +310,7 @@ export class GlBattleScreen {
     mark = this.timeSection('overlays', mark);
 
     this.focus.end();
-    this.settleFocus(picking, party);
+    if (!this.menuOpen && !this.cardOpen && !this.fieldOpen) this.settleFocus(picking, party);
     mark = performance.now();
     renderer.end();
     this.timeSection('flush', mark);
@@ -268,11 +329,145 @@ export class GlBattleScreen {
    * next try is. Its text changes every second, so it's drawn with the stage's overlay text cache.
    */
   private drawConnectionNotice(ctx: ScreenContext, notice: string): void {
+    const p = ctx.palette;
     const style = { size: 22, bold: true };
     const w = Math.min(STAGE_W - 80, ctx.text.measure(notice, style) + 64);
     const box = { x: (STAGE_W - w) / 2, y: FIELD.y + 16, w, h: 52 };
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: INK.dark, stroke: INK.yellow300, radius: 10, border: 3 });
-    write(ctx, notice, STAGE_W / 2, box.y + box.h / 2, style, INK.yellow100, 'center', box.w - 32);
+    ctx.renderer.rect(box.x, box.y + 8, box.w, box.h, { fill: [0, 0, 0, 0.25], radius: 26, softness: 16 });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: p.teal, radius: 26, border: 3 });
+    write(ctx, notice, STAGE_W / 2, box.y + box.h / 2, style, p.ink, 'center', box.w - 32);
+  }
+
+  /**
+   * L held (native): the last turn's log over the field, in a panel at its top, to read again what
+   * happened (the bar only shows the latest message). While a turn plays, that turn so far.
+   */
+  private drawLogPeek(ctx: ScreenContext): void {
+    const p = ctx.palette;
+    const log = this.store.log().filter((entry) => entry.kind !== 'chat');
+    const turns = log.flatMap((entry, i) => (entry.kind === 'turn' ? [i] : []));
+    const last = turns[turns.length - 1] ?? 0;
+    // The latest turn's header with nothing after it yet (we're choosing): the turn before it.
+    const entries = last === log.length - 1 ? log.slice(turns[turns.length - 2] ?? 0, last) : log.slice(last);
+    const box = { x: 160, y: FIELD.y + 14, w: 960, h: 0 };
+    const lines: { text: string; bold: boolean; color: typeof p.ink }[] = [];
+    for (const entry of entries) {
+      const style = entry.kind === 'turn' ? { size: 20, bold: true } : { size: entry.kind === 'minor' ? 16 : 18 };
+      const color = entry.kind === 'minor' ? p.muted : entry.kind === 'result' ? p.teal : p.ink;
+      for (const text of ctx.text.wrap(entry.text, style, box.w - 48)) lines.push({ text, bold: entry.kind === 'turn', color });
+    }
+    const shown = lines.slice(-14);
+    box.h = 56 + shown.length * 26;
+    menuPanel(ctx, box, undefined, 0.96);
+    const keyW = BATTLE_SHORTCUTS ? write(ctx, `${BATTLE_SHORTCUTS.log.label} held`, box.x + 24, box.y + 24, { size: 13, bold: true }, p.muted) : 0;
+    write(ctx, 'LAST TURN', box.x + 36 + keyW, box.y + 24, { size: 13, bold: true }, p.muted);
+    if (shown.length === 0) write(ctx, 'Nothing has happened yet.', box.x + 24, box.y + 64, { size: 18 }, p.muted);
+    shown.forEach((line, i) => write(ctx, line.text, box.x + 24, box.y + 56 + i * 26, { size: line.bold ? 20 : 18, bold: line.bold }, withAlpha(line.color, 1), 'left', box.w - 48));
+  }
+
+  /** What the menu shows of the battle (the settings it reads itself). */
+  private menuState(): MenuState {
+    const watching = this.store.watching();
+    const until = this.store.timerCooldownUntil();
+    const canTimer = this.store.canToggleTimer() && !this.store.result() && !this.store.lost();
+    const sheets = this.sheetButton();
+    return {
+      timer: canTimer ? { on: !!this.store.battleTimer(), cooldown: until ? Math.max(0, Math.ceil((until - Date.now()) / 1000)) : 0 } : null,
+      toggleTimer: () => this.toggleTimer.emit(),
+      sheets: watching ? null : sheets,
+      sheetsProgress: this.menuHoldRow === 'sheets' ? this.menuHold.progress : 0,
+      pressSheets: () => {
+        if (sheets === 'accept') {
+          this.menuHoldRow = 'sheets';
+          this.menuHold.press();
+        } else if (sheets === 'sheet') {
+          this.closeMenu();
+          this.openInfo('p2');
+        }
+      },
+      rival: watching ? '' : this.store.sides().p2.name,
+      openCard: () => {
+        this.cardOpen = true;
+        this.card.open(this.store.sides().p2.name, CARD_CLOSE_ID);
+      },
+      forfeit: this.canForfeit() || this.forfeitState() === 'forfeiting' ? { progress: this.menuHoldRow === 'forfeit' ? this.menuHold.progress : 0, forfeiting: this.forfeitState() === 'forfeiting' } : null,
+      pressForfeit: () => {
+        if (!this.canForfeit()) return;
+        this.menuHoldRow = 'forfeit';
+        this.menuHold.press();
+      },
+    };
+  }
+
+  private canForfeit(): boolean {
+    return !this.store.result() && !this.store.lost() && !this.store.watching() && this.forfeitState() === 'idle';
+  }
+
+  /** + (L on Brewser): the menu, or closed again; lets the press through to Done while team preview is up. */
+  private pressMenu(): boolean {
+    if (!this.partyShown() && this.teamSelect.shown()) return false;
+    if (this.cardOpen) this.closeCard();
+    else if (this.menuOpen) this.closeMenu();
+    else this.openMenu();
+    return true;
+  }
+
+  private openMenu(): void {
+    if (this.menuOpen) return;
+    this.focusBeforeMenu = this.focus.focused;
+    this.menuOpen = true;
+    this.menuHold.reset();
+    this.menuHoldRow = null;
+    this.focus.focus(`${MENU_PREFIX}music`);
+  }
+
+  private closeMenu(): void {
+    if (!this.menuOpen) return;
+    this.menuOpen = false;
+    this.menuHold.reset();
+    this.menuHoldRow = null;
+    this.focus.focus(this.focusBeforeMenu);
+  }
+
+  /** The rival's card closes back to the menu, on its row. */
+  private closeCard(): void {
+    this.cardOpen = false;
+    this.focus.focus(`${MENU_PREFIX}card`);
+  }
+
+  /** Y (R3 on Brewser): the Pokémon on the field, or closed again. */
+  private pressField(): boolean {
+    if (!this.store.started() || this.menuOpen || this.cardOpen) return this.store.started();
+    if (this.fieldOpen) {
+      this.closeField();
+      return true;
+    }
+    this.infoTab = null;
+    this.info.closeSheet();
+    this.focusBeforeField = this.focus.focused;
+    this.fieldOpen = true;
+    this.focus.focus(this.info.firstActiveId());
+    return true;
+  }
+
+  private closeField(): void {
+    this.fieldOpen = false;
+    this.info.closeSheet();
+    this.focus.focus(this.focusBeforeField);
+  }
+
+  /** X (native): the keyboard for a chat message, in live battles. */
+  private pressChat(): boolean {
+    if (!this.store.canChat() || this.menuOpen || this.cardOpen) return false;
+    this.writeChat();
+    return true;
+  }
+
+  /** − (native): the battle timer on or off. */
+  private pressTimer(): boolean {
+    if (!this.store.canToggleTimer() || this.store.result() || this.store.lost()) return false;
+    this.toggleTimer.emit();
+    return true;
   }
 
   /**
@@ -285,11 +480,13 @@ export class GlBattleScreen {
     const style = { size: 20 };
     const w = Math.min(CHAT_POP_W, ctx.text.measure(chatText(entry), style) + 32);
     const box = { x: STAGE_W - 16 - w, y: FIELD.y + 54, w, h: 40 };
-    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0.06, 0.09, 0.16, 0.9], stroke: entry.author ? INK.sky300 : INK.gray500, radius: 10, border: 2 });
+    const p = ctx.palette;
+    ctx.renderer.rect(box.x, box.y + 6, box.w, box.h, { fill: [0, 0, 0, 0.2], radius: 20, softness: 12 });
+    ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: withAlpha(p.panel, 0.95), stroke: entry.author ? p.accentText : p.rim, radius: 20, border: 2 });
     const cy = box.y + box.h / 2;
     let x = box.x + 16;
-    if (entry.author) x += write(ctx, `${entry.author}:`, x, cy, style, INK.sky300, 'left', box.w - 32);
-    write(ctx, `${entry.author ? ' ' : ''}${entry.text}`, x, cy, style, entry.author ? INK.white : INK.gray300, 'left', box.x + box.w - 16 - x);
+    if (entry.author) x += write(ctx, `${entry.author}:`, x, cy, style, p.accentText, 'left', box.w - 32);
+    write(ctx, `${entry.author ? ' ' : ''}${entry.text}`, x, cy, style, entry.author ? p.ink : p.muted, 'left', box.x + box.w - 16 - x);
   }
 
   /** Battle info's log, A: the keyboard over the battle for a chat message; OK says it. */
@@ -388,6 +585,24 @@ export class GlBattleScreen {
 
   /** The controller's d-pad, A and B (everything else comes as page buttons). */
   private onAction(action: CanvasAction): boolean {
+    // Over everything: the rival's card, the menu, the Pokémon on the field (each B closes).
+    if (this.cardOpen || this.menuOpen) {
+      if (action === 'back') {
+        if (this.cardOpen) this.closeCard();
+        else this.closeMenu();
+      } else if (isDirection(action)) this.focus.move(action);
+      else if (action === 'accept') this.focus.accept();
+      return true;
+    }
+    if (this.fieldOpen) {
+      if (this.info.sheetOpen()) {
+        if (action === 'back') this.focus.focus(this.info.closeSheet());
+        else if (action === 'left' || action === 'right') this.info.stepSheet(action === 'left' ? -1 : 1);
+      } else if (action === 'back') this.closeField();
+      else if (isDirection(action)) this.focus.move(action);
+      else if (action === 'accept') this.focus.accept();
+      return true;
+    }
     if (this.infoTab) {
       if (this.info.sheetOpen()) {
         if (action === 'back') this.focus.focus(this.info.closeSheet());
