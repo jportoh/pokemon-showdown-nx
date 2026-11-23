@@ -1,15 +1,25 @@
 import { BAR_H, BAR_TOP } from '@features/battle/gl/field-layout';
 import { BattleLogEntry } from '@features/battle/models/battle';
+import { Rgba } from '@core/gl/gl-renderer';
+import { Palette } from '@core/gl/ui/gl-theme';
 import { ScreenContext, write } from './screen-context';
 
 const STYLE = { size: 24, bold: true };
 const LINE_GAP = 32;
 
-/** The command bar's ground: along the stage's foot, always there, the theme's panel with a soft shadow over the field. */
+/**
+ * The command bar's colour: the top bar's in the light look (the panel's white was too pale under the
+ * field), the panel's in the dark one (the dark bar is near black).
+ */
+export function commandBarFill(p: Palette): Rgba {
+  return p.appearance === 'light' ? p.bar : p.panel;
+}
+
+/** The command bar's ground: along the stage's foot, always there (commandBarFill), with a soft shadow over the field. */
 export function drawCommandBar(ctx: ScreenContext): void {
   const p = ctx.palette;
   ctx.renderer.rect(0, BAR_TOP - 10, 1280, 14, { fill: [0, 0, 0, 0.18], softness: 10 });
-  ctx.renderer.rect(0, BAR_TOP, 1280, BAR_H, { fill: p.panel });
+  ctx.renderer.rect(0, BAR_TOP, 1280, BAR_H, { fill: commandBarFill(p) });
   ctx.renderer.rect(0, BAR_TOP, 1280, 1, { fill: p.rim });
 }
 

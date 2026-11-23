@@ -6,6 +6,7 @@ import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CATEGORY_ICON_H, CATEGORY_ICON_W, categoryIcon } from '@core/gl/ui/category-icons';
 import { SLANT } from '@core/gl/ui/menu-kit';
+import { BATTLE_SHORTCUTS } from '@core/input/console-keys';
 import { BAR_TOP, BOX_H, DOUBLES, FIELD_TOP, SINGLES } from '@features/battle/gl/field-layout';
 import { BattleChoices, TargetOption } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
@@ -13,7 +14,7 @@ import { typeColor } from '@shared/data/type-colors';
 import { spriteSetOf } from '@shared/utils/sprite-id';
 import { foeInk, legendItem } from './header-view';
 import { megaSymbolTexture } from './mega-symbol';
-import { drawCommandBar, drawMessage } from './message-box';
+import { commandBarFill, drawCommandBar, drawMessage } from './message-box';
 import { INK, ScreenContext, button, hint, keyChip, ring, write } from './screen-context';
 
 const X = 16;
@@ -37,6 +38,8 @@ const MEGA_MAGENTA: Rgba = rgba('#d946ef');
 const ROW_1 = BAR_TOP + 12;
 const ROW_2 = BAR_TOP + 62;
 const ROW_H = 40;
+/** Picking a target: the column on the bar's right with Confirm and Back. */
+const TARGET_COLUMN_W = 124;
 /** The name plate over the bar while choosing: who's choosing, its item and ability. */
 const TAB_H = 46;
 const TAB_MAX_W = 900;
@@ -201,9 +204,10 @@ export class PlayPanelView {
     const extraW = extraText ? Math.min(380, ctx.text.measure(extraText, chip) + 24) : 0;
     const width = Math.min(TAB_MAX_W, 12 + (doubles ? 62 : 0) + nameW + 12 + (itemW ? itemW + 8 : 0) + (abilityW ? abilityW + 8 : 0) + (extraW ? extraW + 8 : 0) + 8);
     const top = BAR_TOP - TAB_H;
-    renderer.rect(X, top, width, TAB_H + 16, { fill: p.panel, stroke: p.rim, radius: 14, border: 1 });
+    const ground = commandBarFill(p);
+    renderer.rect(X, top, width, TAB_H + 16, { fill: ground, stroke: p.rim, radius: 14, border: 1 });
     // The plate opens into the bar: its lower edge is the bar itself.
-    renderer.rect(X + 1, BAR_TOP, width - 2, 16, { fill: p.panel });
+    renderer.rect(X + 1, BAR_TOP, width - 2, 16, { fill: ground });
     const mid = top + TAB_H / 2 + 1;
     let x = X + 12;
     if (doubles) {
@@ -310,22 +314,27 @@ export class PlayPanelView {
       radius: 14,
       skew: SLANT,
     });
-    write(ctx, 'SWITCH', switchBox.x + 16, y + 24, { size: 21, bold: true }, switches > 0 ? p.ink : p.disabledInk);
+    // Well inside the slanted edge (it leans out under the middle): X's chip on native, then the title;
+    // under it the team as balls (the ones that could come in bright), or why none can.
+    const ink = switches > 0 ? p.ink : p.disabledInk;
+    let tx = switchBox.x + 20;
+    if (BATTLE_SHORTCUTS) tx += keyChip(ctx, BATTLE_SHORTCUTS.party.label, tx, y + 26, 24) + 8;
+    write(ctx, 'SWITCH', tx, y + 26, { size: 21, bold: true }, ink, 'left', switchBox.x + switchBox.w - 12 - tx);
     const trapped = this.choices.trapped();
-    this.reserve().forEach((state, i) => {
-      const bx = switchBox.x + 6 + i * 20;
-      const by = y + 44;
-      if (state === 'fainted') renderer.rect(bx, by, 16, 16, { fill: [0, 0, 0, 0], stroke: p.muted, radius: 8, border: 1.5 });
-      else {
+    if (switches > 0) {
+      this.reserve().forEach((state, i) => {
+        const bx = switchBox.x + 16 + i * 20;
+        const by = y + 50;
+        const fainted = state === 'fainted';
         const alpha = state === 'active' ? 0.45 : 1;
-        renderer.rect(bx, by, 16, 8, { fill: withAlpha(rgba('#e8473c'), alpha), radius: 4 });
-        renderer.rect(bx, by + 8, 16, 8, { fill: withAlpha(rgba('#f4f4f4'), alpha), radius: 4 });
+        renderer.rect(bx, by, 16, 8, { fill: fainted ? INK.gray600 : withAlpha(rgba('#e8473c'), alpha), radius: 4 });
+        renderer.rect(bx, by + 8, 16, 8, { fill: fainted ? INK.gray500 : withAlpha(rgba('#f4f4f4'), alpha), radius: 4 });
         renderer.rect(bx, by + 7, 16, 2, { fill: withAlpha(rgba('#222222'), alpha) });
         renderer.rect(bx, by, 16, 16, { fill: [0, 0, 0, 0], stroke: withAlpha(rgba('#222222'), alpha), radius: 8, border: 1.5 });
-      }
-    });
-    const reserve = switches > 0 ? `${switches} in reserve` : trapped ? 'Trapped!' : 'None left';
-    write(ctx, reserve, switchBox.x + 4, y + 74, { size: 13, bold: true }, trapped && switches === 0 ? p.danger : p.muted, 'left', switchBox.w - 24);
+      });
+    } else {
+      write(ctx, trapped ? 'Trapped!' : 'None left', switchBox.x + 16, y + 58, { size: 15, bold: true }, trapped ? p.danger : p.muted, 'left', switchBox.w - 36);
+    }
 
     // Mega or Tera, only while it can: by the chooser's status box, on the field. R does it on the
     // controller; the button is for clicks.
@@ -402,15 +411,20 @@ export class PlayPanelView {
     return { x: stand.boxLeft - MEGA_W - 10, y: FIELD_TOP + stand.boxTop + (BOX_H - SIDE_H) / 2, w: MEGA_W, h: SIDE_H };
   }
 
-  /** Picking a target: the move on its type's colour, then each Pokémon it can hit as a card with its picture. */
+  /**
+   * Picking a target: the name plate (who's choosing, or why that target can't be picked), the move on
+   * its type's colour, then each Pokémon it can hit as a card with its picture, as wide as fits beside
+   * the column on the right: A's Confirm over a Back button (B on the controller).
+   */
   private drawTargets(ctx: ScreenContext): string[] {
     const p = ctx.palette;
     const { renderer } = ctx;
+    this.drawTab(ctx);
     const pending = this.choices.pendingMove();
     const move = pending ? this.moves()[pending.move] : null;
     let x = X;
     if (move) {
-      const w = Math.min(260, ctx.text.measure(move.name, { size: 19, bold: true }) + 32);
+      const w = Math.min(220, ctx.text.measure(move.name, { size: 19, bold: true }) + 32);
       renderer.rect(x, ROW_1 + 4, w, ROW_H, { fill: move.color, radius: 12 });
       write(ctx, move.name, x + 16, ROW_1 + 4 + ROW_H / 2, { size: 19, bold: true }, WHITE, 'left', w - 28);
       x += w + 12;
@@ -420,9 +434,13 @@ export class PlayPanelView {
 
     const picks: string[] = [];
     const set = spriteSetOf(this.store.gen());
-    for (const option of this.choices.targetOptions()) {
+    const options = this.choices.targetOptions();
+    // The cards share what's left of the row beside the right column, none wider than 300.
+    const room = RIGHT - TARGET_COLUMN_W - GAP - x;
+    const fitW = Math.floor((room - (options.length - 1) * 10) / Math.max(1, options.length));
+    for (const option of options) {
       const label = targetLabel(option);
-      const box = { x, y: BAR_TOP + 14, w: Math.max(210, Math.min(300, ctx.text.measure(label, { size: 18, bold: true }) + 104)), h: 78 };
+      const box = { x, y: BAR_TOP + 14, w: Math.min(fitW, Math.max(210, Math.min(300, ctx.text.measure(label, { size: 18, bold: true }) + 104))), h: 78 };
       const id = targetId(option.target);
       const focused = option.allowed && ctx.focus.control({ id, ...box, accept: () => this.choices.chooseTarget(option.target) });
       if (option.allowed) picks.push(id);
@@ -442,16 +460,10 @@ export class PlayPanelView {
       x += box.w + 10;
     }
 
-    // At the right: what to do (or why that target can't be picked), and Back for clicks (B on the controller).
-    const notice = this.choices.notice();
-    if (notice) write(ctx, notice, RIGHT, BAR_TOP + 30, { size: 15, bold: true }, p.teal, 'right', Math.max(120, RIGHT - x - 10));
-    else {
-      const width = legendWidth(ctx, '◀▶', 'Target') + 16 + legendWidth(ctx, 'A', 'Confirm');
-      let lx = RIGHT - width;
-      lx += legendItem(ctx, '◀▶', 'Target', lx, BAR_TOP + 30) + 16;
-      legendItem(ctx, 'A', 'Confirm', lx, BAR_TOP + 30);
-    }
-    hint(ctx, 'choice-back', { x: RIGHT - 112, y: BAR_TOP + 54, w: 112, h: 34 }, 'B', 'Back', false, () => this.choices.back());
+    // The right column: A's Confirm, and Back for clicks (B on the controller). The notice is on the plate.
+    const column = RIGHT - TARGET_COLUMN_W;
+    legendItem(ctx, 'A', 'Confirm', column + 8, BAR_TOP + 32);
+    hint(ctx, 'choice-back', { x: column, y: BAR_TOP + 54, w: TARGET_COLUMN_W, h: 34 }, 'B', 'Back', false, () => this.choices.back());
     return picks;
   }
 
@@ -491,11 +503,6 @@ export function targetId(target: number): string {
 /** The field slot a target number points at: 1, 2 the foes' slots; -1, -2 ours. */
 export function targetSlot(target: number): string {
   return `${target > 0 ? 'p2' : 'p1'}${Math.abs(target) === 1 ? 'a' : 'b'}`;
-}
-
-/** How wide a legend item (key chip and action) is drawn. */
-function legendWidth(ctx: ScreenContext, key: string, text: string): number {
-  return Math.max(26, ctx.text.measure(key, { size: 13, bold: true }) + 12) + 8 + ctx.text.measure(text, { size: 16 });
 }
 
 /** "Garchomp", "Kingambit (ally)", "Garchomp (fainted)". */

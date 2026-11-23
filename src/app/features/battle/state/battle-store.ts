@@ -559,18 +559,22 @@ export class BattleStore {
   }
 
   /**
-   * Asks for the battle timer on, or off if we're one of those who want it; the server's notices
-   * update battleTimer. The server doesn't always say it's off (not when no clock is ticking at that
-   * moment), so once nobody wants it, it's taken as off here.
+   * Asks for the battle timer on while it shows off, or off while it shows on; the server's notices
+   * update battleTimer. Off goes by what's shown, not by whether we're known to have asked for it: a
+   * timer we didn't see being asked for (a set's next game, a battle joined again) was asked "on"
+   * again, and kept ticking. The server doesn't always say it's off (not when no clock is ticking at
+   * that moment), so once nobody we know of wants it, it's taken as off here; if it's still on there,
+   * the next turn's "Time left" shows it again.
    */
   toggleTimer(): void {
     if (!this.canToggleTimerSignal() || this.resultSignal()) return;
     const me = toId(this.sidesSignal().p1.name);
-    const on = !this.timerRequesters.has(me);
+    const on = this.timerSignal() === null;
     this.connection?.setTimer?.(on);
     if (on) return;
-    this.timerRequesters.delete(me);
-    this.timerCooldownUntilSignal.set(Date.now() + TIMER_COOLDOWN_MS);
+    // Ours to turn off when we asked for it, or when nobody we know of did (the server ignores it otherwise).
+    const ours = this.timerRequesters.delete(me) || this.timerRequesters.size === 0;
+    if (ours) this.timerCooldownUntilSignal.set(Date.now() + TIMER_COOLDOWN_MS);
     if (this.timerRequesters.size === 0) this.timerSignal.set(null);
     this.renderScheduler.request();
   }

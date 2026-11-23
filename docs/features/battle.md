@@ -35,7 +35,7 @@ A battle takes the whole stage, with no page bar. **The route can't be left whil
 
    | View | What |
    | --- | --- |
-   | `header-view.ts` | Top bar: players, turn, timer, and round buttons for Pokémon, Chat, Info and Menu |
+   | `header-view.ts` | Top bar: players, turn, timer, and round buttons for Last turn (native), Field, Info and Menu |
    | `play-panel-view.ts` | The command bar in our battles: the message while the turn plays; the moves as slanted cards in their types' colours, targets, Switch and Mega/Tera while choosing; the result at the end |
    | `watch-panel-view.ts` | The controls for spectating and replays (pause, speed, skip turn) |
    | `party-view.ts` | The party screen (switching) |
@@ -54,17 +54,19 @@ A battle takes the whole stage, with no page bar. **The route can't be left whil
 | Button | Native .nro | Brewser |
 | --- | --- | --- |
 | D-pad, A, B | Choose moves, targets and switches; B steps back | Same |
-| R | Mega Evolution or Terastallization while choosing a move | Same |
-| + | The menu (at team preview: Done) | — (L) |
-| L | Held: the last turn's log over the field | The menu (at team preview: Done) |
-| Y | The Pokémon on the field at a glance | — (R3) |
-| X | Write in the battle chat (live battles) | — (in Battle info's log) |
+| R | Mega Evolution or Terastallization while choosing a move; at team preview: Done | Same |
+| + | The menu (team preview too) | — (L) |
+| L | Held: the last turn's log over the field (its chip in the top bar) | The menu |
+| Y | The field at a glance: the Pokémon on it and its conditions (not at team preview) | — (R3) |
+| X | While choosing a move: the party screen to switch (its chip on Switch) | — (A on Switch) |
 | − | Battle timer on/off (also in the menu) | — (in the menu) |
 | ZR | Battle info (ZL opens it on the opponent's team; ZL/ZR change its tabs) | Same |
 | ZL | At team preview: accept open team sheets (held), or show the opponent's | Same |
 
+The battle chat is written from Battle info's log (A), on both builds.
+
 `ROLE_KEYS.battleMenu` and `fieldView` and `BATTLE_SHORTCUTS` (core/input/console-keys.ts) say which
-button does what on each build. `BattleScreen` owns R; `GlBattleScreen` owns the rest.
+button does what on each build. `BattleScreen` owns R (but `GlBattleScreen` takes it for Done at team preview); `GlBattleScreen` owns the rest.
 
 ## The field
 

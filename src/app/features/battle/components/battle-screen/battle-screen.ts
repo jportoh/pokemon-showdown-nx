@@ -24,7 +24,7 @@ import { toId } from '@shared/utils/to-id';
  * them). This component starts the battle and owns what lies beyond the screen: forfeiting (the
  * menu's Forfeit, A held), the rematch or the next game of a set, leaving. The battle itself lives in
  * root services. Controller: R toggles Mega Evolution (or Terastallization) while choosing a move;
- * the rest (the menu, Battle info, the field view, the chat and the timer) are the canvas screen's.
+ * the rest (the menu, Battle info, the field view, the party shortcut, the chat and the timer) are the canvas screen's.
  */
 @Component({
   selector: 'app-battle-screen',

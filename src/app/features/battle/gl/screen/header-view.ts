@@ -12,8 +12,8 @@ const URGENT_SECONDS = 15;
 /** The bar's height: the field starts under it. */
 export const BAR_H = 44;
 /** The turn's chip, and the timer's (or a LIVE / REPLAY badge, or Forfeiting…) after it. */
-const TURN = { x: 650, w: 92 };
-const BADGE = { x: 750, w: 98 };
+const TURN = { x: 640, w: 92 };
+const BADGE = { x: 740, w: 98 };
 
 /** Forfeit is held down until it fills up, then the server ends the battle (forfeiting). */
 export type ForfeitState = 'idle' | 'forfeiting';
@@ -25,9 +25,10 @@ export interface HeaderActions {
   menuOpen: boolean;
   toggleMenu: () => void;
   fieldOpen: boolean;
-  toggleField: () => void;
-  /** Writes in the battle chat (native .nro, live battles); null where there's no button for it. */
-  chat: (() => void) | null;
+  /** The field view; null while there's none to show (team preview), and no button for it. */
+  toggleField: (() => void) | null;
+  /** The last turn's log (L held, native): whether it's held now; null where there's none to show. */
+  logHeld: boolean | null;
   forfeitState: ForfeitState;
   toggleTimer: () => void;
 }
@@ -40,9 +41,9 @@ export function foeInk(p: Palette): Rgba {
 /**
  * The top bar, 1280x44, in the menu's style: the format (with a replay's rating, or a best-of set's
  * game and score) on the left, "p1 VS p2" in the sides' colours, the turn and our battle timer (or a
- * LIVE / REPLAY badge), then round buttons for what works everywhere in battle: the Pokémon on the
- * field (Y), the chat (X, native), Battle info (ZR) and the menu (+, L on Brewser). The controller has
- * its own buttons for them; these are for clicks.
+ * LIVE / REPLAY badge), then round buttons for what works everywhere in battle: the last turn's log
+ * (L held, native), the field view (Y, R3 on Brewser; not in team preview), Battle info (ZR) and the
+ * menu (+, L on Brewser). The controller has its own buttons for them; these are for clicks.
  */
 export class HeaderView {
   private readonly store = inject(BattleStore);
@@ -71,7 +72,7 @@ export class HeaderView {
       write(ctx, p1.name, 456, 22, { size: 19, bold: true }, p.accentText, 'right', 140);
       renderer.rect(464, 10, 40, 24, { fill: p.accent, radius: 6, skew: 0.14 });
       write(ctx, 'VS', 484, 22, { size: 13, bold: true }, [1, 1, 1, 1], 'center');
-      write(ctx, p2.name, 512, 22, { size: 19, bold: true }, foeInk(p), 'left', 130);
+      write(ctx, p2.name, 512, 22, { size: 19, bold: true }, foeInk(p), 'left', 120);
     }
 
     const turn = this.store.turn() > 0 ? `TURN ${this.store.turn()}` : this.store.teamPreview() ? 'PREVIEW' : 'STARTING…';
@@ -89,10 +90,10 @@ export class HeaderView {
       this.drawTimer(ctx, actions.toggleTimer);
     }
 
-    // The round buttons, from the right: Menu, Info, Chat (native), Pokémon.
+    // The round buttons, from the right: Menu, Info, Field, Last turn (native, held: a click does nothing).
     const buttons: { id: string; key: string; label: string; active: boolean; press: () => void }[] = [
-      { id: 'header-field', key: ROLE_KEYS.fieldView.label, label: 'Pokémon', active: actions.fieldOpen, press: actions.toggleField },
-      ...(actions.chat && BATTLE_SHORTCUTS ? [{ id: 'header-chat', key: BATTLE_SHORTCUTS.chat.label, label: 'Chat', active: false, press: actions.chat }] : []),
+      ...(actions.logHeld !== null && BATTLE_SHORTCUTS ? [{ id: 'header-log', key: BATTLE_SHORTCUTS.log.label, label: 'Last turn', active: actions.logHeld, press: () => undefined }] : []),
+      ...(actions.toggleField ? [{ id: 'header-field', key: ROLE_KEYS.fieldView.label, label: 'Field', active: actions.fieldOpen, press: actions.toggleField }] : []),
       { id: 'header-info', key: 'ZR', label: 'Info', active: actions.infoOpen, press: actions.toggleInfo },
       { id: 'header-menu', key: ROLE_KEYS.battleMenu.label, label: 'Menu', active: actions.menuOpen, press: actions.toggleMenu },
     ];
@@ -101,7 +102,7 @@ export class HeaderView {
       const w = ctx.text.measure(b.label, { size: 14, bold: true }) + Math.max(24, ctx.text.measure(b.key, { size: 13, bold: true }) + 12) + 30;
       right -= w;
       hint(ctx, b.id, { x: right, y: 6, w, h: 32 }, b.key, b.label, b.active, b.press);
-      right -= 8;
+      right -= 6;
     }
   }
 

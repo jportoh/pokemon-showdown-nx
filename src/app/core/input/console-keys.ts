@@ -170,8 +170,11 @@ export const ROLE_KEYS = {
   battleMenu: { button: NATIVE ? 'buttonPlus' : 'buttonL', label: NATIVE ? '+' : 'L' },
   /** A battle's Pokémon on the field, at a glance. */
   fieldView: { button: NATIVE ? 'buttonY' : 'buttonR3', label: NATIVE ? 'Y' : 'R3' },
-  /** Team preview's picks, sent (Done); L then only Mega Evolves or Terastallizes. */
-  previewDone: { button: NATIVE ? 'buttonPlus' : 'buttonL', label: NATIVE ? '+' : 'L' },
+  /**
+   * Team preview's picks, sent (Done): R on both builds, free there (in battle it Mega Evolves or
+   * Terastallizes), so + (L on Brewser) opens the menu during team preview too.
+   */
+  previewDone: { button: 'buttonR', label: 'R' },
   /** A chat room's message, written (the on-screen keyboard, whose OK is + too). */
   chatWrite: { button: NATIVE ? 'buttonPlus' : 'buttonZR', label: NATIVE ? '+' : 'ZR' },
   /** The teambuilder editor's "none" (No item, No move), Stats' undo, the Calcs field's reset: the option of what's open. */
@@ -195,9 +198,10 @@ export const SLOT_KEYS: { prev: PageButton; next: PageButton } | null = NATIVE ?
 
 /**
  * A battle's shortcuts only the native .nro has buttons for (Brewser keeps X, Y, + and − for itself,
- * so there they're in the battle's menu): X writes in the battle chat, − turns the timer on or off,
- * L held shows the last turn's log over the field (L is the menu on Brewser).
+ * so there they're in the battle's menu or on screen): X opens the party screen while choosing a move
+ * (Switch shows its chip), − turns the timer on or off, L held shows the last turn's log over the field
+ * (L is the menu on Brewser). The chat is written from Battle info's log (A).
  */
-export const BATTLE_SHORTCUTS: { chat: RoleKey; timer: RoleKey; log: RoleKey } | null = NATIVE
-  ? { chat: { button: 'buttonX', label: 'X' }, timer: { button: 'buttonMinus', label: '-' }, log: { button: 'buttonL', label: 'L' } }
+export const BATTLE_SHORTCUTS: { party: RoleKey; timer: RoleKey; log: RoleKey } | null = NATIVE
+  ? { party: { button: 'buttonX', label: 'X' }, timer: { button: 'buttonMinus', label: '-' }, log: { button: 'buttonL', label: 'L' } }
   : null;
