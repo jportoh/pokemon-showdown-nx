@@ -530,7 +530,9 @@ export class PlayScene {
     const enabled = this.canBattle();
     const focused = enabled && ctx.focus.control({ id: 'battle', ...box, accept: () => this.battle() });
     this.battleFocus += ((focused ? 1 : 0) - this.battleFocus) * 0.25;
-    const lead = this.showcaseTeams()[this.teamIndex()]?.members[0]?.sprite;
+    // The leads: both in doubles (the second a little behind, to the left), one in singles.
+    const members = this.showcaseTeams()[this.teamIndex()]?.members ?? [];
+    const leads = members.slice(0, this.format().category === 'Doubles' ? 2 : 1).map((member) => member.sprite);
     drawSlantedButton(ctx, {
       ...box,
       f: this.battleFocus,
@@ -543,9 +545,17 @@ export class PlayScene {
       primary: enabled,
       faded: !enabled,
       chips: [{ text: this.battleLine(), tone: 'muted' }],
-      // The lead in its own colours, opaque while BATTLE! can be pressed (the kit dims art at rest: over the
-      // accent it read as a button that can't be pressed); faded with it otherwise.
-      art: lead && !this.randomTeams() ? (b, alpha, grow) => drawSprite(ctx, lead, b.x + b.w - 30 - 112 * grow, b.y + b.h - 112 * grow + 14, 112 * grow, enabled ? 1 : alpha) : undefined,
+      // The leads in their own colours, opaque while BATTLE! can be pressed (the kit dims art at rest: over
+      // the accent it read as a button that can't be pressed); faded with it otherwise.
+      art:
+        leads.length > 0 && !this.randomTeams()
+          ? (b, alpha, grow) => {
+              const size = 112 * grow;
+              for (let i = leads.length - 1; i >= 0; i--) {
+                drawSprite(ctx, leads[i], b.x + b.w - 30 - size - i * 96, b.y + b.h - size + 14, size, enabled ? 1 : alpha);
+              }
+            }
+          : undefined,
     });
   }
 
