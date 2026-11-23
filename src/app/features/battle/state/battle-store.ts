@@ -84,6 +84,12 @@ const CHAT_ANSWER_MS = 4000;
 const SLOT_INDEX: Record<string, number> = { a: 0, b: 1 };
 /** Lines whose `[from]` ability or item belongs to the `[of]` Pokémon (the one causing the effect). */
 const SOURCE_OWNS_EFFECT = ['-weather', '-fieldstart', '-damage', '-item', '-enditem', '-sidestart'];
+/**
+ * Abilities that act on an ally, named by the line on the ally with `[of]` their owner: Curious
+ * Medicine (`|-clearboost|p2b: Incineroar|[from] ability: Curious Medicine|[of] p2a: Slowking`), Hospitality
+ * (a `-heal`, whose `[of]` is the attacker for Water Absorb, so it goes by the ability) and Pastel Veil.
+ */
+const ALLY_EFFECT_ABILITIES = new Set(['Curious Medicine', 'Hospitality', 'Pastel Veil']);
 /** Pop-ups kept for the field to pick up (it only shows the ones it hasn't seen). */
 const MAX_POPUPS = 8;
 /** Lines that start the next action: a move's own damage lines come before any of these. */
@@ -1342,7 +1348,8 @@ export class BattleStore {
    * Spots abilities and held items taking effect, for the pop-ups over their Pokémon. Whose they
    * are depends on the line: `|-ability|`, `|-enditem|`, `|-item|` and `|-activate|…|ability: X`
    * (or item: X) name the Pokémon first; a `[from] ability:` or `[from] item:` tag belongs to the
-   * `[of]` Pokémon for effects it causes on others (weather, terrain, Rough Skin, Rocky Helmet) and
+   * `[of]` Pokémon for effects it causes on others (weather, terrain, Rough Skin, Rocky Helmet, and
+   * ALLY_EFFECT_ABILITIES such as Curious Medicine on its ally) and
    * to the first Pokémon otherwise (Stamina, Leftovers, Life Orb; for Water Absorb's heal `[of]` is
    * the attacker).
    */
@@ -1355,7 +1362,10 @@ export class BattleStore {
     } else if (command === '-activate' && /^(ability|item): /.test(args[1] ?? '')) {
       this.announce(args[0], args[1].startsWith('item: ') ? 'item' : 'ability', effectName(args[1]));
     } else if (from.startsWith('ability: ')) {
-      this.announce(SOURCE_OWNS_EFFECT.includes(command) ? tags['of'] : args[0], 'ability', effectName(from));
+      const ability = effectName(from);
+      // Curious Medicine and the like act on an ally: theirs is the `[of]` Pokémon, not the one named.
+      const ofOwns = SOURCE_OWNS_EFFECT.includes(command) || (ALLY_EFFECT_ABILITIES.has(ability) && !!tags['of']);
+      this.announce(ofOwns ? tags['of'] : args[0], 'ability', ability);
     }
     // |-miss|ATTACKER|TARGET: the target avoided it (a miss with no target has nobody to show it on).
     if (command === '-miss' && args[1]) this.popup(args[1], 'notice', 'Missed!');
