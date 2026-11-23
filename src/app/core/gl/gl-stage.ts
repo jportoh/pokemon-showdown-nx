@@ -161,6 +161,11 @@ export class GlStage {
     this.overlay = overlay;
   }
 
+  /** An overlay is shown (another one waits for it to go). */
+  get hasOverlay(): boolean {
+    return this.overlay !== null;
+  }
+
   /** A tap or a click: the overlay's, else the top scene's. */
   click(x: number, y: number): void {
     // The controller's presses sound in KeyboardNavigation; a tap that presses a control sounds the same.

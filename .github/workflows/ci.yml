@@ -44,8 +44,20 @@ jobs:
           archive: false
           retention-days: 30
 
+      # The online update (docs/updates.md): the app's code bundle and its manifest, signed with the
+      # UPDATE_SIGNING_KEY secret. The app finds them at releases/latest/download/update.json and
+      # fetches the bundle from the tag v<version>, so the tag must match package.json.
+      - name: Sign the online update
+        if: github.ref_type == 'tag'
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then echo "Tag $GITHUB_REF_NAME doesn't match package.json ($version)"; exit 1; fi
+          node scripts/sign-update.mjs
+
       - name: Publish the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "${{ steps.nro.outputs.file }}" --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" "${{ steps.nro.outputs.file }}" dist/nro/update/* --verify-tag --generate-notes
