@@ -1,15 +1,19 @@
 import { computed, inject, signal } from '@angular/core';
 import { CanvasFocus } from '@core/gl/canvas-ui';
-import { UiContext, button, focusRing, label, pill, retroBox } from '@core/gl/ui/retro-kit';
+import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { drawKeyButton, drawNamePlate, drawPlatformTrainer, menuFocus, menuModal, menuPanel } from '@core/gl/ui/menu-kit';
+import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
+import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
 import { AVATAR_ALIASES } from '@features/trainer-card/data/avatar-aliases';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRating, LadderRatings } from '@features/trainer-card/state/ladder-ratings';
 import { PlayerDetails } from '@features/trainer-card/state/player-details';
+import { RECENT_COUNT, RecentResults } from '@features/trainer-card/state/recent-results';
 import { toId } from '@shared/utils/to-id';
-import { BOX, INNER_X, INNER_Y } from '@features/home/gl/login-view';
 
 /** Ladder rows the card has room for: the best ones. */
 const SHOWN_RATINGS = 4;
@@ -20,23 +24,38 @@ const PER_PAGE = COLUMNS * ROWS;
 const TILE = 92;
 const GAP = 6;
 const PAGE_COUNT = Math.ceil(AVATAR_CHOICES.length / PER_PAGE);
+/** Ratings from here up are amber; the bars go from 1000 to 2000. */
+const HIGH_RATING = 1500;
+/** The results' fixed colours, the same in every theme (white on them passes AA). */
+const WON: Rgba = rgba('#1e7b3c');
+const LOST: Rgba = rgba('#b3261e');
+const WHITE: Rgba = [1, 1, 1, 1];
+
+/** Our own card, beside the menu's trainer (who stays where the menu has them). */
+const PANEL = { x: 500, y: 92, w: 732, h: 548 };
+/** Someone else's card: a licence over the page. */
+const LICENCE = { x: 80, y: 84, w: 1120, h: 552 };
+const PICKER = { x: 96, y: 96, w: 1088, h: 592 };
 
 export const CARD_CLOSE_ID = 'card-close';
 export const CARD_AVATAR_ID = 'card-avatar';
 export const CARD_HISTORY_ID = 'card-history';
 
 /**
- * A Trainer Card, Gen 3 style: the player's own, or someone else's (a
- * challenger's, by name: their avatar from the server, and no picker). The avatar in a frame (our own:
- * A opens the avatar picker over the card), the name and totals across every ladder (battles, wins and
- * losses, win rate), and the best ladder ratings, loaded each time it's shown. Our own card has Battle history (the page that lists our battles, when the menu gives it). B or Close closes it
- * (L too, from the menu). The picker shows Showdown's avatars 10x4 a page: the d-pad turns the page
- * past its top or bottom row, L/R turn pages too, A picks, B goes back to the card.
+ * A Trainer Card: the player's own, or someone else's (a challenger's, by name: their avatar from the
+ * server, and no picker). Both show the totals across every ladder (battles, wins and losses, win
+ * rate) as three big numbers, the latest results as W/L tiles (from their public replays), and the
+ * best ladder ratings as rows with a bar. Our own is drawn beside the menu's trainer, who stays where
+ * the menu has them (A on them opens the avatar picker), with Battle history (ROLE_KEYS.cardHistory,
+ * or its button) and Close; someone else's is a licence over the page, their avatar framed. B or Close
+ * closes it (L too, from the menu). The picker shows Showdown's avatars 10x4 a page: the d-pad turns
+ * the page past its top or bottom row, L/R turn pages too, A picks, B goes back to the card.
  */
 export class TrainerCardView {
   private readonly login = inject(ShowdownLogin);
   private readonly formats = inject(ShowdownFormats);
   private readonly ladder = inject(LadderRatings);
+  private readonly recent = inject(RecentResults);
   private readonly playerDetails = inject(PlayerDetails);
 
   /** The avatar picker is shown over the card. */
@@ -67,27 +86,33 @@ export class TrainerCardView {
     return state.userId === this.userId() ? state.ratings : [];
   });
 
-  private readonly details = computed(() => {
+  /** The three big numbers: battles, wins – losses and win rate ("…" while the ratings load). */
+  private readonly totals = computed(() => {
     const ratings = this.ratings();
     const pending = this.ladder.state().status === 'loading' && ratings.length === 0 ? '…' : null;
     const wins = sum(ratings, (r) => r.wins);
     const losses = sum(ratings, (r) => r.losses);
     const ties = sum(ratings, (r) => r.ties);
     return [
-      { label: 'Name', value: this.name() },
-      { label: 'Battles', value: pending ?? String(wins + losses + ties) },
-      { label: 'Wins – Losses', value: pending ?? `${wins} – ${losses}` },
-      { label: 'Win rate', value: pending ?? (wins + losses === 0 ? '—' : `${Math.round((wins / (wins + losses)) * 100)}%`) },
+      { label: 'BATTLES', value: pending ?? String(wins + losses + ties) },
+      { label: 'WINS – LOSSES', value: pending ?? `${wins}–${losses}` },
+      { label: 'WIN RATE', value: pending ?? (wins + losses === 0 ? '—' : `${Math.round((wins / (wins + losses)) * 100)}%`) },
     ];
+  });
+
+  private readonly results = computed(() => {
+    const state = this.recent.state();
+    return state.userId === this.userId() ? state : null;
   });
 
   private readonly current = computed(() => AVATAR_ALIASES[this.login.state().avatar] ?? this.login.state().avatar);
 
-  /** Showing someone's card (our own: null): their ratings (and details) loaded again, Close focused. */
+  /** Showing someone's card (our own: null): their ratings, results (and details) loaded again. */
   open(player: string | null = null, focusId = CARD_CLOSE_ID): void {
     this.player.set(player);
     this.picking.set(false);
     this.ladder.load(this.userId());
+    this.recent.load(this.userId());
     if (!this.isSelf()) this.playerDetails.load(player ?? this.userId());
     this.focus.focus(focusId);
   }
@@ -109,79 +134,161 @@ export class TrainerCardView {
     this.focus.focus(CARD_AVATAR_ID);
   }
 
-  /** `history` opens the battle history (a button on our own card when given). */
-  draw(ctx: UiContext, close: () => void, history?: () => void): void {
+  private startPicking(): void {
+    this.picking.set(true);
+    const index = AVATAR_CHOICES.indexOf(this.current());
+    this.page.set(Math.max(0, Math.floor(index / PER_PAGE)));
+    this.focus.focus(`avatar-${index === -1 ? 0 : index % PER_PAGE}`);
+  }
+
+  /**
+   * Draws the card: our own beside the menu's trainer (the menu has drawn the lit side; `ball` is its
+   * placeholder for a trainer not loaded yet), someone else's as a licence over the page. `history`
+   * opens the battle history (our own card's, when the page gives it).
+   */
+  draw(ctx: UiContext, close: () => void, history?: () => void, ball: Texture | null = null): void {
+    if (this.isSelf() && history) this.drawOwn(ctx, close, history, ball);
+    else this.drawLicence(ctx, close);
     if (this.picking()) this.drawPicker(ctx);
-    else this.drawCard(ctx, close, history);
   }
 
-  private drawCard(ctx: UiContext, close: () => void, history?: () => void): void {
+  /** Our own: the trainer on the menu's platform (A: the picker), the name plate, the card on the right. */
+  private drawOwn(ctx: UiContext, close: () => void, history: () => void, ball: Texture | null): void {
     const p = ctx.palette;
-    const x = INNER_X + 48;
-    retroBox(ctx, BOX);
-    label(ctx, 'Trainer Card', x, INNER_Y + 52, { size: 40, bold: true }, p.ink);
-    button(ctx, CARD_CLOSE_ID, { x: INNER_X + 876, y: INNER_Y + 28, w: 158, h: 48 }, 'Close', { shortcut: 'B', size: 20, accept: close });
-    if (history && this.isSelf()) button(ctx, CARD_HISTORY_ID, { x: INNER_X + 646, y: INNER_Y + 28, w: 214, h: 48 }, 'Battle history', { size: 20, accept: history });
-    ctx.renderer.rect(x, INNER_Y + 92, 986, 3, { fill: p.outline });
-
-    this.details().forEach((row, i) => {
-      const y = INNER_Y + 124 + i * 52;
-      label(ctx, row.label, x, y + 16, { size: 20 }, p.muted);
-      label(ctx, row.value, INNER_X + 308, y + 16, { size: 24, bold: true }, p.ink, { maxWidth: 480 });
-      ctx.renderer.rect(x, y + 36, 740, 2, { fill: p.select });
-    });
-
-    // The avatar, twice its 80px, in a frame that's the button to change it (on our own card).
-    const frame = { x: INNER_X + 826, y: INNER_Y + 112, w: 208, h: 208 };
-    const self = this.isSelf();
-    const focused = self && ctx.focus.control({
-      id: CARD_AVATAR_ID,
-      ...frame,
-      accept: () => {
-        this.picking.set(true);
-        const index = AVATAR_CHOICES.indexOf(this.current());
-        this.page.set(Math.max(0, Math.floor(index / PER_PAGE)));
-        this.focus.focus(`avatar-${index === -1 ? 0 : index % PER_PAGE}`);
-      },
-    });
-    ctx.renderer.rect(frame.x, frame.y, frame.w, frame.h, { fill: focused ? p.select : p.bg, stroke: p.outline, radius: 8, border: 4 });
     const avatar = this.avatar() ? ctx.images.pixelArt(avatarUrl(this.avatar())) : null;
-    if (avatar) ctx.renderer.rect(frame.x + 24, frame.y + (self ? 8 : 24), 160, 160, { fill: [1, 1, 1, 1], texture: avatar });
-    if (self) {
-      ctx.renderer.rect(frame.x + 12, frame.y + 172, 184, 28, { fill: p.select, radius: 3 });
-      label(ctx, 'Change avatar', frame.x + 104, frame.y + 186, { size: 18, bold: true }, p.ink, { align: 'center' });
-    }
-    if (focused) focusRing(ctx, frame, 8);
+    const focused = ctx.focus.control({ id: CARD_AVATAR_ID, x: 80, y: 132, w: 320, h: 380, accept: () => this.startPicking() });
+    drawPlatformTrainer(ctx, { avatar, ball, f: focused ? 1 : 0, arrive: 1, time: ctx.now / 1000 });
+    if (focused) label(ctx, 'A · CHANGE AVATAR', 240, 104, { size: 14, bold: true }, p.accentText, { align: 'center' });
+    const best = this.ratings()[0];
+    drawNamePlate(ctx, { name: this.name(), status: '● Online', chips: [...(best ? [{ text: `★ ${best.elo}`, tone: 'muted' as const }] : []), { text: 'Registered', tone: 'muted' }] }, 1);
 
-    ctx.renderer.rect(x, INNER_Y + 336, 986, 3, { fill: p.outline });
-    const ratings = this.ratings();
-    const title = ratings.length > SHOWN_RATINGS ? `Ladder · best ${SHOWN_RATINGS} of ${ratings.length}` : 'Ladder';
-    label(ctx, title, x, INNER_Y + 366, { size: 20, bold: true }, p.ink);
-    if (ratings.length > 0) {
-      label(ctx, 'Elo', INNER_X + 580, INNER_Y + 366, { size: 18 }, p.muted);
-      label(ctx, 'GXE', INNER_X + 720, INNER_Y + 366, { size: 18 }, p.muted);
-      label(ctx, 'W – L', INNER_X + 860, INNER_Y + 366, { size: 18 }, p.muted);
-      ratings.slice(0, SHOWN_RATINGS).forEach((rating, i) => {
-        const y = INNER_Y + 410 + i * 40;
-        label(ctx, this.formats.name(rating.formatId), x, y, { size: 20 }, p.ink, { maxWidth: 516 });
-        label(ctx, String(rating.elo), INNER_X + 580, y, { size: 20, bold: true }, p.ink);
-        label(ctx, `${rating.gxe.toFixed(1)}%`, INNER_X + 720, y, { size: 20 }, p.ink);
-        label(ctx, `${rating.wins} – ${rating.losses}`, INNER_X + 860, y, { size: 20 }, p.ink);
-      });
-    } else {
-      const status = this.ladder.state().status;
-      const error = status === 'error';
-      const message = error ? "Couldn't load the ratings from Showdown." : status === 'loaded' ? 'No ladder battles yet.' : 'Loading ratings…';
-      label(ctx, message, x, INNER_Y + 410, { size: 20 }, error ? p.danger : p.muted);
+    drawKeyButton(ctx, CARD_CLOSE_ID, { x: 1104, y: 26, w: 128, h: 44 }, 'B', 'Close', close, false);
+    const plate = HOME_MENU_ITEMS.find((item) => item.id === 'random')?.plate[p.appearance];
+    menuPanel(ctx, PANEL, plate ? rgba(plate) : undefined);
+    label(ctx, 'TRAINER CARD', PANEL.x + 28, PANEL.y + 40, { size: 30, bold: true }, p.ink);
+    drawKeyButton(ctx, CARD_HISTORY_ID, { x: PANEL.x + PANEL.w - 244, y: PANEL.y + 18, w: 220, h: 44 }, ROLE_KEYS.cardHistory.label, 'Battle history', history, false);
+    this.drawStats(ctx, PANEL.x + 28, PANEL.y + 74, PANEL.w - 56);
+    this.drawResults(ctx, PANEL.x + 28, PANEL.y + 204);
+    this.drawLadder(ctx, PANEL.x + 20, PANEL.y + 252, PANEL.w - 40);
+    this.drawLegend(ctx, [['A', focused ? 'Change avatar' : 'Select'], [ROLE_KEYS.cardHistory.label, 'Battle history'], ['B', 'Close']]);
+  }
+
+  /** Someone else's: a licence over the dimmed page, their avatar framed, the numbers beside it. */
+  private drawLicence(ctx: UiContext, close: () => void): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const box = LICENCE;
+    menuModal(ctx, box, undefined, 0.6);
+    // The band along the top, in the accent: TRAINER CARD, and their best rating.
+    renderer.rect(box.x, box.y, box.w, 64, { fill: p.accent, radius: 22 });
+    renderer.rect(box.x, box.y + 40, box.w, 24, { fill: p.accent });
+    label(ctx, 'TRAINER CARD', box.x + 32, box.y + 32, { size: 24, bold: true }, WHITE);
+    const best = this.ratings()[0];
+    const right = box.x + box.w - 180;
+    if (best) label(ctx, `★ ${best.elo} · ${shortName(this.formats.name(best.formatId))}`, right, box.y + 32, { size: 17, bold: true }, WHITE, { align: 'right', maxWidth: 480 });
+    drawKeyButton(ctx, CARD_CLOSE_ID, { x: box.x + box.w - 160, y: box.y + 10, w: 140, h: 44 }, 'B', 'Close', close, false);
+
+    // The avatar, framed, lit from above; the name under it.
+    const frame = { x: box.x + 32, y: box.y + 92, w: 300, h: 300 };
+    renderer.rect(frame.x, frame.y, frame.w, frame.h, { fill: p.hero, fillEnd: p.select, radius: 22 });
+    renderer.rect(frame.x, frame.y + frame.h * 0.7, frame.w, frame.h * 0.3, { fill: withAlpha(p.rim, 0.8), radius: 22 });
+    const avatar = this.avatar() ? ctx.images.pixelArt(avatarUrl(this.avatar())) : null;
+    if (avatar) renderer.rect(frame.x, frame.y, frame.w, frame.h, { fill: WHITE, texture: avatar });
+    label(ctx, this.name(), frame.x, frame.y + frame.h + 36, { size: 30, bold: true }, p.ink, { maxWidth: frame.w });
+
+    const x = box.x + 364;
+    this.drawStats(ctx, x, box.y + 92, box.w - 364 - 32);
+    this.drawResults(ctx, x, box.y + 222);
+    this.drawLadder(ctx, x - 8, box.y + 266, box.w - 364 - 24);
+    this.drawLegend(ctx, [['B', 'Close']]);
+  }
+
+  /** The three big numbers in tiles, `width` across. */
+  private drawStats(ctx: UiContext, x: number, y: number, width: number): void {
+    const p = ctx.palette;
+    const gap = 12;
+    const w = (width - gap * 2) / 3;
+    this.totals().forEach((total, i) => {
+      const tx = x + i * (w + gap);
+      ctx.renderer.rect(tx, y, w, 96, { fill: p.panel, stroke: p.rim, border: 1, radius: 16 });
+      label(ctx, total.value, tx + 18, y + 38, { size: 32, bold: true }, p.ink, { maxWidth: w - 36 });
+      label(ctx, total.label, tx + 18, y + 74, { size: 13, bold: true }, p.muted);
+    });
+  }
+
+  /** The latest results as W/L tiles, the newest first. */
+  private drawResults(ctx: UiContext, x: number, cy: number): void {
+    const p = ctx.palette;
+    let left = x + label(ctx, `LAST ${RECENT_COUNT}`, x, cy, { size: 13, bold: true }, p.muted) + 14;
+    const state = this.results();
+    if (!state || (state.status === 'loading' && state.results.length === 0)) {
+      label(ctx, 'Loading…', left, cy, { size: 15 }, p.muted);
+      return;
+    }
+    if (state.results.length === 0) {
+      label(ctx, state.status === 'error' ? "Couldn't load the replays." : 'No saved battles yet.', left, cy, { size: 15 }, p.muted);
+      return;
+    }
+    for (const result of state.results) {
+      const fill = result === 'W' ? WON : result === 'L' ? LOST : p.rim;
+      ctx.renderer.rect(left, cy - 15, 30, 30, { fill, radius: 8 });
+      label(ctx, result, left + 15, cy, { size: 14, bold: true }, result === 'W' || result === 'L' ? WHITE : p.ink, { align: 'center' });
+      left += 36;
     }
   }
 
+  /** The best ladder ratings as rows: the format, the rating with a bar (1000 to 2000, amber from 1500), GXE and W–L. */
+  private drawLadder(ctx: UiContext, x: number, y: number, width: number): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const ratings = this.ratings();
+    label(ctx, ratings.length > SHOWN_RATINGS ? `LADDER · BEST ${SHOWN_RATINGS} OF ${ratings.length}` : 'LADDER', x + 8, y + 10, { size: 13, bold: true }, p.muted);
+    if (ratings.length === 0) {
+      const status = this.ladder.state().status;
+      const message = status === 'error' ? "Couldn't load the ratings from Showdown." : status === 'loaded' ? 'No ladder battles yet.' : 'Loading ratings…';
+      label(ctx, message, x + 8, y + 50, { size: 18 }, status === 'error' ? p.danger : p.muted);
+      return;
+    }
+    ratings.slice(0, SHOWN_RATINGS).forEach((rating, i) => {
+      const ry = y + 26 + i * 64;
+      renderer.rect(x, ry, width, 56, { fill: i === 0 ? p.select : p.panel, stroke: p.rim, border: 1, radius: 14 });
+      const cy = ry + 28;
+      const right = x + width - 18;
+      label(ctx, `${rating.wins}–${rating.losses}`, right, cy, { size: 15 }, p.muted, { align: 'right' });
+      label(ctx, `${rating.gxe.toFixed(1)}%`, right - 90, cy, { size: 15 }, p.muted, { align: 'right' });
+      const barRight = right - 180;
+      const barW = 130;
+      const barX = barRight - barW;
+      renderer.rect(barX, cy - 4, barW, 8, { fill: p.rim, radius: 4 });
+      const fill = Math.max(0.04, Math.min(1, (rating.elo - 1000) / 1000));
+      renderer.rect(barX, cy - 4, barW * fill, 8, { fill: rating.elo >= HIGH_RATING ? p.teal : p.accent, radius: 4 });
+      label(ctx, String(rating.elo), barX - 12, cy, { size: 19, bold: true }, p.ink, { align: 'right' });
+      label(ctx, shortName(this.formats.name(rating.formatId)), x + 18, cy, { size: 17, bold: true }, p.ink, { maxWidth: barX - 80 - x - 18 });
+    });
+  }
+
+  /** The buttons along the bottom, right-aligned. */
+  private drawLegend(ctx: UiContext, keys: readonly (readonly [string, string])[]): void {
+    const p = ctx.palette;
+    const cy = 684;
+    let x = 1232;
+    for (const [key, text] of [...keys].reverse()) {
+      x -= ctx.text.measure(text, { size: 18 });
+      label(ctx, text, x, cy, { size: 18 }, p.ink);
+      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
+      pill(ctx, key, x, cy, 28);
+      x -= 24;
+    }
+  }
+
+  /** The avatars, a page at a time, over the card. */
   private drawPicker(ctx: UiContext): void {
     const p = ctx.palette;
-    const x = INNER_X + 48;
-    retroBox(ctx, BOX);
-    label(ctx, 'Choose an avatar', x, INNER_Y + 52, { size: 40, bold: true }, p.ink);
-    button(ctx, 'picker-back', { x: INNER_X + 876, y: INNER_Y + 28, w: 158, h: 48 }, 'Back', { shortcut: 'B', size: 20, accept: () => this.stopPicking() });
+    const box = PICKER;
+    menuModal(ctx, box, undefined, 0.6);
+    const x = box.x + 32;
+    label(ctx, 'Choose an avatar', x, box.y + 40, { size: 32, bold: true }, p.ink);
+    drawKeyButton(ctx, 'picker-back', { x: box.x + box.w - 160, y: box.y + 18, w: 136, h: 44 }, 'B', 'Back', () => this.stopPicking());
 
     const page = this.page();
     const first = page * PER_PAGE;
@@ -190,14 +297,16 @@ export class TrainerCardView {
     for (const near of [page - 1, page + 1]) {
       for (const avatar of AVATAR_CHOICES.slice(Math.max(0, near) * PER_PAGE, Math.max(0, near) * PER_PAGE + PER_PAGE)) ctx.images.prefetch(avatarUrl(avatar));
     }
+    const gridW = COLUMNS * TILE + (COLUMNS - 1) * GAP;
+    const left = box.x + (box.w - gridW) / 2;
     avatars.forEach((avatar, index) => {
       const column = index % COLUMNS;
       const row = Math.floor(index / COLUMNS);
-      const box = { x: INNER_X + 54 + column * (TILE + GAP), y: INNER_Y + 104 + row * (TILE + GAP), w: TILE, h: TILE };
+      const tile = { x: left + column * (TILE + GAP), y: box.y + 84 + row * (TILE + GAP), w: TILE, h: TILE };
       const current = avatar === this.current();
       const focused = ctx.focus.control({
         id: `avatar-${index}`,
-        ...box,
+        ...tile,
         accept: () => {
           this.login.setAvatar(avatar);
           this.stopPicking();
@@ -209,14 +318,20 @@ export class TrainerCardView {
           return false;
         },
       });
-      ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: current || focused ? p.select : p.bg, stroke: current ? p.accentText : p.outline, radius: 6, border: 2 });
+      ctx.renderer.rect(tile.x, tile.y, tile.w, tile.h, { fill: current || focused ? p.select : mixRgba(p.panel, p.rim, 0.4), stroke: current ? p.accentText : p.rim, radius: 14, border: current ? 3 : 1 });
       const sprite = ctx.images.pixelArt(avatarUrl(avatar));
-      if (sprite) ctx.renderer.rect(box.x + 6, box.y + 6, 80, 80, { fill: [1, 1, 1, 1], texture: sprite });
-      if (focused) focusRing(ctx, box);
+      if (sprite) ctx.renderer.rect(tile.x + 6, tile.y + 6, 80, 80, { fill: WHITE, texture: sprite });
+      if (focused) menuFocus(ctx, tile, 14);
     });
-    const width = pill(ctx, 'L', x, INNER_Y + 522);
-    label(ctx, `/ R turn pages · Page ${page + 1} of ${PAGE_COUNT} · A choose · B back to the card`, x + width + 8, INNER_Y + 522, { size: 20 }, p.muted, { fast: true });
+    const cy = box.y + box.h - 30;
+    const width = pill(ctx, 'L', x, cy);
+    label(ctx, `/ R turn pages · Page ${page + 1} of ${PAGE_COUNT} · A choose · B back to the card`, x + width + 8, cy, { size: 18 }, p.muted, { fast: true });
   }
+}
+
+/** "VGC 2026 Reg M-C": a format's name without its "[Gen 9 Champions]" prefix, so it fits. */
+function shortName(name: string): string {
+  return name.replace(/^\[[^\]]*\]\s*/, '') || name;
 }
 
 function sum(ratings: readonly LadderRating[], value: (rating: LadderRating) => number): number {

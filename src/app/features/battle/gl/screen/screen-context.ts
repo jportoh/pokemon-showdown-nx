@@ -1,19 +1,28 @@
-import { Align, CanvasFocus, FOCUS_RING, drawText } from '@core/gl/canvas-ui';
-import { GlRenderer, Rgba, Texture, rgba } from '@core/gl/gl-renderer';
+import { Align, CanvasFocus, drawText } from '@core/gl/canvas-ui';
+import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { TextStyle, TextTextures } from '@core/gl/gl-textures';
 import { GlSprites } from '@core/gl/gl-sprites';
+import { Palette } from '@core/gl/ui/gl-theme';
 
-/** What every part of a canvas screen draws with, for one frame. */
+/**
+ * What every part of a canvas screen draws with, for one frame: the stage's resources, the focus and
+ * the theme's palette (Settings' light or dark look), so the menu kit's pieces draw here too.
+ */
 export interface ScreenContext {
   renderer: GlRenderer;
   text: TextTextures;
   images: GlSprites;
   focus: CanvasFocus;
   disc: Texture;
+  palette: Palette;
   now: number;
 }
 
-/** The battle screen's colours. */
+/**
+ * The battle's own fixed colours, for what belongs to the battle itself and doesn't follow the theme
+ * (the field's marks, white text on a type's colour, HP and status colours). Its menus and buttons use
+ * the palette.
+ */
 export const INK = {
   white: rgba('#ffffff'),
   header: rgba('#1f2d45'),
@@ -58,15 +67,10 @@ export function writeLines(ctx: ScreenContext, value: string, x: number, top: nu
 
 export type ButtonLook = 'primary' | 'plain' | 'disabled';
 
-const BUTTON_LOOK: Record<ButtonLook, { fill: Rgba; border: Rgba; ink: Rgba }> = {
-  primary: { fill: INK.blue700, border: INK.blue300, ink: INK.white },
-  plain: { fill: INK.gray600, border: INK.gray400, ink: INK.white },
-  disabled: { fill: INK.gray700, border: INK.gray600, ink: INK.gray400 },
-};
-
 /**
- * A button: declared to the focus (A presses it; a disabled one can't be focused) and drawn with
- * the yellow ring while focused. Returns whether it has the focus.
+ * A button in the menu's style: declared to the focus (A presses it; a disabled one can't be focused),
+ * round-cornered, the accent for the main one, lit with the accent border while focused. Returns
+ * whether it has the focus.
  */
 export function button(
   ctx: ScreenContext,
@@ -76,21 +80,37 @@ export function button(
   look: ButtonLook,
   accept: () => void,
 ): boolean {
+  const p = ctx.palette;
   const disabled = look === 'disabled';
   const focused = disabled ? false : ctx.focus.control({ id, ...box, accept });
-  const { fill, border, ink } = BUTTON_LOOK[look];
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 6, border: 1 });
-  write(ctx, label, box.x + box.w / 2, box.y + box.h / 2, { size: 16, bold: true }, ink, 'center', box.w - 12);
-  if (focused) ring(ctx, box, 6);
+  const primary = look === 'primary';
+  const fill = disabled ? p.disabledFill : primary ? (focused ? p.accentHover : p.accent) : focused ? p.select : p.panel;
+  const border = disabled ? p.disabledBorder : focused ? p.accentText : primary ? p.accent : p.rim;
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 12, border: focused ? 3 : 1 });
+  const ink = disabled ? p.disabledInk : primary ? ([1, 1, 1, 1] as Rgba) : p.ink;
+  write(ctx, label, box.x + box.w / 2, box.y + box.h / 2, { size: box.h >= 60 ? 22 : 17, bold: true }, ink, 'center', box.w - 16);
   return focused;
 }
 
-/** The focus ring: 3px of yellow just inside the box. */
+/** The focus as the menu draws it: an accent border just inside the box. */
 export function ring(ctx: ScreenContext, box: { x: number; y: number; w: number; h: number }, radius: number): void {
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: FOCUS_RING, radius, border: 3 });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: [0, 0, 0, 0], stroke: ctx.palette.accentText, radius, border: 3 });
 }
 
-/** A button hint as the header's: "ZR" on a dark chip, then its action. Clickable, never focused by the d-pad. */
+/** A controller button's name on a small rounded chip ("ZR"), its middle at `cy`; its width. */
+export function keyChip(ctx: ScreenContext, key: string, x: number, cy: number, height = 24, fill?: Rgba, ink?: Rgba): number {
+  const p = ctx.palette;
+  const width = Math.max(height, ctx.text.measure(key, { size: 13, bold: true }) + 12);
+  ctx.renderer.rect(x, cy - height / 2, width, height, { fill: fill ?? p.select, radius: height / 2 });
+  write(ctx, key, x + width / 2, cy, { size: 13, bold: true }, ink ?? p.ink, 'center');
+  return width;
+}
+
+/**
+ * A button hint as the header's, in the menu's style: a round button with the controller button's
+ * chip ("ZR") and its action. Clickable, never focused by the d-pad (the controller has the button).
+ * `held` fills it from the left while its button is held down (hold to confirm).
+ */
 export function hint(
   ctx: ScreenContext,
   id: string,
@@ -99,25 +119,21 @@ export function hint(
   label: string,
   active: boolean,
   accept: () => void,
-  look?: { fill: Rgba; border: Rgba },
+  look?: { fill: Rgba; border: Rgba; ink?: Rgba },
   held?: { progress: number; color: Rgba },
 ): void {
+  const p = ctx.palette;
   ctx.focus.control({ id, ...box, accept, skip: true });
-  const fill = look?.fill ?? (active ? INK.selected : INK.tab);
-  const border = look?.border ?? (active ? INK.sky300 : INK.gray500);
-  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius: 6, border: 1 });
-  // Filling in red from the left while its button is held down (Forfeit).
+  const fill = look?.fill ?? (active ? p.select : p.panel);
+  const border = look?.border ?? (active ? p.accentText : p.rim);
+  const radius = box.h / 2;
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill, stroke: border, radius, border: active ? 2 : 1 });
   if (held && held.progress > 0) {
     const width = (box.w - 2) * Math.min(1, held.progress);
-    ctx.renderer.rect(box.x + 1, box.y + 1, width, box.h - 2, { fill: held.color, radius: Math.min(5, width / 2) });
+    ctx.renderer.rect(box.x + 1, box.y + 1, width, box.h - 2, { fill: held.color, radius: Math.min(radius - 1, width / 2) });
   }
-  // R3 (the right stick pressed) is a round chip with an R; the others, a square one with their name.
-  const stick = key === 'R3';
-  const keyWidth = stick ? 22 : ctx.text.measure(key, { size: 14, bold: true }) + 12;
-  const labelWidth = ctx.text.measure(label, { size: 14, bold: true });
-  const start = box.x + (box.w - keyWidth - 6 - labelWidth) / 2;
-  if (stick) ctx.renderer.rect(start, box.y + box.h / 2 - 11, 22, 22, { fill: INK.header, stroke: INK.gray400, radius: 11, border: 1.5 });
-  else ctx.renderer.rect(start, box.y + box.h / 2 - 10, keyWidth, 20, { fill: INK.header, radius: 2 });
-  write(ctx, stick ? 'R' : key, start + keyWidth / 2, box.y + box.h / 2, { size: 14, bold: true }, INK.white, 'center');
-  write(ctx, label, start + keyWidth + 6, box.y + box.h / 2, { size: 14, bold: true }, INK.white);
+  const ink = look?.ink ?? p.ink;
+  const cy = box.y + box.h / 2;
+  const keyW = keyChip(ctx, key, box.x + 5, cy, box.h - 8, look ? withAlpha(mixRgba(fill, [0, 0, 0, 1], 0.3), 1) : undefined, look ? ink : undefined);
+  write(ctx, label, box.x + keyW + 13, cy, { size: 14, bold: true }, ink, 'left', box.w - keyW - 22);
 }

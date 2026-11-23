@@ -10,7 +10,7 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { OptionPickerView, PickerOption } from '@core/gl/ui/option-picker';
 import { drawGround, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { Box, UiContext, button, label, modal, paragraph } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, button, label, paragraph } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
@@ -20,7 +20,6 @@ import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
-import { BOX as CARD_BOX } from '@features/home/gl/login-view';
 import { ChallengeFormView, ChallengePopupView, POPUP_CARD_ID, PopupModel } from '@features/play/gl/challenge-views';
 import { FormatCard, FormatCarouselView } from '@features/play/gl/format-carousel';
 import { ShowcaseTeam, TeamShowcaseView } from '@features/play/gl/team-showcase';
@@ -440,7 +439,6 @@ export class PlayScene {
     else if (layer === 'form') this.form.draw(ctx, this.format(), this.chosenTeam(), () => this.closeForm());
     else if (layer === 'popup') this.popup.draw(ctx, this.popupModel()!);
     else if (layer === 'card') {
-      modal(ctx, CARD_BOX);
       this.card.draw(ctx, () => this.closeCard());
     }
 

@@ -25,7 +25,8 @@ export class HoldAction {
 
   constructor(
     private readonly navigation: KeyboardNavigation,
-    private readonly button: PageButton,
+    /** The button held: a page button, or A (a focused row confirmed by holding A on it). */
+    private readonly button: PageButton | 'accept',
   ) {}
 
   /** How full it is, 0 to 1 (for the button's fill). */

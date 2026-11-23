@@ -1,9 +1,10 @@
 import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { rgba } from '@core/gl/gl-renderer';
+import { withAlpha } from '@core/gl/gl-renderer';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { INK, ScreenContext, write } from './screen-context';
+import { drawKeys } from './info-view';
+import { ScreenContext, write } from './screen-context';
 import { CARD_H, CARD_W, drawTeamCard, ownCard } from './team-card';
 
 const TOP = 44;
@@ -11,7 +12,6 @@ const GRID_X = 16;
 const GRID_Y = 104;
 const GAP_X = 16;
 const GAP_Y = 8;
-const AMBER = rgba('#fcd34d');
 
 /**
  * The party screen, to switch: over the field (dimmed), our team as cards two by two, each with
@@ -49,18 +49,21 @@ export class PartyView {
 
   /** `back`: whether B leaves it (not on a forced switch with nothing to go back to). */
   draw(ctx: ScreenContext, back: boolean): void {
+    const p = ctx.palette;
     const { renderer } = ctx;
-    renderer.rect(0, TOP, 1280, 720 - TOP, { fill: [0.03, 0.05, 0.1, 0.86] });
+    renderer.rect(0, TOP, 1280, 720 - TOP, { fill: withAlpha(p.bg, 0.94) });
+    renderer.rect(0, TOP, 640, 720 - TOP, { fill: withAlpha(p.hero, 0.7), fillEnd: withAlpha(p.hero, 0) });
     const name = this.choices.pokemonName();
     const title = this.choices.pokemonFainted() ? `${name} fainted. Who comes in?` : `Who comes in for ${name}?`;
-    write(ctx, title, GRID_X, TOP + 30, { size: 28, bold: true }, INK.white, 'left', 780);
+    write(ctx, title, GRID_X, TOP + 30, { size: 26, bold: true }, p.ink, 'left', 780);
     const notice = this.choices.notice();
-    write(ctx, notice || `A Switch in${back ? ' · B Back' : ''}`, 1264, TOP + 30, { size: 18, bold: !!notice }, notice ? AMBER : INK.gray300, 'right', 460);
+    if (notice) write(ctx, notice, 1264, TOP + 30, { size: 17, bold: true }, p.teal, 'right', 460);
+    else drawKeys(ctx, back ? [['A', 'Switch in'], ['B', 'Back']] : [['A', 'Switch in']], 1264, TOP + 30);
 
     for (const entry of this.cards()) {
       const box = { x: entry.x, y: entry.y, w: CARD_W, h: CARD_H };
       const focused = ctx.focus.control({ id: entry.id, ...box, accept: () => this.pick(entry) });
-      drawTeamCard(ctx, entry.x, entry.y, entry.card, { border: entry.allowed ? INK.sky300 : INK.gray600, dim: !entry.allowed, focused });
+      drawTeamCard(ctx, entry.x, entry.y, entry.card, { side: 'p1', dim: !entry.allowed, focused });
     }
   }
 

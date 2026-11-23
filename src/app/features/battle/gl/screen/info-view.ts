@@ -1,27 +1,31 @@
 import { computed, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { Rgba, rgba } from '@core/gl/gl-renderer';
+import { Rgba, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { FieldCondition, SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
 import { PokemonSheet, SheetContext, ownSheet, seenSheet } from '@features/battle/state/pokemon-sheet';
 import { spriteSetOf } from '@shared/utils/sprite-id';
+import { foeInk } from './header-view';
 import { LogView } from './overlay-views';
 import { PokemonSheetView } from './pokemon-sheet-view';
-import { INK, ScreenContext, write } from './screen-context';
+import { ScreenContext, keyChip, write } from './screen-context';
 import { CARD_H, CARD_W, TeamCard, drawTeamCard, ownCard, seenCard } from './team-card';
 
 const TOP = 44;
-const TAB_Y = TOP + 8;
+const TAB_Y = TOP + 10;
 const TAB_W = 230;
-const TAB_H = 44;
+const TAB_H = 40;
 const CONTENT_Y = 104;
 const GRID_X = 16;
 const GAP_X = 16;
 const GAP_Y = 8;
 const COLUMN_W = 405;
 const ROW_H = 76;
+/** The field view (Y): the opponent's side's conditions, their cards, the whole field's, ours, our side's (rows' middles; cards' tops). */
+const FIELD_ROWS = { foe: 110, foeCards: 130, field: 346, ownCards: 366, own: 584 };
 
 /** The team cards' focus ids: "info-card-p2-0". */
 export const CARD_PREFIX = 'info-card-';
@@ -34,17 +38,33 @@ interface ConditionRow {
   color: Rgba;
   /** "3 turns left of 5", "2 layers", "Until it's gone". */
   detail: string;
+  /** The same on a chip: "3" turns left, "×2" layers, nothing. */
+  short: string;
   pips: { on: boolean }[];
 }
 
+/** A legend at the right of a row, from `right` leftwards: each key's chip and its action. */
+export function drawKeys(ctx: ScreenContext, keys: readonly (readonly [string, string])[], right: number, cy: number): number {
+  let x = right;
+  for (const [key, text] of [...keys].reverse()) {
+    x -= ctx.text.measure(text, { size: 16 });
+    write(ctx, text, x, cy, { size: 16 }, ctx.palette.ink);
+    x -= 8 + Math.max(26, ctx.text.measure(key, { size: 13, bold: true }) + 12);
+    keyChip(ctx, key, x, cy, 26);
+    x -= 20;
+  }
+  return x;
+}
+
 /**
- * Battle info (ZR), over the whole stage under the top bar: tabs for each side's team (every member
- * as a team card with all that's known of it: ours exact, theirs as far as the battle or their open
- * team sheet has shown), the field's conditions (weather, terrain and rooms, then each side's, with
- * their turns left) and the battle log with the chat. ZL/ZR or left/right change tabs, up/down page the
- * log, A writes a chat message there (live battles), B closes. On a team's tab the d-pad moves between
- * its cards (left/right past the edge changes tab) and A opens that member's sheet (PokemonSheetView):
- * its stats and stages, Speed, volatile conditions and moves; left/right go through the team, B back.
+ * Battle info (ZR), over the whole stage under the top bar, in the menu's style: tabs for each side's
+ * team (every member as a team card with all that's known of it: ours exact, theirs as far as the
+ * battle or their open team sheet has shown), the field's conditions (weather, terrain and rooms, then
+ * each side's, with their turns left) and the battle log with the chat. ZL/ZR or left/right change
+ * tabs, up/down page the log, A writes a chat message there (live battles), B closes. On a team's tab
+ * the d-pad moves between its cards (left/right past the edge changes tab) and A opens that member's
+ * sheet (PokemonSheetView): its stats and stages, Speed, volatile conditions and moves; left/right go
+ * through the team, B back. It also draws the field at a glance (Y): drawActive.
  */
 export class InfoView {
   private readonly store = inject(BattleStore);
@@ -97,6 +117,16 @@ export class InfoView {
     };
   });
 
+  /** Each side's members on the field, by their index in the team. */
+  private readonly actives = computed(() => {
+    const teams = this.inspection.teams();
+    const onField = (side: SideId): number[] => {
+      if (side === 'p1' && this.ownTeam()) return this.store.team().flatMap((pokemon, i) => (pokemon.active ? [i] : []));
+      return teams[side].flatMap((inspected, i) => (inspected.member.active ? [i] : []));
+    };
+    return { p2: onField('p2').slice(0, 2), p1: onField('p1').slice(0, 2) };
+  });
+
   private readonly conditions = computed(() => {
     const field = this.store.field();
     const turn = this.store.turn();
@@ -108,13 +138,14 @@ export class InfoView {
           ? `${condition.layers} layers`
           : 'Stays until removed';
       const pips = turns ? Array.from({ length: turns.total }, (_, i) => ({ on: i < turns.left })) : [];
-      return { name: condition.name, color: rgba(conditionColor(condition)), detail, pips };
+      const short = turns ? String(turns.left) : condition.layers > 1 ? `×${condition.layers}` : '';
+      return { name: condition.name, color: rgba(conditionColor(condition)), detail, short, pips };
     };
     const { p1, p2 } = this.store.sides();
     return [
-      { title: 'Field', color: INK.yellow200, rows: [field.weather, field.terrain, ...field.rooms].filter((c): c is FieldCondition => !!c).map(toRow) },
-      { title: `${p2.name || 'Opponent'}'s side`, color: INK.red300, rows: field.sides.p2.map(toRow) },
-      { title: `${p1.name || 'Your'}${p1.name ? "'s" : ''} side`, color: INK.sky300, rows: field.sides.p1.map(toRow) },
+      { title: 'Field', side: null, rows: [field.weather, field.terrain, ...field.rooms].filter((c): c is FieldCondition => !!c).map(toRow) },
+      { title: `${p2.name || 'Opponent'}'s side`, side: 'p2' as SideId, rows: field.sides.p2.map(toRow) },
+      { title: `${p1.name || 'Your'}${p1.name ? "'s" : ''} side`, side: 'p1' as SideId, rows: field.sides.p1.map(toRow) },
     ];
   });
 
@@ -130,6 +161,12 @@ export class InfoView {
       case 'log':
         return 'Battle log';
     }
+  }
+
+  /** The first card of the field view, where the focus starts. */
+  firstActiveId(): string | null {
+    const { p1, p2 } = this.actives();
+    return p2.length ? `${CARD_PREFIX}p2-${p2[0]}` : p1.length ? `${CARD_PREFIX}p1-${p1[0]}` : null;
   }
 
   /** A team member's sheet (A on its card). */
@@ -152,62 +189,144 @@ export class InfoView {
     if (count > 0) this.sheetTarget.set({ side: target.side, index: (target.index + step + count) % count });
   }
 
-  /** `sheetHint`: what ZL does on the opponent's tab (accepting open team sheets), when anything. */
-  draw(ctx: ScreenContext, tab: InfoTab, sheetHint: string): void {
-    const { renderer } = ctx;
+  /** The page's ground under the top bar: the theme's, with the lit side. */
+  private drawGround(ctx: ScreenContext): void {
+    const p = ctx.palette;
+    ctx.renderer.rect(0, TOP, 1280, 720 - TOP, { fill: p.bg });
+    ctx.renderer.rect(0, TOP, 640, 720 - TOP, { fill: withAlpha(p.hero, 0.8), fillEnd: withAlpha(p.hero, 0) });
+  }
+
+  /** The open sheet, if any (its own page); true when drawn. */
+  private drawSheet(ctx: ScreenContext): boolean {
     const shownSheet = this.sheet();
     const target = this.sheetTarget();
-    if (shownSheet && target) {
-      this.sheetView.draw(ctx, shownSheet, this.tabLabel(target.side), spriteSetOf(this.store.gen()));
-      return;
-    }
-    renderer.rect(0, TOP, 1280, 720 - TOP, { fill: [0.04, 0.06, 0.11, 1] });
+    if (!shownSheet || !target) return false;
+    this.drawGround(ctx);
+    this.sheetView.draw(ctx, shownSheet, this.tabLabel(target.side), spriteSetOf(this.store.gen()));
+    return true;
+  }
+
+  /** `sheetHint`: what ZL does on the opponent's tab (accepting open team sheets), when anything. */
+  draw(ctx: ScreenContext, tab: InfoTab, sheetHint: string): void {
+    if (this.drawSheet(ctx)) return;
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    this.drawGround(ctx);
     INFO_TABS.forEach((t, i) => {
       const x = GRID_X + i * (TAB_W + 8);
       const on = t === tab;
-      renderer.rect(x, TAB_Y, TAB_W, TAB_H, { fill: on ? INK.blue700 : INK.card, stroke: on ? INK.blue300 : INK.tab, radius: 10, border: 2 });
-      const color = t === 'p2' ? INK.red300 : t === 'p1' ? INK.sky300 : INK.white;
-      write(ctx, this.tabLabel(t), x + TAB_W / 2, TAB_Y + TAB_H / 2, { size: 18, bold: true }, on ? INK.white : color, 'center', TAB_W - 16);
+      renderer.rect(x, TAB_Y, TAB_W, TAB_H, { fill: on ? p.accent : p.panel, stroke: on ? p.accent : p.rim, radius: TAB_H / 2, border: 1 });
+      const color = on ? ([1, 1, 1, 1] as Rgba) : t === 'p2' ? foeInk(p) : t === 'p1' ? p.accentText : p.ink;
+      write(ctx, this.tabLabel(t), x + TAB_W / 2, TAB_Y + TAB_H / 2, { size: 17, bold: true }, color, 'center', TAB_W - 24);
     });
-    const keys = tab === 'p1' || tab === 'p2' ? 'A Details · ZL ZR Tabs · B Close' : tab !== 'log' ? '◀ ▶ Tabs · B Close' : this.store.canChat() ? 'A Chat · ▲ ▼ Scroll · B Close' : '◀ ▶ Tabs · ▲ ▼ Scroll · B Close';
     const sheet = tab === 'p2' && sheetHint;
-    write(ctx, sheet || keys, 1264, TAB_Y + TAB_H / 2, { size: 16, bold: !!sheet }, sheet ? INK.yellow200 : INK.gray300, 'right', 300);
+    if (sheet) write(ctx, sheet, 1264, TAB_Y + TAB_H / 2, { size: 16, bold: true }, p.teal, 'right', 300);
+    else {
+      const keys: [string, string][] =
+        tab === 'p1' || tab === 'p2' ? [['A', 'Details'], ['ZL ZR', 'Tabs'], ['B', 'Close']] : tab !== 'log' ? [['◀▶', 'Tabs'], ['B', 'Close']] : this.store.canChat() ? [['A', 'Chat'], ['▲▼', 'Scroll'], ['B', 'Close']] : [['▲▼', 'Scroll'], ['B', 'Close']];
+      drawKeys(ctx, keys, 1264, TAB_Y + TAB_H / 2);
+    }
 
     if (tab === 'log') this.log.draw(ctx);
     else if (tab === 'field') this.drawField(ctx);
     else this.drawTeam(ctx, tab);
   }
 
+  /**
+   * The field at a glance (Y, R3 on Brewser): the opponent's Pokémon on top, ours under, each as its
+   * team card with all that's known of it, and the field's conditions as chips with their turns left:
+   * each side's by its Pokémon (screens, hazards, Tailwind), the whole field's between them (weather,
+   * terrain, rooms). A opens a Pokémon's whole sheet (stats and stages, Speed, conditions), as on
+   * Battle info's tabs; Battle info's Field tab has the conditions in full.
+   */
+  drawActive(ctx: ScreenContext): void {
+    if (this.drawSheet(ctx)) return;
+    const p = ctx.palette;
+    this.drawGround(ctx);
+    const keyW = keyChip(ctx, ROLE_KEYS.fieldView.label, GRID_X, TOP + 32, 30);
+    const titleW = write(ctx, 'FIELD', GRID_X + keyW + 12, TOP + 32, { size: 24, bold: true }, p.ink);
+    write(ctx, `Turn ${this.store.turn()}`, GRID_X + keyW + titleW + 28, TOP + 33, { size: 16 }, p.muted);
+    drawKeys(ctx, [['A', 'Whole sheet'], ['B', 'Close']], 1264, TOP + 32);
+    const [field, foeSide, ownSide] = this.conditions();
+    this.drawConditionChips(ctx, foeSide, FIELD_ROWS.foe);
+    this.drawConditionChips(ctx, field, FIELD_ROWS.field);
+    this.drawConditionChips(ctx, ownSide, FIELD_ROWS.own);
+    const teams = this.teams();
+    const actives = this.actives();
+    (['p2', 'p1'] as const).forEach((side, row) => {
+      actives[side].forEach((index, column) => {
+        const card = teams[side][index];
+        if (!card) return;
+        const cx = GRID_X + column * (CARD_W + GAP_X);
+        const cy = row === 0 ? FIELD_ROWS.foeCards : FIELD_ROWS.ownCards;
+        const focused = ctx.focus.control({ id: `${CARD_PREFIX}${side}-${index}`, x: cx, y: cy, w: CARD_W, h: CARD_H, accept: () => this.openSheet(side, index) });
+        drawTeamCard(ctx, cx, cy, card, { side, dim: card.fainted, focused });
+      });
+    });
+    write(ctx, "The opponent's show only what the battle has revealed.", GRID_X, 698, { size: 15 }, p.muted, 'left', 800);
+  }
+
+  /** A row of the field view: the group's name, then each condition as a chip (its colour, name, turns left), as many as fit. */
+  private drawConditionChips(ctx: ScreenContext, group: { title: string; side: SideId | null; rows: ConditionRow[] }, cy: number): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const color = group.side === 'p2' ? foeInk(p) : group.side === 'p1' ? p.accentText : p.ink;
+    let x = GRID_X + 4 + write(ctx, group.title.toUpperCase(), GRID_X + 4, cy, { size: 14, bold: true }, color, 'left', 300) + 14;
+    if (group.rows.length === 0) {
+      write(ctx, 'Nothing', x, cy, { size: 16 }, p.muted);
+      return;
+    }
+    const nameStyle = { size: 16, bold: true };
+    for (const row of group.rows) {
+      const nameW = ctx.text.measure(row.name, nameStyle);
+      const shortW = row.short ? ctx.text.measure(row.short, nameStyle) + 16 : 0;
+      const w = 12 + 10 + 8 + nameW + (shortW ? 8 + shortW : 0) + 12;
+      if (x + w > 1264) break;
+      renderer.rect(x, cy - 15, w, 30, { fill: p.panel, stroke: p.rim, radius: 15, border: 1 });
+      renderer.rect(x + 12, cy - 5, 10, 10, { fill: row.color, radius: 5 });
+      write(ctx, row.name, x + 30, cy, nameStyle, p.ink);
+      if (shortW) {
+        const sx = x + 30 + nameW + 8;
+        renderer.rect(sx, cy - 11, shortW, 22, { fill: p.rim, radius: 11 });
+        write(ctx, row.short, sx + shortW / 2, cy, nameStyle, p.ink, 'center');
+      }
+      x += w + 8;
+    }
+  }
+
   private drawTeam(ctx: ScreenContext, side: SideId): void {
     const cards = this.teams()[side];
     if (cards.length === 0) {
-      write(ctx, 'Nothing seen of this team yet.', 640, 400, { size: 22 }, INK.gray300, 'center');
+      write(ctx, 'Nothing seen of this team yet.', 640, 400, { size: 22 }, ctx.palette.muted, 'center');
     }
     cards.slice(0, 6).forEach((card, i) => {
       const x = GRID_X + (i % 2) * (CARD_W + GAP_X);
       const y = CONTENT_Y + Math.floor(i / 2) * (CARD_H + GAP_Y);
       const focused = ctx.focus.control({ id: `${CARD_PREFIX}${side}-${i}`, x, y, w: CARD_W, h: CARD_H, accept: () => this.openSheet(side, i) });
-      drawTeamCard(ctx, x, y, card, { border: side === 'p2' ? INK.red300 : INK.sky300, dim: card.fainted, focused });
+      drawTeamCard(ctx, x, y, card, { side, dim: card.fainted, focused });
     });
   }
 
   private drawField(ctx: ScreenContext): void {
+    const p = ctx.palette;
     const { renderer } = ctx;
     this.conditions().forEach((group, column) => {
       const x = GRID_X + column * (COLUMN_W + 16);
-      renderer.rect(x, CONTENT_Y, COLUMN_W, 604, { fill: INK.card, radius: 10 });
-      write(ctx, group.title, x + 18, CONTENT_Y + 28, { size: 22, bold: true }, group.color, 'left', COLUMN_W - 36);
-      if (group.rows.length === 0) write(ctx, 'Nothing', x + 18, CONTENT_Y + 72, { size: 20 }, INK.gray400);
+      renderer.rect(x, CONTENT_Y + 10, COLUMN_W, 594, { fill: [0, 0, 0, 0.16], radius: 20, softness: 20 });
+      renderer.rect(x, CONTENT_Y, COLUMN_W, 594, { fill: p.panel, stroke: p.rim, radius: 20, border: 1 });
+      const color = group.side === 'p2' ? foeInk(p) : group.side === 'p1' ? p.accentText : p.ink;
+      write(ctx, group.title, x + 20, CONTENT_Y + 30, { size: 22, bold: true }, color, 'left', COLUMN_W - 40);
+      if (group.rows.length === 0) write(ctx, 'Nothing', x + 20, CONTENT_Y + 74, { size: 20 }, p.muted);
       group.rows.slice(0, 7).forEach((row, i) => {
-        const y = CONTENT_Y + 52 + i * (ROW_H + 4);
-        renderer.rect(x + 12, y, COLUMN_W - 24, ROW_H, { fill: INK.header, radius: 8 });
-        renderer.rect(x + 12, y, 8, ROW_H, { fill: row.color, radius: 4 });
-        write(ctx, row.name, x + 32, y + 24, { size: 22, bold: true }, INK.white, 'left', COLUMN_W - 64);
-        write(ctx, row.detail, x + 32, y + 54, { size: 18 }, INK.gray300, 'left', 220);
+        const y = CONTENT_Y + 54 + i * (ROW_H + 4);
+        renderer.rect(x + 12, y, COLUMN_W - 24, ROW_H, { fill: mixRgba(p.panel, p.rim, 0.6), radius: 12 });
+        renderer.rect(x + 12, y + 8, 6, ROW_H - 16, { fill: row.color, radius: 3 });
+        write(ctx, row.name, x + 32, y + 24, { size: 21, bold: true }, p.ink, 'left', COLUMN_W - 64);
+        write(ctx, row.detail, x + 32, y + 54, { size: 16 }, p.muted, 'left', 220);
         const pipW = row.pips.length > 0 ? Math.min(16, Math.floor((120 - 4 * (row.pips.length - 1)) / row.pips.length)) : 0;
         row.pips.forEach((pip, n) => {
           const px = x + COLUMN_W - 24 - (row.pips.length - n) * (pipW + 4);
-          renderer.rect(px, y + 48, pipW, 12, { fill: pip.on ? row.color : [1, 1, 1, 0.15], radius: 2 });
+          renderer.rect(px, y + 48, pipW, 12, { fill: pip.on ? row.color : p.rim, radius: 3 });
         });
       });
     });
