@@ -19,7 +19,7 @@ The rules for working on this codebase, for people and code assistants alike. Th
 
 ## Rendering: one WebGL canvas
 
-The app targets the Brewser console (a custom engine at 1280x720, driven by a controller). The whole UI is drawn on ONE 1280x720 WebGL canvas: `GlStage` (core/gl/gl-stage.ts) owns the renderer, the text and image caches and the frame loop, and `GlStageHost` is the only visible element in the DOM.
+The app is a standalone Nintendo Switch homebrew app (`.nro`) on the nx.js engine (1280x720, driven by a controller; see [docs/native.md](docs/native.md)). The whole UI is drawn on ONE 1280x720 WebGL canvas: `GlStage` (core/gl/gl-stage.ts) owns the renderer, the text and image caches and the frame loop, and `GlStageHost` is the only visible element in the DOM.
 
 - Each route is a scene component with an empty template that calls `GlStage.show(scene)` and draws every frame. Angular is the skeleton only: DI, services, signals, the router.
 - Do NOT add DOM templates, HTML controls or CSS for UI. Build screens from the canvas kit: `core/gl/canvas-ui.ts` (CanvasFocus, drawText), `core/gl/ui/retro-kit.ts` (boxes, buttons, steppers, tabs, text fields, modals, ListView), `PageBar`, `OptionPickerView`, `FormatListScreen`, `CanvasKeyboard` (the only way to type text) and `GlTheme` (the themes' palettes).

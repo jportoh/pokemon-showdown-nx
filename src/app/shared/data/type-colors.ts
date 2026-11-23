@@ -1,6 +1,6 @@
 // Row backgrounds per Pokémon type, e.g. for the move list. Darkened versions of the usual type
 // colours, so white names and gray-300 (#d1d5db) details on them keep at least 4.5:1 contrast
-// (WCAG AA). Plain hex: Brewser renders oklch() with the wrong colours.
+// (WCAG AA). Plain hex, which every canvas engine reads.
 const TYPE_COLORS: Readonly<Record<string, string>> = {
   normal: '#5b5b58',
   fire: '#9a2e12',

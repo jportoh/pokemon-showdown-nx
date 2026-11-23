@@ -11,7 +11,7 @@ export interface HomeMenuItem {
   needsConnection: boolean;
   /**
    * The tint its button fades into, so each is also known by its colour: a dark shade of the icon's
-   * colour on the dark appearance, a pastel one on the light (literals, as Brewser needs).
+   * colour on the dark appearance, a pastel one on the light (literals).
    */
   plate: Readonly<Record<Appearance, string>>;
   /** What it's for, under the menu while it has the focus. */

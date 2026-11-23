@@ -1,5 +1,5 @@
 import { Signal, computed, inject, signal } from '@angular/core';
-import { ROLE_KEYS, SLOT_KEYS } from '@core/input/console-keys';
+import { ROLE_KEYS } from '@core/input/console-keys';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
@@ -124,7 +124,7 @@ export class SetEditorView {
   }
 
   /**
-   * ZL: the open list's "none" choice (No item, No move), when it has one; on Stats, undoes the
+   * The open list's "none" choice (No item, No move), when it has one; on Stats, undoes the
    * points; on Calcs, the field (reset while it's open).
    */
   pressClear(): boolean {
@@ -137,7 +137,7 @@ export class SetEditorView {
   }
 
   /**
-   * ZR: starts filling Remove in red; held to the end, it removes the Pokémon and goes back to the
+   * − (ROLE_KEYS.removePokemon): starts filling Remove in red; held to the end, it removes the Pokémon and goes back to the
    * team (nothing in a new slot). Holding it is the confirmation, so nothing asks again.
    */
   pressRemove(): boolean {
@@ -161,7 +161,7 @@ export class SetEditorView {
   }
 
   /**
-   * ZL/ZR on the native .nro (SLOT_KEYS): the team's previous or next Pokémon, round and round, on the
+   * ZL/ZR: the team's previous or next Pokémon, round and round, on the
    * same tab. Not while a list, the natures, the field or the rival's editing is open.
    */
   pressSlot(by: 1 | -1): boolean {
@@ -177,7 +177,7 @@ export class SetEditorView {
   }
 
   /**
-   * X on the native .nro (ROLE_KEYS.clear): the open list's "none", Stats' undo, and on Calcs the
+   * X (ROLE_KEYS.clear): the open list's "none", Stats' undo, and on Calcs the
    * field's reset or the rival editor's own; false elsewhere on Calcs (X edits the rival there).
    */
   pressOption(): boolean {
@@ -187,7 +187,7 @@ export class SetEditorView {
     return this.calcs.pressField(team.format);
   }
 
-  /** + on the native .nro (ROLE_KEYS.calcsField): Calcs' field, opened. */
+  /** + (ROLE_KEYS.calcsField): Calcs' field, opened. */
   pressFieldOpen(): boolean {
     const team = this.team();
     if (this.tab() !== 'calcs' || !team || !this.pokemon() || this.calcs.isOpen) return false;
@@ -287,13 +287,13 @@ export class SetEditorView {
 
   /**
    * The team's six slots for the page bar, their sprites small, the one edited lit; ends at `right`.
-   * A tap (or click) on a Pokémon opens it; on the native .nro, ZL and ZR's chips either side say they
+   * A tap (or click) on a Pokémon opens it; ZL and ZR's chips either side say they
    * go through them.
    */
   drawSlots(ctx: UiContext, right: number, cy: number): number {
     const p = ctx.palette;
     const sets = this.team()?.sets ?? [];
-    const keys = SLOT_KEYS && sets.length > 1;
+    const keys = sets.length > 1;
     if (keys) right -= keyPill(ctx, 'ZR', right - keyPillWidth(ctx, 'ZR'), cy) + 8;
     const left = right - MAX_TEAM_SIZE * (SLOT + SLOT_GAP) + SLOT_GAP;
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
@@ -374,8 +374,8 @@ export class SetEditorView {
   /** What the buttons do now, for the legend. */
   private legend(spec: ChooserSpec | null, stats: boolean): LegendEntry[] {
     const remove = { keys: [ROLE_KEYS.removePokemon.label], text: 'Hold to remove' };
-    // ZL/ZR through the team's Pokémon (native), when there's more than one.
-    const slots: LegendEntry[] = SLOT_KEYS && (this.team()?.sets.length ?? 0) > 1 ? [{ keys: ['ZL', 'ZR'], text: 'Pokémon' }] : [];
+    // ZL/ZR through the team's Pokémon, when there's more than one.
+    const slots: LegendEntry[] = (this.team()?.sets.length ?? 0) > 1 ? [{ keys: ['ZL', 'ZR'], text: 'Pokémon' }] : [];
     if (spec) {
       const current = this.currentValue();
       const entries: LegendEntry[] = [
@@ -476,7 +476,7 @@ export class SetEditorView {
       { keys: [ROLE_KEYS.calcsSwap.label], text: this.calcState.mode() === 'attack' ? 'They attack' : 'You attack' },
       { keys: [ROLE_KEYS.calcsField.label], text: 'Field' },
     );
-    if (SLOT_KEYS && (this.team()?.sets.length ?? 0) > 1) entries.push({ keys: ['ZL', 'ZR'], text: 'Pokémon' });
+    if ((this.team()?.sets.length ?? 0) > 1) entries.push({ keys: ['ZL', 'ZR'], text: 'Pokémon' });
     entries.push({ keys: ['L', 'R'], text: 'Tabs' }, { keys: ['B'], text: 'Back to team' });
     return entries;
   }

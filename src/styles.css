@@ -1,9 +1,8 @@
 /*
-  The whole app is one WebGL canvas (GlStage) drawing a 1280x720 stage, the Brewser console's handheld
+  The whole app is one WebGL canvas (GlStage) drawing a 1280x720 stage, the Switch's handheld
   resolution: every screen is drawn on it, so the page itself only holds the canvas. GlStageHost sizes
   and centres the canvas to the screen (1920x1080 docked) keeping 16:9; the page's colour fills any
-  bands. Plain CSS, which Brewser's engine renders as written (no layers, nesting or modern colour
-  functions).
+  bands. Plain CSS, kept simple.
 */
 html {
   height: 100%;
@@ -26,7 +25,7 @@ app-gl-stage {
   display: block;
 }
 
-/* Hidden by a wrapper toggled by display, which Brewser toggles reliably. */
+/* Hidden by a wrapper toggled by display. */
 .gl-stage {
   display: block;
 }

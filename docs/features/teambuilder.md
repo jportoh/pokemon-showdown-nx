@@ -14,7 +14,7 @@ always goes back one step (editor → team → grid → home menu):
 | --- | --- | --- |
 | **Grid** | `gl/team-grid-view.ts` | The teams as cards, New team first, newest first. ZR imports a PokePaste |
 | **Team** | `gl/team-view.ts` | A team as the games' party screen: the focused Pokémon's card, six slot rows. Rename and format in the header, L/R go through the teams, ZL validates, ZR (held) deletes |
-| **Editor** | `gl/set-editor-view.ts` | One Pokémon across the page: its card, and Details, Stats or Calcs beside it (L/R switch tabs). On the native .nro ZL/ZR go through the team's Pokémon and - (held) removes it, X is the open list's none / Stats' undo, + opens the Calcs field and - swaps who attacks there; on Brewser (no X, - or +) ZL/ZR keep those jobs (see `ROLE_KEYS`, `SLOT_KEYS`) |
+| **Editor** | `gl/set-editor-view.ts` | One Pokémon across the page: its card, and Details, Stats or Calcs beside it (L/R switch tabs). ZL/ZR go through the team's Pokémon and - (held) removes it, X is the open list's none / Stats' undo, + opens the Calcs field and - swaps who attacks there (see `ROLE_KEYS`) |
 
 ### The editor's parts
 

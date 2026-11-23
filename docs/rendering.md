@@ -8,7 +8,7 @@ Everything here lives in `src/app/core/gl/`.
 
 ## Why it's built this way
 
-The Brewser console is slow at the things browsers usually do for you: layout, decoding images,
+The console is slow at the things browsers usually do for you: layout, decoding images,
 rasterizing text. Every rule below comes from a measurement on the console (the comments in the code
 name the tests). In short:
 
@@ -146,8 +146,8 @@ Press **L3** (or **F**) on any screen for the performance HUD (`perf-hud.ts`, fe
   frames.
 - The loading screen's report, the scene's own `diagnostics()` lines, and the last touch events.
 
-`npm run build:brewser:diag` additionally shows a boot report on the console (see
-[brewser.md](brewser.md)).
+On the console, errors and the start-up's `[boot]` marks also go to `native.log` on the SD card
+([native.md](native.md#phase-1-the-app-on-the-engine)).
 
 ## Checklist for drawing code
 

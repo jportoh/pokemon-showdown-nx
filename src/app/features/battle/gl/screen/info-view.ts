@@ -233,7 +233,7 @@ export class InfoView {
   }
 
   /**
-   * The field at a glance (Y, R3 on Brewser): the opponent's Pokémon on top, ours under, each as its
+   * The field at a glance (Y): the opponent's Pokémon on top, ours under, each as its
    * team card with all that's known of it, and the field's conditions as chips with their turns left:
    * each side's by its Pokémon (screens, hazards, Tailwind), the whole field's between them (weather,
    * terrain, rooms). A opens a Pokémon's whole sheet (stats and stages, Speed, conditions), as on

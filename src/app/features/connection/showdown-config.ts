@@ -1,6 +1,5 @@
 /**
  * Main Pokémon Showdown server's raw WebSocket endpoint (the one the official client uses via SockJS).
- * Must be allow-listed in the Brewser submission's network permissions.
  */
 export const SHOWDOWN_WEBSOCKET_URL = 'wss://sim3.psim.us/showdown/websocket';
 
@@ -22,7 +21,7 @@ export const HEARTBEAT_IDLE_MS = 25_000;
 /** …and a connection that hasn't answered by then is taken as lost: closed, and reconnected. */
 export const HEARTBEAT_TIMEOUT_MS = 10_000;
 /** A query any connection may send, answered with one short line (`|queryresponse|userdetails|…`). */
-export const HEARTBEAT_COMMAND = '/cmd userdetails brewserheartbeat';
+export const HEARTBEAT_COMMAND = '/cmd userdetails nxheartbeat';
 
 /** Attempts in a row that never opened before Showdown counts as unreachable (see ConnectionState.trouble). */
 export const UNREACHABLE_AFTER_ATTEMPTS = 2;
@@ -30,7 +29,7 @@ export const UNREACHABLE_AFTER_ATTEMPTS = 2;
 /**
  * When attempts keep failing, Showdown's website is asked for a small file (its icon) to tell why: if it
  * answers, the internet works and only the battle server doesn't; if not, the internet or Showdown is
- * down. Same host as the sprites (allow-listed on Brewser); asked at most every PROBE_EVERY_MS, given
+ * down. Same host as the sprites; asked at most every PROBE_EVERY_MS, given
  * up after PROBE_TIMEOUT_MS.
  */
 export const PROBE_URL = 'https://play.pokemonshowdown.com/favicon.ico';
@@ -41,7 +40,7 @@ export const SLOW_ATTEMPT_MS = 4000;
 
 /**
  * Showdown's login server: gives the assertion that claims a name on the server (see ShowdownLogin).
- * Same host as the sprites, already in the Brewser network allow-list.
+ * Same host as the sprites.
  */
 export const LOGIN_ASSERTION_URL = 'https://play.pokemonshowdown.com/api/getassertion';
 

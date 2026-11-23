@@ -1,14 +1,9 @@
-import { PLATFORM } from '@core/runtime/platform';
-
 /**
  * What each controller button and key does, so the whole app works with them alone (no mouse or touch).
  *
- * On the console (test K1, 2026-09-25) the buttons reach the page through the Gamepad API: A, B,
- * ZL and ZR only there; the d-pad there and also as key events (both its arrow key and the letter the
- * build maps to it). X and Y belong to Brewser (restart, exit), and so did L and R in test K1; later
- * the user found L and R free, and screens use them for their own actions (in battle: R Mega Evolves,
- * L opens the menu on Brewser). The build's "button mappings" go the other way: they let a computer keyboard drive the Switch controls in the web
- * version, with these letters. Arrows, Enter and Escape also work, for computer keyboards.
+ * On the console the buttons reach the app through the Gamepad API (KeyboardNavigation polls it). In
+ * the web version (development) keys stand for the Switch controls: the letters below, plus arrows,
+ * Enter and Escape for computer keyboards.
  */
 export type InputAction =
   | 'up'
@@ -31,48 +26,37 @@ export type InputAction =
   | 'last';
 
 /**
- * The shoulder buttons, R3 and L3 (the sticks pressed), whose meaning depends on the screen (see
- * KeyboardNavigation.registerButton).
+ * The shoulder buttons, R3 and L3 (the sticks pressed), X, Y, + and −, whose meaning depends on the
+ * screen (see KeyboardNavigation.registerButton).
  */
 export type PageButton = 'buttonL' | 'buttonR' | 'buttonZL' | 'buttonZR' | 'buttonR3' | 'buttonL3' | 'buttonPlus' | 'buttonMinus' | 'buttonX' | 'buttonY';
 
 /**
- * Gamepad API button indices as Brewser reports them (seen on device: A=0, B=1, ZL=6, ZR=7, d-pad
- * 12–15, the standard mapping's positions for those labels). L=4, R=5, L3=10 and R3=11 (the sticks
- * pressed) are the standard mapping's too. The native .nro's engine (nx.js) numbers the face buttons
- * by position instead, B=0 and A=1 (test x1), so there they swap.
+ * Gamepad API button indices, numbered by position as in the standard mapping, which nx.js follows
+ * (test x1): B=0 (bottom), A=1 (right), Y=2 (left), X=3 (top), L=4, R=5, ZL=6, ZR=7, −=8, +=9,
+ * L3=10 and R3=11 (the sticks pressed), the d-pad 12–15. + doesn't exit (native/app/plus-button.ts):
+ * leaving is the console's HOME button.
  */
-const ACCEPT_INDEX = PLATFORM === 'native' ? 1 : 0;
-const BACK_INDEX = PLATFORM === 'native' ? 0 : 1;
-
 export const GAMEPAD_BUTTONS: readonly (readonly [number, InputAction])[] = [
-  [ACCEPT_INDEX, 'accept'],
-  [BACK_INDEX, 'back'],
-  [6, 'prevTab'],
-  [7, 'nextTab'],
+  [0, 'back'],
+  [1, 'accept'],
+  [2, 'buttonY'],
+  [3, 'buttonX'],
   [4, 'buttonL'],
   [5, 'buttonR'],
+  [6, 'prevTab'],
+  [7, 'nextTab'],
+  [8, 'buttonMinus'],
+  [9, 'buttonPlus'],
   [10, 'buttonL3'],
   [11, 'buttonR3'],
   [12, 'up'],
   [13, 'down'],
   [14, 'left'],
   [15, 'right'],
-  // Only the native .nro has them: on Brewser, X, Y and + are the browser's own (restart, exit).
-  // nx.js numbers them by position like A and B: Y=2, X=3, -=8, +=9 (test x1). + no longer exits there
-  // (native/app/plus-button.ts): leaving is the console's HOME button.
-  ...(PLATFORM === 'native'
-    ? ([
-        [2, 'buttonY'],
-        [3, 'buttonX'],
-        [8, 'buttonMinus'],
-        [9, 'buttonPlus'],
-      ] as const)
-    : []),
 ];
 
-// Keyed by `KeyboardEvent.key` (lower-cased), then `code`, then the legacy `keyCode` (undefined on
-// Brewser, where key and code are filled in).
+// Keyed by `KeyboardEvent.key` (lower-cased), then `code`, then the legacy `keyCode`.
 const BY_KEY: Record<string, InputAction> = {
   w: 'up',
   s: 'down',
@@ -86,6 +70,11 @@ const BY_KEY: Record<string, InputAction> = {
   f: 'buttonL3',
   z: 'prevTab',
   c: 'nextTab',
+  x: 'buttonX',
+  y: 'buttonY',
+  '+': 'buttonPlus',
+  '=': 'buttonPlus',
+  '-': 'buttonMinus',
   ArrowUp: 'up',
   Up: 'up',
   ArrowDown: 'down',
@@ -115,6 +104,12 @@ const BY_CODE: Record<string, InputAction> = {
   KeyF: 'buttonL3',
   KeyZ: 'prevTab',
   KeyC: 'nextTab',
+  KeyX: 'buttonX',
+  KeyY: 'buttonY',
+  Equal: 'buttonPlus',
+  NumpadAdd: 'buttonPlus',
+  Minus: 'buttonMinus',
+  NumpadSubtract: 'buttonMinus',
 };
 
 const BY_KEY_CODE: Record<number, InputAction> = {
@@ -130,6 +125,12 @@ const BY_KEY_CODE: Record<number, InputAction> = {
   70: 'buttonL3',
   90: 'prevTab',
   67: 'nextTab',
+  88: 'buttonX',
+  89: 'buttonY',
+  187: 'buttonPlus',
+  107: 'buttonPlus',
+  189: 'buttonMinus',
+  109: 'buttonMinus',
   38: 'up',
   40: 'down',
   37: 'left',
@@ -151,65 +152,53 @@ export interface RoleKey {
   readonly label: string;
 }
 
-const NATIVE = PLATFORM === 'native';
-
 /**
- * The buttons with one meaning across the app on the native .nro, which has X, Y and + to give
- * them (Brewser keeps those for itself, so it keeps the older keys): Y searches, X is the focused
- * thing's option (favourite, edit the rival, the battle timer), + confirms or sends. Screens register
- * a role's button and draw its label, so both builds show the key that works.
+ * The buttons with one meaning across the app: Y searches, X is the focused thing's option
+ * (favourite, edit the rival, the battle timer), + confirms or sends. Screens register a role's
+ * button and draw its label.
  */
 export const ROLE_KEYS = {
-  /** An open list's search (R3 still searches on native too). */
-  search: { button: NATIVE ? 'buttonY' : 'buttonR3', label: NATIVE ? 'Y' : 'R3' },
+  /** An open list's search (R3 searches too). */
+  search: { button: 'buttonY', label: 'Y' },
   /** The teambuilder grid's favourite team, so R only ever means "next" there. */
-  favourite: { button: NATIVE ? 'buttonX' : 'buttonR', label: NATIVE ? 'X' : 'R' },
+  favourite: { button: 'buttonX', label: 'X' },
   /** Calcs: edit the rival's set. */
-  editRival: { button: NATIVE ? 'buttonX' : 'buttonR3', label: NATIVE ? 'X' : 'R3' },
-  /** A battle's menu (sound, look, timer, team sheets, the rival's card, forfeit): L on Brewser, which has no +. */
-  battleMenu: { button: NATIVE ? 'buttonPlus' : 'buttonL', label: NATIVE ? '+' : 'L' },
+  editRival: { button: 'buttonX', label: 'X' },
+  /** A battle's menu (sound, look, timer, team sheets, the rival's card, forfeit). */
+  battleMenu: { button: 'buttonPlus', label: '+' },
   /** A battle's Pokémon on the field, at a glance. */
-  fieldView: { button: NATIVE ? 'buttonY' : 'buttonR3', label: NATIVE ? 'Y' : 'R3' },
+  fieldView: { button: 'buttonY', label: 'Y' },
   /**
-   * Team preview's picks, sent (Done): R on both builds, free there (in battle it Mega Evolves or
-   * Terastallizes), so + (L on Brewser) opens the menu during team preview too.
+   * Team preview's picks, sent (Done): R, free there (in battle it Mega Evolves or Terastallizes),
+   * so + opens the menu during team preview too.
    */
   previewDone: { button: 'buttonR', label: 'R' },
   /** A chat room's message, written (the on-screen keyboard, whose OK is + too). */
-  chatWrite: { button: NATIVE ? 'buttonPlus' : 'buttonZR', label: NATIVE ? '+' : 'ZR' },
+  chatWrite: { button: 'buttonPlus', label: '+' },
   /** The teambuilder editor's "none" (No item, No move), Stats' undo, the Calcs field's reset: the option of what's open. */
-  clear: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
-  /** The teambuilder editor's Remove (held), so ZL/ZR go through the team's Pokémon on native. */
-  removePokemon: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  clear: { button: 'buttonX', label: 'X' },
+  /** The teambuilder editor's Remove (held), so ZL/ZR go through the team's Pokémon. */
+  removePokemon: { button: 'buttonMinus', label: '-' },
   /** Calcs: who attacks, swapped. */
-  calcsSwap: { button: NATIVE ? 'buttonMinus' : 'buttonZR', label: NATIVE ? '-' : 'ZR' },
+  calcsSwap: { button: 'buttonMinus', label: '-' },
   /** Watch Live: the focused battle's details (its teams and turn), in a box over the list. */
-  battleDetails: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
+  battleDetails: { button: 'buttonX', label: 'X' },
   /** The Trainer Card's battle history (it has a button too). */
-  cardHistory: { button: NATIVE ? 'buttonX' : 'buttonZL', label: NATIVE ? 'X' : 'ZL' },
+  cardHistory: { button: 'buttonX', label: 'X' },
   /** Calcs: the field (weather, terrain, screens…). */
-  calcsField: { button: NATIVE ? 'buttonPlus' : 'buttonZL', label: NATIVE ? '+' : 'ZL' },
+  calcsField: { button: 'buttonPlus', label: '+' },
 } as const satisfies Record<string, RoleKey>;
 
 /**
- * The teambuilder editor's previous and next Pokémon of the team: ZL and ZR on the native .nro, whose
- * X, − and + take those buttons' other jobs there (ROLE_KEYS.clear, removePokemon, calcsSwap,
- * calcsField). Brewser has no spare buttons, so there they keep them and the slots are clicked.
+ * A battle's shortcuts: X opens the party screen while choosing a move (Switch shows its chip), −
+ * turns the timer on or off, L held shows the last turn's log over the field. The chat is written
+ * from Battle info's log (A).
  */
-export const SLOT_KEYS: { prev: PageButton; next: PageButton } | null = NATIVE ? { prev: 'buttonZL', next: 'buttonZR' } : null;
+export const BATTLE_SHORTCUTS = {
+  party: { button: 'buttonX', label: 'X' },
+  timer: { button: 'buttonMinus', label: '-' },
+  log: { button: 'buttonL', label: 'L' },
+} as const satisfies Record<string, RoleKey>;
 
-/**
- * A battle's shortcuts only the native .nro has buttons for (Brewser keeps X, Y, + and − for itself,
- * so there they're in the battle's menu or on screen): X opens the party screen while choosing a move
- * (Switch shows its chip), − turns the timer on or off, L held shows the last turn's log over the field
- * (L is the menu on Brewser). The chat is written from Battle info's log (A).
- */
-export const BATTLE_SHORTCUTS: { party: RoleKey; timer: RoleKey; log: RoleKey } | null = NATIVE
-  ? { party: { button: 'buttonX', label: 'X' }, timer: { button: 'buttonMinus', label: '-' }, log: { button: 'buttonL', label: 'L' } }
-  : null;
-
-/**
- * The home menu's Settings, straight from anywhere on it: X on the native .nro (its chip on the button).
- * Brewser keeps X for itself, so there it's only the button. On the Trainer Card, X is its history.
- */
-export const HOME_SETTINGS_KEY: RoleKey | null = NATIVE ? { button: 'buttonX', label: 'X' } : null;
+/** The home menu's Settings, straight from anywhere on it (X, its chip on the button). On the Trainer Card, X is its history. */
+export const HOME_SETTINGS_KEY: RoleKey = { button: 'buttonX', label: 'X' };

@@ -15,7 +15,7 @@ const IDLE_IMAGE_MS = 300_000;
 
 /**
  * The battle screen's images (Showdown's sprites, item icons) as WebGL textures, made from the ones
- * SpriteBitmaps decodes once. On the console any image becomes a texture (probe w1: Brewser doesn't
+ * SpriteBitmaps decodes once. On the console any image becomes a texture (the console's engine doesn't
  * apply CORS); desktop browsers refuse Showdown's sprites, whose server sends no CORS headers. A back
  * sprite that doesn't exist (some new Megas) falls back to the front one. Champions sprites come from
  * the sheets bundled with the app (sprite-sheets.ts): one texture per sheet, each sprite a part of it.

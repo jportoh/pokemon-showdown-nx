@@ -56,7 +56,7 @@ function isCanvasAction(action: InputAction): action is CanvasAction {
  *
  * Findings from the console (test K1) shape it: A, B, ZL and ZR only reach the page through the
  * Gamepad API, so the controller is polled. The d-pad also sends key events (its arrow and its mapped
- * letter, i.e. twice), so on Brewser, keys are ignored while a controller is connected.
+ * letter, i.e. twice), so on the console, keys are ignored while a controller is connected.
  */
 @Service()
 export class KeyboardNavigation {

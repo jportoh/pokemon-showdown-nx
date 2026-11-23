@@ -16,7 +16,7 @@ export class RowLookups<T> {
   /** Each key's result, 'loading' while queued or on its way. */
   readonly results = this.resultsSignal.asReadonly();
 
-  /** @param changed called after each result (to render: Brewser needs asking). */
+  /** @param changed called after each result (to render: the console needs asking). */
   constructor(
     private readonly lookUp: (key: string) => Promise<T>,
     private readonly atOnce: number,

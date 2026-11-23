@@ -10,7 +10,7 @@
 //    output they stay crisp lines on the TV; scaled from 720p they blur into grey;
 //  - a yellow square that moves, so the frame rate shows.
 //
-// The log goes to sdmc:/switch/pokemon-showdown-brewser/res-probe.log, with the console's operation
+// The log goes to sdmc:/switch/pokemon-showdown-nx/res-probe.log, with the console's operation
 // mode (handheld or docked) at start and whenever it changes. Run it docked, then undock it.
 
 interface ProbeScreen {
@@ -24,7 +24,7 @@ interface ProbeSwitch {
   operationMode?: () => unknown;
 }
 
-const LOG = 'sdmc:/switch/pokemon-showdown-brewser/res-probe.log';
+const LOG = 'sdmc:/switch/pokemon-showdown-nx/res-probe.log';
 const nx = (globalThis as unknown as { Switch: ProbeSwitch }).Switch;
 const probeScreen = (globalThis as unknown as { screen: ProbeScreen }).screen;
 const begun = Date.now();

@@ -1,5 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { PageButton, ROLE_KEYS, SLOT_KEYS } from '@core/input/console-keys';
+import { PageButton, ROLE_KEYS } from '@core/input/console-keys';
 import { Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
@@ -90,40 +90,36 @@ export class TeambuilderScene {
     });
     // The grid opens on its first team (stored last), or New.
     this.grid.focusTeam(this.store.teams(), this.store.teams().at(-1)?.id ?? null);
-    // On the grid ZL picks a team up (and puts it down), ROLE_KEYS.favourite (R, X on the native
-    // .nro) makes it its format's favourite and ZR imports a PokePaste. On a team L/R go through the
+    // On the grid ZL picks a team up (and puts it down), ROLE_KEYS.favourite (X) makes it its format's favourite and ZR imports a PokePaste. On a team L/R go through the
     // teams, ZL validates and ZR deletes it; in the editor L/R switch Details/Stats (or a list's
     // filters), ZL picks No item/No move (on Stats it undoes the points) and ZR removes the Pokémon;
-    // ROLE_KEYS.search (R3, also Y on native) searches an open list, ROLE_KEYS.editRival edits the
-    // Calcs rival. Where two roles share a button (Brewser's R3, R), the newest registered tries first.
+    // ROLE_KEYS.search (Y, also R3) searches an open list, ROLE_KEYS.editRival edits the
+    // Calcs rival. Where two roles share a button (X), the newest registered tries first.
     const release = [
       this.navigation.registerButton('buttonZL', () => {
         if (this.leaving) return true;
         if (this.view === 'teams') return this.pressMove();
         if (this.view === 'team') return this.validate();
         if (this.view !== 'edit') return false;
-        return SLOT_KEYS ? this.editor.pressSlot(-1) : this.editor.pressClear();
+        return this.editor.pressSlot(-1);
       }),
       this.navigation.registerButton('buttonZR', () => {
         if (this.leaving) return true;
         if (this.view === 'teams') return this.grid.isMoving() || this.askPaste();
         if (this.view === 'team') return this.pressDelete();
         if (this.view !== 'edit') return false;
-        return SLOT_KEYS ? this.editor.pressSlot(1) : this.editor.pressRemove();
+        return this.editor.pressSlot(1);
       }),
-      // On the native .nro ZL/ZR's editor jobs move to X (the open thing's option), − (Remove, or who
-      // attacks on Calcs) and + (Calcs' field); X tries before ROLE_KEYS.editRival (the later registered goes first).
-      ...(SLOT_KEYS
-        ? [
-            this.navigation.registerButton(ROLE_KEYS.removePokemon.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressRemove())),
-            this.navigation.registerButton(ROLE_KEYS.calcsField.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressFieldOpen())),
-          ]
-        : []),
+      // In the editor, ZL/ZR go through the team's Pokémon; the other jobs are X (the open thing's
+      // option), − (Remove, or who attacks on Calcs) and + (Calcs' field); X tries before
+      // ROLE_KEYS.editRival (the later registered goes first).
+      this.navigation.registerButton(ROLE_KEYS.removePokemon.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressRemove())),
+      this.navigation.registerButton(ROLE_KEYS.calcsField.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressFieldOpen())),
       this.navigation.registerButton('buttonL', () => this.pressLR(-1)),
       this.navigation.registerButton('buttonR', () => this.view !== 'teams' && this.pressLR(1)),
       this.navigation.registerButton(ROLE_KEYS.favourite.button, () => this.view === 'teams' && this.pressFavourite()),
       this.navigation.registerButton(ROLE_KEYS.editRival.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressEditRival())),
-      ...(SLOT_KEYS ? [this.navigation.registerButton(ROLE_KEYS.clear.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressOption()))] : []),
+      this.navigation.registerButton(ROLE_KEYS.clear.button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressOption())),
       // An open list's search, without walking up to its box first.
       ...[...new Set<PageButton>(['buttonR3', ROLE_KEYS.search.button])].map((button) =>
         this.navigation.registerButton(button, () => this.leaving !== null || (this.view === 'edit' && this.editor.pressSearch())),

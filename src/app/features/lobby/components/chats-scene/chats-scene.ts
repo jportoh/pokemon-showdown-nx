@@ -37,7 +37,7 @@ const LEAVE_MS = 180;
  * Chats, drawn on the stage in the menu's style: the rooms as cards on the left (each its Pokémon and
  * how many are in it, from `/cmd rooms`) and the room joined on the right (one at a time), in a panel
  * with Chats' colour: its log, or its users on demand (ZL), and a field to write in with the canvas
- * keyboard (ZR, + on the native .nro). Before a room is joined, the panel shows the focused one. L leaves
+ * keyboard (+). Before a room is joined, the panel shows the focused one. L leaves
  * the room, as does picking another one or leaving the page (a room joined off this page would only
  * cost the console the work of its traffic). The d-pad scrolls the log or the users while they have
  * the focus, and goes on past their ends. Our own lines stand out, and the ones that say our name.
@@ -108,15 +108,15 @@ export class ChatsScene {
     const unwatch = this.stats.watch();
     // Focus starts on the room joined, or the first one.
     this.focus.focus(`room-${this.store.room()?.id ?? CHAT_ROOMS[0].id}`);
-    // The console buttons, while in a room: ROLE_KEYS.chatWrite writes (ZR, + on the native .nro;
+    // The console buttons, while in a room: ROLE_KEYS.chatWrite writes (+;
     // offline, ZR opens the login box), ZL shows or hides the users, L leaves.
     const write = () => {
       if (this.joined()) this.write();
       return true;
     };
     const release = [
-      this.navigation.registerButton('buttonZR', () => this.loginBox.pressZR() || (ROLE_KEYS.chatWrite.button === 'buttonZR' ? write() : true)),
-      ...(ROLE_KEYS.chatWrite.button === 'buttonZR' ? [] : [this.navigation.registerButton(ROLE_KEYS.chatWrite.button, write)]),
+      this.navigation.registerButton('buttonZR', () => this.loginBox.pressZR() || true),
+      this.navigation.registerButton(ROLE_KEYS.chatWrite.button, write),
       this.navigation.registerButton('buttonZL', () => {
         if (this.joined()) this.toggleUsers(true);
         return true;

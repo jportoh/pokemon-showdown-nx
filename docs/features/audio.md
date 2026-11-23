@@ -2,8 +2,8 @@
 
 `core/audio/`, `features/battle/audio/`
 
-All sound goes through **Web Audio**: on the console `<audio>` elements never play, while an
-`AudioContext` runs from launch and decodes ogg, mp3 and wav ([brewser.md](../brewser.md#audio)).
+All sound goes through **Web Audio**: the console's engine has no `<audio>` elements, while an
+`AudioContext` runs from launch and decodes ogg and mp3 ([native.md](../native.md#phase-0-probe-test-x1-2026-11-21)).
 
 ## `AudioEngine`
 

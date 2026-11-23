@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for wanting to help! This is a Pokémon Showdown client for the Brewser console, built with
-Angular and drawn entirely on a WebGL canvas. Bug reports, ideas and pull requests are all welcome.
+Thanks for wanting to help! This is a Pokémon Showdown client for the Nintendo Switch (a homebrew
+`.nro`), built with Angular and drawn entirely on a WebGL canvas. Bug reports, ideas and pull requests are all welcome.
 
 ## Before you start
 
@@ -16,14 +16,14 @@ The other guides in [docs/](docs/) go deeper:
 | [ui-kit.md](docs/ui-kit.md) | build or change a screen |
 | [input.md](docs/input.md) | touch controls, buttons or focus |
 | [rendering.md](docs/rendering.md) | draw a lot, add images, or chase a dropped frame |
-| [brewser.md](docs/brewser.md) | want to know why something is done the hard way, or test on a console |
+| [native.md](docs/native.md) | want to know why something is done the hard way, or test on a console |
 | [showdown.md](docs/showdown.md) | talk to the Showdown server |
 | [data.md](docs/data.md) | touch game data, formats, sprites or sounds |
 | [features/](docs/features/README.md) | work on a specific screen |
 | [releases.md](docs/releases.md) | want to know how changes are shipped |
 
 For anything bigger than a small fix, **open an issue first** to talk it through. Some designs here
-are deliberate trade-offs for the console (see [brewser.md](docs/brewser.md)), and it saves you work
+are deliberate trade-offs for the console (see [native.md](docs/native.md)), and it saves you work
 to know before you start.
 
 ## Setting up
@@ -32,18 +32,19 @@ Requirements: Node.js 22+ and npm.
 
 ```bash
 git clone <your fork>
-cd pokemon-showdown-brewser
+cd pokemon-showdown-nx
 npm install
 npm start          # http://localhost:4200
 ```
 
 The keyboard stands in for the controller: arrows or WASD move, Enter or J is A, Escape or K is B,
-Z/C are ZL/ZR, Q/E are L/R, R is R3 and F is L3 (the performance HUD). Any gamepad also works. See
+Z/C are ZL/ZR, Q/E are L/R, X/Y are X/Y, + and - are + and −, R is R3 and F is L3 (the performance
+HUD). Any gamepad also works. See
 [input.md](docs/input.md#the-buttons).
 
 To log in or play online from a desktop browser, you need one with web security disabled, because
 Showdown's login server only allows its own site
-([brewser.md](docs/brewser.md#developing-in-a-desktop-browser)). Browsing, the teambuilder and
+([native.md](docs/native.md#developing-in-a-desktop-browser)). Browsing, the teambuilder and
 everything offline work without it.
 
 ## Making a change
@@ -54,16 +55,16 @@ everything offline work without it.
 3. Run the checks.
 4. Open a pull request against `main`. Describe what changed and why, and how you tested it
    (browser, console, or both). Add a screenshot or a short video for visual changes.
-5. CI builds the console zip for your PR; a maintainer tests it on a console if you couldn't, and
+5. CI builds the `.nro` for your PR; a maintainer tests it on a console if you couldn't, and
    squash-merges it.
 
 ### Checks
 
 ```bash
-npm run build:brewser   # must pass: CI runs it as the required check
+npm run build:nro   # must pass: CI runs it as the required check
 ```
 
-It runs `ng build` and then re-bundles the result for the console ([brewser.md](docs/brewser.md#the-console-build)).
+It runs `ng build` and then packages the result as the Switch app ([native.md](docs/native.md#building-it)).
 
 There are no unit tests yet (`npm test` runs Vitest, and CI doesn't run it). Tests for pure
 logic (protocol parsing, battle text, team formats, the damage calc wrapper) are a very welcome
@@ -112,8 +113,6 @@ The project's rules for code assistants are in [CLAUDE.md](CLAUDE.md); they appl
   scripts in `scripts/`: change the script and run it again rather than editing the output
   ([data.md](docs/data.md)).
 - Only add assets you have the right to share, and credit their source.
-- A feature that needs a new remote origin must say so in its PR: it has to be added to the console's
-  network allow-list.
 
 **Commits and PRs**
 

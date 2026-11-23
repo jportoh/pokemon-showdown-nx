@@ -84,6 +84,6 @@ file that brings it in.
 ## Saved data
 
 What the app saves on the device goes through `core/persistence/device-storage.ts` (see
-[brewser.md](brewser.md#storage)). Keys are versioned (`psb.settings.v1`, `psb.teams.v1`…): when a
+[native.md](native.md#running-it)). Keys are versioned (`psb.settings.v1`, `psb.teams.v1`…): when a
 saved shape changes incompatibly, read the old version and migrate it, or bump the key, so players
 don't lose their teams.

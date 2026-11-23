@@ -2,7 +2,7 @@
 // and once WebGL owns the screen nothing printed is visible. Angular reports its errors through
 // console.error, so that is copied too.
 
-const LOG_DIR = 'sdmc:/switch/pokemon-showdown-brewser/';
+const LOG_DIR = 'sdmc:/switch/pokemon-showdown-nx/';
 const LOG_PATH = `${LOG_DIR}native.log`;
 const startedAt = Date.now();
 

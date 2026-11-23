@@ -34,7 +34,7 @@ export interface MenuState {
 }
 
 /**
- * The battle's menu (+ on the native .nro, L on Brewser), over the battle, which goes on meanwhile:
+ * The battle's menu (+), over the battle, which goes on meanwhile:
  * the music and sound effects volumes, light or dark and the battlefield (random or basic) (◀ ▶, as in
  * Settings; the field changes at once), the battle timer, the
  * open team sheets, the opponent's Trainer Card and Forfeit, held down (A) until its row fills red.

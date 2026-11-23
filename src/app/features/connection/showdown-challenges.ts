@@ -38,7 +38,7 @@ const ANSWER_WINDOW_MS = 5000;
 
 /**
  * Challenges other players send us. Showdown sends them as private messages:
- * `|pm| ffenrix|!Brewser1234|/challenge gen9randombattle|gen9randombattle|||`, and the same with an
+ * `|pm| ffenrix|!Player1234|/challenge gen9randombattle|gen9randombattle|||`, and the same with an
  * empty `/challenge` when it's withdrawn (or, from our side, once we've answered). Accepting starts a
  * battle room, which BattleRooms picks up. Ours go out as `/challenge ffenrix, gen9randombattle`, and
  * the server echoes them the same way with us as sender. In formats played with our own teams, the

@@ -82,7 +82,7 @@ const RECLAIM_DELAY_MS = 5000;
  * for the old connection: the server puts a player back in their battles by the name. Settings may also keep the name and, to log in when the app
  * starts (`logInSaved()`), a registered name's password (see SavedLogin).
  * The login server only allows CORS from Showdown's own site, so a regular browser can't read its
- * answer; the Brewser console doesn't enforce CORS (test P1, 2026-09-26), so there it works.
+ * answer; the console's engine doesn't enforce CORS, so there it works.
  */
 @Service()
 export class ShowdownLogin {
@@ -308,7 +308,7 @@ export class ShowdownLogin {
     return (id && (this.chosenAvatars[id] ?? this.lastAvatars[id])) || '';
   }
 
-  /** The name as Showdown's user ID ("brewser1234"), to recognise our own messages. */
+  /** The name as Showdown's user ID ("player1234"), to recognise our own messages. */
   userId(): string {
     return toId(this.stateSignal().name);
   }
@@ -484,7 +484,7 @@ export class ShowdownLogin {
   }
 
   /**
-   * `|updateuser| Brewser1234|1|lucas|…`: the name (with a leading rank character), whether it's a
+   * `|updateuser| Player1234|1|lucas|…`: the name (with a leading rank character), whether it's a
    * chosen one, and the avatar.
    */
   private onUpdateUser(rawName: string, named: boolean, avatar: string): void {
