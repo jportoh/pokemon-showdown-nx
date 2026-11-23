@@ -46,9 +46,9 @@ type Section = (typeof SECTIONS)[number];
  * info (ZR; ZL opens it on the opponent's team): both teams, the field's conditions and the log; and
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
- * R (Mega/Tera) is BattleScreen's; the menu (+, L on Brewser), the field view (Y, R3 on Brewser), the
- * chat (X), the timer (−) and the last turn's log (L held) are this screen's, and the mouse clicks what's
- * under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
+ * R (Mega/Tera) is BattleScreen's, but Done in team preview; the menu (+, L on Brewser), the field view
+ * (Y, R3 on Brewser), the party screen (X), the timer (−) and the last turn's log (L held) are this
+ * screen's (the chat is written from Battle info's log), and the mouse clicks what's under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
   selector: 'app-gl-battle-screen',
@@ -144,16 +144,15 @@ export class GlBattleScreen {
     const unregister = [
       this.navigation.registerButton('buttonZR', () => this.pressInfo()),
       this.navigation.registerButton('buttonZL', () => this.pressSheet()),
-      // Team preview's picks, sent (Done): + on the native .nro, L on Brewser. The menu shares that
-      // button, so it's registered after: it lets the press through while team preview is up.
-      this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && this.teamSelect.pressDone()),
+      // Team preview's picks, sent (Done): R, which BattleScreen (Mega, Tera) gets back outside team preview.
+      this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && !this.menuOpen && !this.cardOpen && this.teamSelect.pressDone()),
       this.navigation.registerButton(ROLE_KEYS.battleMenu.button, () => this.pressMenu()),
       this.navigation.registerButton(ROLE_KEYS.fieldView.button, () => this.pressField()),
-      // Only the native .nro has buttons for these (Brewser has them in the menu): X writes in the chat,
-      // − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
+      // Only the native .nro has buttons for these (Brewser has them on screen or in the menu): X opens
+      // the party screen, − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
       ...(BATTLE_SHORTCUTS
         ? [
-            this.navigation.registerButton(BATTLE_SHORTCUTS.chat.button, () => this.pressChat()),
+            this.navigation.registerButton(BATTLE_SHORTCUTS.party.button, () => this.pressParty()),
             this.navigation.registerButton(BATTLE_SHORTCUTS.timer.button, () => this.pressTimer()),
             this.navigation.registerButton(BATTLE_SHORTCUTS.log.button, () => this.store.turn() > 0),
           ]
@@ -235,8 +234,10 @@ export class GlBattleScreen {
       menuOpen: this.menuOpen,
       toggleMenu: () => (this.menuOpen ? this.closeMenu() : this.openMenu()),
       fieldOpen: this.fieldOpen,
-      toggleField: () => this.pressField(),
-      chat: this.store.canChat() ? () => this.pressChat() : null,
+      // The field view once the battle is on (not during team preview).
+      toggleField: this.store.started() && !picking ? () => this.pressField() : null,
+      // L held (native): the last turn's log, once there's a turn to look back on.
+      logHeld: BATTLE_SHORTCUTS && this.store.turn() > 0 && !covered && !party ? this.navigation.isHeld(BATTLE_SHORTCUTS.log.button) : null,
       forfeitState: this.forfeitState(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
@@ -403,9 +404,8 @@ export class GlBattleScreen {
     return !this.store.result() && !this.store.lost() && !this.store.watching() && this.forfeitState() === 'idle';
   }
 
-  /** + (L on Brewser): the menu, or closed again; lets the press through to Done while team preview is up. */
+  /** + (L on Brewser): the menu, or closed again (team preview too: Done is R). */
   private pressMenu(): boolean {
-    if (!this.partyShown() && this.teamSelect.shown()) return false;
     if (this.cardOpen) this.closeCard();
     else if (this.menuOpen) this.closeMenu();
     else this.openMenu();
@@ -456,10 +456,19 @@ export class GlBattleScreen {
     this.focus.focus(this.focusBeforeField);
   }
 
-  /** X (native): the keyboard for a chat message, in live battles. */
-  private pressChat(): boolean {
-    if (!this.store.canChat() || this.menuOpen || this.cardOpen) return false;
-    this.writeChat();
+  /**
+   * X (native): while choosing a move, the party screen to switch (as A on Switch), or closed again.
+   * A forced switch has it open already.
+   */
+  private pressParty(): boolean {
+    if (this.store.watching() || this.menuOpen || this.cardOpen || this.fieldOpen || this.infoTab) return false;
+    if (!this.playPanel.choosing() || this.choices.pendingMove()) return false;
+    if (this.partyShown()) {
+      this.partyOpen = null;
+      this.choices.notice.set('');
+    } else {
+      this.partyOpen = this.choices.slot();
+    }
     return true;
   }
 

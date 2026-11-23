@@ -17,7 +17,7 @@ const BRING_SLOT = { x: 424, y: 616, h: 96, width: 448, gap: 12 };
 const DONE_BOX = { x: 884, y: 636, w: 160, h: 56 };
 const SHEET_BOX = { x: 1052, y: 648, w: 176, h: 32 };
 const POP_MS = 200;
-/** Done's beat while it waits to be pressed (all picked), and its shake when L comes too soon. */
+/** Done's beat while it waits to be pressed (all picked), and its shake when R comes too soon. */
 const DONE_BEAT_MS = 900;
 const NUDGE_MS = 420;
 export const DONE_ID = 'team-done';
@@ -112,7 +112,7 @@ export class TeamSelectView {
   private filledAt: number[] = [];
   /** Since when all are picked and Done waits (its beat starts there); null while not. */
   private readySince: number | null = null;
-  /** L pressed before all were picked: the count shakes (set on the next frame). */
+  /** R pressed before all were picked: the count shakes (set on the next frame). */
   private nudgeAt = -1e4;
   private nudgeAsked = false;
 
@@ -144,7 +144,7 @@ export class TeamSelectView {
     this.store.choose(`team ${this.order().map((i) => i + 1).join('')}`);
   }
 
-  /** L: Done from anywhere on the screen; too soon, the count shakes. False when it isn't ours to use. */
+  /** R: Done from anywhere on the screen; too soon, the count shakes. False when it isn't ours to use. */
   pressDone(): boolean {
     if (!this.pending()) return false;
     if (this.ready()) this.done();
@@ -225,7 +225,7 @@ export class TeamSelectView {
   }
 
   /**
-   * Done, with L's chip. Once all are picked it beats (a glow swelling out of it, the button growing a
+   * Done, with R's chip. Once all are picked it beats (a glow swelling out of it, the button growing a
    * little) until it's pressed, so it's clear the picks wait for it.
    */
   private drawDone(ctx: ScreenContext, ready: boolean, standing: boolean, focused: boolean): void {
@@ -330,9 +330,9 @@ export class TeamSelectView {
 
   private hint(sheet: SheetButton | null): string {
     if (this.standingBy()) return sheet === 'sheet' ? 'ZL their full team sheet' : '';
-    if (sheet === 'sheet') return 'A pick · L done · ZL their sheet';
-    if (sheet === 'accept') return 'A pick · L done · hold ZL: accept open TS';
-    if (sheet === 'waiting') return 'A pick · L done · waiting on sheets';
-    return 'A pick · ◀▶ sides · L done';
+    if (sheet === 'sheet') return `A pick · ${ROLE_KEYS.previewDone.label} done · ZL their sheet`;
+    if (sheet === 'accept') return `A pick · ${ROLE_KEYS.previewDone.label} done · hold ZL: accept open TS`;
+    if (sheet === 'waiting') return `A pick · ${ROLE_KEYS.previewDone.label} done · waiting on sheets`;
+    return `A pick · ◀▶ sides · ${ROLE_KEYS.previewDone.label} done`;
   }
 }
