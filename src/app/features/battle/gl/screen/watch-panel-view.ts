@@ -54,7 +54,8 @@ export class WatchPanelView {
     controlButton(ctx, 'replay-speed', at(2), `Speed ${this.store.speed()}x`, 'plain', () => {
       this.store.setSpeed(SPEEDS[(SPEEDS.indexOf(this.store.speed()) + 1) % SPEEDS.length]);
     });
-    controlButton(ctx, 'replay-leave', at(3), 'Other replays', 'plain', actions.leaveReplay);
+    // Our own battle's instant replay goes back to its end.
+    controlButton(ctx, 'replay-leave', at(3), this.store.instantReplay() ? 'Back to results' : 'Other replays', 'plain', actions.leaveReplay);
   }
 
   private drawLive(ctx: ScreenContext, leave: () => void): void {

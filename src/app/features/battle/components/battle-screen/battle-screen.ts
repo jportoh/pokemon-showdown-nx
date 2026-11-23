@@ -11,6 +11,7 @@ import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
+import { SentTeams } from '@features/connection/sent-teams';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { toId } from '@shared/utils/to-id';
 
@@ -40,6 +41,7 @@ import { toId } from '@shared/utils/to-id';
       (leaveReplay)="leaveReplay()"
       (leaveLive)="leaveLive()"
       (rematch)="rematch()"
+      (instantReplay)="store.watchInstantReplay()"
       (leave)="leave()"
       (back)="back()"
       (forfeit)="forfeit()"
@@ -56,6 +58,7 @@ export class BattleScreen {
   private readonly rooms = inject(BattleRooms);
   private readonly login = inject(ShowdownLogin);
   private readonly challenges = inject(ShowdownChallenges);
+  private readonly sentTeams = inject(SentTeams);
 
   /** The real battle's server room (a ladder match or an accepted challenge); null for replays and spectating. */
   private readonly liveRoom = signal<string | null>(null);
@@ -63,9 +66,9 @@ export class BattleScreen {
   private readonly rematchAsked = signal(false);
 
   /**
-   * The end's Rematch button, in a real battle (random formats only: a challenge can't carry a team
-   * yet): a challenge to the same player in the same format, or
-   * accepting theirs if they asked first; while ours waits, the button cancels it.
+   * The end's Rematch button, in a real battle: a challenge to the same player in the same format
+   * (with the team we sent for this battle, in formats with teams), or accepting theirs if they asked
+   * first; while ours waits, the button cancels it.
    */
   protected readonly rematchView = computed(() => {
     const room = this.liveRoom();
@@ -83,7 +86,7 @@ export class BattleScreen {
     }
     const format = roomFormat(room);
     const opponent = this.store.sides().p2.name;
-    if (!format?.includes('random') || !opponent) return { can: false, label: '', note: '' };
+    if (!format || !opponent || this.rematchTeam() === undefined) return { can: false, label: '', note: '' };
     if (this.challenges.outgoing()?.toId === toId(opponent)) {
       return { can: true, label: 'Cancel rematch', note: this.challenges.error() ?? `Waiting for ${opponent} to accept the rematch…` };
     }
@@ -100,7 +103,19 @@ export class BattleScreen {
     const room = this.liveRoom();
     const opponent = toId(this.store.sides().p2.name);
     const format = room && roomFormat(room);
-    return this.challenges.incoming().find((c) => c.fromId === opponent && c.format === format && !c.needsTeam) ?? null;
+    return this.challenges.incoming().find((c) => c.fromId === opponent && c.format === format && (!c.needsTeam || !!this.rematchTeam())) ?? null;
+  });
+
+  /**
+   * The team a rematch plays with: the one we sent for this battle in formats with teams, null in
+   * random formats; undefined when there's none to play again (a battle opened before we sent one).
+   */
+  private readonly rematchTeam = computed(() => {
+    const room = this.liveRoom();
+    const format = room && roomFormat(room);
+    if (!format) return undefined;
+    if (format.includes('random')) return null;
+    return this.sentTeams.get(format) ?? undefined;
   });
 
   /**
@@ -115,7 +130,8 @@ export class BattleScreen {
       !this.store.started() &&
       !this.store.request() &&
       !this.store.result() &&
-      !this.store.lost(),
+      !this.store.lost() &&
+      !this.store.instantReplay(),
   );
 
   protected readonly forfeitState = signal<ForfeitState>('idle');
@@ -132,7 +148,7 @@ export class BattleScreen {
     // A rematch accepted (theirs or ours), or the next game of a best-of set, opens its room while this
     // battle is still on screen (App only opens battles when none is): it takes this one's place.
     const rematches = this.rooms.started.subscribe((roomId) => {
-      if (this.liveRoom() && (this.store.result() || this.store.lost())) this.startLive(roomId);
+      if (this.liveRoom() && (this.store.result() || this.store.lost() || this.store.instantReplay())) this.startLive(roomId);
     });
     // Back after a reconnection with another name (ours couldn't be had back): the server won't let
     // that one play our side, so the battle can't go on from here.
@@ -173,11 +189,13 @@ export class BattleScreen {
     const opponent = this.store.sides().p2.name;
     const theirs = this.theirRematch();
     if (!format || !opponent) return;
+    const team = this.rematchTeam();
+    if (team === undefined) return;
     if (this.challenges.outgoing()) this.challenges.cancelChallenge();
-    else if (theirs) this.challenges.accept(theirs);
+    else if (theirs) this.challenges.accept(theirs, team);
     else {
       this.rematchAsked.set(true);
-      this.challenges.challenge(opponent, format);
+      this.challenges.challenge(opponent, format, team);
     }
   }
 
@@ -222,12 +240,20 @@ export class BattleScreen {
 
   /** The same replay again, from the start. */
   protected watchAgain(): void {
+    if (this.store.instantReplay()) {
+      this.store.restartInstantReplay();
+      return;
+    }
     const replay = this.store.replay();
     if (replay) this.store.start(new ReplayBattleConnection(replay));
   }
 
-  /** Closes the replay (so the page can be left) and goes back to the list it was opened from. */
+  /** Closes the replay (so the page can be left) and goes back to the list it was opened from; an instant replay, to our battle's end. */
   protected leaveReplay(): void {
+    if (this.store.instantReplay()) {
+      this.store.endInstantReplay();
+      return;
+    }
     const backTo = this.store.replay()?.backTo ?? '/replays';
     this.store.close();
     void this.router.navigateByUrl(backTo);

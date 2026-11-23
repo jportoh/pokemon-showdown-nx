@@ -17,6 +17,7 @@ import { ForfeitState, HeaderView } from '@features/battle/gl/screen/header-view
 import { CARD_CLOSE_ID, TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { CARD_PREFIX, INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
 import { TeamsOverviewView, chatText } from '@features/battle/gl/screen/overlay-views';
+import { LEAVE_CONFIRM_IDS, LeaveKind, drawLeaveConfirm } from '@features/battle/gl/screen/leave-confirm-view';
 import { PartyView } from '@features/battle/gl/screen/party-view';
 import { PlayPanelView, targetSlot } from '@features/battle/gl/screen/play-panel-view';
 import { INK, ScreenContext, write } from '@features/battle/gl/screen/screen-context';
@@ -68,6 +69,7 @@ export class GlBattleScreen {
   readonly leaveReplay = output<void>();
   readonly leaveLive = output<void>();
   readonly rematch = output<void>();
+  readonly instantReplay = output<void>();
   readonly leave = output<void>();
   /** B in our own battle, with nothing of the screen's own to close: takes back choices (BattleScreen.back). */
   readonly back = output<void>();
@@ -107,6 +109,9 @@ export class GlBattleScreen {
   private focusBeforeMenu: string | null = null;
   /** The opponent's card is open over the battle (from the menu). */
   private cardOpen = false;
+  /** B while watching asks first: leaving the replay or the live battle (null: not asking), and the focus under it. */
+  private leaveAsk: LeaveKind | null = null;
+  private focusBeforeLeave: string | null = null;
   /** The Pokémon on the field at a glance (Y, R3 on Brewser), and the focus under it. */
   private fieldOpen = false;
   private focusBeforeField: string | null = null;
@@ -142,13 +147,15 @@ export class GlBattleScreen {
   });
 
   constructor() {
+    // While leaving is being asked, the other buttons wait (the dialog takes them, doing nothing).
+    const unlessAsking = (press: () => boolean) => () => this.leaveAsk !== null || press();
     const unregister = [
-      this.navigation.registerButton('buttonZR', () => this.pressInfo()),
-      this.navigation.registerButton('buttonZL', () => this.pressSheet()),
+      this.navigation.registerButton('buttonZR', unlessAsking(() => this.pressInfo())),
+      this.navigation.registerButton('buttonZL', unlessAsking(() => this.pressSheet())),
       // Team preview's picks, sent (Done): R, which BattleScreen (Mega, Tera) gets back outside team preview.
       this.navigation.registerButton(ROLE_KEYS.previewDone.button, () => !this.partyShown() && this.teamSelect.shown() && !this.menuOpen && !this.cardOpen && this.teamSelect.pressDone()),
-      this.navigation.registerButton(ROLE_KEYS.battleMenu.button, () => this.pressMenu()),
-      this.navigation.registerButton(ROLE_KEYS.fieldView.button, () => this.pressField()),
+      this.navigation.registerButton(ROLE_KEYS.battleMenu.button, unlessAsking(() => this.pressMenu())),
+      this.navigation.registerButton(ROLE_KEYS.fieldView.button, unlessAsking(() => this.pressField())),
       // Only the native .nro has buttons for these (Brewser has them on screen or in the menu): X opens
       // the party screen, − turns the timer on or off, L held shows the last turn's log (drawn while it's held).
       ...(BATTLE_SHORTCUTS
@@ -196,6 +203,7 @@ export class GlBattleScreen {
       this.menuOpen = false;
       this.cardOpen = false;
       this.fieldOpen = false;
+      this.leaveAsk = null;
     }
     // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
     const pop = this.store.chatPop();
@@ -267,6 +275,7 @@ export class GlBattleScreen {
         rematchLabel: this.rematchLabel(),
         rematchNote: this.rematchNote(),
         rematch: () => this.rematch.emit(),
+        instantReplay: () => this.instantReplay.emit(),
         leave: () => this.leave.emit(),
         openParty: () => (this.partyOpen = this.choices.slot()),
       });
@@ -300,6 +309,9 @@ export class GlBattleScreen {
     } else if (this.menuOpen) {
       this.focus.begin();
       this.menu.draw(ctx, this.menuState());
+    } else if (this.leaveAsk) {
+      this.focus.begin();
+      drawLeaveConfirm(ctx, this.leaveAsk, { stay: () => this.closeLeaveAsk(), leave: () => this.confirmLeave() });
     }
     this.header.drawCountdown(ctx);
     // Also while team preview's teams have come but not yet our request to pick ours (its log plays
@@ -315,7 +327,7 @@ export class GlBattleScreen {
     mark = this.timeSection('overlays', mark);
 
     this.focus.end();
-    if (!this.menuOpen && !this.cardOpen && !this.fieldOpen) this.settleFocus(picking, party);
+    if (!this.menuOpen && !this.cardOpen && !this.fieldOpen && !this.leaveAsk) this.settleFocus(picking, party);
     mark = performance.now();
     renderer.end();
     this.timeSection('flush', mark);
@@ -599,10 +611,11 @@ export class GlBattleScreen {
   /** The controller's d-pad, A and B (everything else comes as page buttons). */
   private onAction(action: CanvasAction): boolean {
     // Over everything: the rival's card, the menu, the Pokémon on the field (each B closes).
-    if (this.cardOpen || this.menuOpen) {
+    if (this.cardOpen || this.menuOpen || this.leaveAsk) {
       if (action === 'back') {
         if (this.cardOpen) this.closeCard();
-        else this.closeMenu();
+        else if (this.menuOpen) this.closeMenu();
+        else this.closeLeaveAsk();
       } else if (isDirection(action)) this.focus.move(action);
       else if (action === 'accept') this.focus.accept();
       return true;
@@ -643,11 +656,12 @@ export class GlBattleScreen {
     return false;
   }
 
-  /** B: closes or steps back from whatever is in front. */
+  /** B: closes or steps back from whatever is in front; watching, it asks before leaving. */
   private pressBack(): void {
     if (this.store.watching()) {
-      if (this.store.replay()) this.leaveReplay.emit();
-      else this.leaveLive.emit();
+      this.focusBeforeLeave = this.focus.focused;
+      this.leaveAsk = this.store.instantReplay() ? 'instant' : this.store.replay() ? 'replay' : 'live';
+      this.focus.focus(LEAVE_CONFIRM_IDS.stay);
       return;
     }
     if (this.teamSelect.shown()) {
@@ -661,6 +675,20 @@ export class GlBattleScreen {
       return;
     }
     this.back.emit();
+  }
+
+  private closeLeaveAsk(): void {
+    this.leaveAsk = null;
+    this.focus.focus(this.focusBeforeLeave);
+  }
+
+  /** Leave in the dialog: the replay or the live battle is left (an instant replay, for the battle's end). */
+  private confirmLeave(): void {
+    const kind = this.leaveAsk;
+    this.leaveAsk = null;
+    this.focusBeforeLeave = null;
+    if (kind === 'live') this.leaveLive.emit();
+    else this.leaveReplay.emit();
   }
 
   /** ZR: opens Battle info (on the tab last shown), or moves to the next tab. */

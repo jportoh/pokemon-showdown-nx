@@ -6,6 +6,7 @@ import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { splitLine } from '@features/connection/showdown-protocol';
+import { ReplayBattleConnection } from '@features/battle/replay/replay-battle-connection';
 import {
   BattleConnection,
   BattleFieldState,
@@ -126,6 +127,23 @@ function isChatLine(line: string): boolean {
  * we're back in one we left (the app closed mid-battle), so the log is caught up, not played again. A
  * new battle's first frame goes no further than turn 1, whose lead-ins still play out.
  */
+/** Lines about the present (the timer, refused choices), not the battle: not applied again. */
+function isPresentOnly(line: string): boolean {
+  return line.startsWith('|inactive|') || line.startsWith('|inactiveoff|') || line.startsWith('|error|') || line.startsWith('|html|<div class="message-error">');
+}
+
+/**
+ * A replay's log from our battle's frames: the protocol lines a spectator would have seen. Without
+ * the requests, the present-only lines or `|init|battle` (which would make the store take it as a
+ * rejoin and apply it all at once).
+ */
+function instantReplayLog(frames: readonly string[]): string {
+  return frames
+    .flatMap((frame) => frame.split('\n'))
+    .filter((line) => line.startsWith('|') && !line.startsWith('|request|') && line !== '|init|battle' && !isPresentOnly(line))
+    .join('\n');
+}
+
 function isRejoin(frame: string): boolean {
   const lines = frame.split('\n');
   return lines.includes('|init|battle') && lines.some((line) => line.startsWith('|turn|') && Number(line.slice('|turn|'.length)) > 1);
@@ -230,6 +248,7 @@ export class BattleStore {
   private readonly activeMovesSignal = signal<readonly RequestActive[]>([]);
   private readonly battleIdSignal = signal(0);
   private readonly replaySignal = signal<Replay | null>(null);
+  private readonly instantReplaySignal = signal(false);
   private readonly spectatingSignal = signal(false);
   private readonly spectateErrorSignal = signal<string | null>(null);
   private readonly lostSignal = signal<string | null>(null);
@@ -296,6 +315,8 @@ export class BattleStore {
    * with another name): why. It ends the battle as far as the screen goes.
    */
   readonly lost = this.lostSignal.asReadonly();
+  /** The replay being watched is our own battle's, just finished (see watchInstantReplay). */
+  readonly instantReplay = this.instantReplaySignal.asReadonly();
   /** Watched rather than played (a replay or a live battle): no "you", both players by name. */
   readonly watching = computed(() => this.replaySignal() !== null || this.spectatingSignal());
   /** Replays only: the playback is paused. */
@@ -415,6 +436,21 @@ export class BattleStore {
   private readonly critSlots = new Set<string>();
   /** The last request shown, to show again when the choices are taken back. */
   private lastRequest: BattleRequest | null = null;
+  /** Every frame our own battle's room has sent (sides as we see them), for its instant replay. */
+  private frames: string[] = [];
+  /**
+   * While our finished battle's instant replay plays: its connection (its room stays open), the frames
+   * it had sent, and those it sends meanwhile.
+   */
+  private suspended: {
+    connection: BattleConnection;
+    played: string[];
+    frames: string[];
+    /** Our team as the last request had it: requests aren't applied again on the way back. */
+    team: readonly RequestPokemon[];
+    moves: readonly RequestActive[];
+    lastRequest: BattleRequest | null;
+  } | null = null;
 
   /** How the log names Pokémon and teams: from p1's side, which is the player's (or the one watched). */
   private readonly names: BattleNames = {
@@ -429,6 +465,7 @@ export class BattleStore {
 
   start(connection: BattleConnection): void {
     this.reset();
+    this.frames = [];
     this.battleIdSignal.update((id) => id + 1);
     this.replaySignal.set(connection.replay ?? null);
     // Only replays have a speed control: a live battle after one at x2 or x4 plays at normal speed.
@@ -440,7 +477,11 @@ export class BattleStore {
     this.canToggleTimerSignal.set(!!connection.setTimer && !connection.replay);
     this.canChatSignal.set(!!connection.say && !connection.replay);
     void this.music.start();
-    connection.start((frame) => this.receive(frame));
+    connection.start((frame) => {
+      // Our battle's room goes on while its instant replay plays: what it says waits for the way back.
+      if (this.suspended?.connection === connection) this.suspended.frames.push(frame);
+      else this.receive(frame);
+    });
   }
 
   /** Leaves the battle for good: the battle page can be left again. */
@@ -452,7 +493,81 @@ export class BattleStore {
     this.session.setActive(false);
   }
 
+  /**
+   * The end's Instant replay: our finished battle again from its start, as a replay (play/pause,
+   * next turn, speed), from what its room sent us (without the requests, only we saw those). Its room
+   * stays open meanwhile, for a rematch or the set's next game; endInstantReplay comes back to the end.
+   */
+  watchInstantReplay(): void {
+    const live = this.connection;
+    if (!live || live.replay || this.watching() || !this.resultSignal() || this.suspended) return;
+    const { p1, p2 } = this.sidesSignal();
+    const replay: Replay = {
+      id: 'instant',
+      format: this.formatSignal(),
+      players: [p1.name, p2.name],
+      uploadtime: 0,
+      log: instantReplayLog(this.frames),
+    };
+    this.suspended = { connection: live, frames: [], played: this.frames, team: this.teamSignal(), moves: this.activeMovesSignal(), lastRequest: this.lastRequest };
+    this.instantReplaySignal.set(true);
+    this.startReplay(replay);
+  }
+
+  /** The instant replay again, from the start. */
+  restartInstantReplay(): void {
+    const replay = this.replaySignal();
+    if (this.suspended && replay) this.startReplay(replay);
+  }
+
+  /**
+   * Leaves the instant replay for the end of our battle: what its room sent is applied again at
+   * once, as when coming back to a battle after a reconnection, then what it said meanwhile.
+   */
+  endInstantReplay(): void {
+    const suspended = this.suspended;
+    if (!suspended) return;
+    this.halt();
+    this.clearBattle();
+    this.suspended = null;
+    this.instantReplaySignal.set(false);
+    this.replaySignal.set(null);
+    this.speedSignal.set(1);
+    this.connection = suspended.connection;
+    this.canChatSignal.set(!!suspended.connection.say);
+    this.battleIdSignal.update((id) => id + 1);
+    this.frames = [];
+    for (const frame of [...suspended.played, ...suspended.frames]) {
+      this.catchingUp = true;
+      this.receive(frame.split('\n').filter((line) => !isPresentOnly(line) && !line.startsWith('|request|')).join('\n'));
+    }
+    this.catchingUp = false;
+    this.teamSignal.set(suspended.team);
+    this.activeMovesSignal.set(suspended.moves);
+    this.lastRequest = suspended.lastRequest;
+    this.renderScheduler.request();
+  }
+
+  /** Plays `replay` from the start, in place of what's shown, keeping the music. */
+  private startReplay(replay: Replay): void {
+    this.halt();
+    this.clearBattle();
+    this.battleIdSignal.update((id) => id + 1);
+    this.replaySignal.set(replay);
+    this.canChatSignal.set(false);
+    this.answerChat(null);
+    const connection = new ReplayBattleConnection(replay);
+    this.connection = connection;
+    // Its own battle music, as any replay.
+    void this.music.start();
+    connection.start((frame) => this.receive(frame));
+  }
+
   private reset(): void {
+    // An instant replay's battle is left too.
+    this.suspended?.connection.stop();
+    this.suspended = null;
+    this.instantReplaySignal.set(false);
     this.stop();
     this.clearBattle();
   }
@@ -469,6 +584,8 @@ export class BattleStore {
     this.halt();
     this.clearBattle();
     this.pendingRequest = request;
+    // The room sends it all again: what came before goes from the instant replay's record.
+    this.frames = [];
     this.canToggleTimerSignal.set(canToggleTimer);
     this.battleIdSignal.update((id) => id + 1);
     this.catchingUp = true;
@@ -634,6 +751,17 @@ export class BattleStore {
   }
 
   /**
+   * Skip to end, as Showdown's button, in our own battles: what's left of the turn being played is
+   * applied at once, so the next choice (or the end) shows straight away.
+   */
+  skipToEnd(): void {
+    if (this.watching() || !this.playingSignal()) return;
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.catchUp();
+  }
+
+  /**
    * Watching live or back in a battle we left, the battle so far: applied at once with nothing left animating, so the screen shows
    * the battle as it stands and only what happens from now on plays out.
    */
@@ -677,6 +805,8 @@ export class BattleStore {
       this.initialized = true;
       this.lostSignal.set(null);
     }
+    // Our own battle's frames, for its instant replay.
+    if (this.connection && !this.connection.replay && !this.spectatingSignal()) this.frames.push(frame);
     const catching = this.catchingUp || isRejoin(frame);
     for (const line of frame.split('\n')) {
       // A room frame starts with ">battle-…"; this screen shows a single battle. Chat commands' notices

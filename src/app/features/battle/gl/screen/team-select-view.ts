@@ -65,12 +65,13 @@ export class TeamSelectView {
 
   /**
    * The team's positions (0-based) in the order picked; a new request starts over, the same one shown
-   * again (Done taken back) keeps them.
+   * again (Done taken back) keeps them. Request IDs start over with each battle, so a rematch's team
+   * preview, with the same ID as the last battle's, starts over too.
    */
   private readonly order = linkedSignal({
-    source: this.request,
-    computation: (request, previous?: { source: BattleRequest | null; value: number[] }): number[] =>
-      request && previous?.source?.rqid === request.rqid ? previous.value : [],
+    source: () => ({ request: this.request(), battle: this.store.battleId() }),
+    computation: (source, previous?: { source: { request: BattleRequest | null; battle: number }; value: number[] }): number[] =>
+      source.request && previous?.source.battle === source.battle && previous.source.request?.rqid === source.request.rqid ? previous.value : [],
   });
 
   private readonly ready = computed(() => {
