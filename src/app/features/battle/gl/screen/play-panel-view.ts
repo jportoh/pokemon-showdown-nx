@@ -158,7 +158,8 @@ export class PlayPanelView {
       if (this.choices.forceSwitch()) return [];
       return this.choices.pendingMove() ? this.drawTargets(ctx) : this.drawMoves(ctx, actions);
     }
-    if (!this.store.playing() && this.choices.submitted().length > 0) return this.drawWaiting(ctx);
+    // Waiting: for the turn after sending our choices, or (a wait request) for the opponent's switch-in.
+    if (!this.store.playing() && (this.choices.submitted().length > 0 || this.store.request()?.wait)) return this.drawWaiting(ctx);
     if (!this.store.playing()) {
       drawMessage(ctx, this.store.log());
       return [];
@@ -494,10 +495,10 @@ export class PlayPanelView {
     return picks;
   }
 
-  /** While the opponent chooses: each of our orders on its move's type colour, and Cancel. */
+  /** While the opponent chooses: each of our orders on its move's type colour (none sent: none), and Cancel. */
   private drawWaiting(ctx: ScreenContext): string[] {
     const p = ctx.palette;
-    const plans = this.plans();
+    const plans = this.choices.submitted().length > 0 ? this.plans() : [];
     const width = plans.length > 1 ? (RIGHT - X - GAP) / 2 : RIGHT - X;
     plans.forEach((plan, i) => {
       const box = { x: X + i * (width + GAP), y: ROW_1, w: width, h: ROW_H };

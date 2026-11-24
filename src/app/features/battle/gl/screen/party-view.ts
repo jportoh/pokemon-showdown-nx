@@ -16,8 +16,9 @@ const GAP_Y = 8;
 /**
  * The party screen, to switch: over the field (dimmed), our team as cards two by two, each with
  * everything about it (HP, item, ability, moves); the ones that can come in bright, the rest dimmed
- * with where they are. A sends the focused one in; on one that can't come in, says why. Opened with
- * Switch, and by itself for a forced switch (a Pokémon fainted, or U-turn).
+ * with where they are. A sends the focused one in; on one that can't come in, says why; Y opens its
+ * whole sheet, exact stats and all (the battle screen's call). Opened with Switch, and by itself for a
+ * forced switch (a Pokémon fainted, or U-turn).
  */
 export class PartyView {
   private readonly store = inject(BattleStore);
@@ -47,6 +48,12 @@ export class PartyView {
   /** The first that can come in, where the focus starts. */
   readonly firstId = computed(() => this.cards().find((card) => card.allowed)?.id ?? this.cards()[0]?.id ?? null);
 
+  /** The team member whose card has the focus (its index in our team), else the first. */
+  memberInFocus(focused: string | null): number | null {
+    const card = this.cards().find((entry) => entry.id === focused) ?? this.cards()[0];
+    return card ? card.index - 1 : null;
+  }
+
   /** `back`: whether B leaves it (not on a forced switch with nothing to go back to). */
   draw(ctx: ScreenContext, back: boolean): void {
     const p = ctx.palette;
@@ -58,7 +65,7 @@ export class PartyView {
     write(ctx, title, GRID_X, TOP + 30, { size: 26, bold: true }, p.ink, 'left', 780);
     const notice = this.choices.notice();
     if (notice) write(ctx, notice, 1264, TOP + 30, { size: 17, bold: true }, p.teal, 'right', 460);
-    else drawKeys(ctx, back ? [['A', 'Switch in'], ['B', 'Back']] : [['A', 'Switch in']], 1264, TOP + 30);
+    else drawKeys(ctx, back ? [['A', 'Switch in'], ['Y', 'Stats'], ['B', 'Back']] : [['A', 'Switch in'], ['Y', 'Stats']], 1264, TOP + 30);
 
     for (const entry of this.cards()) {
       const box = { x: entry.x, y: entry.y, w: CARD_W, h: CARD_H };

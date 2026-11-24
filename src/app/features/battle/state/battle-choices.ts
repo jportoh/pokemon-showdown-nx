@@ -82,10 +82,20 @@ export class BattleChoices {
 
   private readonly request = this.store.request;
 
-  /** The last choices sent, described; cleared by a new battle. */
-  readonly submitted = linkedSignal<unknown, readonly PlannedAction[]>({
+  /** The last choices sent, described, with the request they answered; cleared by a new battle. */
+  private readonly sent = linkedSignal<unknown, { rqid: number | undefined; plans: readonly PlannedAction[] }>({
     source: this.store.battleId,
-    computation: () => [],
+    computation: () => ({ rqid: undefined, plans: [] }),
+  });
+
+  /**
+   * The choices sent while they're still this turn's: a newer request (the next turn, or a wait while
+   * the opponent replaces a fainted Pokémon) leaves them behind, so the waiting bar doesn't show them.
+   */
+  readonly submitted = computed(() => {
+    const { rqid, plans } = this.sent();
+    const request = this.request();
+    return request && request.rqid !== rqid ? [] : plans;
   });
 
   /** This turn's orders so far, described (the second slot shows the first one's). */
@@ -246,7 +256,7 @@ export class BattleChoices {
       this.choices.set(choices);
       return;
     }
-    this.submitted.set(choices.flatMap((c, slot) => this.describe(c, slot) ?? []));
+    this.sent.set({ rqid: this.request()?.rqid, plans: choices.flatMap((c, slot) => this.describe(c, slot) ?? []) });
     this.store.choose(choices.map(toChoiceString).join(', '));
   }
 

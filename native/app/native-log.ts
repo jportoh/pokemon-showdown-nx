@@ -53,4 +53,8 @@ globalThis.addEventListener('error', (event) => {
 globalThis.addEventListener('unhandledrejection', (event) => {
   nativeLog(`[unhandled rejection] ${describe((event as PromiseRejectionEvent).reason)}`);
 });
+// An orderly exit (HOME → close, Switch.exit) says so; a log that just stops was the engine dying (bugs L86).
+globalThis.addEventListener('unload', () => nativeLog('[exit] unload'));
+// The app's own lines (src/app/core/runtime/native-trace.ts): the screens it goes through.
+(globalThis as unknown as { psbNativeLog?: (line: string) => void }).psbNativeLog = nativeLog;
 
