@@ -88,8 +88,11 @@ export class StartScene {
   /** "Remember me": on unless turned off here (the welcome needs a remembered name). */
   private readonly rememberName = signal(true);
   private readonly autoLogin = signal(this.settings.settings().autoLogin);
-  /** A login was asked for here: its answer (an error, or the name) is ours to show. */
-  private readonly submitted = signal(false);
+  /**
+   * A login was asked for here: its answer (an error, or the name) is ours to show. So is an automatic
+   * login's that brought us here (refused, or the login server out of reach): the footer says why.
+   */
+  private readonly submitted = signal(this.login.state().mode === 'login' && this.login.state().loginError !== null);
 
   private readonly guestConnecting = computed(() => {
     const state = this.login.state();
@@ -127,6 +130,9 @@ export class StartScene {
     }
     const error = this.submitted() ? state.loginError : null;
     if (error) return { text: error, error: true };
+    // Guest from the welcome (the doors say it on the guest's chip): why no name could be had.
+    const guestError = this.guestError();
+    if (guestError) return { text: guestError, error: true };
     if (state.loggingIn) return { text: 'Logging in…', error: false };
     if (connecting) return { text: connectingText(connection, now), error: false };
     return null;

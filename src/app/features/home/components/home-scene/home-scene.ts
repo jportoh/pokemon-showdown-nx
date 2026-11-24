@@ -11,6 +11,7 @@ import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { HOME_SETTINGS_KEY, ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ServerStats } from '@features/connection/server-stats';
+import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
@@ -88,6 +89,7 @@ export class HomeScene {
   private readonly navigation = inject(KeyboardNavigation);
   private readonly menu = inject(HomeMenu);
   private readonly login = inject(ShowdownLogin);
+  private readonly connection = inject(ShowdownConnection);
   private readonly search = inject(ShowdownSearch);
   private readonly summary = inject(HomeSummary);
   private readonly stats = inject(ServerStats);
@@ -138,7 +140,13 @@ export class HomeScene {
   private readonly plate = computed((): NamePlate & { chips: Chip[] } => {
     const login = this.login.state();
     if (login.mode === null) return { name: 'Trainer', status: 'Offline', chips: [{ text: 'ZR to log in', tone: 'muted' }] };
-    if (login.status !== 'named') return { name: login.name || 'Trainer', status: 'Connecting…', chips: [] };
+    // No name to be had (Showdown's login server out of reach, say): why, in red.
+    if (login.status === 'unavailable') return { name: login.name || 'Trainer', status: 'No name', chips: [{ text: login.error ?? "Couldn't get a name", tone: 'error' }] };
+    if (login.status !== 'named') {
+      // Connected, the name is being claimed from the login server (it can be slow to answer).
+      const naming = this.connection.state().status === 'connected' && (login.status === 'naming' || login.loggingIn || login.reclaiming);
+      return { name: login.name || 'Trainer', status: naming ? 'Getting a name…' : 'Connecting…', chips: [] };
+    }
     if (!login.registered) {
       const chips: Chip[] = [{ text: login.ownName ? 'Unregistered name' : 'Guest', tone: 'muted' }];
       if (login.ownName) chips.push({ text: 'L to register', tone: 'muted' });
