@@ -232,7 +232,7 @@ export function ownSheet(member: OwnMember, sprite: string, ctx: SheetContext): 
   const moves = request.moves.slice(0, 4).map((id) => {
     const look = moveMeta(id, ctx.gen);
     const live = member.activeMoves?.find((m) => m.id === id);
-    return { ...look, known: true, pp: live ? `${live.pp}/${live.maxpp}` : '', dim: disabled.has(id) };
+    return { ...look, known: true, pp: live?.pp !== undefined ? `${live.pp}/${live.maxpp}` : '', dim: disabled.has(id) };
   });
 
   const item = itemName(request.item);

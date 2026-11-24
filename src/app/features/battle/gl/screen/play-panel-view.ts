@@ -103,12 +103,12 @@ export class PlayPanelView {
         index: i,
         // "Hidden Power Dark", without the power the request adds before Gen 6 (it has its own column).
         name: move.id === 'hiddenpower' && info ? info.name : move.move,
-        disabled: !!move.disabled || move.pp <= 0,
+        disabled: !!move.disabled || move.pp === 0,
         type,
         color: rgba(typeColor(type) || '#4b5563'),
         power: info && info.basePower > 0 ? String(info.basePower) : '',
         category: info?.category ?? '',
-        pp: `${move.pp}/${move.maxpp}`,
+        pp: move.pp === undefined ? '' : `${move.pp}/${move.maxpp}`,
         x: X + i * (MOVE_W + GAP),
       };
     }),
