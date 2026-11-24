@@ -64,7 +64,7 @@ export class TeambuilderScene {
   private readonly editor = new SetEditorView(this.focus, this.team, () => this.closeEditor(), this.spriteStage);
   private view: View = 'teams';
   private readonly diagnostics = inject(GlDiagnostics);
-  /** The diagnostics' own lines (L3): the damage calcs' time and the sprites' uploads. */
+  /** The diagnostics' own lines (L3 + R3): the damage calcs' time and the sprites' uploads. */
   private diagnosticLines(): string[] {
     const calcs = this.diagnostics.summary('calc');
     const sprites = this.diagnostics.summary('sprite');

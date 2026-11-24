@@ -70,7 +70,7 @@ The calculator is a teambuilder tool only: there's no damage calc during battles
 
 - **Text and performance.** The editor draws a lot of text. Descriptions are wrapped once and cached
   (`tb-draw.ts`), and texts not ready yet show skeletons ([rendering.md](../rendering.md#text)).
-  Check the L3 HUD when changing these views.
+  Check the L3 + R3 HUD when changing these views.
 - **Adding a format** for teams means its data (a new or extended script in `scripts/`), any rule
   that differs (`game-rules.ts`, the dex reader) and an entry in `TEAM_FORMATS` ([data.md](../data.md#formats)).
 - **Saved teams** must keep loading after your change: if the saved shape changes, migrate it

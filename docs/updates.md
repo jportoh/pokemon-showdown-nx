@@ -34,7 +34,7 @@ which says which bundle to run and which assets it brought. The loader runs the 
 Then it wraps `fetch` (`native/loader/asset-redirect.ts`) so the app's relative URLs for the packed
 files read the SD card's copies, and imports the bundle. Otherwise it runs `app.mjs`, and removes an
 update that can never run here. It leaves `globalThis.psbBoot` (which code runs, its version and
-source); the L3 HUD and Settings (More › App version) show it.
+source); the L3 + R3 HUD and Settings (More › App version) show it.
 
 ## Starting safely
 

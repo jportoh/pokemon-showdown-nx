@@ -4,7 +4,8 @@ Every screen is drawn on the WebGL stage (see [architecture.md](architecture.md)
 HTML buttons, lists or inputs. Screens are built from the kit in `src/app/core/gl/` instead. This
 guide lists its pieces and then builds a screen step by step.
 
-> **Try it live:** press **R3** on the home menu (or **R** on a keyboard) to open `/gl-kit`, a
+> **Try it live:** run `ng serve` and open `localhost:4200/gl-kit` in the browser (no button in
+> the app leads there), a
 > showcase of the widgets, a long list, the on-screen keyboard and a text stress test
 > (`features/gl-home/components/gl-kit-screen`).
 
@@ -247,7 +248,7 @@ export class ExampleScene {
 ```
 
 **3. Check it** with `npm start`: the d-pad (arrow keys) moves between the buttons, A (Enter) presses,
-ZR (C) adds, B (Escape) goes back. Then try the other themes in Settings, and the L3 HUD (F) to see
+ZR (C) adds, B (Escape) goes back. Then try the other themes in Settings, and the L3 + R3 HUD (F) to see
 its frame time.
 
 As a screen grows, move self-contained parts into classes under the feature's `gl/` folder (a view
@@ -265,4 +266,4 @@ and views. `features/play/gl` and `features/teambuilder/gl` are good examples.
   rate.
 - **Leave with a fade.** Pages fade out before navigating (`leaving` in `SettingsScene`), and ignore
   input meanwhile.
-- **Diagnostics.** Implement `diagnostics()` on the scene to add your own lines to the L3 HUD.
+- **Diagnostics.** Implement `diagnostics()` on the scene to add your own lines to the L3 + R3 HUD.

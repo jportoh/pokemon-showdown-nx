@@ -65,6 +65,8 @@ export class KeyboardNavigation {
 
   /** L/R/ZL/ZR/R3 handlers by screen, newest last: the newest one that uses the press wins. */
   private readonly pageButtons: { button: PageButton; handler: () => boolean }[] = [];
+  /** Two buttons pressed together (see registerChord). */
+  private readonly chords: { buttons: readonly [PageButton, PageButton]; handler: () => boolean }[] = [];
   private textInput: TextInput | null = null;
   /** Screens drawn on the canvas, newest last: the newest takes the d-pad, A and B (see captureInput). */
   private readonly canvasInputs: CanvasInput[] = [];
@@ -120,6 +122,21 @@ export class KeyboardNavigation {
     return () => {
       const index = this.pageButtons.indexOf(entry);
       if (index !== -1) this.pageButtons.splice(index, 1);
+    };
+  }
+
+  /**
+   * What two buttons pressed together do (L3 + R3: the diagnostics), so a player doesn't open it by
+   * accident. The chord fires when the second one goes down while the first is held; then neither
+   * does its own job until both are let go (the first one's own press already went through, if it
+   * came a frame or more before). Returns the unregister function.
+   */
+  registerChord(buttons: readonly [PageButton, PageButton], handler: () => boolean): () => void {
+    const entry = { buttons, handler };
+    this.chords.push(entry);
+    return () => {
+      const index = this.chords.indexOf(entry);
+      if (index !== -1) this.chords.splice(index, 1);
     };
   }
 
@@ -181,6 +198,10 @@ export class KeyboardNavigation {
       event.preventDefault();
       return;
     }
+    if (!event.repeat && this.pressChord(action, (other) => this.keysDown.has(other))) {
+      event.preventDefault();
+      return;
+    }
     if (this.dispatch(action, 'keyboard')) event.preventDefault();
   }
 
@@ -214,7 +235,7 @@ export class KeyboardNavigation {
       const previous = this.held.get(action);
       if (!previous) {
         held.set(action, { since: now, fired: now, repeats: 0 });
-        this.dispatch(action, 'gamepad');
+        if (!this.pressChord(action, (other) => pressed.has(other))) this.dispatch(action, 'gamepad');
         continue;
       }
       held.set(action, previous);
@@ -229,6 +250,26 @@ export class KeyboardNavigation {
     }
     this.held = held;
     this.releaseConsumed();
+  }
+
+  /**
+   * A newly pressed button that completes a chord (the other one is `down`): runs its handler and
+   * swallows both buttons until they're let go. Returns whether it did.
+   */
+  private pressChord(action: InputAction, down: (other: InputAction) => boolean): boolean {
+    for (const { buttons, handler } of [...this.chords].reverse()) {
+      const [first, second] = buttons.map(buttonAction);
+      const other = action === first ? second : action === second ? first : null;
+      if (other === null || !down(other) || this.consumed.has(action)) continue;
+      this.consumed.add(first);
+      this.consumed.add(second);
+      if (handler()) {
+        this.audio.play('page');
+        this.renderScheduler.request();
+      }
+      return true;
+    }
+    return false;
   }
 
   /** Runs an action; returns whether it was used (and the key's default must be prevented). */

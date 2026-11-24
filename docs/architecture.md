@@ -45,7 +45,7 @@ UI fully usable with the controller alone. See [ui-kit.md](ui-kit.md).
    `CanvasFocus`, and ends with `renderer.end()`.
 4. An **overlay** (the on-screen keyboard, `GlStage.setOverlay`) draws over the scene and gets input
    first.
-5. With **L3** pressed, the performance HUD (`PerfHud`) draws on top: frame times, draw calls, cache
+5. With **L3 + R3** pressed together, the performance HUD (`PerfHud`) draws on top: frame times, draw calls, cache
    use and the scene's own `diagnostics()` lines.
 
 Scenes draw in **immediate mode**: nothing is retained between frames except the scene's own state.
@@ -144,7 +144,7 @@ Path aliases: `@core/*`, `@features/*` and `@shared/*` (see `tsconfig.json`).
 | `/history` | `HistoryScene` | The player's own battles |
 | `/chats` | `ChatsScene` | Chat rooms |
 | `/settings` | `SettingsScene` | Settings |
-| `/gl-kit` | `GlKitScreen` | Developer showcase of the UI kit (R3 on the home menu) |
+| `/gl-kit` | `GlKitScreen` | Developer showcase of the UI kit (by URL only, e.g. `localhost:4200/gl-kit`) |
 
 The router uses hash URLs (`withHashLocation`): on the console the location only lives in memory
 (`native/app/dom-shim.ts`).

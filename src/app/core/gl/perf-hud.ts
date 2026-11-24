@@ -19,7 +19,7 @@ const WIDTH = 380;
 const UPDATE_MS = 500;
 
 /**
- * The frame-time diagnostics the stage shows over any screen (L3): frame rate, stutters and what
+ * The frame-time diagnostics the stage shows over any screen (L3 + R3): frame rate, stutters and what
  * came before them, the text and image caches, draw calls, and a graph of the last frames. `extra`
  * adds the shown screen's own lines. Made in an injection context (the stage's field).
  */
@@ -84,7 +84,7 @@ export class PerfHud {
         ...this.diagnostics.connection(),
         ...this.extra(),
         ...codeLine(),
-        'L3 hides this',
+        'L3 + R3 hides this',
       ];
     }
     const x = right - WIDTH - 8;

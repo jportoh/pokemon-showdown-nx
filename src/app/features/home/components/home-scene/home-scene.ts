@@ -75,7 +75,7 @@ const ART: Partial<Record<PixelIconName, readonly { sprite: string; size: number
  * Settings is a small button at the top, by Showdown's counts. The trainer is a button too: the
  * Trainer Card (or registering the player's name). Under the menu, what the focused button is for and
  * the controller's buttons. ZR held logs out (or disconnects) and goes back to the entry screen; offline,
- * ZR goes there to log in. L opens the Trainer Card too; B closes it. X opens Settings. R3 opens the UI kit gallery.
+ * ZR goes there to log in. L opens the Trainer Card too; B closes it. X opens Settings.
  */
 @Component({
   selector: 'app-home-scene',
@@ -231,7 +231,6 @@ export class HomeScene {
       this.navigation.registerButton('buttonZR', () => this.pressZR()),
       this.navigation.registerButton('buttonL', () => (this.box() === 'card' && this.cardView.picking() ? this.cardView.turn(-1) : this.toggleBox())),
       this.navigation.registerButton('buttonR', () => this.box() === 'card' && this.cardView.picking() && this.cardView.turn(1)),
-      this.navigation.registerButton('buttonR3', () => (void this.router.navigateByUrl('/gl-kit'), true)),
       // X: Settings, but for the Trainer Card's history (registered after, so it's asked first).
       this.navigation.registerButton(HOME_SETTINGS_KEY.button, () => this.box() === null && (this.open(SETTINGS_ITEM), true)),
       this.navigation.registerButton(ROLE_KEYS.cardHistory.button, () => this.box() === 'card' && !this.cardView.picking() && (this.openHistory(), true)),

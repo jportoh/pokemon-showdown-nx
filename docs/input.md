@@ -17,7 +17,7 @@ the keyboard into a small set of actions and hands them to the screen that's sho
 | X / Y | X / Y | `buttonX` / `buttonY` | Handlers registered with `registerButton` |
 | + / − | + (or =) / - | `buttonPlus` / `buttonMinus` | Handlers registered with `registerButton` |
 | R3 | R | `buttonR3` | Handlers registered with `registerButton` |
-| L3 | F | `buttonL3` | The performance HUD, on every screen (`GlStage`) |
+| L3 | F | `buttonL3` | Handlers registered with `registerButton`; with R3, the performance HUD on every screen (`registerChord`, `GlStage`) |
 
 The mapping lives in `core/input/console-keys.ts`, with the Gamepad API indices by position, as
 nx.js reports them (B=0, A=1, Y=2, X=3, L=4, R=5, ZL=6, ZR=7, −=8, +=9, L3=10, R3=11, d-pad 12–15).
@@ -108,7 +108,7 @@ or `GlStage.hover`. The stage passes them to the top scene, which usually forwar
 like moving there and pressing A.
 
 The console's touchscreen sends events in **bursts** and in several families at once (touch, pointer
-and mouse for one tap); `PointerInput` folds each burst into a single tap. With the L3 HUD open, the
+and mouse for one tap); `PointerInput` folds each burst into a single tap. With the L3 + R3 HUD open, the
 last raw events are listed and a dot marks where the last tap landed.
 
 ## Testing without a console
