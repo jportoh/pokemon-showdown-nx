@@ -54,7 +54,8 @@ back here, and so does a login left without a name (the automatic one refused). 
 | `state/home-summary.ts` | The live facts in each button's chips (format and team, a challenge, number of teams…) |
 | `gl/login-view.ts` | The login box over other pages (`LoginView`) and registration (`RegisterView`) |
 | `gl/login-overlay.ts` | The same login box opened over other pages (Chats, Watch Live) with ZR |
-| `gl/logo-ball.ts` | The header's pixel-art Poké Ball |
+| `gl/logo-layout.ts` | Where the logo goes (`HOME_LOGO`) and its mark: Pokémon Showdown's "o!" in gold, as the app icon has it, bundled at the sizes it's drawn at (`public/logo/`) |
+| `gl/logo-ball.ts` | The pixel-art Poké Ball of the waiting spinner, PRESS START and the trainer's placeholders |
 
 The trainer is the screen's protagonist: the player's avatar at 5x (a faint Poké Ball offline), and a
 button: A on it opens the Trainer Card (registered names) or registration. The buttons are slanted

@@ -16,7 +16,7 @@ import { GlTheme } from '@core/gl/ui/gl-theme';
 import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { BALL } from '@features/home/gl/logo-ball';
-import { HOME_LOGO } from '@features/home/gl/logo-layout';
+import { HOME_LOGO, LOGO_MARKS, logoMark } from '@features/home/gl/logo-layout';
 import { PreloadAsset, preloadList } from '@features/loading/data/preload-list';
 
 /** Textures made per frame while loading (the menu's screens make 2: nothing else is drawn here). */
@@ -44,7 +44,7 @@ const LOGO_WAIT_MS = 1200;
 /** The card: fading in, held, fading out; then the title. A or START skips it. */
 const INTRO_MS = 2600;
 const INTRO_FADE_MS = 500;
-/** The title's arrival: a white flash, the Poké Ball dropping in with a bounce, the logo fading up. */
+/** The title's arrival: a white flash, the gold "o!" dropping in with a bounce, the logo fading up. */
 const FLASH_MS = 600;
 const DROP_MS = 900;
 /** START pressed: a quick flash, then the logo flies to where the next screen draws it. */
@@ -52,7 +52,7 @@ const PRESS_FLASH_MS = 250;
 const OUTRO_MS = 700;
 
 /** The logo on the title, big; START sends it to the next screen's (see logo-layout). */
-const BIG = { ballX: (STAGE_W - 120) / 2, ballY: 96, ballScale: 5, textCy: 290, gap: 16, style: { size: 64, bold: true } };
+const BIG = { markX: (STAGE_W - 120) / 2, markY: 96, markSize: 120, textCy: 290, gap: 16, style: { size: 64, bold: true } };
 const PROMPT_CY = 420;
 const PROMPT_STYLE: TextStyle = { size: 26, bold: true };
 /** The edition: a red sticker, tilted, under SHOWDOWN!'s end; it pops in after the logo. */
@@ -146,6 +146,8 @@ export class LoadingScene {
     this.music.preload();
     // The studio's logo first: the card waits for it.
     this.bitmaps.request(STUDIO_LOGO, ImagePriority.Screen);
+    // The title's "o!" next (the entry screen and the menu draw it too).
+    for (const mark of LOGO_MARKS) this.bitmaps.request(mark.url, ImagePriority.Screen);
     for (const asset of this.assets) this.bitmaps.request(asset.url, ImagePriority.Screen);
     // A tap anywhere (the console's touch screen, a mouse) presses it too.
     const hide = this.stage.show({ draw: (frame) => this.draw(frame), input: (action) => action === 'accept' && this.press(), click: () => this.press() });
@@ -227,7 +229,7 @@ export class LoadingScene {
     renderer.begin(now / 1000, p.bg, p.rim);
     this.prime(frame);
     if (fade > 0) this.drawParade(frame, Math.min(1, age / 1200) * fade);
-    this.drawBall(frame, age, fly);
+    this.drawMark(frame, age, fly);
     this.drawWordmark(frame, fly, Math.min(1, age / 500));
     if (fade > 0) this.drawEdition(frame, age, fade);
 
@@ -318,20 +320,19 @@ export class LoadingScene {
     renderer.rect(cx - tw / 2, EDITION_CY - th / 2, tw, th, { fill: withAlpha(WHITE, alpha), texture: label, angle });
   }
 
-  /** The Poké Ball: dropping in with a bounce, then bobbing and rocking; it settles as it flies. */
-  private drawBall({ renderer, now }: StageFrame, age: number, fly: number): void {
-    if (!this.ball) return;
+  /** The gold "o!": dropping in with a bounce, then bobbing and rocking; it settles as it flies. */
+  private drawMark({ renderer, images, now }: StageFrame, age: number, fly: number): void {
     const time = now / 1000;
     const settle = 1 - fly;
     const drop = Math.min(1, age / DROP_MS);
-    const fall = (1 - bounceOut(drop)) * -(BIG.ballY + 140);
-    const spin = (1 - drop) * Math.PI * 4;
-    const scale = lerp(BIG.ballScale, this.target.ballScale, fly);
-    const size = this.ball.width * scale;
-    const x = lerp(BIG.ballX, this.target.ballX, fly);
+    const fall = (1 - bounceOut(drop)) * -(BIG.markY + 140);
+    const size = lerp(BIG.markSize, this.target.markSize, fly);
+    const mark = logoMark(images, size);
+    if (!mark) return;
+    const x = lerp(BIG.markX, this.target.markX, fly);
     const bob = drop >= 1 ? Math.sin(time * 3) * 6 * settle : 0;
-    const y = lerp(BIG.ballY + fall, this.target.ballY, fly) + bob;
-    renderer.rect(x, y, size, size, { fill: WHITE, texture: this.ball, angle: spin + Math.sin(time * 2.4) * 0.12 * settle });
+    const y = lerp(BIG.markY + fall, this.target.markY, fly) + bob;
+    renderer.rect(x, y, size, size, { fill: WHITE, texture: mark, angle: Math.sin(time * 2.4) * 0.12 * settle });
   }
 
   /** The Pokémon walking right to left along the bottom, each hopping a little, a shadow under it. */
