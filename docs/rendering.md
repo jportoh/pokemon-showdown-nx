@@ -122,6 +122,13 @@ The Champions format's sprites are packed into sheets shipped with the app
 means a whole team draws without switching textures, and the loading screen uploads them all at
 launch. Other formats' sprites (Random Battle) come from Showdown one by one.
 
+Each sprite's texture also knows where its picture starts (`Texture.top`, a share of its height): a
+sheet's sprites from the 6th number of their place (`scripts/sprite-tops.mjs`, which
+`update:sprites` runs too), the others measured from their pixels as they're uploaded
+(`core/gl/picture-top.ts`). The battle field puts a move's, an item's or an ability's banner just over
+the Pokémon's head with it, not over its 96x96 box, which is mostly empty above a back sprite or an old
+generation's.
+
 > In a desktop browser, Showdown's sprite server sends no CORS headers, so WebGL can't use its images.
 > The bundled sheets work everywhere; individual Showdown sprites only show on the console, which
 > doesn't enforce CORS.

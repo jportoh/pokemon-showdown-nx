@@ -1,8 +1,8 @@
 import { SpriteSet, spriteUrl } from '@shared/utils/sprite-id';
 import data from '@core/dex/sprite-sheets.json';
 
-/** Where a sprite is in its sheet: sheet index, left, top, width, height. */
-type Place = [number, number, number, number, number];
+/** Where a sprite is in its sheet: sheet index, left, top, width, height, and its picture's first row (scripts/sprite-tops.mjs). */
+type Place = [number, number, number, number, number, number?];
 
 interface SheetsData {
   sheets: { url: string; width: number; height: number }[];
@@ -21,6 +21,8 @@ export interface SheetSprite {
   width: number;
   height: number;
   uv: readonly [number, number, number, number];
+  /** Where its picture starts, as a share of its height (0-1). */
+  top?: number;
 }
 
 /**
@@ -31,9 +33,15 @@ export interface SheetSprite {
 export function sheetSprite(sprite: string, back: boolean): SheetSprite | null {
   const place = (back ? DATA.back[sprite] : undefined) ?? DATA.front[sprite];
   if (!place) return null;
-  const [index, x, y, width, height] = place;
+  const [index, x, y, width, height, top] = place;
   const sheet = DATA.sheets[index];
-  return { url: sheet.url, width, height, uv: [x / sheet.width, y / sheet.height, (x + width) / sheet.width, (y + height) / sheet.height] };
+  return {
+    url: sheet.url,
+    width,
+    height,
+    uv: [x / sheet.width, y / sheet.height, (x + width) / sheet.width, (y + height) / sheet.height],
+    top: top === undefined ? undefined : top / height,
+  };
 }
 
 /** The image to download for a sprite: its sheet, or Showdown's own file. */

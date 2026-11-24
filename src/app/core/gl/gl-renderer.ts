@@ -109,6 +109,8 @@ export interface Texture {
   readonly height: number;
   /** Only this part of the texture (left, top, right, bottom, 0-1): a sprite in a sheet. */
   readonly uv?: readonly [number, number, number, number];
+  /** Where its picture starts, as a share of its height (0-1): known for sprites (picture-top.ts). */
+  readonly top?: number;
 }
 
 export interface QuadStyle {

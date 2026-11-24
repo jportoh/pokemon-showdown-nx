@@ -1,6 +1,7 @@
 import { ITEM_ICON_SIZE, ITEM_SHEET_URL, itemIconCell } from '@core/dex/names';
 import { GlRenderer, Rgba, Texture } from '@core/gl/gl-renderer';
 import { SpriteSet, baseSprite, spriteUrl } from '@shared/utils/sprite-id';
+import { pictureTop } from './picture-top';
 import { ImagePriority, SpriteBitmaps } from './sprite-bitmaps';
 import { SPRITE_SHEET_URLS, SheetSprite, sheetSprite } from './sprite-sheets';
 
@@ -178,7 +179,7 @@ export class GlSprites {
     if (view) return view;
     const texture = this.textures.get(sheet.url) ?? this.upload(sheet.url, priority, false);
     if (!texture) return null;
-    const made = { handle: texture.handle, width: sheet.width, height: sheet.height, uv: sheet.uv };
+    const made = { handle: texture.handle, width: sheet.width, height: sheet.height, uv: sheet.uv, top: sheet.top };
     this.views.set(key, made);
     return made;
   }
@@ -193,7 +194,9 @@ export class GlSprites {
       const started = performance.now();
       const { image, width, height } = decoded;
       // Our own decoder's pixels come premultiplied already.
-      const made = 'pixels' in image ? this.renderer.textureFromPixels(image.pixels, width, height, smooth) : this.renderer.textureFromSource(image, width, height, smooth);
+      const texture = 'pixels' in image ? this.renderer.textureFromPixels(image.pixels, width, height, smooth) : this.renderer.textureFromSource(image, width, height, smooth);
+      // A sprite's (a small image's) picture's first row, for the labels over a Pokémon's head.
+      const made = { ...texture, top: pictureTop(image, width, height) };
       this.onUpload?.(performance.now() - started);
       this.textures.set(url, made);
       if (!this.kept.has(url)) this.lastUsed.set(url, this.now);
