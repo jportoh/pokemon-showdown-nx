@@ -6,7 +6,7 @@ import { speciesInfo } from '@core/dex/species';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { ACCEPT_FILL } from '@core/gl/ui/hold-action';
 import { movePills, sheetRows } from '@features/battle/gl/screen/sheet-rows';
-import { BattleRequest } from '@features/battle/models/battle';
+import { BattleRequest, SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { spriteId } from '@shared/utils/sprite-id';
 import { CARD, HeroSet, SLOTS, TOP, drawHalves, drawHero, drawIcon, drawSprite, easeOut, heroFromRow, iconBox } from './face-off';
@@ -32,7 +32,8 @@ export type SheetButton = 'sheet' | 'accept' | 'waiting';
  * down its edge, the one in focus big in the middle over a card with its set (theirs from their open
  * team sheet), so the two can be weighed against each other. ▲▼ go down a column, ◀▶ cross over; A
  * on ours adds it to the four slots along the foot (two leads, two back) or takes it out; B takes the
- * last pick back; Done sends the order; ZL agrees to open team sheets or shows theirs. After Done it
+ * last pick back; Done sends the order; ZL agrees to open team sheets or shows theirs; Y opens the
+ * whole sheet (exact stats for ours) of the one in focus. After Done it
  * stands by, the picks kept, until the battle starts; B there takes Done back while the opponent is
  * still choosing.
  */
@@ -132,6 +133,13 @@ export class TeamSelectView {
     return this.order().length === this.toBring();
   }
 
+  /** The Pokémon in focus (ours by default), for Y's whole sheet: its side and place in the team. */
+  memberInFocus(focused: string | null): { side: SideId; index: number } | null {
+    if (focused?.startsWith('foe-')) return { side: 'p2', index: Number(focused.slice('foe-'.length)) };
+    if (focused?.startsWith('pick-')) return { side: 'p1', index: Number(focused.slice('pick-'.length)) };
+    return this.own().length > 0 ? { side: 'p1', index: this.shownOwn.index } : null;
+  }
+
   /** B: takes the last pick back; after Done, takes Done back while the opponent is still choosing. */
   undo(): void {
     if (!this.standingBy()) this.order.update((order) => order.slice(0, -1));
@@ -222,7 +230,8 @@ export class TeamSelectView {
     const shake = nudge < 1 ? Math.sin(nudge * 6 * Math.PI) * 8 * (1 - nudge) : 0;
     write(ctx, status, CARD.left + shake, 640, { size: 18, bold: true }, nudge < 1 ? p.danger : ready || standing ? p.teal : p.ink, 'left', 290);
     write(ctx, this.hint(sheet?.button ?? null), CARD.left, 672, { size: 14 }, p.muted, 'left', 290);
-    write(ctx, standing ? (this.store.canUndo() ? 'B change picks' : '') : 'B undo', CARD.left, 696, { size: 14 }, p.muted, 'left', 290);
+    const stats = `${ROLE_KEYS.fieldView.label} stats`;
+    write(ctx, standing ? (this.store.canUndo() ? `B change picks · ${stats}` : stats) : `B undo · ${stats}`, CARD.left, 696, { size: 14 }, p.muted, 'left', 290);
   }
 
   /**

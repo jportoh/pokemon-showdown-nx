@@ -114,6 +114,8 @@ export class GlBattleScreen {
   private focusBeforeLeave: string | null = null;
   /** The Pokémon on the field at a glance (Y), and the focus under it. */
   private fieldOpen = false;
+  /** Team preview's whole sheet of a Pokémon (Y), over the picks. */
+  private previewSheet = false;
   private focusBeforeField: string | null = null;
 
   /** Battle info's tab while it's open; null while it's closed. */
@@ -198,6 +200,7 @@ export class GlBattleScreen {
       this.menuOpen = false;
       this.cardOpen = false;
       this.fieldOpen = false;
+      this.previewSheet = false;
       this.leaveAsk = null;
     }
     // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
@@ -291,8 +294,13 @@ export class GlBattleScreen {
       this.focus.begin();
       this.overview.draw(ctx);
     }
+    // The preview's sheet goes with team preview (the battle starting, Battle info opened over it).
+    if (this.previewSheet && (!picking || !this.info.sheetOpen())) this.previewSheet = false;
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
-    else if (this.fieldOpen) {
+    else if (this.previewSheet) {
+      this.focus.begin();
+      this.info.drawActive(ctx);
+    } else if (this.fieldOpen) {
       this.focus.begin();
       this.info.drawActive(ctx);
     } else if (!covered && !party && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
@@ -448,6 +456,7 @@ export class GlBattleScreen {
 
   /** Y: the Pokémon on the field, or closed again. */
   private pressField(): boolean {
+    if (this.teamSelect.shown() && !this.partyShown()) return this.togglePreviewSheet();
     if (!this.store.started() || this.menuOpen || this.cardOpen) return this.store.started();
     if (this.fieldOpen) {
       this.closeField();
@@ -459,6 +468,27 @@ export class GlBattleScreen {
     this.fieldOpen = true;
     this.focus.focus(this.info.firstActiveId());
     return true;
+  }
+
+  /** Y in team preview: the whole sheet of the Pokémon in focus (ours with exact stats), or closed again. */
+  private togglePreviewSheet(): boolean {
+    if (this.menuOpen || this.cardOpen || this.infoTab) return false;
+    if (this.previewSheet) {
+      this.closePreviewSheet();
+      return true;
+    }
+    const target = this.teamSelect.memberInFocus(this.focus.focused);
+    if (!target) return false;
+    this.focusBeforeField = this.focus.focused;
+    this.info.openSheet(target.side, target.index);
+    this.previewSheet = this.info.sheetOpen();
+    return this.previewSheet;
+  }
+
+  private closePreviewSheet(): void {
+    this.previewSheet = false;
+    this.info.closeSheet();
+    this.focus.focus(this.focusBeforeField);
   }
 
   private closeField(): void {
@@ -613,6 +643,11 @@ export class GlBattleScreen {
         else this.closeLeaveAsk();
       } else if (isDirection(action)) this.focus.move(action);
       else if (action === 'accept') this.focus.accept();
+      return true;
+    }
+    if (this.previewSheet) {
+      if (action === 'back') this.closePreviewSheet();
+      else if (action === 'left' || action === 'right') this.info.stepSheet(action === 'left' ? -1 : 1);
       return true;
     }
     if (this.fieldOpen) {
