@@ -248,6 +248,26 @@ export const TEAM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.fil
 /** The Random Battle page's formats: teams handed out at random. */
 export const RANDOM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.filter((format) => format.randomTeams);
 
+/**
+ * Random formats the app doesn't play yet, shown on the Random Battle page as coming soon (not
+ * pickable): the generations between Gen 4 and Gen 9, whose battles need their own gimmicks first.
+ */
+export const UPCOMING_RANDOM_FORMATS: readonly PlayableFormat[] = [
+  { gen: 8, games: 'Sword/Shield', extra: 'Dynamax' },
+  { gen: 7, games: 'Sun/Moon', extra: 'Z-Moves, Megas' },
+  { gen: 6, games: 'X/Y', extra: 'Megas' },
+  { gen: 5, games: 'Black/White', extra: '' },
+].map(({ gen, games, extra }) => ({
+  id: `gen${gen}randombattle`,
+  name: `[Gen ${gen}] Random Battle`,
+  label: `Gen ${gen} Random Battle`,
+  short: `Gen ${gen}`,
+  randomTeams: true,
+  category: 'Random',
+  detail: `Singles · random ${games} teams`,
+  rules: `Random Gen ${gen} sets${extra ? ` · ${extra}` : ''}`,
+}));
+
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */
 export function formatName(id: string): string {
   return [...TEAM_FORMATS, ...PLAYABLE_FORMATS].find((format) => format.id === id)?.name ?? id;

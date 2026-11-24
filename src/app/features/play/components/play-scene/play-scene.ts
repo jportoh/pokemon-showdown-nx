@@ -32,7 +32,7 @@ import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
-import { PLAYABLE_FORMATS, PlayableFormat, RANDOM_PLAY_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
+import { PLAYABLE_FORMATS, PlayableFormat, RANDOM_PLAY_FORMATS, TEAM_PLAY_FORMATS, UPCOMING_RANDOM_FORMATS } from '@shared/data/formats';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
@@ -65,8 +65,8 @@ const LEAVE_MS = 180;
  *
  * The Random Battle page (/random, from the home menu's Random Battle) is the same page for the random
  * formats, its own format kept apart from the Battle page's: no teams to pick, so instead of the two
- * rows every format is in sight as a grid of tiles (FormatGridView); A on one picks it and goes on to
- * BATTLE!.
+ * rows the formats are a grid of tiles in sections that scrolls (FormatGridView); the page opens on the
+ * format picked, and A on a tile picks it and goes on to BATTLE!.
  */
 @Component({
   selector: 'app-play-scene',
@@ -236,8 +236,8 @@ export class PlayScene {
   private formOpen = false;
   private cardOpen = false;
   private lastLayer: Layer = 'page';
-  /** Where the focus goes when the page shows again. */
-  private returnTo: PageControl = 'battle';
+  /** Where the focus goes when the page shows again: on the Random Battle page, first the format picked (it's what's chosen there). */
+  private returnTo: PageControl = this.random ? 'format' : 'battle';
   /** BATTLE!'s and the challenge button's eased focus. */
   private battleFocus = 0;
   private challengeFocus = 0;
@@ -488,6 +488,7 @@ export class PlayScene {
   private drawGrid(ctx: UiContext): void {
     this.grid.draw(ctx, {
       formats: this.pageFormats,
+      upcoming: UPCOMING_RANDOM_FORMATS,
       picked: this.format().id,
       locked: this.locked(),
       ball: this.ball,

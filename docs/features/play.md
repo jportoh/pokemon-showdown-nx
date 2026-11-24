@@ -24,10 +24,14 @@ Pokémon drawn on it).
 
 The home menu's Random Battle opens the same scene (route data `random`) for the random formats
 (`RANDOM_PLAY_FORMATS`), with its own picked format (`PlaySelection.randomFormat`). There are no
-teams, so the two carousels give way to a grid of every format (`gl/format-grid.ts`): tiles in rows
-of five under their category (Standard, Randomized Metas), each with its short name
-(`PlayableFormat.short`) and its sets. The d-pad walks the grid, A picks a tile and moves on to
-BATTLE!, ZL/ZR step through them; while searching, the picked tile shows the search and the rest dim.
+teams, so the two carousels give way to a grid of the formats (`gl/format-grid.ts`): tiles in rows
+of five under their section (Current gen: Gen 9 and Champions; Other gens, newest first; Randomized
+Metas), each with its short name (`PlayableFormat.short`) and its sets, scrolling once they don't
+all fit. The page opens on the format picked; the d-pad walks the grid row by row (the view follows
+the focus, a bar at the right edge shows where it is), A picks a tile and moves on to BATTLE!, ZL/ZR
+step through them; while searching, the picked tile shows the search and the rest dim. Random
+formats the app can't play yet (`UPCOMING_RANDOM_FORMATS`: Gen 5 to 8) are in their place, greyed with
+SOON: the focus passes them by and they can't be picked.
 The actions along the foot are the Battle page's.
 
 Over the page, as modals: the format and team lists (`OptionPickerView`), the challenge form, incoming
