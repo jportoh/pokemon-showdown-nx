@@ -14,7 +14,7 @@ import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { BALL } from '@features/home/gl/logo-ball';
-import { HOME_LOGO } from '@features/home/gl/logo-layout';
+import { HOME_LOGO, logoMark } from '@features/home/gl/logo-layout';
 import {
   Chip,
   NamePlate,
@@ -320,7 +320,8 @@ export class StartScene {
   private drawLogo(ctx: UiContext): void {
     const p = ctx.palette;
     const logo = HOME_LOGO;
-    if (this.ball) ctx.renderer.image(this.ball, logo.ballX, logo.ballY, logo.ballScale);
+    const mark = logoMark(ctx.images, logo.markSize);
+    if (mark) ctx.renderer.rect(logo.markX, logo.markY, logo.markSize, logo.markSize, { fill: [1, 1, 1, 1], texture: mark });
     const width = label(ctx, 'POKÉMON', logo.textX, logo.textCy, logo.style, p.logoInk);
     label(ctx, 'SHOWDOWN!', logo.textX + width + logo.gap, logo.textCy, logo.style, p.logo);
   }

@@ -33,7 +33,15 @@ export type UpdateStatus =
   | { kind: 'needs-nro'; version: string }
   | { kind: 'failed'; reason: string }
   /** The player went back to the .nro's code: from the next start. */
-  | { kind: 'set-aside'; version: string };
+  | { kind: 'set-aside'; version: string }
+  /**
+   * The latest version is one this console won't run again: the player set it aside (checkNow brings
+   * it back), or it didn't start well here (the next version is tried).
+   */
+  | { kind: 'declined'; version: string; why: 'set-aside' | 'failed' };
+
+/** state.json's `failed` for an update the player set aside (not one that failed to start). */
+const SET_ASIDE = 'set aside by the player';
 
 /** A release's update.json (scripts/build-nro.mjs, writeUpdate). */
 interface Manifest {
@@ -90,22 +98,44 @@ export class AppUpdater {
   setAside(): void {
     const state = readState();
     if (!state || state.failed) return;
-    writeState({ ...state, failed: 'set aside by the player' });
+    writeState({ ...state, failed: SET_ASIDE });
     log(`update ${state.version} set aside by the player`);
     this.statusSignal.set({ kind: 'set-aside', version: state.version });
+  }
+
+  /** The updater can look now (on the console, and not already looking or downloading). */
+  get canCheck(): boolean {
+    const kind = this.statusSignal().kind;
+    return !!codeSource() && !!files() && kind !== 'checking' && kind !== 'downloading';
+  }
+
+  /**
+   * Settings' Check for updates: looks again now, as at start, and also brings back an update the
+   * player set aside (downloading it again if its files are gone), for a player who went back to the
+   * .nro's version and so no longer gets the update's prompt.
+   */
+  checkNow(): void {
+    if (!this.canCheck) return;
+    this.started = true;
+    this.run(true);
   }
 
   private start(): void {
     if (this.started) return;
     this.started = true;
-    void this.check().catch((error: unknown) => {
+    this.run(false);
+  }
+
+  private run(manual: boolean): void {
+    void this.check(manual).catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error);
       log(`check failed: ${reason}`);
       this.statusSignal.set({ kind: 'failed', reason });
     });
   }
 
-  private async check(): Promise<void> {
+  /** `manual`: the player asked (checkNow), so an update they set aside is taken back. */
+  private async check(manual: boolean): Promise<void> {
     const running = codeSource();
     const api = files();
     if (!running || !api) return;
@@ -121,16 +151,31 @@ export class AppUpdater {
     if (!(await verifySignature(manifestBytes, signatureText))) throw new Error('the manifest signature is not valid');
     const manifest = parseManifest(manifestBytes);
     log(`latest ${manifest.version} (running ${running.version}, ${(performance.now() - begun).toFixed(0)} ms)`);
+    const state = readState();
     if (compareVersions(manifest.version, running.version) <= 0) {
+      // Running the update the player set aside in this session: asking again keeps it.
+      if (manual && state?.failed === SET_ASIDE && state.version === running.version && running.source === 'update') {
+        writeState(withoutFailure(state));
+        log(`update ${state.version} taken back by the player`);
+      }
       this.statusSignal.set({ kind: 'up-to-date' });
       return;
     }
 
-    const state = readState();
     if (state?.version === manifest.version && state.assetsId === running.assetsId) {
-      if (state.failed) log(`${manifest.version} not downloaded again: ${state.failed}`);
-      this.statusSignal.set(state.failed ? { kind: 'up-to-date' } : { kind: 'ready', version: manifest.version });
-      return;
+      if (!state.failed) {
+        this.statusSignal.set({ kind: 'ready', version: manifest.version });
+        return;
+      }
+      const why = state.failed === SET_ASIDE ? 'set-aside' : 'failed';
+      if (!manual || why === 'failed') {
+        log(`${manifest.version} not downloaded again: ${state.failed}`);
+        this.statusSignal.set({ kind: 'declined', version: manifest.version, why });
+        return;
+      }
+      // Set aside, and the player asks for it again: downloaded and installed as new (a pack still
+      // on the SD card isn't downloaded twice), which clears the mark.
+      log(`update ${manifest.version} taken back by the player`);
     }
 
     // Can it run on this .nro? Its asset list says what its code expects.
@@ -189,6 +234,12 @@ async function install(api: UpdateFiles, manifest: Manifest, bundle: ArrayBuffer
   writeState({ version: manifest.version, file: manifest.file, assetsId, bootAttempts: 0, ...(assetsDir ? { assetsDir, packed: target.packed } : {}) });
   if (previous && previous.file !== manifest.file) removeQuietly(api, `${UPDATE_DIR}${previous.file}`);
   if (previous?.assetsDir && previous.assetsDir !== assetsDir) removeTree(api, `${UPDATE_DIR}${previous.assetsDir}`);
+}
+
+/** An update's state without its failure mark (and with its starts counted afresh). */
+function withoutFailure(state: UpdateState): UpdateState {
+  const { failed: _failed, ...rest } = state;
+  return { ...rest, bootAttempts: 0 };
 }
 
 function makeUpdateDir(api: UpdateFiles): void {

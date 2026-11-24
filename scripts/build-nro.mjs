@@ -69,7 +69,7 @@ const TARGETS = {
     entry: () => appEntry(),
     // main.js is the loader (native/loader/main.ts), the app goes in app.mjs: see docs/updates.md.
     loader: true,
-    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await renderedAudio())],
+    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await showdownGen3Sprites()), ...(await renderedAudio())],
   },
   probe: {
     output: 'psb-native-x1.nro',
@@ -398,18 +398,39 @@ async function showdownSprites() {
 const CRIES_DIR = 'audio/cries/';
 
 async function showdownCries() {
+  return cachedShowdownFiles(await showdownDirectory(CRIES_DIR, '.mp3'), Infinity);
+}
+
+/**
+ * The Ruby/Sapphire sprites Gen 3 battles show (~845 files, under 1 MiB), bundled like the cries:
+ * each was its own https request, so a battle's dozen sprites cost ~65 ms of handshake apiece on the
+ * console's main thread. They never change, so a copy once downloaded is kept.
+ */
+const GEN3_SPRITE_DIRS = ['sprites/gen3/', 'sprites/gen3-back/'];
+
+async function showdownGen3Sprites() {
+  const wanted = (await Promise.all(GEN3_SPRITE_DIRS.map((dir) => showdownDirectory(dir, '.png')))).flat();
+  return cachedShowdownFiles(wanted, Infinity);
+}
+
+/**
+ * The `extension` files of one of Showdown's directories (paths relative to its root), from its
+ * directory index; without the index, the ones already in the cache.
+ */
+async function showdownDirectory(dir, extension) {
   let names;
   try {
-    const response = await fetch(SHOWDOWN + CRIES_DIR);
+    const response = await fetch(SHOWDOWN + dir);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    names = [...(await response.text()).matchAll(/href="\.\/([^"/]+\.mp3)"/g)].map((match) => decodeURIComponent(match[1]));
-    if (!names.length) throw new Error('no mp3 in the index');
+    const pattern = new RegExp(`href="\\./([^"/]+\\${extension})"`, 'g');
+    names = [...(await response.text()).matchAll(pattern)].map((match) => decodeURIComponent(match[1]));
+    if (!names.length) throw new Error(`no ${extension} in the index`);
   } catch (error) {
-    const cached = path.join(cacheDir, 'showdown', CRIES_DIR);
-    names = fs.existsSync(cached) ? fs.readdirSync(cached).filter((name) => name.endsWith('.mp3')) : [];
-    console.warn(`Showdown's cries index failed (${error instanceof Error ? error.message : error}): bundling the ${names.length} cached cries`);
+    const cached = path.join(cacheDir, 'showdown', dir);
+    names = fs.existsSync(cached) ? fs.readdirSync(cached).filter((name) => name.endsWith(extension)) : [];
+    console.warn(`Showdown's ${dir} index failed (${error instanceof Error ? error.message : error}): bundling the ${names.length} cached files`);
   }
-  return cachedShowdownFiles([...new Set(names)].map((name) => CRIES_DIR + name), Infinity);
+  return [...new Set(names)].map((name) => dir + name);
 }
 
 /** Showdown's files (paths relative to its root), downloaded into dist/nro-cache/showdown unless a copy younger than maxAgeMs is there. */

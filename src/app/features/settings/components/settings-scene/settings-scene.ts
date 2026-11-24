@@ -35,7 +35,8 @@ type SettingId =
   | 'autoLogin'
   | 'history'
   | 'replays'
-  | 'appVersion';
+  | 'appVersion'
+  | 'checkUpdates';
 
 interface SettingRow {
   id: SettingId;
@@ -60,7 +61,7 @@ const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconN
   { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
   { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
   { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
-  { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion'] },
+  { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion', 'checkUpdates'] },
 ];
 const GROUP = { x: 40, y: 98, w: 420, h: 94, step: 106 };
 const PANEL = { x: 500, y: 98, w: 732, h: 518 };
@@ -230,6 +231,7 @@ export class SettingsScene {
         kind: 'link',
       },
       versionRow(this.updater.status()),
+      checkRow(this.updater.status(), this.updater.canCheck),
     ];
   });
 
@@ -308,7 +310,9 @@ export class SettingsScene {
 
   private activate(row: SettingRow): void {
     if (row.kind === 'action') {
-      if (!row.disabled && row.id === 'appVersion') this.updater.setAside();
+      if (row.disabled) return;
+      if (row.id === 'appVersion') this.updater.setAside();
+      else if (row.id === 'checkUpdates') this.updater.checkNow();
       return;
     }
     if (row.kind === 'link') {
@@ -581,15 +585,14 @@ export class SettingsScene {
 
 
 /**
- * The app's version (MORE): which code runs (the .nro's or an online update) and what the updater
- * found. While an update runs, A goes back to the .nro's code (from the next start).
+ * The app's version (MORE): which code runs (the .nro's or an online update). While an update runs,
+ * A goes back to the .nro's code (from the next start). What the updater found is under it (checkRow).
  */
 function versionRow(status: UpdateStatus): SettingRow {
   const code = codeSource();
   const row = { id: 'appVersion', label: 'App version', kind: 'action' } as const;
   if (!code) return { ...row, value: 'Web', detail: 'The web version is always the latest.', disabled: true };
   if (status.kind === 'set-aside') return { ...row, value: code.version, detail: `From the next start, the .nro's own ${code.builtInVersion}.`, disabled: true };
-  const news = updateNews(status);
   if (code.source === 'update' && status.kind !== 'ready') {
     return {
       ...row,
@@ -598,7 +601,24 @@ function versionRow(status: UpdateStatus): SettingRow {
       actionText: `Use ${code.builtInVersion}`,
     };
   }
-  return { ...row, value: code.version, detail: news ?? 'New versions download by themselves.', disabled: true };
+  return { ...row, value: code.version, detail: code.source === 'update' ? `An online update over the .nro's ${code.builtInVersion}.` : "The .nro's own version.", disabled: true };
+}
+
+/**
+ * Check for updates (MORE, under the version): what the updater found, and A looks again now, also
+ * bringing back an update the player set aside (they no longer get its prompt).
+ */
+function checkRow(status: UpdateStatus, canCheck: boolean): SettingRow {
+  const row = { id: 'checkUpdates', label: 'Check for updates', kind: 'action' } as const;
+  if (!codeSource()) return { ...row, value: '—', detail: 'Only the console app updates itself.', disabled: true };
+  const busy = status.kind === 'checking' || status.kind === 'downloading';
+  return {
+    ...row,
+    value: busy ? 'Checking…' : 'Check now',
+    detail: updateNews(status) ?? 'New versions download by themselves; A looks now.',
+    actionText: 'Check now',
+    disabled: !canCheck,
+  };
 }
 
 /** What the updater is doing or found, in a sentence; null when there's nothing to say. */
@@ -616,6 +636,12 @@ function updateNews(status: UpdateStatus): string | null {
       return "Couldn't look for updates this time.";
     case 'up-to-date':
       return 'Up to date.';
+    case 'declined':
+      return status.why === 'set-aside'
+        ? `${status.version} was set aside: A downloads it again.`
+        : `${status.version} didn't start well on this console: the next version will be tried.`;
+    case 'set-aside':
+      return 'A brings the online update back.';
     default:
       return null;
   }

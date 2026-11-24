@@ -49,7 +49,10 @@ source); the L3 + R3 HUD and Settings (More › App version) show it.
   it failed and closes the app (`Switch.exit()` takes effect after the current task, so the loader
   returns right after it); the next start runs the `.nro`'s code.
 - Settings › More › App version: while an update runs, A goes back to the `.nro`'s version (that
-  update isn't downloaded again; a newer one is).
+  update isn't downloaded again; a newer one is). Under it, Check for updates says what the updater
+  found and A runs the check again now. A manual check also takes back an update the player set
+  aside: the one running keeps going, and one no longer running is downloaded again (its pack, if
+  still on the SD card, isn't). An update that failed to start stays declined until a newer one.
 
 ## The updater
 
@@ -62,7 +65,8 @@ TLS handshakes), on the console only:
    ECDSA P-256 signature with the public key in `update-config.ts`. Ed25519 would be smaller, but
    the engine's `crypto.subtle` doesn't have it.
 2. Nothing to do when the version isn't newer than the running code, or it is already downloaded
-   (or failed, or was set aside) for this `.nro`.
+   (or failed, or was set aside) for this `.nro`. A check the player asks for (Settings) takes a
+   set-aside update back.
 3. It reads the release's asset list (`assets-<version>.json`, checked against the manifest) and
    compares it with the `.nro`'s own `assets.json`: the update can run here when the engine is the
    same and each asset its code expects is in this RomFS with the same hash, or in its pack.

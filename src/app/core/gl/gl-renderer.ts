@@ -160,7 +160,11 @@ export function withAlpha(color: Rgba, alpha: number): Rgba {
 
 const NO_STROKE: Rgba = [0, 0, 0, 0];
 
+import { glTextureStats } from '@core/runtime/native-trace';
+
 export class GlRenderer {
+  /** Each texture alive and its bytes (RGBA), for the native log's count (glTextureStats). */
+  private readonly textureBytes = new Map<WebGLTexture, number>();
   readonly gl: WebGLRenderingContext;
   readonly version: 1 | 2;
   readonly width: number;
@@ -269,6 +273,7 @@ export class GlRenderer {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     setSampling(gl, smooth);
+    this.track(handle, width * height * 4);
     return { handle, width, height };
   }
 
@@ -280,6 +285,9 @@ export class GlRenderer {
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
     setSampling(gl, smooth);
+    // The source's own pixels (a text's canvas is drawn at the screen's scale).
+    const size = source as { width?: number; height?: number };
+    this.track(handle, (size.width ?? width) * (size.height ?? height) * 4);
     return { handle, width, height };
   }
 
@@ -299,6 +307,7 @@ export class GlRenderer {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y, width, h, gl.RGBA, gl.UNSIGNED_BYTE, h === rows ? strip : strip.subarray(0, width * h * 4));
     }
     setSampling(gl, smooth);
+    this.track(handle, width * height * 4);
     return { handle, width, height };
   }
 
@@ -317,6 +326,21 @@ export class GlRenderer {
 
   deleteTexture(texture: Texture): void {
     this.gl.deleteTexture(texture.handle);
+    this.track(texture.handle, 0);
+  }
+
+  /** A texture's bytes now (0: deleted), in the count. */
+  private track(handle: WebGLTexture, bytes: number): void {
+    const before = this.textureBytes.get(handle);
+    if (before !== undefined) {
+      glTextureStats.count--;
+      glTextureStats.bytes -= before;
+      this.textureBytes.delete(handle);
+    }
+    if (bytes === 0) return;
+    this.textureBytes.set(handle, bytes);
+    glTextureStats.count++;
+    glTextureStats.bytes += bytes;
   }
 
   /** Draws only inside this box (stage pixels) until clip(null): effects can't spill out of the field. */
@@ -510,7 +534,7 @@ export class GlRenderer {
     gl.deleteBuffer(this.backdropBuffer);
     gl.deleteProgram(this.shapeProgram);
     gl.deleteProgram(this.backdropProgram);
-    gl.deleteTexture(this.whiteTexture.handle);
+    this.deleteTexture(this.whiteTexture);
   }
 }
 
