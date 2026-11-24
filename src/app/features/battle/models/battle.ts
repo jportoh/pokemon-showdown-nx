@@ -11,8 +11,9 @@ export type GameType = 'singles' | 'doubles';
 export interface RequestMove {
   move: string;
   id: string;
-  pp: number;
-  maxpp: number;
+  /** Absent for a move it's locked into (Gen 1's "Fight" while asleep or trapped, a recharge…). */
+  pp?: number;
+  maxpp?: number;
   /** Showdown's target type: 'normal', 'allAdjacentFoes', 'self'… */
   target: string;
   disabled?: boolean;

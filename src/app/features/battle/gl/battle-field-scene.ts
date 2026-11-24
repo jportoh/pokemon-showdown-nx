@@ -59,6 +59,8 @@ const BOX_STATS: [string, string][] = [
   ['accuracy', 'Acc'],
   ['evasion', 'Eva'],
 ];
+/** Gen 1's: one Special stat (its stage is SpA's, SpD's moves with it). */
+const GEN1_BOX_STATS = BOX_STATS.filter(([stat]) => stat !== 'spd').map(([stat, short]): [string, string] => [stat, stat === 'spa' ? 'Spc' : short]);
 /** The result card, as BattleResult. */
 const RESULT_W = 640;
 /** The field, where the result card goes. */
@@ -932,7 +934,7 @@ export class BattleFieldScene {
     const status = STATUS[p.status];
     const all = [
       ...(status ? [{ text: status.text, color: status.color }] : []),
-      ...BOX_STATS.filter(([stat]) => p.boosts[stat]).map(([stat, short]) => ({
+      ...(this.store.gen() === 1 ? GEN1_BOX_STATS : BOX_STATS).filter(([stat]) => p.boosts[stat]).map(([stat, short]) => ({
         text: `${short} ${p.boosts[stat] > 0 ? '+' : ''}${p.boosts[stat]}`,
         color: p.boosts[stat] > 0 ? '#15803d' : '#b91c1c',
       })),

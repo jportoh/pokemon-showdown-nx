@@ -129,12 +129,13 @@ export class PokemonSheetView {
     // Item (with its icon) and ability side by side.
     const infoY = hpY + 46;
     const column = inner / 2;
-    write(ctx, 'ITEM', left, infoY, LABEL, C.faint);
-    write(ctx, 'ABILITY', left + column, infoY, LABEL, C.faint);
+    // Gen 1 has no items, Gens 1 and 2 no abilities: no heading either.
+    if (sheet.item) write(ctx, 'ITEM', left, infoY, LABEL, C.faint);
+    if (sheet.ability) write(ctx, 'ABILITY', left + column, infoY, LABEL, C.faint);
     const valueY = infoY + 28;
     if (sheet.itemId) {
       ctx.images.drawItem(sheet.itemId, left - 2, valueY - 14, 28);
-    } else {
+    } else if (sheet.item) {
       renderer.rect(left, valueY - 14, 28, 28, { fill: C.inner, radius: 6 });
       write(ctx, sheet.itemKnown ? '' : '?', left + 14, valueY, { size: 16, bold: true }, C.faint, 'center');
     }

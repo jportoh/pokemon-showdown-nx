@@ -1,3 +1,4 @@
+import { hasAbilities, hasItems, statRows } from '@core/dex/generations';
 import { moveInfo } from '@core/dex/moves';
 import { speciesInfo } from '@core/dex/species';
 import { barColor } from '@features/battle/gl/hp-bar';
@@ -6,14 +7,6 @@ import { InspectedMember } from '@features/battle/state/pokemon-inspection';
 import { typeColor } from '@shared/data/type-colors';
 import { toId } from '@shared/utils/to-id';
 
-const BASE_STATS = [
-  { id: 'hp', label: 'HP' },
-  { id: 'atk', label: 'Atk' },
-  { id: 'def', label: 'Def' },
-  { id: 'spa', label: 'SpA' },
-  { id: 'spd', label: 'SpD' },
-  { id: 'spe', label: 'Spe' },
-] as const;
 /** Stat stages with no row of their own, shown under the HP. */
 const OTHER_BOOSTS = [
   { id: 'accuracy', label: 'Acc' },
@@ -87,7 +80,7 @@ export function pokemonInfoView(inspected: InspectedMember | null, owner: string
   const note = [where, ...otherBoosts].join(' · ');
 
   const stats = info
-    ? BASE_STATS.map((stat, i) => {
+    ? statRows(gen).map((stat, i) => {
         const value = info.baseStats[stat.id];
         const stage = stat.id === 'hp' ? 0 : (boosts[stat.id] ?? 0);
         return {
@@ -105,12 +98,15 @@ export function pokemonInfoView(inspected: InspectedMember | null, owner: string
   const lost = seen?.lostItem ?? '';
   // The sheet's item until the battle shows it used up or knocked off.
   const itemName = seen?.item || (lost ? '' : (sheet?.item ?? ''));
-  const item = itemName || (lost ? `No item (${lost} gone)` : sheet ? 'No item' : 'Item not revealed');
+  // Gen 1 has no items, Gens 1 and 2 no abilities: nothing shown.
+  const item = itemName || (lost ? `No item (${lost} gone)` : sheet ? 'No item' : hasItems(gen) ? 'Item not revealed' : '');
 
   const possible = info?.abilities ?? [];
   const known = seen?.ability || sheet?.ability;
-  const abilityKnown = !!known || possible.length === 1;
-  const ability = known || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
+  const abilityKnown = !!known || possible.length === 1 || !hasAbilities(gen);
+  const ability = !hasAbilities(gen)
+    ? ''
+    : known || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Ability not revealed');
 
   const moves = Array.from({ length: MOVE_SLOTS }, (_, i) => {
     // The sheet's moves in its order; without one, those used so far.
@@ -132,7 +128,7 @@ export function pokemonInfoView(inspected: InspectedMember | null, owner: string
     note,
     stats.map((s) => `base ${s.label} ${s.value}${s.stage ? ` (${s.stageText})` : ''}`).join(', '),
     item,
-    abilityKnown ? `ability ${ability}` : ability,
+    ability && abilityKnown ? `ability ${ability}` : ability,
     knownMoves.length ? `${sheet ? 'moves' : 'moves used'}: ${knownMoves.join(', ')}` : 'no moves used yet',
   ]
     .filter(Boolean)
@@ -151,7 +147,7 @@ export function pokemonInfoView(inspected: InspectedMember | null, owner: string
     note,
     stats,
     itemId: itemName ? toId(itemName) : '',
-    itemKnown: !!itemName,
+    itemKnown: !!itemName || !hasItems(gen),
     item,
     abilityKnown,
     ability,

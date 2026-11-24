@@ -1,5 +1,5 @@
-// Builds what differs in past generations (Gen 3: Ruby/Sapphire/Emerald, Gen 4: Diamond/Pearl/Platinum,
-// for their Random Battles) from the moves and species the battle screen shows (moves.json,
+// Builds what differs in past generations (Gen 1: Red/Blue/Yellow, Gen 2: Gold/Silver/Crystal, Gen 3:
+// Ruby/Sapphire/Emerald, Gen 4: Diamond/Pearl/Platinum, for their Random Battles) from the moves and species the battle screen shows (moves.json,
 // species.json), into one file per generation, src/app/core/dex/gen<N>.json:
 //
 //   { "moves": { "flamethrower": ["Fire", "S", 95, 100], … },
@@ -9,8 +9,8 @@
 //
 // Showdown's client keeps each generation's changes in teambuilder-tables.js (overrideMoveData and
 // overrideSpeciesData per gen), applied from Gen 8 down to the one played, as the client does. On top of
-// that, before Gen 4 a move is physical or special by its TYPE; and there are no hidden abilities before
-// Gen 5. Only each generation's moves and species (by number) are kept, and only what differs. The
+// that, before Gen 4 a move is physical or special by its TYPE; there are no hidden abilities before Gen 5
+// and no abilities at all before Gen 3 (Gen 1's one Special stat comes as equal SpA and SpD). Only each generation's moves and species (by number) are kept, and only what differs. The
 // tables file (~15 MB) is JSON inside a JS string: it's only parsed as data, never run.
 
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -29,6 +29,8 @@ const CATEGORIES = { Physical: 'P', Special: 'S', Status: 'T' };
  * ones…, aren't in it). Arceus' plates came in Gen 4: all its formes are kept there.
  */
 const GENS = [
+  { gen: 1, lastMove: 165, lastSpecies: 151, formes: /^$/ },
+  { gen: 2, lastMove: 251, lastSpecies: 251, formes: /^$/ },
   { gen: 3, lastMove: 354, lastSpecies: 386, formes: /^(Attack|Defense|Speed|Sunny|Rainy|Snowy)$/ },
   {
     gen: 4,
@@ -44,6 +46,20 @@ const GENS = [
  * [what, expected].
  */
 const CHECKS = {
+  1: (moves, species) => [
+    [moves.bite?.join(), 'Normal,P,60,100'],
+    [moves.gust?.[0], 'Normal'],
+    [species.magnemite?.[0].join(), 'Electric'],
+    [species.alakazam?.[1].join(), '55,50,45,135,135,120'],
+    [species.gengar?.[2].length, 0],
+  ],
+  2: (moves, species) => [
+    [moves.bite?.join(), 'Dark,S,60,100'],
+    [moves.curse?.[0], '???'],
+    [species.magnemite?.[0].join(), 'Electric,Steel'],
+    [species.clefairy?.[0].join(), 'Normal'],
+    [species.gengar?.[2].length, 0],
+  ],
   3: (moves, species) => [
     [moves.flamethrower?.join(), 'Fire,S,95,100'],
     [moves.crunch?.[1], 'S'],
@@ -118,8 +134,8 @@ for (const { gen, lastMove, lastSpecies, formes, allFormes = [] } of GENS) {
     const [, types, stats] = current;
     const o = speciesOverrides[id] ?? {};
     const slots = o.abilities ?? Object.fromEntries([...(/[{,]abilities:\{([^}]*)\}/.exec(body)?.[1] ?? '').matchAll(/"?(\w+)"?:"((?:[^"\\]|\\.)*)"/g)].map((m) => [m[1], JSON.parse(`"${m[2]}"`)]));
-    // No hidden abilities before Gen 5.
-    const oldAbilities = ['0', '1'].map((slot) => slots[slot]).filter(Boolean);
+    // No hidden abilities before Gen 5, no abilities before Gen 3.
+    const oldAbilities = gen < 3 ? [] : ['0', '1'].map((slot) => slots[slot]).filter(Boolean);
     const oldTypes = o.types ?? types;
     const oldStats = o.baseStats ? STATS.map((stat) => o.baseStats[stat]) : stats;
     const entry = [oldTypes, oldStats, oldAbilities];
