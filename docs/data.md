@@ -33,8 +33,9 @@ The formats the app offers are a curated list in `src/app/shared/data/formats.ts
 
 - `TEAM_FORMATS`: what teams can be built for (the Champions VGC and BSS formats, which share the
   same data and rules).
-- `PLAYABLE_FORMATS`: what the Battle page, Watch Live and Replays offer, with a label, a category, a
-  one-line description and a short rules summary.
+- `PLAYABLE_FORMATS`: what Watch Live and Replays offer, with a label, a category, a one-line
+  description and a short rules summary. The Battle page offers its team formats (`TEAM_PLAY_FORMATS`),
+  the Random Battle page its random ones (`RANDOM_PLAY_FORMATS`).
 
 Format IDs must match the server's `|formats|` list exactly. Regulations rotate, so check the IDs
 against the live server when you add or update one (the comments note the date they were checked).
