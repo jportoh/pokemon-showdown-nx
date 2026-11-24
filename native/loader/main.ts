@@ -2,7 +2,9 @@
 // app.mjs in the RomFS; an online update puts a newer bundle on the SD card (see
 // native/update/boot-state.ts). The loader runs the update when:
 //
-//  - it was built against this .nro's engine and assets (same fingerprint),
+//  - the updater checked it against this .nro (same fingerprint): every asset its code expects is in
+//    this RomFS or among the files its asset pack brought, which the loader then serves instead
+//    (asset-redirect.ts),
 //  - it is newer than the .nro's own code (a newer .nro makes older updates obsolete), and
 //  - it hasn't failed to start MAX_BOOT_ATTEMPTS times in a row.
 //
@@ -20,6 +22,7 @@ import {
   type BootInfo,
   type UpdateState,
 } from '../update/boot-state';
+import { missingAsset, redirectAssets } from './asset-redirect';
 
 /** Injected by scripts/build-nro.mjs. */
 declare const __PSB_VERSION__: string;
@@ -68,6 +71,7 @@ function discard(state: UpdateState, reason: string): void {
   try {
     nxFiles?.removeSync?.(`${UPDATE_DIR}${state.file}`);
     nxFiles?.removeSync?.(`${UPDATE_DIR}state.json`);
+    if (state.assetsDir) nxFiles?.removeSync?.(`${UPDATE_DIR}${state.assetsDir}`);
   } catch {
     // Best effort: it is skipped anyway.
   }
@@ -88,7 +92,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  const missing = missingAsset(state);
+  if (missing) {
+    // The SD card lost part of it (a half-copied folder, a card cleaned up): the .nro's code and
+    // assets go together, the updater fetches the update again.
+    discard(state, `${missing} is missing`);
+    await runRomfs();
+    return;
+  }
+
   writeState({ ...state, bootAttempts: state.bootAttempts + 1 });
+  redirectAssets(state);
   const info = boot('update', state.version, state);
   const path = `${UPDATE_DIR}${state.file}`;
   bootLog(`running update ${state.version} (start ${state.bootAttempts + 1} of ${MAX_BOOT_ATTEMPTS}) over the .nro's ${__PSB_VERSION__}`);

@@ -44,6 +44,14 @@ jobs:
           archive: false
           retention-days: 30
 
+      # The signing key a release will need: on every push to main, so a missing or wrong
+      # UPDATE_SIGNING_KEY secret shows here, not when a tag is published.
+      - name: Check the update signing key
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node scripts/sign-update.mjs --check
+
       # The online update (docs/updates.md): the app's code bundle and its manifest, signed with the
       # UPDATE_SIGNING_KEY secret. The app finds them at releases/latest/download/update.json and
       # fetches the bundle from the tag v<version>, so the tag must match package.json.

@@ -4,9 +4,10 @@
 //   sdmc:/switch/pokemon-showdown-nx/update/
 //     app-<version>.mjs   the app's code bundle for that version (import() can't take a ?query, so
 //                         the version goes in the name)
-//     state.json          UpdateState: the bundle to run and how its starts went
+//     assets-<hash>/      the assets its pack brought, at their RomFS paths (docs/updates.md)
+//     state.json          UpdateState: the bundle to run, its assets and how its starts went
 //
-// The updater (later) writes the bundle, checks it, then writes state.json; the loader reads it.
+// The updater (src/app/core/update) writes and checks the files, then state.json; the loader reads it.
 
 export const UPDATE_DIR = 'sdmc:/switch/pokemon-showdown-nx/update/';
 export const STATE_PATH = `${UPDATE_DIR}state.json`;
@@ -25,10 +26,14 @@ export interface UpdateState {
   /** Its file name inside UPDATE_DIR. */
   file: string;
   /**
-   * The fingerprint of the .nro's engine and assets it was built against: a bundle only runs on a
-   * .nro whose RomFS has exactly the files its code expects (sprites, audio, the bundled list).
+   * The fingerprint (engine and assets) of the .nro the updater checked it against: every asset its
+   * code expects is in that .nro's RomFS or in `assetsDir`. Another .nro (a newer one copied over)
+   * doesn't run it.
    */
   assetsId: string;
+  /** The folder in UPDATE_DIR with the assets its pack brought; `packed` lists their RomFS paths. */
+  assetsDir?: string;
+  packed?: string[];
   /** Starts tried since the last confirmed one. */
   bootAttempts: number;
   /** Set when the loader gave up on it: never tried again (a newer version replaces it). */
@@ -56,6 +61,20 @@ interface NxFiles {
   appendFileSync(path: string, data: string): void;
   mkdirSync(path: string): void;
   removeSync?(path: string): void;
+  statSync?(path: string): { size: number } | null;
+}
+
+/** A RomFS-relative asset path a pack may carry: plain segments, no way out of its folder. */
+export function isAssetPath(value: unknown): value is string {
+  return typeof value === 'string' && /^[\w.@+-]+(\/[\w.@+-]+)*$/.test(value) && !value.split('/').some((part) => part === '.' || part === '..');
+}
+
+/** An asset's path as the app asks for it ('sprites/x.png', './sprites/x.png', 'romfs:/sprites/x.png'), or null for a URL. */
+export function assetKey(input: unknown): string | null {
+  const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : null;
+  if (raw === null) return null;
+  const path = raw.split(/[?#]/)[0].replace(/^romfs:\//, '').replace(/^\.?\//, '');
+  return /^[a-z][a-z0-9+.-]*:/i.test(path) ? null : decodeURIComponent(path);
 }
 
 export const nxFiles = (globalThis as unknown as { Switch?: NxFiles }).Switch;
@@ -67,6 +86,8 @@ export function readState(): UpdateState | null {
     const state = JSON.parse(new TextDecoder().decode(raw)) as Partial<UpdateState>;
     if (typeof state.version !== 'string' || typeof state.file !== 'string' || typeof state.assetsId !== 'string') return null;
     if (!/^app-[\w.+-]+\.mjs$/.test(state.file)) return null;
+    if (state.assetsDir !== undefined && !/^assets-[0-9a-f]+$/.test(state.assetsDir)) return null;
+    if (state.packed !== undefined && (!Array.isArray(state.packed) || !state.packed.every(isAssetPath))) return null;
     return { ...state, bootAttempts: Number(state.bootAttempts) || 0 } as UpdateState;
   } catch {
     return null;

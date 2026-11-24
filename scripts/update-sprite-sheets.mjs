@@ -2,7 +2,8 @@
 // sheets bundled with the app (public/sprites/), with a map of where each one is
 // (src/app/core/dex/sprite-sheets.json).
 //
-//   npm run update:sprites
+//   npm run update:sprites              adds the sprites not in the sheets yet, on new sheets
+//   npm run update:sprites -- --repack  packs every sprite again, from the first sheet
 //
 // Why: the console's network takes ~100 ms per request however many run at once (test p3: 30 sprites
 // all at once 3.6 s, 6 at a time 2.9 s), so 685 sprites took 70 s to load; a few sheets take a few
@@ -10,8 +11,12 @@
 // Run it again after update:champions. Sprites missing-sprites.json links come from there instead
 // (see sprite-overrides.mjs); those with no back anywhere (some new Megas) are left out: the app draws
 // their front instead.
+//
+// By default it only appends: the sheets already made stay byte for byte as they are, and the new
+// species go on new sheets. An online update then carries just those new sheets in its asset pack
+// (docs/updates.md), not every sheet again. --repack (all sheets change) is for a new baseline .nro.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
@@ -247,8 +252,14 @@ const overrides = loadOverrides();
 const names = [...new Set([...dex.species.map((s) => s.sprite), ...dex.megas.map((m) => m.sprite), ...EXTRA])].sort();
 const unused = Object.keys(overrides).filter((name) => !names.includes(name));
 if (unused.length) console.log(`Not in the format, skipped: ${unused.join(', ')}`);
-const jobs = [...names.map((name) => ({ name, back: false })), ...names.map((name) => ({ name, back: true }))];
-console.log(`Downloading ${jobs.length} sprites…`);
+const repack = process.argv.includes('--repack') || !existsSync(MAP);
+/** Appending: the sheets made before, kept as they are. */
+const previous = repack ? { sheets: [], front: {}, back: {} } : JSON.parse(readFileSync(MAP, 'utf8'));
+const jobs = [
+  ...names.filter((name) => !previous.front[name]).map((name) => ({ name, back: false })),
+  ...names.filter((name) => !previous.back[name]).map((name) => ({ name, back: true })),
+];
+console.log(`${repack ? 'Repacking' : 'Appending'}: downloading ${jobs.length} sprites…`);
 const files = await downloadAll(jobs);
 
 const placed = [];
@@ -260,11 +271,12 @@ jobs.forEach((job, i) => {
 
 const perSheet = COLUMNS * ROWS;
 const sheets = [];
-const map = { sheets: [], front: {}, back: {} };
+const map = { sheets: [...previous.sheets], front: { ...previous.front }, back: { ...previous.back } };
+if (!repack && placed.length === 0) console.log('Every sprite is in the sheets already: nothing to add.');
 mkdirSync(SHEETS_DIR, { recursive: true });
 for (let first = 0; first < placed.length; first += perSheet) {
   const group = placed.slice(first, first + perSheet);
-  const index = sheets.length;
+  const index = map.sheets.length;
   const width = COLUMNS * CELL;
   const height = Math.ceil(group.length / COLUMNS) * CELL;
   const pixels = Buffer.alloc(width * height * 4);
