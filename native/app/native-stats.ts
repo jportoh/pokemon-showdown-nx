@@ -40,6 +40,8 @@ interface MemoryUsage {
 
 const memoryUsage = (globalThis as unknown as { Switch?: { memoryUsage?: () => MemoryUsage } }).Switch?.memoryUsage;
 const mib = (bytes: number | undefined) => (bytes === undefined ? '?' : (bytes / 1048576).toFixed(1));
+/** The app's GPU textures (GlRenderer counts them, src/app/core/runtime/native-trace.ts). */
+const textures = () => (globalThis as unknown as { psbGlTextures?: { count: number; bytes: number } }).psbGlTextures;
 
 function summary(): string {
   const parts: string[] = [];
@@ -58,7 +60,7 @@ setInterval(() => {
   try {
     const usage = memoryUsage?.();
     if (usage) {
-      memory = `lag max ${netStats.lagMs.toFixed(0)} ms · fetches max ${netStats.maxFetches} · fonts ${fontFaceCount()} · heap ${mib(usage.usedHeapSize)}/${mib(usage.heapSizeLimit)} MiB · external ${mib(usage.externalMemory)} · native ${mib(usage.nativeHeapUsed)} used ${mib(usage.nativeHeapFree)} free`;
+      memory = `lag max ${netStats.lagMs.toFixed(0)} ms · fetches max ${netStats.maxFetches} · fonts ${fontFaceCount()} · heap ${mib(usage.usedHeapSize)}/${mib(usage.heapSizeLimit)} MiB · external ${mib(usage.externalMemory)} · native ${mib(usage.nativeHeapUsed)} used ${mib(usage.nativeHeapFree)} free · textures ${textures()?.count ?? '?'} (${mib(textures()?.bytes)} MiB)`;
     }
   } catch {
     memory = 'memoryUsage failed';
