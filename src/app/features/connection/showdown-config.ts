@@ -44,6 +44,12 @@ export const SLOW_ATTEMPT_MS = 4000;
  */
 export const LOGIN_ASSERTION_URL = 'https://play.pokemonshowdown.com/api/getassertion';
 
+/**
+ * A login server request (an assertion, a login, a registration) is given up after this long: when
+ * Showdown's website is down the request can hang with no answer at all, and the login with it.
+ */
+export const LOGIN_TIMEOUT_MS = 12_000;
+
 /** Logs in to a registered name with its password (`name`, `pass`, `challstr`): same server as above. */
 export const LOGIN_URL = 'https://play.pokemonshowdown.com/api/login';
 

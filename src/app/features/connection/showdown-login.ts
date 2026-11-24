@@ -1,5 +1,6 @@
 import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
+import { ON_CONSOLE } from '@core/runtime/platform';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { randomFreshItem, randomInt } from '@core/runtime/random';
 import { Observable, Subject } from 'rxjs';
@@ -8,7 +9,7 @@ import { AVATAR_ALIASES } from '@features/trainer-card/data/avatar-aliases';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { SavedLogin } from './saved-login';
 import { ShowdownConnection } from './showdown-connection';
-import { LOGIN_ASSERTION_URL, LOGIN_URL, REGISTER_URL } from './showdown-config';
+import { LOGIN_ASSERTION_URL, LOGIN_TIMEOUT_MS, LOGIN_URL, REGISTER_URL } from './showdown-config';
 import { splitLine } from './showdown-protocol';
 
 export interface LoginState {
@@ -269,7 +270,7 @@ export class ShowdownLogin {
       return;
     }
     this.setState({ registering: true, registerError: null });
-    void fetchRegisterAssertion(state.name, password, confirmation, captcha, challstr).then(
+    void withTimeout(fetchRegisterAssertion(state.name, password, confirmation, captcha, challstr)).then(
       (result) => {
         if (this.challstr !== challstr) return;
         if ('error' in result) {
@@ -280,7 +281,7 @@ export class ShowdownLogin {
         this.credentials = { name: state.name, password };
         this.connection.send('', `/trn ${state.name},0,${result.assertion}`);
       },
-      () => this.setState({ registering: false, registerError: "Couldn't reach Showdown's login server." }),
+      (error: unknown) => this.setState({ registering: false, registerError: unreachable(error) }),
     );
   }
 
@@ -348,7 +349,7 @@ export class ShowdownLogin {
     this.setState({ reclaiming: true });
     let assertion: string;
     try {
-      assertion = held.password ? await fetchLoginAssertion(held.name, held.password, challstr) : await fetchAssertion(held.name, challstr);
+      assertion = await withTimeout(held.password ? fetchLoginAssertion(held.name, held.password, challstr) : fetchAssertion(held.name, challstr));
     } catch {
       if (this.challstr === challstr && this.held === held) this.retryReclaim();
       return;
@@ -433,9 +434,10 @@ export class ShowdownLogin {
       const name = randomName();
       let assertion: string;
       try {
-        assertion = await fetchAssertion(name, challstr);
-      } catch {
-        this.fail("Couldn't reach Showdown's login server (a web browser blocks it; the console app can).");
+        assertion = await withTimeout(fetchAssertion(name, challstr));
+      } catch (error) {
+        // A newer challenge means the connection was replaced: its own login is under way.
+        if (this.challstr === challstr) this.fail(unreachable(error));
         return;
       }
       // A newer challenge means the connection was replaced: its own login is under way.
@@ -460,11 +462,11 @@ export class ShowdownLogin {
     this.setState({ loggingIn: true, loginError: null });
     let assertion: string;
     try {
-      assertion = credentials.password
-        ? await fetchLoginAssertion(credentials.name, credentials.password, challstr)
-        : await fetchAssertion(credentials.name, challstr);
-    } catch {
-      this.loginFailed("Couldn't reach Showdown's login server (a web browser blocks it; the console app can).");
+      assertion = await withTimeout(
+        credentials.password ? fetchLoginAssertion(credentials.name, credentials.password, challstr) : fetchAssertion(credentials.name, challstr),
+      );
+    } catch (error) {
+      if (this.challstr === challstr) this.loginFailed(unreachable(error));
       return;
     }
     if (this.challstr !== challstr) return;
@@ -596,6 +598,34 @@ function randomName(): string {
   return `${adjective}${pokemon}${10 + randomInt(90)}`.slice(0, MAX_NAME_LENGTH);
 }
 
+/** The login server didn't answer in time (LOGIN_TIMEOUT_MS). */
+class LoginServerTimeout extends Error {}
+
+/** The login server answered with an HTTP error. */
+class LoginServerStatus extends Error {
+  constructor(readonly status: number) {
+    super(`The login server answered ${status}.`);
+  }
+}
+
+/** A login server request, given up after LOGIN_TIMEOUT_MS (the request itself can hang with no answer). */
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new LoginServerTimeout()), LOGIN_TIMEOUT_MS);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Why the login server couldn't give a name, for the player: it's Showdown's, so mostly "try again later". */
+function unreachable(error: unknown): string {
+  if (error instanceof LoginServerTimeout) return "Showdown's login server isn't answering. Try again in a while.";
+  if (error instanceof LoginServerStatus) return `Showdown's login server failed (${error.status}). Try again in a while.`;
+  // A browser's page can't call it (the web version is for development); the console app can.
+  if (!ON_CONSOLE) return "Couldn't reach Showdown's login server (a web browser blocks it; the console app can).";
+  return "Couldn't reach Showdown's login server. Try again in a while.";
+}
+
 /** The login server's answer: an assertion, ";" for a registered name or ";;message" for an error. */
 async function fetchAssertion(name: string, challstr: string): Promise<string> {
   const response = await fetch(LOGIN_ASSERTION_URL, {
@@ -603,7 +633,7 @@ async function fetchAssertion(name: string, challstr: string): Promise<string> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `userid=${encodeURIComponent(toId(name))}&challstr=${encodeURIComponent(challstr)}`,
   });
-  if (!response.ok) throw new Error(`The login server answered ${response.status}.`);
+  if (!response.ok) throw new LoginServerStatus(response.status);
   return (await response.text()).trim();
 }
 
@@ -618,7 +648,7 @@ async function fetchLoginAssertion(name: string, password: string, challstr: str
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `name=${encodeURIComponent(name)}&pass=${encodeURIComponent(password)}&challstr=${encodeURIComponent(challstr)}`,
   });
-  if (!response.ok) throw new Error(`The login server answered ${response.status}.`);
+  if (!response.ok) throw new LoginServerStatus(response.status);
   const data: unknown = JSON.parse((await response.text()).replace(/^\]/, ''));
   if (!isLoginAnswer(data)) return ";;The login server's answer wasn't understood.";
   const assertion = data.assertion ?? '';
@@ -648,7 +678,7 @@ async function fetchRegisterAssertion(
       `challstr=${encodeURIComponent(challstr)}`,
     ].join('&'),
   });
-  if (!response.ok) throw new Error(`The login server answered ${response.status}.`);
+  if (!response.ok) throw new LoginServerStatus(response.status);
   const data: unknown = JSON.parse((await response.text()).replace(/^]/, ''));
   if (!isLoginAnswer(data)) return { error: "The login server's answer wasn't understood." };
   const assertion = data.assertion ?? '';

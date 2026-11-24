@@ -52,6 +52,12 @@ as the existing code does.
    for a minute while the server still holds it for the old one. The server puts a player back in
    their battles by name.
 
+The login server is Showdown's website (`play.pokemonshowdown.com`), apart from the battle server: it
+can be down while the battle server is up, and its requests then hang with no answer. Each one is
+given up after `LOGIN_TIMEOUT_MS` (12 s), and the player is told why no name could be had ("Showdown's
+login server isn't answering. Try again in a while.") on the guest's button, the entry screen's
+footer and the menu's name plate. An automatic login that fails brings its reason to the entry screen.
+
 `SavedLogin` keeps what Settings allows: the name ("Remember my name") and, only on the console's SD
 card and only while "Log in automatically" is on, a registered name's password.
 
