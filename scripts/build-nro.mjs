@@ -11,6 +11,7 @@
 //                             native shims (native/app) and puts the static files in the RomFS.
 //   npm run build:nro:probe   the phase 0 engine probe (native/poc/main.ts).
 //   node scripts/build-nro.mjs --update-probe   the online updates probe (native/poc/update-probe.ts).
+//   node scripts/build-nro.mjs --nro-probe      the in-app .nro update probe (native/poc/nro-probe.ts).
 // Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/.
 
 import fs from 'node:fs';
@@ -89,7 +90,29 @@ const TARGETS = {
     entry: () => ({ entryPoints: [path.join(root, 'native/poc/update-probe.ts')] }),
     files: () => [['update-probe-mod.js', path.join(root, 'native/poc/update-probe-mod.js')]],
   },
+  // Can the app replace its own .nro? (native/poc/nro-probe.ts)
+  nroProbe: {
+    output: 'psb-nro-probe.nro',
+    title: 'PSB NRO Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000004n,
+    entry: () => ({
+      entryPoints: [path.join(root, 'native/poc/nro-probe.ts')],
+      define: { __PROBE_A_SHA__: JSON.stringify(sha256(probeBytes('a'))), __PROBE_B_SHA__: JSON.stringify(sha256(probeBytes('b'))) },
+    }),
+    files: () => [
+      ['probe-a.bin', probeBytes('a')],
+      ['probe-b.bin', probeBytes('b')],
+    ],
+  },
 };
+
+/** 1 MiB of bytes that are the same in every build (the .nro probe's RomFS files). */
+function probeBytes(seed) {
+  const blocks = [];
+  for (let i = 0; i < 32768; i++) blocks.push(crypto.createHash('sha256').update(`${seed}${i}`).digest());
+  return Buffer.concat(blocks);
+}
 const AUTHOR = 'pokemon-showdown-nx';
 
 /** Which feature crashes the app on sleep and wake? `--sleep-probe=ws|wsplain|audio|pad` (native/poc/sleep-probe.ts). */
@@ -109,7 +132,9 @@ async function main() {
   const sleepMode = option('sleep-probe');
   const target = sleepMode
     ? sleepProbe(sleepMode)
-    : process.argv.includes('--update-probe')
+    : process.argv.includes('--nro-probe')
+      ? TARGETS.nroProbe
+      : process.argv.includes('--update-probe')
       ? TARGETS.updateProbe
       : process.argv.includes('--res-probe')
       ? TARGETS.resProbe
