@@ -45,8 +45,11 @@ export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
 
 /**
  * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles), as
- * single games and as best-of-3 sets, its Battle Stadium Singles format, and the most played random formats (IDs checked against the
- * server's `|formats|`, 2026-09-30). The format picker lists them by category, in this order.
+ * single games and as best-of-3 sets, its Battle Stadium Singles format, the most played random formats
+ * (IDs checked against the server's `|formats|`, 2026-09-30), and the ladder's randomized metas that
+ * play with the usual mechanics: no 4-player battles, Shared Power, custom Pokémon or drafts (checked
+ * 2026-11-24; their team preview picks come from the request's maxChosenTeamSize). The format picker
+ * lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
   {
@@ -121,6 +124,78 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     category: 'Random',
     detail: 'Singles · random Ruby/Sapphire teams',
     rules: 'Random Gen 3 sets',
+  },
+  {
+    id: 'gen9randombattleblitz',
+    name: '[Gen 9] Random Battle (Blitz)',
+    label: 'Gen 9 Random Battle (Blitz)',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random teams · fast timer',
+    rules: 'Random Battle sets · short turn timer',
+  },
+  {
+    id: 'gen9monotyperandombattle',
+    name: '[Gen 9] Monotype Random Battle',
+    label: 'Monotype Random Battle',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · random teams of one type',
+    rules: 'Every Pokémon shares a type',
+  },
+  {
+    id: 'gen9babyrandombattle',
+    name: '[Gen 9] Baby Random Battle',
+    label: 'Baby Random Battle',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · random teams of baby Pokémon',
+    rules: 'Unevolved Pokémon only',
+  },
+  {
+    id: 'gen9battlefactory',
+    name: '[Gen 9] Battle Factory',
+    label: 'Battle Factory',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · competitive sets of a random tier',
+    rules: 'Team preview · Smogon tier sets',
+  },
+  {
+    id: 'gen91v1factory',
+    name: '[Gen 9] 1v1 Factory',
+    label: '1v1 Factory',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · pick 1 · competitive sets',
+    rules: 'Team preview · pick 1',
+  },
+  {
+    id: 'gen9challengecup1v1',
+    name: '[Gen 9] Challenge Cup 1v1',
+    label: 'Challenge Cup 1v1',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · pick 1 · any legal moves and item',
+    rules: 'Team preview · pick 1',
+  },
+  {
+    id: 'gen9challengecup2v2',
+    name: '[Gen 9] Challenge Cup 2v2',
+    label: 'Challenge Cup 2v2',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Doubles · pick 2 · any legal moves and item',
+    rules: 'Team preview · pick 2',
+  },
+  {
+    id: 'gen9hackmonscup',
+    name: '[Gen 9] Hackmons Cup',
+    label: 'Hackmons Cup',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · any ability, moves and item',
+    rules: 'Anything goes, level-balanced',
   },
 ];
 
