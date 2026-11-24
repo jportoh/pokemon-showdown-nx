@@ -1,5 +1,5 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { speciesInfo } from '@core/dex/species';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
@@ -31,7 +31,7 @@ import { TeamStore } from '@features/teambuilder/state/team-store';
 import { TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
-import { PLAYABLE_FORMATS } from '@shared/data/formats';
+import { PLAYABLE_FORMATS, PlayableFormat, RANDOM_PLAY_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
 import { spriteId } from '@shared/utils/sprite-id';
 import { toId } from '@shared/utils/to-id';
 
@@ -40,12 +40,9 @@ type Layer = 'card' | 'popup' | 'picker' | 'form' | 'page';
 /** The page's controls focus goes back to once the page shows again. */
 type PageControl = 'format' | 'team' | 'challenge' | 'battle';
 
-const FORMAT_OPTIONS: readonly PickerOption[] = PLAYABLE_FORMATS.map((format) => ({
-  id: format.id,
-  title: format.label,
-  detail: format.detail,
-  category: format.category,
-}));
+function formatOptions(formats: readonly PlayableFormat[]): PickerOption[] {
+  return formats.map((format) => ({ id: format.id, title: format.label, detail: format.detail, category: format.category }));
+}
 
 /** The actions along the foot: who's playing on the left, BATTLE! in the middle, challenges on the right. */
 const BATTLE_BOX: Box = { x: 412, y: 590, w: 470, h: 108 };
@@ -64,6 +61,9 @@ const LEAVE_MS = 180;
  * them and A opens their list. Challenges that arrive show in a panel over the page (B leaves one for
  * later, and a button brings it back), as do the lists, the form to challenge someone and a
  * challenger's Trainer Card.
+ *
+ * The Random Battle page (/random, from the home menu's Random Battle) is the same page for the random
+ * formats: no teams to pick, its own format kept apart from the Battle page's.
  */
 @Component({
   selector: 'app-play-scene',
@@ -84,6 +84,11 @@ export class PlayScene {
   private readonly login = inject(ShowdownLogin);
   private readonly search = inject(ShowdownSearch);
   private readonly selection = inject(PlaySelection);
+  /** The Random Battle page: the random formats instead of the team ones. */
+  private readonly random = inject(ActivatedRoute).snapshot.data['random'] === true;
+  /** The formats this page offers. */
+  private readonly pageFormats = this.random ? RANDOM_PLAY_FORMATS : TEAM_PLAY_FORMATS;
+  private readonly formatOptions = formatOptions(this.pageFormats);
 
   private readonly focus = new CanvasFocus();
   private readonly picker = new OptionPickerView(this.focus);
@@ -95,16 +100,18 @@ export class PlayScene {
   /** The Poké Ball the cards are drawn with (the logo's), made with the stage's renderer. */
   private ball: Texture | null = null;
 
-  private readonly format = this.selection.playFormat;
+  private readonly format = this.random ? this.selection.randomPlayFormat : this.selection.playFormat;
+  /** Sets this page's format. */
+  private readonly setFormat = (id: string): void => (this.random ? this.selection.randomFormat : this.selection.format).set(id);
   private readonly formatIndex = computed(() =>
     Math.max(
       0,
-      PLAYABLE_FORMATS.findIndex((format) => format.id === this.format().id),
+      this.pageFormats.findIndex((format) => format.id === this.format().id),
     ),
   );
   private readonly randomTeams = computed(() => this.format().randomTeams);
-  private readonly teams = this.selection.teams;
-  private readonly chosenTeam = this.selection.team;
+  private readonly teams = computed(() => (this.random ? [] : this.selection.teams()));
+  private readonly chosenTeam = computed(() => (this.random ? null : this.selection.team()));
   private readonly teamIndex = computed(() =>
     Math.max(
       0,
@@ -124,7 +131,7 @@ export class PlayScene {
   /** Every format's card: how many teams the player has for it. */
   private readonly formatCards = computed((): FormatCard[] => {
     const teams = this.teamStore.teams().filter((team) => team.sets.length > 0);
-    return PLAYABLE_FORMATS.map((format) => ({
+    return this.pageFormats.map((format) => ({
       format,
       teams: format.randomTeams ? 0 : teams.filter((team) => team.format === (format.teamFormat ?? format.id)).length,
     }));
@@ -302,8 +309,8 @@ export class PlayScene {
 
   private stepFormat(by: 1 | -1): boolean {
     if (this.locked()) return false;
-    const count = PLAYABLE_FORMATS.length;
-    this.selection.format.set(PLAYABLE_FORMATS[(this.formatIndex() + by + count) % count].id);
+    const count = this.pageFormats.length;
+    this.setFormat(this.pageFormats[(this.formatIndex() + by + count) % count].id);
     return true;
   }
 
@@ -317,7 +324,7 @@ export class PlayScene {
   private openPicker(which: 'format' | 'team'): void {
     this.returnTo = which;
     if (which === 'format') {
-      this.picker.open('Pick a format', FORMAT_OPTIONS, this.format().id, (id) => this.selection.format.set(id));
+      this.picker.open('Pick a format', this.formatOptions, this.format().id, this.setFormat);
     } else {
       this.picker.open('Pick a team', this.teamOptions(), this.chosenTeam()?.id ?? null, (id) => this.selection.teamId.set(id));
     }
@@ -428,7 +435,7 @@ export class PlayScene {
     renderer.begin(now / 1000, p.bg, p.rim);
     this.focus.begin();
     drawGround(ctx, 1);
-    this.bar.drawHeader(ctx, { title: 'BATTLE', icon: 'battle', back: () => this.onAction('back') });
+    this.bar.drawHeader(ctx, { title: this.random ? 'RANDOM BATTLE' : 'BATTLE', icon: this.random ? 'random' : 'battle', back: () => this.onAction('back') });
     this.drawFormats(ctx);
     this.drawTeams(ctx);
     this.drawPlayer(ctx);

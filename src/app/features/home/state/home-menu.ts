@@ -5,8 +5,8 @@ import { Appearance } from '@core/settings/app-settings';
 export interface HomeMenuItem {
   id: PixelIconName;
   label: string;
-  /** The page it opens; none for Random Battle, which searches for an opponent right there. */
-  path: string | null;
+  /** The page it opens. */
+  path: string;
   /** Only useful connected: faded on the menu while offline. */
   needsConnection: boolean;
   /**
@@ -37,11 +37,11 @@ export const HOME_MENU_ITEMS: readonly HomeMenuItem[] = [
   {
     id: 'random',
     label: 'Random Battle',
-    path: null,
+    path: '/random',
     needsConnection: true,
     plate: { dark: '#43361a', light: '#f6e6bf' },
-    description: 'Get a random team and an opponent in seconds.',
-    action: 'Find an opponent',
+    description: 'Pick a random format: a team is handed out, no building needed.',
+    action: 'Open',
   },
   {
     id: 'teambuilder',

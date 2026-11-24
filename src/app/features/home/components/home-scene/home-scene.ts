@@ -19,10 +19,11 @@ import { Chip, NamePlate, TRAINER, drawGround, drawNamePlate, drawPlatformTraine
 import { RegisterView } from '@features/home/gl/login-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
+import { PlaySelection } from '@features/play/state/play-selection';
+import { formatLabel } from '@shared/data/formats';
 import { CARD_CLOSE_ID, CARD_HISTORY_ID, TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRatings } from '@features/trainer-card/state/ladder-ratings';
-import { RANDOM_BATTLE_FORMAT } from '@shared/data/formats';
 import { groupDigits } from '@shared/utils/group-digits';
 import { toId } from '@shared/utils/to-id';
 
@@ -89,6 +90,7 @@ export class HomeScene {
   private readonly menu = inject(HomeMenu);
   private readonly login = inject(ShowdownLogin);
   private readonly search = inject(ShowdownSearch);
+  private readonly selection = inject(PlaySelection);
   private readonly summary = inject(HomeSummary);
   private readonly stats = inject(ServerStats);
   private readonly ladder = inject(LadderRatings);
@@ -177,11 +179,12 @@ export class HomeScene {
   private readonly randomStatus = computed((): Chip => {
     const error = this.search.error();
     if (this.search.cancelling()) return { text: 'Cancelling…', tone: 'alert' };
-    if (this.search.searching()) return { text: 'Searching… A to cancel', tone: 'alert' };
+    const searched = this.search.searching();
+    if (searched) return { text: `Searching… ${formatLabel(searched)}`, tone: 'alert' };
     if (error) return { text: error, tone: 'error' };
     if (this.login.state().status === 'unavailable') return { text: 'No name on Showdown', tone: 'error' };
     if (this.offline()) return { text: 'Needs connection', tone: 'faded' };
-    return { text: 'Gen 9 · Ladder', tone: 'muted' };
+    return { text: `${this.selection.randomPlayFormat().label} · Ladder`, tone: 'muted' };
   });
 
   private readonly counts = computed(() => {
@@ -260,8 +263,9 @@ export class HomeScene {
   private open(item: HomeMenuItem): void {
     if (this.leaving) return;
     this.menu.lastItem.set(item.id);
-    if (!item.path) {
-      this.randomBattle();
+    // Random Battle is only for playing online: offline, the entry screen to connect first.
+    if (item.id === 'random' && this.login.state().mode === null) {
+      this.toEntry();
       return;
     }
     const path = item.path;
@@ -270,13 +274,6 @@ export class HomeScene {
 
   private leave(then: () => void): void {
     this.leaving = { at: performance.now(), then };
-  }
-
-  /** A: searches the Gen 9 Random Battle ladder, or cancels the search; offline, the entry screen to log in. */
-  private randomBattle(): void {
-    if (this.search.searching()) this.search.cancel();
-    else if (this.login.state().mode === null) this.toEntry();
-    else if (this.named()) this.search.search(RANDOM_BATTLE_FORMAT);
   }
 
   /** Our battle history, from the Trainer Card (its B comes back to the card). */
@@ -507,7 +504,7 @@ export class HomeScene {
     const description = onTrainer ? this.trainerHint() : (item?.description ?? '');
     const y = 684;
     label(ctx, description, 520, y, { size: 15 }, withAlpha(p.muted, alpha), { maxWidth: 360 });
-    const action = onTrainer ? this.trainerAction() : item ? (item.id === 'random' && this.search.searching() ? 'Cancel' : item.action) : null;
+    const action = onTrainer ? this.trainerAction() : item ? item.action : null;
     if (action) {
       const width = pill(ctx, 'A', 892, y, 28);
       label(ctx, action, 892 + width + 8, y, { size: 18 }, withAlpha(p.ink, alpha), { maxWidth: 172 - width });

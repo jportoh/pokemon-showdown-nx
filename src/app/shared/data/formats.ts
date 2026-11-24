@@ -48,8 +48,8 @@ export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
  * single games and as best-of-3 sets, its Battle Stadium Singles format, the most played random formats
  * (IDs checked against the server's `|formats|`, 2026-09-30), and the ladder's randomized metas that
  * play with the usual mechanics: no 4-player battles, Shared Power, custom Pokémon or drafts (checked
- * 2026-11-24; their team preview picks come from the request's maxChosenTeamSize). The format picker
- * lists them by category, in this order.
+ * 2026-11-24; their team preview picks come from the request's maxChosenTeamSize). The Battle page offers
+ * the team formats, the Random Battle page the random ones; each lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
   {
@@ -225,6 +225,12 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     rules: 'Anything goes, level-balanced',
   },
 ];
+
+/** The Battle page's formats: those played with the player's own teams. */
+export const TEAM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.filter((format) => !format.randomTeams);
+
+/** The Random Battle page's formats: teams handed out at random. */
+export const RANDOM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.filter((format) => format.randomTeams);
 
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */
 export function formatName(id: string): string {

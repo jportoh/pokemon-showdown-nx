@@ -9,6 +9,7 @@ import { ForfeitState } from '@features/battle/gl/screen/header-view';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleStore } from '@features/battle/state/battle-store';
+import { RANDOM_PLAY_FORMATS } from '@shared/data/formats';
 import { BattleRooms } from '@features/connection/battle-rooms';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { SentTeams } from '@features/connection/sent-teams';
@@ -265,11 +266,17 @@ export class BattleScreen {
     void this.router.navigateByUrl('/live');
   }
 
-  /** Closes the finished battle (so the page can be left) and goes back to the Battle page; a rematch waiting is withdrawn. */
+  /**
+   * Closes the finished battle (so the page can be left) and goes back to the page it was played from:
+   * Random Battle's for a random format, else the Battle page. A rematch waiting is withdrawn.
+   */
   protected leave(): void {
+    const room = this.store.battleRoom();
+    const format = room && roomFormat(room);
+    const random = RANDOM_PLAY_FORMATS.some((offered) => offered.id === format);
     this.challenges.cancelChallenge();
     this.store.close();
-    void this.router.navigateByUrl('/play');
+    void this.router.navigateByUrl(random ? '/random' : '/play');
   }
 }
 

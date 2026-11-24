@@ -19,7 +19,7 @@ import { ShowdownLogin } from '@features/connection/showdown-login';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { BATTLEFIELD_CHOICES } from '@shared/data/battlefields';
-import { PLAYABLE_FORMATS, TEAM_FORMATS, formatLabel } from '@shared/data/formats';
+import { PLAYABLE_FORMATS, TEAM_FORMATS, TEAM_PLAY_FORMATS, formatLabel } from '@shared/data/formats';
 
 type SettingId =
   | 'appearance'
@@ -155,7 +155,7 @@ export class SettingsScene {
         detail: 'The format the Battle page starts on.',
         value: formatLabel(settings.battleFormat),
         kind: 'cycle',
-        steppable: PLAYABLE_FORMATS.length > 1,
+        steppable: TEAM_PLAY_FORMATS.length > 1,
       },
       {
         id: 'teamFormat',
@@ -355,7 +355,7 @@ export class SettingsScene {
         break;
       }
       case 'battleFormat':
-        this.appSettings.set('battleFormat', cycle(PLAYABLE_FORMATS.map((f) => f.id), settings.battleFormat, step));
+        this.appSettings.set('battleFormat', cycle(TEAM_PLAY_FORMATS.map((f) => f.id), settings.battleFormat, step));
         break;
       case 'teamFormat':
         if (TEAM_FORMATS.length < 2) return false;
