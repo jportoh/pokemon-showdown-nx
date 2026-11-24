@@ -20,6 +20,16 @@ slanted format cards and a team panel fading into Battle's colour, a name plate 
 trainer, and BATTLE! and the challenge button as slanted buttons (BATTLE! in the accent, the lead
 Pokémon drawn on it).
 
+## Random Battle (`/random`)
+
+The home menu's Random Battle opens the same scene (route data `random`) for the random formats
+(`RANDOM_PLAY_FORMATS`), with its own picked format (`PlaySelection.randomFormat`). There are no
+teams, so the two carousels give way to a grid of every format (`gl/format-grid.ts`): tiles in rows
+of five under their category (Standard, Randomized Metas), each with its short name
+(`PlayableFormat.short`) and its sets. The d-pad walks the grid, A picks a tile and moves on to
+BATTLE!, ZL/ZR step through them; while searching, the picked tile shows the search and the rest dim.
+The actions along the foot are the Battle page's.
+
 Over the page, as modals: the format and team lists (`OptionPickerView`), the challenge form, incoming
 challenges (`gl/challenge-views.ts`) and a challenger's Trainer Card.
 
@@ -43,6 +53,7 @@ ZL/ZR, L/R, A.
 | `components/play-scene/play-scene.ts` | The scene: rows, modals and their input. What's on top decides who gets the input |
 | `gl/carousel.ts` | The carousel's sliding motion, shared by both rows |
 | `gl/format-carousel.ts`, `gl/team-showcase.ts` | The two carousels' cards |
+| `gl/format-grid.ts` | The Random Battle page's grid of formats |
 | `gl/challenge-views.ts` | The challenge form and the incoming challenge popup |
 | `state/play-selection.ts` | The picked format and team, kept while the app runs |
 

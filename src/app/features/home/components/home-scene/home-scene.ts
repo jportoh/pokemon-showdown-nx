@@ -20,7 +20,7 @@ import { RegisterView } from '@features/home/gl/login-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
 import { HomeSummary } from '@features/home/state/home-summary';
 import { PlaySelection } from '@features/play/state/play-selection';
-import { formatLabel } from '@shared/data/formats';
+import { PLAYABLE_FORMATS, formatLabel } from '@shared/data/formats';
 import { CARD_CLOSE_ID, CARD_HISTORY_ID, TrainerCardView } from '@features/trainer-card/gl/trainer-card-view';
 import { avatarUrl } from '@features/trainer-card/data/avatar-url';
 import { LadderRatings } from '@features/trainer-card/state/ladder-ratings';
@@ -180,11 +180,13 @@ export class HomeScene {
     const error = this.search.error();
     if (this.search.cancelling()) return { text: 'Cancelling…', tone: 'alert' };
     const searched = this.search.searching();
-    if (searched) return { text: `Searching… ${formatLabel(searched)}`, tone: 'alert' };
+    // Under Random Battle, a random format by its short name ("Gen 9"): the button says the rest.
+    if (searched) return { text: `Searching… ${PLAYABLE_FORMATS.find((f) => f.id === searched)?.short ?? formatLabel(searched)}`, tone: 'alert' };
     if (error) return { text: error, tone: 'error' };
     if (this.login.state().status === 'unavailable') return { text: 'No name on Showdown', tone: 'error' };
     if (this.offline()) return { text: 'Needs connection', tone: 'faded' };
-    return { text: `${this.selection.randomPlayFormat().label} · Ladder`, tone: 'muted' };
+    const format = this.selection.randomPlayFormat();
+    return { text: `${format.short ?? format.label} · Ladder`, tone: 'muted' };
   });
 
   private readonly counts = computed(() => {

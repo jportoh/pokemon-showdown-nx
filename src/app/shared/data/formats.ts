@@ -23,6 +23,11 @@ export const DEFAULT_TEAM_FORMAT = TEAM_FORMATS[0].id;
 export interface PlayableFormat extends BattleFormat {
   /** Short, for buttons and the format picker. */
   label: string;
+  /**
+   * Shorter still, where the context says the rest: a random format's tile on the Random Battle page and
+   * the home menu's Random Battle button ("Gen 9", "Monotype"); else the label.
+   */
+  short?: string;
   /** Teams are handed out at random: no team of the player's is needed. */
   randomTeams: boolean;
   /** The heading it's listed under in the format picker, as Showdown groups its formats. */
@@ -84,6 +89,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: RANDOM_BATTLE_FORMAT,
     name: '[Gen 9] Random Battle',
     label: 'Gen 9 Random Battle',
+    short: 'Gen 9',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random teams',
@@ -93,6 +99,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9randomdoublesbattle',
     name: '[Gen 9] Random Doubles Battle',
     label: 'Gen 9 Random Doubles',
+    short: 'Gen 9 Doubles',
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random teams',
@@ -102,6 +109,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9championsrandombattle',
     name: '[Gen 9 Champions] Random Battle',
     label: 'Champions Random Battle',
+    short: 'Champions',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Champions teams',
@@ -111,6 +119,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9championsrandomdoublesbattle',
     name: '[Gen 9 Champions] Random Doubles Battle',
     label: 'Champions Random Doubles',
+    short: 'Champions Doubles',
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random Champions teams',
@@ -120,6 +129,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen1randombattle',
     name: '[Gen 1] Random Battle',
     label: 'Gen 1 Random Battle',
+    short: 'Gen 1',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Red/Blue teams',
@@ -129,6 +139,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen2randombattle',
     name: '[Gen 2] Random Battle',
     label: 'Gen 2 Random Battle',
+    short: 'Gen 2',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Gold/Silver teams',
@@ -138,6 +149,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen3randombattle',
     name: '[Gen 3] Random Battle',
     label: 'Gen 3 Random Battle',
+    short: 'Gen 3',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Ruby/Sapphire teams',
@@ -147,6 +159,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen4randombattle',
     name: '[Gen 4] Random Battle',
     label: 'Gen 4 Random Battle',
+    short: 'Gen 4',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Diamond/Pearl teams',
@@ -156,6 +169,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9randombattleblitz',
     name: '[Gen 9] Random Battle (Blitz)',
     label: 'Gen 9 Random Battle (Blitz)',
+    short: 'Blitz',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random teams · fast timer',
@@ -165,6 +179,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9monotyperandombattle',
     name: '[Gen 9] Monotype Random Battle',
     label: 'Monotype Random Battle',
+    short: 'Monotype',
     randomTeams: true,
     category: 'Randomized Metas',
     detail: 'Singles · random teams of one type',
@@ -174,6 +189,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9babyrandombattle',
     name: '[Gen 9] Baby Random Battle',
     label: 'Baby Random Battle',
+    short: 'Baby',
     randomTeams: true,
     category: 'Randomized Metas',
     detail: 'Singles · random teams of baby Pokémon',

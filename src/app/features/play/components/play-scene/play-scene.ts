@@ -22,6 +22,7 @@ import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
 import { ChallengeFormView, ChallengePopupView, POPUP_CARD_ID, PopupModel } from '@features/play/gl/challenge-views';
 import { FormatCard, FormatCarouselView } from '@features/play/gl/format-carousel';
+import { FormatGridView, formatTileId } from '@features/play/gl/format-grid';
 import { ShowcaseTeam, TeamShowcaseView } from '@features/play/gl/team-showcase';
 import { PlaySelection, preferredTeam } from '@features/play/state/play-selection';
 import { packTeam } from '@features/teambuilder/data/packed-team';
@@ -63,7 +64,9 @@ const LEAVE_MS = 180;
  * challenger's Trainer Card.
  *
  * The Random Battle page (/random, from the home menu's Random Battle) is the same page for the random
- * formats: no teams to pick, its own format kept apart from the Battle page's.
+ * formats, its own format kept apart from the Battle page's: no teams to pick, so instead of the two
+ * rows every format is in sight as a grid of tiles (FormatGridView); A on one picks it and goes on to
+ * BATTLE!.
  */
 @Component({
   selector: 'app-play-scene',
@@ -97,6 +100,7 @@ export class PlayScene {
   private readonly card = new TrainerCardView(this.focus);
   private readonly formats = new FormatCarouselView();
   private readonly showcase = new TeamShowcaseView();
+  private readonly grid = new FormatGridView();
   /** The Poké Ball the cards are drawn with (the logo's), made with the stage's renderer. */
   private ball: Texture | null = null;
 
@@ -399,7 +403,9 @@ export class PlayScene {
       battle: this.canBattle(),
     };
     const order: PageControl[] = [this.returnTo, 'battle', 'team', 'format'];
-    this.focus.focus(order.find((control) => enabled[control]) ?? 'format');
+    const control = order.find((control) => enabled[control]) ?? 'format';
+    // The Random Battle page's format control is the picked format's tile.
+    this.focus.focus(this.random && control === 'format' ? formatTileId(this.format().id) : control);
     this.returnTo = 'battle';
   }
 
@@ -436,8 +442,11 @@ export class PlayScene {
     this.focus.begin();
     drawGround(ctx, 1);
     this.bar.drawHeader(ctx, { title: this.random ? 'RANDOM BATTLE' : 'BATTLE', icon: this.random ? 'random' : 'battle', back: () => this.onAction('back') });
-    this.drawFormats(ctx);
-    this.drawTeams(ctx);
+    if (this.random) this.drawGrid(ctx);
+    else {
+      this.drawFormats(ctx);
+      this.drawTeams(ctx);
+    }
     this.drawPlayer(ctx);
     this.drawBattle(ctx);
     this.drawChallenge(ctx);
@@ -462,24 +471,43 @@ export class PlayScene {
     renderer.end();
   }
 
-  private drawFormats(ctx: UiContext): void {
+  /** The search under way, as the format's card (or tile) shows it. */
+  private searchModel(now: number): { since: number; title: string; line: string } | null {
     const searched = this.search.searching();
     const joining = this.rooms.joining();
+    if (!joining && !searched) return null;
     const searchedLabel = PLAYABLE_FORMATS.find((format) => format.id === searched)?.label ?? this.format().label;
+    return {
+      since: this.searchSince,
+      title: joining ? 'Opponent found!' : this.search.cancelling() ? 'Cancelling…' : `Searching… ${clock(now - this.searchSince)}`,
+      line: joining ? 'Joining battle…' : `Ladder · ${searchedLabel}`,
+    };
+  }
+
+  /** The Random Battle page's formats, all in sight; a pick goes on to BATTLE!. */
+  private drawGrid(ctx: UiContext): void {
+    this.grid.draw(ctx, {
+      formats: this.pageFormats,
+      picked: this.format().id,
+      locked: this.locked(),
+      ball: this.ball,
+      search: this.searchModel(ctx.now),
+      pick: (id) => {
+        if (this.locked()) return;
+        this.setFormat(id);
+        if (this.canBattle()) this.focus.focus('battle');
+      },
+    });
+  }
+
+  private drawFormats(ctx: UiContext): void {
     this.formats.draw(ctx, {
       cards: this.formatCards(),
       index: this.formatIndex(),
       focused: this.focus.focused === 'format',
       locked: this.locked(),
       ball: this.ball,
-      search:
-        joining || searched
-          ? {
-              since: this.searchSince,
-              title: joining ? 'Opponent found!' : this.search.cancelling() ? 'Cancelling…' : `Searching… ${clock(ctx.now - this.searchSince)}`,
-              line: joining ? 'Joining battle…' : `Ladder · ${searchedLabel}`,
-            }
-          : null,
+      search: this.searchModel(ctx.now),
       open: () => this.openPicker('format'),
       step: (by) => this.stepFormat(by),
     });
