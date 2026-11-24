@@ -34,10 +34,13 @@ export function spriteUrl(sprite: string, back = false, set: SpriteSet = 'gen5')
   return `${SPRITES_URL}/${back ? `${set}-back` : set}/${sprite}.png`;
 }
 
-/** Showdown's sprite sets: the Black/White ones (every species) or Ruby/Sapphire's (Gen 3 species only). */
-export type SpriteSet = 'gen5' | 'gen3';
+/**
+ * Showdown's sprite sets: the Black/White ones (every species), Ruby/Sapphire's or Diamond/Pearl's
+ * (their generation's species only).
+ */
+export type SpriteSet = 'gen5' | 'gen3' | 'gen4';
 
-/** The sprites a generation's battles show: Gen 3's own, Black/White's for the rest. */
+/** The sprites a generation's battles show: Gen 3's and 4's own, Black/White's for the rest. */
 export function spriteSetOf(gen: number): SpriteSet {
-  return gen === 3 ? 'gen3' : 'gen5';
+  return gen === 3 ? 'gen3' : gen === 4 ? 'gen4' : 'gen5';
 }

@@ -126,6 +126,15 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     rules: 'Random Gen 3 sets',
   },
   {
+    id: 'gen4randombattle',
+    name: '[Gen 4] Random Battle',
+    label: 'Gen 4 Random Battle',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Diamond/Pearl teams',
+    rules: 'Random Gen 4 sets',
+  },
+  {
     id: 'gen9randombattleblitz',
     name: '[Gen 9] Random Battle (Blitz)',
     label: 'Gen 9 Random Battle (Blitz)',

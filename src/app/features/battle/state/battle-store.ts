@@ -361,7 +361,7 @@ export class BattleStore {
   readonly format = this.formatSignal.asReadonly();
   /** The generation played, from the `|gen|` line (9 until then). */
   readonly gen = this.genSignal.asReadonly();
-  /** Gen 3 battles show Ruby/Sapphire's sprites; the rest Black/White's. */
+  /** Gen 3 and 4 battles show their own games' sprites; the rest Black/White's. */
   readonly spriteSet = computed(() => spriteSetOf(this.genSignal()));
   /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */
   readonly gameType = this.gameTypeSignal.asReadonly();

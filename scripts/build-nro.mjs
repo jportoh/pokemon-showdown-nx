@@ -406,10 +406,10 @@ async function showdownCries() {
  * was its own https request, so a battle's dozen sprites cost ~65 ms of handshake apiece on the
  * console's main thread. Black/White's (every species: ~2650 files once the sheets' ~700 are left
  * out, ~2.5 MiB) for any format with species outside Champions (Gen 9 Random Battle…), and
- * Ruby/Sapphire's (~845 files, under 1 MiB) for Gen 3. A copy once downloaded is kept; new species
- * come with Showdown's directory index.
+ * Ruby/Sapphire's (~845 files) and Diamond/Pearl's (~1360 files), under 1 MiB each, for Gen 3 and
+ * Gen 4. A copy once downloaded is kept; new species come with Showdown's directory index.
  */
-const SPRITE_DIRS = ['sprites/gen5/', 'sprites/gen5-back/', 'sprites/gen3/', 'sprites/gen3-back/'];
+const SPRITE_DIRS = ['sprites/gen5/', 'sprites/gen5-back/', 'sprites/gen3/', 'sprites/gen3-back/', 'sprites/gen4/', 'sprites/gen4-back/'];
 const SPRITE_MAP = path.join(root, 'src/app/core/dex/sprite-sheets.json');
 
 async function showdownPokemonSprites() {

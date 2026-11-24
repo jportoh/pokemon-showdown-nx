@@ -40,7 +40,7 @@ export interface CardMove {
 /** One team member as the party screen and Battle info show it: everything known of it. */
 export interface TeamCard {
   sprite: string;
-  /** Gen 3 battles show Ruby/Sapphire's sprites. */
+  /** Gen 3 and 4 battles show their own games' sprites. */
   spriteSet: SpriteSet;
   name: string;
   types: { text: string; color: string; tera: boolean }[];

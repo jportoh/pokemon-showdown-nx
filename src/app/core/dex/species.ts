@@ -1,11 +1,12 @@
 import { StatTable } from '@core/dex/champions-dex';
 import { toId } from '@shared/utils/to-id';
 import gen3 from './gen3.json';
+import gen4 from './gen4.json';
 import data from './species.json';
 
 // What the spectator's Pokémon panel shows of every species, generated from Showdown's data by
 // `npm run update:species`: species of any format (Random Battle uses many the Champions data doesn't have).
-// What differs in Gen 3 comes from `npm run update:gen3`.
+// What differs in Gen 3 and 4 comes from `npm run update:past-gens`.
 
 export interface SpeciesInfo {
   name: string;
@@ -16,7 +17,10 @@ export interface SpeciesInfo {
 }
 
 const SPECIES = data as unknown as Readonly<Record<string, readonly [string, string[], number[], string[]]>>;
-const GEN3_SPECIES = gen3.species as unknown as Readonly<Record<string, readonly [string[], number[], string[]]>>;
+type PastSpecies = Readonly<Record<string, readonly [string[], number[], string[]]>>;
+
+/** What differs in past generations, by generation. */
+const PAST_SPECIES: Readonly<Record<number, PastSpecies>> = { 3: gen3.species as unknown as PastSpecies, 4: gen4.species as unknown as PastSpecies };
 
 /**
  * The base species of a cosmetic forme ("Vivillon-Marine" → "Vivillon", "Alcremie-Ruby-Swirl" →
@@ -31,8 +35,8 @@ export function cosmeticBase(species: string): string | null {
 }
 
 /**
- * A species' types, base stats and abilities by its name or ID, as in the generation played (Gen 3:
- * before the Fairy type, older stats, no hidden abilities); a cosmetic forme ("Vivillon-Pokeball")
+ * A species' types, base stats and abilities by its name or ID, as in the generation played (Gen 3
+ * and 4: before the Fairy type, older stats, no hidden abilities); a cosmetic forme ("Vivillon-Pokeball")
  * gets its base species'. Undefined when unknown.
  */
 export function speciesInfo(species: string, gen = 9): SpeciesInfo | undefined {
@@ -40,6 +44,6 @@ export function speciesInfo(species: string, gen = 9): SpeciesInfo | undefined {
   const entry = SPECIES[id];
   if (!entry) return undefined;
   const [name, currentTypes, currentStats, currentAbilities] = entry;
-  const [types, [hp, atk, def, spa, spd, spe], abilities] = (gen === 3 && GEN3_SPECIES[id]) || [currentTypes, currentStats, currentAbilities];
+  const [types, [hp, atk, def, spa, spd, spe], abilities] = PAST_SPECIES[gen]?.[id] || [currentTypes, currentStats, currentAbilities];
   return { name, types, baseStats: { hp, atk, def, spa, spd, spe }, abilities };
 }
