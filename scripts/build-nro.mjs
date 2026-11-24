@@ -64,7 +64,7 @@ const TARGETS = {
     title: 'Pokémon Showdown',
     version: packageVersion,
     titleId: 0x05f5d0c0de001000n,
-    // A placeholder made from the app's pixel-art Poké Ball (logo-ball.ts); replace the file to change it.
+    // Showdown's "o!" logo recoloured gold on the app's dark blue (docs/native.md); replace the file to change it.
     icon: path.join(root, 'native/icon.jpg'),
     entry: () => appEntry(),
     // main.js is the loader (native/loader/main.ts), the app goes in app.mjs: see docs/updates.md.

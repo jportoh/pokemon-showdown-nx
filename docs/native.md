@@ -201,9 +201,9 @@ or once everything else has loaded, and the loading screen waits for it.
 
 ## Phase 3: a finished app
 
-- **Icon**: `native/icon.jpg`, a 256×256 JPEG made from the app's pixel-art Poké Ball. Replace the file
-  to change it. The NACP has the title "Pokémon Showdown", the author, `package.json`'s version and
-  the title id.
+- **Icon**: `native/icon.jpg`, a 256×256 JPEG: Pokémon Showdown's "o!" logo (its `favicon-256.png`)
+  recoloured gold, on the app's dark blue. Replace the file to change it. The NACP has the title
+  "Pokémon Showdown", the author, `package.json`'s version and the title id.
 - **CI**: the workflow builds the `.nro` for every pull request and push to `main`, uploads it
   as `pokemon-showdown-<commit>.nro` and adds it to tagged releases.
 - **HOME menu**: no NSP is built here. Installing a title needs the console's own keys, which can't
