@@ -291,7 +291,7 @@ export class GlBattleScreen {
       this.focus.begin();
       this.overview.draw(ctx);
     }
-    if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
+    if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint(), (tab) => tab !== this.infoTab && this.openInfo(tab));
     else if (this.fieldOpen) {
       this.focus.begin();
       this.info.drawActive(ctx);
@@ -651,9 +651,15 @@ export class GlBattleScreen {
     return false;
   }
 
-  /** B: closes or steps back from whatever is in front; watching, it asks before leaving. */
+  /** B: closes or steps back from whatever is in front; watching, it asks before leaving (unless the battle is over). */
   private pressBack(): void {
     if (this.store.watching()) {
+      // Over (won, lost or tied): nothing left to miss, so it leaves straight away.
+      if (this.store.result()) {
+        if (this.store.replay() || this.store.instantReplay()) this.leaveReplay.emit();
+        else this.leaveLive.emit();
+        return;
+      }
       this.focusBeforeLeave = this.focus.focused;
       this.leaveAsk = this.store.instantReplay() ? 'instant' : this.store.replay() ? 'replay' : 'live';
       this.focus.focus(LEAVE_CONFIRM_IDS.stay);

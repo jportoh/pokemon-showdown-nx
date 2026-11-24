@@ -206,8 +206,11 @@ export class InfoView {
     return true;
   }
 
-  /** `sheetHint`: what ZL does on the opponent's tab (accepting open team sheets), when anything. */
-  draw(ctx: ScreenContext, tab: InfoTab, sheetHint: string): void {
+  /**
+   * `sheetHint`: what ZL does on the opponent's tab (accepting open team sheets), when anything;
+   * `select`: a tab tapped (the touch screen, a click).
+   */
+  draw(ctx: ScreenContext, tab: InfoTab, sheetHint: string, select: (tab: InfoTab) => void): void {
     if (this.drawSheet(ctx)) return;
     const p = ctx.palette;
     const { renderer } = ctx;
@@ -215,6 +218,8 @@ export class InfoView {
     INFO_TABS.forEach((t, i) => {
       const x = GRID_X + i * (TAB_W + 8);
       const on = t === tab;
+      // Tapped, it opens (the d-pad changes tabs with ZL/ZR and ◀▶, so it never lands here).
+      ctx.focus.control({ id: `info-tab-${t}`, x, y: TAB_Y, w: TAB_W, h: TAB_H, skip: true, accept: () => select(t) });
       renderer.rect(x, TAB_Y, TAB_W, TAB_H, { fill: on ? p.accent : p.panel, stroke: on ? p.accent : p.rim, radius: TAB_H / 2, border: 1 });
       const color = on ? ([1, 1, 1, 1] as Rgba) : t === 'p2' ? foeInk(p) : t === 'p1' ? p.accentText : p.ink;
       write(ctx, this.tabLabel(t), x + TAB_W / 2, TAB_Y + TAB_H / 2, { size: 17, bold: true }, color, 'center', TAB_W - 24);
