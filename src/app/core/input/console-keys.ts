@@ -185,6 +185,8 @@ export const ROLE_KEYS = {
   battleDetails: { button: 'buttonX', label: 'X' },
   /** The Trainer Card's battle history (it has a button too). */
   cardHistory: { button: 'buttonX', label: 'X' },
+  /** The Trainer Card's Random avatar, on the card and in its avatar picker (it has a button too). */
+  randomAvatar: { button: 'buttonY', label: 'Y' },
   /** Calcs: the field (weather, terrain, screens…). */
   calcsField: { button: 'buttonPlus', label: '+' },
 } as const satisfies Record<string, RoleKey>;

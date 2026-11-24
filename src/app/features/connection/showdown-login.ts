@@ -4,6 +4,7 @@ import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { randomFreshItem, randomInt } from '@core/runtime/random';
 import { Observable, Subject } from 'rxjs';
 import { toId } from '@shared/utils/to-id';
+import { AVATAR_ALIASES } from '@features/trainer-card/data/avatar-aliases';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
 import { SavedLogin } from './saved-login';
 import { ShowdownConnection } from './showdown-connection';
@@ -301,6 +302,18 @@ export class ShowdownLogin {
     this.connection.send('', `/avatar ${avatar}`);
     // Shown at once: the server's own update may come later, or not at all.
     this.setState({ avatar });
+  }
+
+  /**
+   * A random avatar for the player (the Trainer Card's Random avatar): any the client offers but the
+   * current one and the last few given (randomAvatar's), kept like a chosen one.
+   */
+  randomizeAvatar(): void {
+    const current = this.stateSignal().avatar;
+    let avatar = randomAvatar();
+    // The pick just made is now among the recent ones, so a second one differs.
+    if (avatar === (AVATAR_ALIASES[current] ?? current)) avatar = randomAvatar();
+    this.setAvatar(avatar);
   }
 
   /** The avatar a name of the player's had last (chosen here, or the server's), or '' if none is known. */

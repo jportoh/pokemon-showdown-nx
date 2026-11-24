@@ -18,6 +18,7 @@ import { CARD_CLOSE_ID, TrainerCardView } from '@features/trainer-card/gl/traine
 import { CARD_PREFIX, INFO_TABS, InfoTab, InfoView } from '@features/battle/gl/screen/info-view';
 import { TeamsOverviewView, chatText } from '@features/battle/gl/screen/overlay-views';
 import { LEAVE_CONFIRM_IDS, LeaveKind, drawLeaveConfirm } from '@features/battle/gl/screen/leave-confirm-view';
+import { SideId } from '@features/battle/models/battle';
 import { PartyView } from '@features/battle/gl/screen/party-view';
 import { PlayPanelView, targetSlot } from '@features/battle/gl/screen/play-panel-view';
 import { INK, ScreenContext, write } from '@features/battle/gl/screen/screen-context';
@@ -49,7 +50,7 @@ type Section = (typeof SECTIONS)[number];
  * team preview (picking ours, or a spectator's view of both) and "Joining battle…". The focus lives
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
  * R (Mega/Tera) is BattleScreen's, but Done in team preview; the menu (+), the field view
- * (Y), the party screen (X), the timer (−) and the last turn's log (L held) are this
+ * (Y; over team preview or the party screen, the focused Pokémon's sheet), the party screen (X), the timer (−) and the last turn's log (L held) are this
  * screen's (the chat is written from Battle info's log), and the mouse clicks what's under it. L3 + R3 show the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
@@ -114,6 +115,8 @@ export class GlBattleScreen {
   private focusBeforeLeave: string | null = null;
   /** The Pokémon on the field at a glance (Y), and the focus under it. */
   private fieldOpen = false;
+  /** The whole sheet of a Pokémon (Y) over team preview's picks or the party screen. */
+  private previewSheet = false;
   private focusBeforeField: string | null = null;
 
   /** Battle info's tab while it's open; null while it's closed. */
@@ -198,6 +201,7 @@ export class GlBattleScreen {
       this.menuOpen = false;
       this.cardOpen = false;
       this.fieldOpen = false;
+      this.previewSheet = false;
       this.leaveAsk = null;
     }
     // A chat message's time popped up runs from when it's said, whatever covers the field meanwhile.
@@ -291,8 +295,13 @@ export class GlBattleScreen {
       this.focus.begin();
       this.overview.draw(ctx);
     }
+    // The sheet goes with team preview or the party screen (the battle starting, a new choice, Battle info opened over it).
+    if (this.previewSheet && (!(picking || party) || !this.info.sheetOpen())) this.previewSheet = false;
     if (this.infoTab) this.info.draw(ctx, this.infoTab, this.sheetHint());
-    else if (this.fieldOpen) {
+    else if (this.previewSheet) {
+      this.focus.begin();
+      this.info.drawActive(ctx);
+    } else if (this.fieldOpen) {
       this.focus.begin();
       this.info.drawActive(ctx);
     } else if (!covered && !party && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
@@ -448,6 +457,11 @@ export class GlBattleScreen {
 
   /** Y: the Pokémon on the field, or closed again. */
   private pressField(): boolean {
+    if (this.partyShown()) return this.togglePreviewSheet(() => {
+      const index = this.party.memberInFocus(this.focus.focused);
+      return index === null ? null : { side: 'p1', index };
+    });
+    if (this.teamSelect.shown()) return this.togglePreviewSheet(() => this.teamSelect.memberInFocus(this.focus.focused));
     if (!this.store.started() || this.menuOpen || this.cardOpen) return this.store.started();
     if (this.fieldOpen) {
       this.closeField();
@@ -461,6 +475,30 @@ export class GlBattleScreen {
     return true;
   }
 
+  /**
+   * Y in team preview or on the party screen: the whole sheet of the Pokémon in focus (ours with exact
+   * stats), or closed again.
+   */
+  private togglePreviewSheet(inFocus: () => { side: SideId; index: number } | null): boolean {
+    if (this.menuOpen || this.cardOpen || this.infoTab) return false;
+    if (this.previewSheet) {
+      this.closePreviewSheet();
+      return true;
+    }
+    const target = inFocus();
+    if (!target) return false;
+    this.focusBeforeField = this.focus.focused;
+    this.info.openSheet(target.side, target.index);
+    this.previewSheet = this.info.sheetOpen();
+    return this.previewSheet;
+  }
+
+  private closePreviewSheet(): void {
+    this.previewSheet = false;
+    this.info.closeSheet();
+    this.focus.focus(this.focusBeforeField);
+  }
+
   private closeField(): void {
     this.fieldOpen = false;
     this.info.closeSheet();
@@ -472,7 +510,7 @@ export class GlBattleScreen {
    * A forced switch has it open already.
    */
   private pressParty(): boolean {
-    if (this.store.watching() || this.menuOpen || this.cardOpen || this.fieldOpen || this.infoTab) return false;
+    if (this.store.watching() || this.menuOpen || this.cardOpen || this.fieldOpen || this.infoTab || this.previewSheet) return false;
     if (!this.playPanel.choosing() || this.choices.pendingMove()) return false;
     if (this.partyShown()) {
       this.partyOpen = null;
@@ -613,6 +651,11 @@ export class GlBattleScreen {
         else this.closeLeaveAsk();
       } else if (isDirection(action)) this.focus.move(action);
       else if (action === 'accept') this.focus.accept();
+      return true;
+    }
+    if (this.previewSheet) {
+      if (action === 'back') this.closePreviewSheet();
+      else if (action === 'left' || action === 'right') this.info.stepSheet(action === 'left' ? -1 : 1);
       return true;
     }
     if (this.fieldOpen) {
