@@ -1,7 +1,7 @@
 // Showdown's files the app keeps asking for ship inside the .nro (scripts/build-nro.mjs) and are read
 // from the RomFS instead of the network: the item sheet and the trainer avatars every session loads,
-// every Pokémon's cry and Gen 3's sprites. On the console each https request costs a TLS handshake on the main thread
-// (~65 ms each): at start they competed with the connection to Showdown (test x11: the item sheet and
+// every Pokémon's cry and the Pokémon sprites outside the Champions sheets. On the console each https
+// request costs a TLS handshake on the main thread (~65 ms each): at start they competed with the connection to Showdown (test x11: the item sheet and
 // the unknown trainer took ~1.8 s), and the teams' cries, fetched together when a battle starts, held
 // the main thread ~0.6–0.7 s (9–11 handshakes, test x13).
 //
