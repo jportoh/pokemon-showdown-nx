@@ -1,4 +1,5 @@
 import { moveInfo } from '@core/dex/moves';
+import { hasAbilities, hasItems, statRows } from '@core/dex/generations';
 import { abilityName, itemName } from '@core/dex/names';
 import { speciesInfo } from '@core/dex/species';
 import { BattleFieldState, BattlePokemon, RequestMove, RequestPokemon, SideId } from '@features/battle/models/battle';
@@ -8,16 +9,6 @@ import { toId } from '@shared/utils/to-id';
 import { parseCondition } from './battle-store';
 import { InspectedMember } from './pokemon-inspection';
 import { VolatileLook, volatileLook } from './volatiles';
-
-type StatKey = 'hp' | 'atk' | 'def' | 'spa' | 'spd' | 'spe';
-const STATS: readonly { id: StatKey; label: string }[] = [
-  { id: 'hp', label: 'HP' },
-  { id: 'atk', label: 'Atk' },
-  { id: 'def', label: 'Def' },
-  { id: 'spa', label: 'SpA' },
-  { id: 'spd', label: 'SpD' },
-  { id: 'spe', label: 'Spe' },
-];
 
 /** A stat stage's multiplier as shown beside it: "×1.5", "×2/3"… (⅓ and ⅔ aren't in the font) */
 const MULTIPLIERS: Record<number, string> = {
@@ -215,7 +206,7 @@ export function ownSheet(member: OwnMember, sprite: string, ctx: SheetContext): 
   const onField = request.active && !fainted;
   const boosts = onField ? (seen?.boosts ?? {}) : {};
 
-  const stats = STATS.map(({ id, label }) => {
+  const stats = statRows(ctx.gen).map(({ id, label }) => {
     const base = info?.baseStats[id] ?? 0;
     if (id === 'hp') return { label, base, value: maxHp, stage: 0, now: fainted ? '0' : `${hp}`, multiplier: '' };
     const value = request.stats?.[id] ?? 0;
@@ -259,9 +250,10 @@ export function ownSheet(member: OwnMember, sprite: string, ctx: SheetContext): 
     hp: { fraction: maxHp > 0 ? hp / maxHp : 0, text: fainted ? '0%' : `${hp}/${maxHp}` },
     status: statusOf(status),
     itemId: fainted ? '' : request.item,
-    item: item || 'No item',
-    itemKnown: !!item,
-    ability: abilityName(request.ability ?? request.baseAbility ?? ''),
+    // Gen 1 has no items, Gens 1 and 2 no abilities: nothing shown.
+    item: item || (hasItems(ctx.gen) ? 'No item' : ''),
+    itemKnown: !!item || !hasItems(ctx.gen),
+    ability: hasAbilities(ctx.gen) ? abilityName(request.ability ?? request.baseAbility ?? '') : '',
     abilityKnown: true,
     context,
     stats,
@@ -285,7 +277,7 @@ export function seenSheet(inspected: InspectedMember, sprite: string, ctx: Sheet
   const nature = sheet?.nature ?? '';
   const boosts = member.active ? (seen?.boosts ?? {}) : {};
 
-  const stats = STATS.map(({ id, label }) => {
+  const stats = statRows(ctx.gen).map(({ id, label }) => {
     const stage = id === 'hp' ? 0 : (boosts[id] ?? 0);
     return { label, base: info?.baseStats[id] ?? 0, stage, now: '', multiplier: MULTIPLIERS[stage] ?? '' };
   });
@@ -301,11 +293,13 @@ export function seenSheet(inspected: InspectedMember, sprite: string, ctx: Sheet
   const lost = seen?.lostItem ?? '';
   // The sheet's item until the battle shows it used up or knocked off.
   const itemShown = seen?.item || (lost ? '' : (sheet?.item ?? ''));
-  const item = itemShown || (lost ? `None (${lost} gone)` : sheet ? 'No item' : 'Not revealed');
+  const item = itemShown || (lost ? `None (${lost} gone)` : sheet ? 'No item' : hasItems(ctx.gen) ? 'Not revealed' : '');
   const possible = info?.abilities ?? [];
   const knownAbility = seen?.ability || sheet?.ability;
-  const abilityKnown = !!knownAbility || possible.length === 1;
-  const ability = knownAbility || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Not revealed');
+  const abilityKnown = !!knownAbility || possible.length === 1 || !hasAbilities(ctx.gen);
+  const ability = !hasAbilities(ctx.gen)
+    ? ''
+    : knownAbility || (possible.length === 1 ? possible[0] : possible.length ? `Maybe ${possible.join(' / ')}` : 'Not revealed');
 
   const known = sheet ? sheet.moves : (seen?.moves ?? []);
   const moves = Array.from({ length: 4 }, (_, i): SheetMove => {
@@ -331,7 +325,7 @@ export function seenSheet(inspected: InspectedMember, sprite: string, ctx: Sheet
     status: statusOf(seen?.status),
     itemId: itemShown ? toId(itemShown) : '',
     item,
-    itemKnown: !!itemShown,
+    itemKnown: !!itemShown || !hasItems(ctx.gen),
     ability,
     abilityKnown,
     context,

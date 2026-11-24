@@ -1,11 +1,13 @@
 import { toId } from '@shared/utils/to-id';
+import gen1 from './gen1.json';
+import gen2 from './gen2.json';
 import gen3 from './gen3.json';
 import gen4 from './gen4.json';
 import data from './moves.json';
 
 // What the battle screen shows of every move, generated from Showdown's data by `npm run update:moves`:
-// moves of any format (Random Battle uses many the Champions data doesn't have). What differs in Gen 3
-// and 4 (power, accuracy, type, and in Gen 3 the category, which went by type then) comes from
+// moves of any format (Random Battle uses many the Champions data doesn't have). What differs in Gens 1
+// to 4 (power, accuracy, type, and before Gen 4 the category, which went by type then) comes from
 // `npm run update:past-gens`.
 
 export interface MoveInfo {
@@ -25,7 +27,7 @@ const MOVES = data as unknown as Readonly<Record<string, readonly [string, strin
 type PastMoves = Readonly<Record<string, readonly [string, Category, number, number]>>;
 
 /** What differs in past generations, by generation. */
-const PAST_MOVES: Readonly<Record<number, PastMoves>> = { 3: gen3.moves as unknown as PastMoves, 4: gen4.moves as unknown as PastMoves };
+const PAST_MOVES: Readonly<Record<number, PastMoves>> = Object.fromEntries([gen1, gen2, gen3, gen4].map((past, i) => [i + 1, past.moves as unknown as PastMoves]));
 
 /**
  * A move's name, type, category, power and accuracy by its name or ID, as in the generation played;

@@ -101,7 +101,7 @@ export class GlSprites {
   }
 
   /**
-   * A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. Gen 3's and
+   * A sprite elsewhere on the screen (team tiles, cards), as soon as `priority` allows. Gens 1 to
    * 4's sprites come from Showdown alone (the sheets are Black/White's), falling back to the gen5 one
    * when the species has none; a forme Showdown has no sprite for (some cosmetic ones) is drawn as its base species.
    */

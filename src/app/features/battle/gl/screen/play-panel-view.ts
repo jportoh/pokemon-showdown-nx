@@ -1,5 +1,6 @@
 import { computed, inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { hasAbilities, hasItems } from '@core/dex/generations';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
 import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
@@ -113,14 +114,15 @@ export class PlayPanelView {
     }),
   );
 
-  /** The one choosing: its item and ability, from the request. */
+  /** The one choosing: its item and ability, from the request (none in the generations without them). */
   private readonly chooser = computed(() => {
     const pokemon = this.choices.pokemon();
     if (!pokemon) return null;
+    const gen = this.store.gen();
     return {
       itemId: pokemon.item,
-      item: itemName(pokemon.item) || 'No item',
-      ability: abilityName(pokemon.ability ?? pokemon.baseAbility ?? ''),
+      item: itemName(pokemon.item) || (hasItems(gen) ? 'No item' : ''),
+      ability: hasAbilities(gen) ? abilityName(pokemon.ability ?? pokemon.baseAbility ?? '') : '',
     };
   });
 
@@ -223,7 +225,7 @@ export class PlayPanelView {
     const name = this.choices.pokemonName();
     const chip = { size: 14, bold: true };
     const nameW = ctx.text.measure(name, { size: 21, bold: true });
-    const itemW = chooser ? Math.min(220, ctx.text.measure(chooser.item, chip)) + 24 + (chooser.itemId ? 24 : 0) : 0;
+    const itemW = chooser?.item ? Math.min(220, ctx.text.measure(chooser.item, chip)) + 24 + (chooser.itemId ? 24 : 0) : 0;
     const abilityW = chooser?.ability ? Math.min(200, ctx.text.measure(chooser.ability, chip)) + 24 : 0;
     const extraText = notice || extra?.text || '';
     const extraW = extraText ? Math.min(380, ctx.text.measure(extraText, chip) + 24) : 0;
@@ -256,7 +258,7 @@ export class PlayPanelView {
       x += w + 8;
     };
     if (chooser) {
-      pill(chooser.item, itemW, p.rim, p.ink, chooser.itemId || undefined);
+      if (itemW) pill(chooser.item, itemW, p.rim, p.ink, chooser.itemId || undefined);
       if (abilityW) pill(chooser.ability, abilityW, p.rim, p.ink);
     }
     if (notice) pill(notice, extraW, p.teal, p.contrast);
