@@ -117,7 +117,8 @@ The code is released under the [MIT License](LICENSE).
 
 The license covers this project's code only. Pokémon, its names, sprites, music and sounds belong to
 Nintendo, Game Freak and The Pokémon Company; game data and many assets come from Pokémon Showdown
-and its contributors. They are not covered by this license.
+and its contributors, and the app icon is based on Pokémon Showdown's logo. They are not covered by
+this license.
 
 This is an unofficial fan project. It is not affiliated with Pokémon Showdown, Nintendo, Game Freak or
 The Pokémon Company.
