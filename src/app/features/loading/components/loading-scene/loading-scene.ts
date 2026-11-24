@@ -240,9 +240,16 @@ export class LoadingScene {
       say(renderer, frame.text, LEGAL, STAGE_W / 2, STAGE_H - 16, { size: 14 }, withAlpha(p.muted, fade));
     }
 
-    // The flashes: white over everything as the title arrives and as START is pressed.
-    const flash = Math.max(1 - age / FLASH_MS, this.outroAt ? 0.7 * (1 - (now - this.outroAt) / PRESS_FLASH_MS) : 0);
-    if (flash > 0) renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: [1, 1, 1, flash] });
+    // The flashes: white over everything as the title arrives (from the studio's white card) and as
+    // START is pressed; in the dark appearance the second one is a soft glow of the accent instead,
+    // since a white flash there dazzles on the way to a dark menu.
+    const arrival = 1 - age / FLASH_MS;
+    if (arrival > 0) renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: [1, 1, 1, arrival] });
+    const press = this.outroAt ? 1 - (now - this.outroAt) / PRESS_FLASH_MS : 0;
+    if (press > 0) {
+      const glow = p.appearance === 'dark' ? withAlpha(p.accent, 0.3 * press) : withAlpha(WHITE, 0.7 * press);
+      renderer.rect(0, 0, STAGE_W, STAGE_H, { fill: glow });
+    }
     this.warmKeyboard(frame);
     renderer.end();
 

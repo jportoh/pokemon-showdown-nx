@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
+import { randomFreshItem, randomInt } from '@core/runtime/random';
 import { Observable, Subject } from 'rxjs';
 import { toId } from '@shared/utils/to-id';
 import { AVATAR_CHOICES } from '@features/trainer-card/data/avatar-choices';
@@ -563,20 +564,23 @@ const NAME_POKEMON = [
   'Garchomp', 'Pichu', 'Slowpoke', 'Vulpix', 'Growlithe', 'Meowth', 'Rowlet', 'Sobble', 'Fuecoco', 'Sprigatito',
   'Quaxly', 'Zorua', 'Mimikyu', 'Tyrunt', 'Axew', 'Bidoof', 'Spheal', 'Swablu', 'Riolu',
 ];
+/** The guest names' words used lately (see randomFreshItem), so the next names don't repeat them. */
+const RECENT_ADJECTIVES_KEY = 'psb.recent-name-adjectives.v1';
+const RECENT_POKEMON_KEY = 'psb.recent-name-pokemon.v1';
+/** The guest avatars given lately, so the next guests get other ones. */
+const RECENT_AVATARS_KEY = 'psb.recent-guest-avatars.v1';
 /** Showdown's longest name. */
 const MAX_NAME_LENGTH = 18;
 
 /**
  * A guest's name, two words and two digits ("BraveSnorlax42"): fun, within Showdown's 18 characters,
- * and unlikely to be taken (a registered one is skipped: see claimName).
+ * and unlikely to be taken (a registered one is skipped: see claimName). Its words aren't the last
+ * few names' (they fit: no adjective is over 6 letters, no Pokémon over 10).
  */
 function randomName(): string {
-  const pick = <T>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)];
-  const digits = String(10 + Math.floor(Math.random() * 90));
-  for (;;) {
-    const name = `${pick(NAME_ADJECTIVES)}${pick(NAME_POKEMON)}${digits}`;
-    if (name.length <= MAX_NAME_LENGTH) return name;
-  }
+  const adjective = randomFreshItem(NAME_ADJECTIVES, RECENT_ADJECTIVES_KEY, 12);
+  const pokemon = randomFreshItem(NAME_POKEMON, RECENT_POKEMON_KEY, 15);
+  return `${adjective}${pokemon}${10 + randomInt(90)}`.slice(0, MAX_NAME_LENGTH);
 }
 
 /** The login server's answer: an assertion, ";" for a registered name or ";;message" for an error. */
@@ -662,5 +666,5 @@ function readAvatars(key = AVATAR_STORAGE_KEY): Record<string, string> {
 
 /** Any of the avatars the client offers, as a new connection would get. */
 function randomAvatar(): string {
-  return AVATAR_CHOICES[Math.floor(Math.random() * AVATAR_CHOICES.length)];
+  return randomFreshItem(AVATAR_CHOICES, RECENT_AVATARS_KEY, 40);
 }
