@@ -1,17 +1,46 @@
 # Pokémon Showdown NX
 
-A [Pokémon Showdown](https://pokemonshowdown.com) client for the **Nintendo Switch**, as a standalone
-homebrew app (`.nro`). It connects to Showdown's main server, is played with a controller on a
-1280×720 screen, and has a Gen 3 style retro look. It's built with Angular and runs on the
-[nx.js_extended](https://github.com/natureglass/nx.js_extended) engine; the whole UI is drawn with
-WebGL on a single canvas.
+[![CI](https://github.com/jportoh/pokemon-showdown-nx/actions/workflows/ci.yml/badge.svg)](https://github.com/jportoh/pokemon-showdown-nx/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/jportoh/pokemon-showdown-nx)](https://github.com/jportoh/pokemon-showdown-nx/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Play [Pokémon Showdown](https://pokemonshowdown.com) on your **Nintendo Switch**: ladder battles,
+challenges, a teambuilder, live battles and replays, all with the controller, in a standalone
+homebrew app (`.nro`) with a Gen 3 style retro look.
+
+It's an unofficial fan project: it plays on Showdown's main server with your Showdown account (or as
+a guest), like the website does.
+
+## Install
+
+You need a Switch that runs homebrew (Atmosphère with the Homebrew Menu) and an internet connection.
+
+1. Download `pokemon-showdown-vX.Y.Z.nro` from the
+   [latest release](https://github.com/jportoh/pokemon-showdown-nx/releases/latest).
+2. Copy it to the `switch/` folder of the SD card (`sdmc:/switch/`).
+3. Open it from the Homebrew Menu in **application mode**: hold **R** while you launch a game, then
+   pick the app. Opened from the album (applet mode), it doesn't get enough memory to run.
+
+You can also install a forwarder to the `.nro` to open it from the HOME menu (see
+[docs/native.md](docs/native.md)). To leave the app, press the console's HOME button.
+
+## Updates
+
+The app keeps itself up to date. A few seconds after it starts, it checks for a new version and
+downloads it in the background (the code and any new sprites, a few MB). When it's ready, it offers to
+close so the next start runs the new version; you can also keep playing and get it next time. If a
+new version ever fails to start, the app goes back to the one it had.
+
+Copying a new `.nro` is only needed now and then (a new engine, a new icon); the app tells you when.
+Your teams, settings and saved login stay on the SD card, in `sdmc:/switch/pokemon-showdown-nx/`.
 
 ## Features
 
 - **Battle**: pick a format and a team, then search Showdown's ladder or challenge a player by name.
   Incoming challenges can be answered from any page. Doubles and singles, Mega Evolution,
-  Terastallization, the battle timer, forfeit, rematches, Best-of-3 sets and Open Team Sheets.
-- **Formats**: VGC 2026 Reg M-C (single games and Bo3), BSS Reg M-C, and Gen 9, Champions and
+  Terastallization, the battle timer, forfeit, rematches, instant replays, Best-of-3 sets and Open
+  Team Sheets.
+- **Formats**: VGC 2026 (single games and Bo3), Battle Stadium Singles, and Gen 9, Champions and
   Gen 3 Random Battles.
 - **Teambuilder**: build teams for the Champions formats, validate them on the server, import them
   from PokePaste, and check damage against common sets with the built-in calculator.
@@ -20,9 +49,10 @@ WebGL on a single canvas.
   automatically).
 - **Chats**: join Showdown's main chat rooms.
 - **Trainer Card**: your avatar, ladder ratings and record.
-- **Settings**: six colour themes, music and sound volumes, default formats, spectators, saved login.
-- Animated battles with per-move effects, battle music and cries, and synthesized chiptune menu
-  music.
+- **Settings**: light and dark appearance, six colour themes, music and sound volumes, default
+  formats, spectators, saved login.
+- Animated battles on seven battlefields, with per-move effects, battle music and cries, and
+  chiptune menu music.
 
 ## Controls
 
@@ -36,17 +66,24 @@ WebGL on a single canvas.
 | R3 | R | Page action (search) |
 | L3 + R3 | F + R | Performance overlay (both together) |
 
-To leave the app, use the console's HOME button.
+Every screen shows its buttons. The touchscreen works too, and text is typed with the app's own
+on-screen keyboard.
 
-The console's touchscreen and a mouse also work.
+## Known limitations
 
-## Getting started
+- **Sleep closes the app.** The engine can't survive the console sleeping with a connection open, so
+  the app closes when the console wakes. Open it again.
+- **720p only.** The engine draws at 1280×720; docked, the console scales it to the TV.
+- **Guests can't chat in battles.** That's a Showdown server rule: log in to chat.
+
+## Development
 
 Requirements: Node.js 22+ and npm.
 
 ```bash
 npm install
-npm start          # dev server at http://localhost:4200
+npm start                    # dev server at http://localhost:4200
+npm run build:nro            # → dist/nro/pokemon-showdown.nro
 ```
 
 The browser is for development. Logging in to Showdown needs `play.pokemonshowdown.com/api`, which
@@ -54,17 +91,9 @@ only allows CORS from Showdown's own site, so in a desktop browser online play n
 disabled (for example Chrome started with `--disable-web-security`). The console doesn't enforce
 CORS.
 
-## Building the Switch app
-
-```bash
-npm run build:nro            # → dist/nro/pokemon-showdown.nro
-```
-
-Copy the `.nro` to `sdmc:/switch/` and open it from the Homebrew Menu in **application mode** (hold R
-while launching a game), or install a forwarder to it. See [docs/native.md](docs/native.md). CI
-builds the `.nro` for every pull request and attaches it to every release.
-
-## Documentation
+It's built with Angular and runs on the [nx.js_extended](https://github.com/natureglass/nx.js_extended)
+engine; the whole UI is drawn with WebGL on a single 1280×720 canvas. CI builds the `.nro` for every
+pull request; a `vX.Y.Z` tag publishes a release and the online update.
 
 Developer documentation lives in [docs/](docs/):
 
@@ -73,12 +102,14 @@ Developer documentation lives in [docs/](docs/):
 - [Input](docs/input.md): controller, keyboard, touch and focus
 - [Rendering](docs/rendering.md): the renderer, text and image caches, performance
 - [The Switch app](docs/native.md): the engine, the `.nro` build, testing on a console
+- [Online updates](docs/updates.md): the loader, the updater, asset packs
 - [Talking to Showdown](docs/showdown.md): connection, login, battles
 - [Game data and assets](docs/data.md): bundled data, update scripts, formats
 - [Features](docs/features/README.md): one page per area of the app
 - [Branches, CI and releases](docs/releases.md)
 
-Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md).
+Want to help? Read [CONTRIBUTING.md](CONTRIBUTING.md). Bugs and ideas are welcome as
+[issues](https://github.com/jportoh/pokemon-showdown-nx/issues).
 
 ## License
 
