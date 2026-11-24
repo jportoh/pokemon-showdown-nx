@@ -89,7 +89,7 @@ button does what. `BattleScreen` owns R (but `GlBattleScreen` takes it for Done 
 2. If it fits a **pattern** (a beam, a sound wave, a priority rush…), add it to the pattern's list in
    `move-patterns.ts`.
 3. If it deserves its **own animation**, add it to `signature-moves.ts`, following the existing ones.
-   Keep the particle count modest and check the frame time on the console (L3).
+   Keep the particle count modest and check the frame time on the console (L3 + R3).
 
 All animation time runs on the field's clock, divided by the playback `speed` (replays can play
 faster).

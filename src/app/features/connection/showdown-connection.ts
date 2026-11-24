@@ -35,7 +35,7 @@ type DropReason = 'timeout' | 'closed' | 'abandoned' | 'silent';
  * answer. Attempts that keep failing say why (`trouble`): no network, as the device tells it
  * (`navigator.onLine` and its events, where the engine has them), or Showdown out of reach, and then
  * whether its website still answers (the probe), to tell the internet or Showdown being down from
- * only its battle server not answering. The last attempts and the probe show on L3.
+ * only its battle server not answering. The last attempts and the probe show on L3 + R3.
  */
 @Service()
 export class ShowdownConnection {
@@ -182,7 +182,7 @@ export class ShowdownConnection {
       }
     }
     this.framesSubject.next(frame);
-    // With what every store did with it (the L3 diagnostics).
+    // With what every store did with it (the L3 + R3 diagnostics).
     this.diagnostics.record('socket', performance.now() - started);
   }
 
@@ -271,7 +271,7 @@ export class ShowdownConnection {
   }
 
   /**
-   * L3's connection lines: the state, the last attempts ("14 s ago: timeout after 10.0 s", "closed
+   * The diagnostics' (L3 + R3) connection lines: the state, the last attempts ("14 s ago: timeout after 10.0 s", "closed
    * 1006 after 0.3 s", "opened in 0.5 s") and the website's answer to the probe.
    */
   private diagnosticLines(): string[] {

@@ -38,7 +38,7 @@ export const LONG_FRAME_MS = 25;
 /**
  * What the main thread does around the stage's frames, to find the stutters on the console: Angular's
  * renders (timed by wrapping ApplicationRef's tick), text and sprite textures uploaded, and the
- * stage's own drawing time. PerfHud (L3) draws it as a graph.
+ * stage's own drawing time. PerfHud (L3 + R3) draws it as a graph.
  */
 @Service()
 export class GlDiagnostics {
@@ -47,9 +47,9 @@ export class GlDiagnostics {
   private pendingUpload = false;
   private pendingArrival = false;
   readonly frames: FrameSample[] = [];
-  /** The connection to Showdown's lines on L3 (its attempts, why it can't connect): ShowdownConnection sets it. */
+  /** The connection to Showdown's lines on L3 + R3 (its attempts, why it can't connect): ShowdownConnection sets it. */
   connection: () => string[] = () => [];
-  /** How the launch's loading screen went (LoadingScene), once it's done: shown on L3. */
+  /** How the launch's loading screen went (LoadingScene), once it's done: shown on L3 + R3. */
   loading: string[] = [];
 
   constructor() {

@@ -34,7 +34,7 @@ WebGL on a single canvas.
 | X / Y | X / Y | X: the focused thing's option (favourite, Settings, the party in battle); Y: search, the field in battle |
 | + / − | + / − | +: confirm or send (the battle menu, the keyboard's OK, chat); −: the battle timer, remove |
 | R3 | R | Page action (search) |
-| L3 | F | Performance overlay |
+| L3 + R3 | F + R | Performance overlay (both together) |
 
 To leave the app, use the console's HOME button.
 

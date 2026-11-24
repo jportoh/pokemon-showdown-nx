@@ -18,7 +18,7 @@ name the tests). In short:
 - **`createImageBitmap` takes ~100 ms per sprite**: decode PNGs in JavaScript, a few ms per frame.
 - **Timers fire only 20–25 times a second**: anything per-frame runs from `requestAnimationFrame`.
 
-When you add drawing code, keep those in mind and check the L3 HUD on the console.
+When you add drawing code, keep those in mind and check the L3 + R3 HUD on the console.
 
 ## `GlRenderer`: one shader, batched quads
 
@@ -135,9 +135,10 @@ For icons and shapes, make the texture once in `stage.whenReady(...)` and delete
   (arrows, cursors).
 - `discTexture`: the shared soft disc (`frame.disc`) for ellipses and shadows.
 
-## Diagnostics (L3)
+## Diagnostics (L3 + R3)
 
-Press **L3** (or **F**) on any screen for the performance HUD (`perf-hud.ts`, fed by
+Press **L3 and R3** together (or **F** and **R** on a keyboard) on any screen for the performance
+HUD (`perf-hud.ts`, fed by
 `GlDiagnostics`):
 
 - Frame rate, long frames and what happened before them (an Angular render, a text or sprite upload,

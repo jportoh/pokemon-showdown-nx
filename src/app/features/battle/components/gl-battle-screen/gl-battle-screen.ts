@@ -50,7 +50,7 @@ type Section = (typeof SECTIONS)[number];
  * in the canvas (CanvasFocus), the controller's d-pad, A and B come straight here (through the stage),
  * R (Mega/Tera) is BattleScreen's, but Done in team preview; the menu (+), the field view
  * (Y), the party screen (X), the timer (−) and the last turn's log (L held) are this
- * screen's (the chat is written from Battle info's log), and the mouse clicks what's under it. L3 shows the frame-time diagnostics (the stage's), with its own lines.
+ * screen's (the chat is written from Battle info's log), and the mouse clicks what's under it. L3 + R3 show the frame-time diagnostics (the stage's), with its own lines.
  */
 @Component({
   selector: 'app-gl-battle-screen',
@@ -743,7 +743,7 @@ export class GlBattleScreen {
 
   private readonly sectionTotals: Record<Section, number> = { field: 0, chrome: 0, panel: 0, overlays: 0, flush: 0 };
   private timedFrames = 0;
-  /** The diagnostics' own lines (L3): where the frame's time goes, on average since the last time. */
+  /** The diagnostics' own lines (L3 + R3): where the frame's time goes, on average since the last time. */
   private diagnosticLines(): string[] {
     const timed = Math.max(1, this.timedFrames);
     const breakdown = SECTIONS.map((section) => `${section} ${(this.sectionTotals[section] / timed).toFixed(1)}`).join(' · ');

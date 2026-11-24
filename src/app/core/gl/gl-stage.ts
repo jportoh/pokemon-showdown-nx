@@ -48,7 +48,7 @@ export interface GlScene {
   /** A tap or a click; true when it pressed a control (it then sounds like A). */
   click?(x: number, y: number): boolean | void;
   hover?(x: number, y: number): void;
-  /** The scene's own lines in the diagnostics (L3), worked out every half second. */
+  /** The scene's own lines in the diagnostics (L3 + R3), worked out every half second. */
   diagnostics?(): string[];
 }
 
@@ -82,12 +82,13 @@ export class GlStage {
   private releaseInput: (() => void) | null = null;
   /** The touchscreen and the mouse (set by the host): its last raw events show in the diagnostics. */
   pointer: PointerInput | null = null;
-  /** L3, on any screen: the frame-time diagnostics, with the shown scene's own lines and the last touches. */
+  /** L3 + R3, on any screen: the frame-time diagnostics, with the shown scene's own lines and the last touches. */
   private readonly hud = new PerfHud(() => [...(this.top()?.diagnostics?.() ?? []), ...(this.pointer?.log ?? [])]);
 
   constructor() {
-    // The stage lasts as long as the app: L3 is never let go.
-    this.navigation.registerButton('buttonL3', () => this.hud.toggle());
+    // The stage lasts as long as the app: the chord is never let go. Both sticks pressed together, so a
+    // player doesn't open it by accident (L3 alone did).
+    this.navigation.registerChord(['buttonL3', 'buttonR3'], () => this.hud.toggle());
   }
 
   /**

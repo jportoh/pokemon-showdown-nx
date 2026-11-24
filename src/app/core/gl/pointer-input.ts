@@ -19,7 +19,7 @@ const COPIES_MS = 800;
 const BURST_MS = 30;
 /** How near a burst's events are to its first one (farther, it's another finger). */
 const SAME_PRESS_PX = 40;
-/** The last raw events kept for the diagnostics (L3). */
+/** The last raw events kept for the diagnostics (L3 + R3). */
 const LOG_SIZE = 8;
 
 interface PointLike {
@@ -52,9 +52,9 @@ type Point = { x: number; y: number };
  * the diagnostics.
  */
 export class PointerInput {
-  /** The last raw events, newest last (L3). */
+  /** The last raw events, newest last (L3 + R3). */
   readonly log: string[] = [];
-  /** Where the last tap landed, in stage coordinates (L3 draws a dot there). */
+  /** Where the last tap landed, in stage coordinates (the diagnostics draw a dot there). */
   lastTap: Point | null = null;
   /** The family whose events count as the presses; the others' are copies while it goes on. */
   private leader: Family | null = null;

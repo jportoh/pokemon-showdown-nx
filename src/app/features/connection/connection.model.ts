@@ -24,7 +24,7 @@ export interface ConnectionState {
 
 export type ConnectionTrouble = 'no-network' | 'unreachable' | 'showdown-down' | 'server-only';
 
-/** How one attempt to connect went, for the diagnostics (L3). */
+/** How one attempt to connect went, for the diagnostics (L3 + R3). */
 export interface ConnectionAttempt {
   /** When it started (`Date.now()` terms). */
   at: number;

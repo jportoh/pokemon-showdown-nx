@@ -16,7 +16,7 @@ says it's done. While a bar fills, the screen:
 - makes the on-screen keyboard's texts ahead (`CanvasKeyboard.warm`).
 
 Then the logo flies to its place in the home screen's header and the entry screen (or the menu) takes over. It took about
-3.7 s on the console when it was measured. The report of how long each part took shows in the L3 HUD.
+3.7 s on the console when it was measured. The report of how long each part took shows in the L3 + R3 HUD.
 
 **If you add an image every screen needs**, add it to the preload list, so no screen waits for it.
 
@@ -63,7 +63,7 @@ own team. The left side is lit by the palette's `hero` colour.
 
 Controls: the d-pad and A open a page; **ZR** held down logs out (or disconnects) and goes back to
 the entry screen; offline, ZR goes there to log in; **L** opens the Trainer Card or registration too;
-**R3** opens the UI kit showcase (`/gl-kit`).
+**X** opens Settings.
 
 Adding a page to the menu means adding its item to `home-menu.ts`, its chips to the home scene,
 and its route to `app.routes.ts`. Keep the layout in mind (Battle wide, two rows of two, Settings
