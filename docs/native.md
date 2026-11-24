@@ -174,14 +174,16 @@ game runs. The `.nro` now does the same for what every session loaded or compute
   `PSBPCM1` header) under `audio/synth/`. `AudioEngine` reads them instead of synthesizing, which took
   ~240 ms of CPU in Node, so seconds on the console, spread over the loading screen and the first
   menu frames. That adds ~10 MiB. If a piece is missing, it synthesizes as before.
-- **Showdown's images every session loads, and the cries.** The item sheet (already decoded), the
-  trainer avatars the app knows by name (~300) and every Pokémon's cry (~1250 mp3s, ~11 MiB, listed
-  from Showdown's directory index) go under `showdown/`, at their paths on Showdown's server.
+- **Showdown's images every session loads, the cries and Gen 3's sprites.** The item sheet (already
+  decoded), the trainer avatars the app knows by name (~300), every Pokémon's cry (~1250 mp3s,
+  ~11 MiB) and the Ruby/Sapphire sprites Gen 3 battles show (`sprites/gen3/` and `gen3-back/`,
+  ~845 png, under 1 MiB; the cries and these are listed from Showdown's directory indexes) go under
+  `showdown/`, at their paths on Showdown's server.
   `bundled-showdown.ts` redirects `fetch` for those URLs to the RomFS, so the app's cache keys don't
   change. Each https request costs a TLS handshake on the main thread (~65 ms): at start they
   competed with the connection, and the teams' cries, fetched together when a battle starts, held it
   ~0.6–0.7 s (test x13). The build caches them in `dist/nro-cache/showdown`; sprites are refreshed
-  weekly, cries are kept once downloaded.
+  weekly, cries and Gen 3's sprites are kept once downloaded.
   With the cries local, decoding the twelve together still held it ~200 ms (x16): the console hands
   each decoded sound over on the main thread. `BattleCries` now loads them one at a time, a frame
   apart, a cry about to be played first. In x17 the battle entry's worst block was 122 ms (the
