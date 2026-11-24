@@ -10,7 +10,11 @@
 //   npm run build:nro         the app: `ng build`, then this script bundles Angular's output after the
 //                             native shims (native/app) and puts the static files in the RomFS.
 //   npm run build:nro:probe   the phase 0 engine probe (native/poc/main.ts).
-// Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/.
+//   node scripts/build-nro.mjs --update-probe   the online updates probe (native/poc/update-probe.ts).
+//   node scripts/build-nro.mjs --nro-probe      the in-app .nro update probe (native/poc/nro-probe.ts).
+// Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/. The app's build also
+// writes its online update to dist/nro/update/ (docs/updates.md); `--baseline=<assets json>|none`
+// replaces the baseline release named in native/baseline.json.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +49,13 @@ const ENGINE_FILES = ['GeistMono.ttf', 'runtime.js.map'];
 const cacheDir = path.join(root, 'dist/nro-cache');
 const outDir = path.join(root, 'dist/nro');
 const browserDir = path.join(root, 'dist/pokemon-showdown-nx/browser');
-const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+// `--app-version=x.y.z` overrides package.json's version, e.g. to build a test online update.
+/** The repository whose releases carry the online updates (CI sets GITHUB_REPOSITORY). */
+const REPO = process.env.GITHUB_REPOSITORY || 'jportoh/pokemon-showdown-nx';
+/** An asset pack is downloaded and checked in blocks this big (src/app/core/update). */
+const PACK_BLOCK = 4 * 1024 * 1024;
+const PACK_MAGIC = 'PSBPACK1';
+const packageVersion = option('app-version') ?? JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 // Homebrew title ids outside Nintendo's application range (high byte 0x05, as homebrew forwarders use).
 const TARGETS = {
@@ -57,6 +67,8 @@ const TARGETS = {
     // A placeholder made from the app's pixel-art Poké Ball (logo-ball.ts); replace the file to change it.
     icon: path.join(root, 'native/icon.jpg'),
     entry: () => appEntry(),
+    // main.js is the loader (native/loader/main.ts), the app goes in app.mjs: see docs/updates.md.
+    loader: true,
     files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await renderedAudio())],
   },
   probe: {
@@ -76,7 +88,38 @@ const TARGETS = {
     entry: () => ({ entryPoints: [path.join(root, 'native/poc/res-probe.ts')] }),
     files: () => [],
   },
+  // Can the app update its code online? (native/poc/update-probe.ts)
+  updateProbe: {
+    output: 'psb-update-probe.nro',
+    title: 'PSB Update Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000003n,
+    entry: () => ({ entryPoints: [path.join(root, 'native/poc/update-probe.ts')] }),
+    files: () => [['update-probe-mod.js', path.join(root, 'native/poc/update-probe-mod.js')]],
+  },
+  // Can the app replace its own .nro? (native/poc/nro-probe.ts)
+  nroProbe: {
+    output: 'psb-nro-probe.nro',
+    title: 'PSB NRO Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000004n,
+    entry: () => ({
+      entryPoints: [path.join(root, 'native/poc/nro-probe.ts')],
+      define: { __PROBE_A_SHA__: JSON.stringify(sha256(probeBytes('a'))), __PROBE_B_SHA__: JSON.stringify(sha256(probeBytes('b'))) },
+    }),
+    files: () => [
+      ['probe-a.bin', probeBytes('a')],
+      ['probe-b.bin', probeBytes('b')],
+    ],
+  },
 };
+
+/** 1 MiB of bytes that are the same in every build (the .nro probe's RomFS files). */
+function probeBytes(seed) {
+  const blocks = [];
+  for (let i = 0; i < 32768; i++) blocks.push(crypto.createHash('sha256').update(`${seed}${i}`).digest());
+  return Buffer.concat(blocks);
+}
 const AUTHOR = 'pokemon-showdown-nx';
 
 /** Which feature crashes the app on sleep and wake? `--sleep-probe=ws|wsplain|audio|pad` (native/poc/sleep-probe.ts). */
@@ -96,7 +139,11 @@ async function main() {
   const sleepMode = option('sleep-probe');
   const target = sleepMode
     ? sleepProbe(sleepMode)
-    : process.argv.includes('--res-probe')
+    : process.argv.includes('--nro-probe')
+      ? TARGETS.nroProbe
+      : process.argv.includes('--update-probe')
+      ? TARGETS.updateProbe
+      : process.argv.includes('--res-probe')
       ? TARGETS.resProbe
       : process.argv.includes('--probe')
         ? TARGETS.probe
@@ -114,15 +161,34 @@ async function main() {
   const romfs = Object.create(null);
   for (const name of ENGINE_FILES) if (engineRomfs[name] instanceof Blob) romfs[name] = engineRomfs[name];
   const files = await target.files();
-  romfs['main.js'] = new Blob([await bundle(target.entry(), bundledShowdownDefine(files))]);
   let assetBytes = 0;
+  const assetHashes = [];
+  /** The assets as they go in the RomFS (an online update's pack takes the changed ones). */
+  const assets = new Map();
   const predecode = target === TARGETS.app ? await loadPngDecoder() : null;
   for (const [name, source] of files) {
     let bytes = Buffer.isBuffer(source) ? source : fs.readFileSync(source);
     if (predecode && PREDECODED.test(name)) bytes = predecode(bytes, name);
     if (predecode && DECODED_MUSIC.test(name)) bytes = await decodeMusic(bytes, name);
     assetBytes += bytes.length;
+    assetHashes.push(`${name} ${sha256(bytes)}`);
+    if (target.loader) assets.set(name, bytes);
     place(romfs, name, new Blob([bytes]));
+  }
+  let assetsId = null;
+  if (target.loader) {
+    // The fingerprint an online update must match to run on this .nro: the engine and every asset.
+    assetsId = sha256(Buffer.from([sha256(engine), ...assetHashes.sort()].join('\n'))).slice(0, 16);
+    const defines = { __PSB_VERSION__: JSON.stringify(target.version), __PSB_ASSETS_ID__: JSON.stringify(assetsId) };
+    const app = await bundle({ ...target.entry(), define: defines }, bundledShowdownDefine(files));
+    romfs['app.mjs'] = new Blob([app]);
+    romfs['main.js'] = new Blob([await bundle({ entryPoints: [path.join(root, 'native/loader/main.ts')], define: defines })]);
+    const index = assetIndex(target.version, sha256(engine), assetsId, assets);
+    // The .nro's own list of its assets: the updater checks an update's against it.
+    romfs['assets.json'] = new Blob([JSON.stringify(index)]);
+    await writeUpdate(app, index, assets);
+  } else {
+    romfs['main.js'] = new Blob([await bundle(target.entry(), bundledShowdownDefine(files))]);
   }
 
   const nacp = new NACP((await base.nacp.arrayBuffer()).slice(0));
@@ -150,9 +216,108 @@ async function main() {
   const outPath = path.join(outDir, suffix ? target.output.replace(/.nro$/, `-${suffix}.nro`) : target.output);
   fs.writeFileSync(outPath, Buffer.from(await nro.arrayBuffer()));
   console.log(`Engine ${label}`);
+  if (romfs['app.mjs']) console.log(`app.mjs ${(romfs['app.mjs'].size / 1024).toFixed(0)} KiB, version ${target.version}, assets id ${assetsId}`);
   console.log(`main.js ${(romfs['main.js'].size / 1024).toFixed(0)} KiB, assets ${(assetBytes / 1048576).toFixed(1)} MiB`);
   console.log(`NRO written to ${path.relative(root, outPath)} (${(nro.size / 1048576).toFixed(1)} MiB)`);
   console.log('Copy it to sdmc:/switch/ and open it from hbmenu in application mode (hold R on a game).');
+}
+
+/** Every asset's sha256 by its RomFS path, with the engine's and the build's fingerprint. */
+function assetIndex(version, engine, assetsId, assets) {
+  const files = {};
+  for (const name of [...assets.keys()].sort()) files[name] = sha256(assets.get(name));
+  return { version, engine, assetsId, files, packed: [] };
+}
+
+/**
+ * The online update for this build (docs/updates.md), in dist/nro/update/:
+ *
+ *  - app-<version>.mjs: the app's code;
+ *  - assets-<version>.json: every asset the code expects (path → sha256), and which come in the pack;
+ *  - assets-<hash>.pack: the assets that differ from the baseline release's .nro (none when this build
+ *    is the baseline), the ones a player with that .nro lacks;
+ *  - update.json: the manifest (signed by scripts/sign-update.mjs).
+ *
+ * A .nro runs the update when each asset the code expects is in its RomFS with the same hash, or in
+ * the pack, and its engine is the same.
+ */
+async function writeUpdate(app, index, assets) {
+  const { version } = index;
+  const dir = path.join(outDir, 'update');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const baseline = await loadBaseline(version);
+  if (baseline && baseline.engine !== index.engine) {
+    throw new Error(`The baseline ${baseline.version} has another engine: this release needs a new baseline (native/baseline.json, docs/updates.md).`);
+  }
+  const packed = baseline ? Object.keys(index.files).filter((name) => baseline.files[name] !== index.files[name]) : [];
+  const file = `app-${version}.mjs`;
+  fs.writeFileSync(path.join(dir, file), app);
+  const indexFile = `assets-${version}.json`;
+  const indexBytes = Buffer.from(JSON.stringify({ ...index, packed }));
+  fs.writeFileSync(path.join(dir, indexFile), indexBytes);
+  const manifest = {
+    version,
+    file,
+    size: app.length,
+    sha256: sha256(app),
+    engine: index.engine,
+    assetsId: index.assetsId,
+    index: { file: indexFile, size: indexBytes.length, sha256: sha256(indexBytes) },
+  };
+  if (packed.length) {
+    const pack = buildPack(packed, assets);
+    const packFile = `assets-${sha256(pack).slice(0, 16)}.pack`;
+    fs.writeFileSync(path.join(dir, packFile), pack);
+    const blocks = [];
+    for (let at = 0; at < pack.length; at += PACK_BLOCK) blocks.push(sha256(pack.subarray(at, at + PACK_BLOCK)));
+    manifest.pack = { file: packFile, size: pack.length, blockSize: PACK_BLOCK, blocks };
+    console.log(`Asset pack over the baseline ${baseline.version}: ${packed.length} files, ${(pack.length / 1048576).toFixed(1)} MiB (${packFile})`);
+  } else {
+    console.log(baseline ? `No asset differs from the baseline ${baseline.version}: no pack.` : 'No baseline: this build is one (no pack).');
+  }
+  fs.writeFileSync(path.join(dir, 'update.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/**
+ * An asset pack: PACK_MAGIC, the header's length (u32 LE), the header (JSON: each file's path, its
+ * offset after the header and its size), then the files one after another. The loader reads files
+ * out of it in place (native/loader/asset-pack.ts).
+ */
+function buildPack(names, assets) {
+  let offset = 0;
+  const entries = names.map((name) => {
+    const entry = { path: name, offset, size: assets.get(name).length };
+    offset += entry.size;
+    return entry;
+  });
+  const header = Buffer.from(JSON.stringify({ files: entries }));
+  const length = Buffer.alloc(4);
+  length.writeUInt32LE(header.length);
+  return Buffer.concat([Buffer.from(PACK_MAGIC, 'latin1'), length, header, ...names.map((name) => assets.get(name))]);
+}
+
+/**
+ * The baseline release's asset list (native/baseline.json names its tag), or null when there is
+ * none or this release is it. `--baseline=<file>` reads a local one instead, `--baseline=none` builds
+ * without. Kept in dist/nro-cache once downloaded (a release never changes).
+ */
+async function loadBaseline(version) {
+  const forced = option('baseline');
+  if (forced === 'none') return null;
+  if (forced) return JSON.parse(fs.readFileSync(forced, 'utf8'));
+  const { tag } = JSON.parse(fs.readFileSync(path.join(root, 'native/baseline.json'), 'utf8'));
+  if (!tag || tag === `v${version}`) return null;
+  const name = `assets-${tag.replace(/^v/, '')}.json`;
+  const cached = path.join(cacheDir, 'baselines', name);
+  if (fs.existsSync(cached)) return JSON.parse(fs.readFileSync(cached, 'utf8'));
+  const url = `https://github.com/${REPO}/releases/download/${tag}/${name}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`The baseline's asset list ${url}: HTTP ${response.status} (or build with --baseline=none)`);
+  const text = await response.text();
+  fs.mkdirSync(path.dirname(cached), { recursive: true });
+  fs.writeFileSync(cached, text);
+  return JSON.parse(text);
 }
 
 /** Angular's production build, run after the native shims (they must exist before any app code). */

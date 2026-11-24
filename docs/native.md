@@ -246,3 +246,41 @@ or once everything else has loaded, and the loading screen waits for it.
   console to sleep. **Pending:** report it to natureglass/nx.js_extended, with the minimal repro
   (the `ws` sleep probe), the results by feature and the crash reports, and ask for a "going to
   sleep" event as an alternative: with one, the app could close its socket and reconnect on wake.
+
+## Online updates probe (test u1, 2026-11-23)
+
+Could the `.nro` update its own code instead of everyone copying a new one? `native/poc/update-probe.ts`
+(`node scripts/build-nro.mjs --update-probe`) checks what an updater needs and logs to
+`sdmc:/switch/pokemon-showdown-nx/update-probe.log`. Results on the console:
+
+- **Loading code**: `import()` works from the RomFS (`'./x.js'`) and from an absolute SD path
+  (`sdmc:/…/x.mjs`), but **not with a query string** (`?v=1`: "Cannot find module"), and not from
+  `data:` or `blob:` URLs. `new Function` and indirect `eval` work. A 655 KiB ES module (three.js)
+  read from the SD card imports in 126 ms with all its exports.
+- **Files**: `Switch` has `readDirSync`, `statSync`, `renameSync`, `removeSync` and async versions
+  (`writeFile`, `rename`…). Writing 655 KiB takes 20 ms; 26.6 MiB with `writeFileSync`, 1.1 s (it
+  blocks the frame loop). `fetch('sdmc:/…')` reads SD files.
+- **Network**: a GitHub release download follows the 302 to `release-assets.githubusercontent.com`;
+  the GitHub API answers without a token (60 requests an hour per IP). Each new https host costs a
+  ~100 ms frame (the TLS handshake on the main thread, see phase 2). A big download streams at
+  ~1.85 MiB/s in ~40 KiB chunks.
+- **Integrity**: `crypto.subtle` has SHA-256 (67 ms for 655 KiB; a plain JS version takes 222 ms) and
+  ECDSA P-256 verification (126 ms). **Ed25519 is not supported** ("Unrecognized algorithm name").
+
+See [updates.md](updates.md) for the loader built on these results.
+
+## In-app .nro update probe (test u4, 2026-11-24)
+
+Could the app download a whole new `.nro` and put it in place of its own? `native/poc/nro-probe.ts`
+(`node scripts/build-nro.mjs --nro-probe`) on the console:
+
+- **The running `.nro` can't be renamed** (`I/O error (rename)`): the system keeps it open while the
+  app runs (its RomFS is read from it), so the app can't swap its own file, and nothing runs after it
+  closes to do it. A new `.nro` still has to be copied by the player (or another homebrew tool).
+- **Big downloads work streamed to the SD card**: `Switch.file(path).writable` (it truncates an
+  existing file) took 53.8 MiB at 1.70 MiB/s in 4 MiB blocks, each hashed with `crypto.subtle`
+  (218 ms in all), writes 1.9 s in all (longest 249 ms, off the frame loop: worst frame 98 ms). JS
+  memory peaked ~75 MiB above the start. Reading it back in 4 MiB blocks (`FsFile.stream`) and
+  checking every block took 2.9 s. Renaming and removing a 54 MiB file that isn't open is instant.
+
+So assets come through the online updates instead (see [updates.md](updates.md)).
