@@ -234,6 +234,7 @@ export class HomeScene {
       // X: Settings, but for the Trainer Card's history (registered after, so it's asked first).
       this.navigation.registerButton(HOME_SETTINGS_KEY.button, () => this.box() === null && (this.open(SETTINGS_ITEM), true)),
       this.navigation.registerButton(ROLE_KEYS.cardHistory.button, () => this.box() === 'card' && !this.cardView.picking() && (this.openHistory(), true)),
+      this.navigation.registerButton(ROLE_KEYS.randomAvatar.button, () => this.box() === 'card' && this.cardView.randomize()),
       this.stats.watch(),
     ];
     inject(DestroyRef).onDestroy(() => {
