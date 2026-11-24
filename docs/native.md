@@ -177,8 +177,10 @@ game runs. The `.nro` now does the same for what every session loaded or compute
 - **Showdown's images every session loads, the cries and the Pokémon sprites.** The item sheet
   (already decoded), the trainer avatars the app knows by name (~300), every Pokémon's cry (~1250
   mp3s, ~11 MiB) and the battle sprites outside the Champions sheets: Black/White's for every species
-  (`sprites/gen5/` and `gen5-back/`, ~2650 png once the sheets' ones are left out, ~2.5 MiB) and
-  Ruby/Sapphire's for Gen 3 (`sprites/gen3/` and `gen3-back/`, ~845 png, under 1 MiB). The cries
+  (`sprites/gen5/` and `gen5-back/`, ~2650 png once the sheets' ones are left out, ~2.5 MiB),
+  Red/Blue's for Gen 1 (`sprites/gen1/` and `gen1-back/`, ~310 png), Gold/Silver's for Gen 2 (`gen2/`,
+  ~555 png), Ruby/Sapphire's for Gen 3 (`gen3/`, ~845 png) and Diamond/Pearl's for Gen 4 (`gen4/`,
+  ~1360 png), under 1 MiB each. The cries
   and the sprites are listed from Showdown's directory indexes. They go under `showdown/`, at their
   paths on Showdown's server.
   `bundled-showdown.ts` redirects `fetch` for those URLs to the RomFS, so the app's cache keys don't

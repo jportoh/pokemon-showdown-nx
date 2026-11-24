@@ -361,7 +361,7 @@ export class BattleStore {
   readonly format = this.formatSignal.asReadonly();
   /** The generation played, from the `|gen|` line (9 until then). */
   readonly gen = this.genSignal.asReadonly();
-  /** Gen 3 battles show Ruby/Sapphire's sprites; the rest Black/White's. */
+  /** Gen 1 to 4 battles show their own games' sprites; the rest Black/White's. */
   readonly spriteSet = computed(() => spriteSetOf(this.genSignal()));
   /** Singles or doubles, from the `|gametype|` line (before the first Pokémon come out). */
   readonly gameType = this.gameTypeSignal.asReadonly();
@@ -1191,8 +1191,11 @@ export class BattleStore {
       case '-unboost': {
         const amount = Number(args[2]) || 0;
         this.changeBoost(args[0], args[1], (stage) => stage + (command === '-boost' ? amount : -amount));
-        this.showStatChange(args[0], args[1], command === '-boost' ? amount : -amount);
-        return this.say(boostText(args[0], args[1], amount, command === '-boost', names));
+        // Gen 1's one Special stat comes as SpA and SpD changing together: told once, as Special.
+        if (this.genSignal() === 1 && args[1] === 'spd') return 0;
+        const stat = this.genSignal() === 1 && args[1] === 'spa' ? 'spc' : args[1];
+        this.showStatChange(args[0], stat, command === '-boost' ? amount : -amount);
+        return this.say(boostText(args[0], stat, amount, command === '-boost', names));
       }
       case '-setboost':
         this.changeBoost(args[0], args[1], () => Number(args[2]) || 0);
@@ -1235,7 +1238,8 @@ export class BattleStore {
       case '-immune':
         return this.say(`It doesn't affect ${this.label(args[0], false)}...`);
       case '-miss':
-        return this.say(`${this.label(args[1] ?? args[0])} avoided the attack!`);
+        // Without a target (Gen 1's misses), it's the attacker's move that missed.
+        return this.say(args[1] ? `${this.label(args[1])} avoided the attack!` : `${this.label(args[0])}'s attack missed!`);
       case '-fail': {
         // A Baton Pass with no one to pass to (or a Shed Tail without the HP) switches no one in.
         const slot = this.slotOf(args[0]);

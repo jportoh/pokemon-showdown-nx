@@ -1,4 +1,5 @@
 import { ChampionsDex } from '@core/dex/champions-dex';
+import { hasAbilities, hasItems } from '@core/dex/generations';
 import { moveInfo } from '@core/dex/moves';
 import { abilityName, itemName } from '@core/dex/names';
 import { speciesInfo } from '@core/dex/species';
@@ -40,7 +41,7 @@ export interface CardMove {
 /** One team member as the party screen and Battle info show it: everything known of it. */
 export interface TeamCard {
   sprite: string;
-  /** Gen 3 battles show Ruby/Sapphire's sprites. */
+  /** Gen 1 to 4 battles show their own games' sprites. */
   spriteSet: SpriteSet;
   name: string;
   types: { text: string; color: string; tera: boolean }[];
@@ -72,9 +73,10 @@ export function ownCard(pokemon: RequestPokemon, dex: ChampionsDex, state = '', 
     hp: { fraction: maxHp > 0 ? hp / maxHp : 0, text: fainted ? '0%' : `${hp}/${maxHp}` },
     status: STATUS[status] ? { text: STATUS[status].text, color: STATUS[status].color } : null,
     itemId: fainted ? '' : pokemon.item,
-    item: item || 'No item',
-    itemKnown: !!item,
-    ability: abilityName(pokemon.ability ?? pokemon.baseAbility ?? ''),
+    // Gen 1 has no items, Gens 1 and 2 no abilities: nothing shown.
+    item: item || (hasItems(gen) ? 'No item' : ''),
+    itemKnown: !!item || !hasItems(gen),
+    ability: hasAbilities(gen) ? abilityName(pokemon.ability ?? pokemon.baseAbility ?? '') : '',
     abilityKnown: true,
     moves: pokemon.moves.slice(0, 4).map((id) => {
       const info = moveInfo(id, gen);

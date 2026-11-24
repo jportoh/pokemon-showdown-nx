@@ -12,7 +12,7 @@ from Showdown's data by scripts, plus a few asset files in `public/`.
 | `moves.json` | Every move: name, type, category, base power, accuracy | `npm run update:moves` | `moves.ts` |
 | `species.json` | Every species: name, types, base stats, abilities | `npm run update:species` | `species.ts` |
 | `names.json` | Item and ability names, each item's place in Showdown's icon sheet | `npm run update:names` | `names.ts` |
-| `gen3.json` | What differs in Gen 3 (moves and species), for Gen 3 Random Battle | `npm run update:gen3` (after `update:moves` and `update:species`) | the battle code |
+| `gen1.json` … `gen4.json` | What differs in Gens 1 to 4 (moves and species), for their Random Battles | `npm run update:past-gens` (after `update:moves` and `update:species`) | the battle code |
 | `calc-sets.json` | Common sets for the damage calculator | `npm run update:calc-sets` | `teambuilder/calc` |
 | `sprite-sheets.json` | Where each Champions sprite is in the bundled sheets | `npm run update:sprites` | `core/gl/sprite-sheets.ts` |
 
