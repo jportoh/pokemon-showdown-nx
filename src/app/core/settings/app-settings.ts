@@ -1,7 +1,7 @@
 import { Service, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { BATTLEFIELD_CHOICES, BattlefieldChoice } from '@shared/data/battlefields';
-import { PLAYABLE_FORMATS, TEAM_FORMATS } from '@shared/data/formats';
+import { TEAM_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
 
 export type ThemeId = 'zafiro' | 'noche' | 'grafito' | 'esmeralda' | 'pokeball' | 'ocaso';
 
@@ -61,7 +61,7 @@ const DEFAULTS: Settings = {
   theme: 'zafiro',
   appearance: 'light',
   battlefield: 'random',
-  battleFormat: PLAYABLE_FORMATS[0].id,
+  battleFormat: TEAM_PLAY_FORMATS[0].id,
   teamFormat: TEAM_FORMATS[0].id,
   allowSpectators: true,
   saveReplays: true,
@@ -96,7 +96,8 @@ function loadSettings(): Settings {
     theme: THEMES.some((theme) => theme.id === settings.theme) ? settings.theme : DEFAULTS.theme,
     appearance: APPEARANCES.some((appearance) => appearance.id === settings.appearance) ? settings.appearance : DEFAULTS.appearance,
     battlefield: BATTLEFIELD_CHOICES.some((field) => field.id === settings.battlefield) ? settings.battlefield : DEFAULTS.battlefield,
-    battleFormat: PLAYABLE_FORMATS.some((format) => format.id === settings.battleFormat) ? settings.battleFormat : DEFAULTS.battleFormat,
+    // The Battle page's: a random format saved before they had their own page goes back to the default.
+    battleFormat: TEAM_PLAY_FORMATS.some((format) => format.id === settings.battleFormat) ? settings.battleFormat : DEFAULTS.battleFormat,
     teamFormat: TEAM_FORMATS.some((format) => format.id === settings.teamFormat) ? settings.teamFormat : DEFAULTS.teamFormat,
     allowSpectators: settings.allowSpectators !== false,
     saveReplays: settings.saveReplays !== false,

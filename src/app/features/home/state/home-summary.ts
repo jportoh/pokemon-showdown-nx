@@ -37,7 +37,6 @@ export class HomeSummary {
     const challenger = this.challenger();
     if (challenger) return `${challenger} wants to battle!`;
     const format = this.selection.playFormat();
-    if (format.randomTeams) return `${format.label} · random teams`;
     const teams = this.selection.teams().length;
     return `${format.label} · ${teams ? plural(teams, 'team') : 'no teams yet'}`;
   });

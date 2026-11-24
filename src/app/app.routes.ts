@@ -39,6 +39,12 @@ export const routes: Routes = [
     loadComponent: () => import('@features/play/components/play-scene/play-scene').then((c) => c.PlayScene),
   },
   {
+    // The same page for the random formats (Random Battle on the home menu).
+    path: 'random',
+    data: { random: true },
+    loadComponent: () => import('@features/play/components/play-scene/play-scene').then((c) => c.PlayScene),
+  },
+  {
     path: 'teambuilder',
     loadComponent: () =>
       import('@features/teambuilder/components/teambuilder-scene/teambuilder-scene').then((c) => c.TeambuilderScene),

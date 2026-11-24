@@ -5,6 +5,8 @@ export const STAT_NAMES: Record<string, string> = {
   def: 'Defense',
   spa: 'Sp. Atk',
   spd: 'Sp. Def',
+  /** Gen 1's Special. */
+  spc: 'Special',
   spe: 'Speed',
   accuracy: 'Accuracy',
   evasion: 'Evasion',

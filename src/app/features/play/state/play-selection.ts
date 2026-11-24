@@ -3,9 +3,12 @@ import { AppSettings } from '@core/settings/app-settings';
 import { inGridOrder } from '@features/teambuilder/gl/team-grid-view';
 import { Team } from '@features/teambuilder/models/team';
 import { TeamStore } from '@features/teambuilder/state/team-store';
-import { PLAYABLE_FORMATS } from '@shared/data/formats';
+import { RANDOM_BATTLE_FORMAT, RANDOM_PLAY_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
 
-/** The format and team picked on the Battle page, kept while the app runs so a return finds them. */
+/**
+ * The format and team picked on the Battle page, and the format picked on the Random Battle page, kept
+ * while the app runs so a return finds them.
+ */
 @Service()
 export class PlaySelection {
   private readonly teamStore = inject(TeamStore);
@@ -20,7 +23,11 @@ export class PlaySelection {
   readonly teamId = signal<string | null>(null);
 
   /** The format picked, as the app offers it. */
-  readonly playFormat = computed(() => PLAYABLE_FORMATS.find((f) => f.id === this.format()) ?? PLAYABLE_FORMATS[0]);
+  readonly playFormat = computed(() => TEAM_PLAY_FORMATS.find((f) => f.id === this.format()) ?? TEAM_PLAY_FORMATS[0]);
+
+  /** The Random Battle page's format's ID. */
+  readonly randomFormat = signal<string>(RANDOM_BATTLE_FORMAT);
+  readonly randomPlayFormat = computed(() => RANDOM_PLAY_FORMATS.find((f) => f.id === this.randomFormat()) ?? RANDOM_PLAY_FORMATS[0]);
 
   /** The player's teams for the format, with at least one Pokémon, in the teambuilder's order. */
   readonly teams = computed(() => {
@@ -28,8 +35,8 @@ export class PlaySelection {
     return inGridOrder(this.teamStore.teams()).filter((team) => team.format === (format.teamFormat ?? format.id) && team.sets.length > 0);
   });
 
-  /** The team picked, or the format's favourite (else its first team) while none is; none with random teams. */
-  readonly team = computed(() => (this.playFormat().randomTeams ? null : preferredTeam(this.teams(), this.teamId())));
+  /** The team picked, or the format's favourite (else its first team) while none is. */
+  readonly team = computed(() => preferredTeam(this.teams(), this.teamId()));
 }
 
 /** Of a format's teams, the one picked if it's among them, else the favourite, else the first. */

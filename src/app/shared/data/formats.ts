@@ -23,6 +23,11 @@ export const DEFAULT_TEAM_FORMAT = TEAM_FORMATS[0].id;
 export interface PlayableFormat extends BattleFormat {
   /** Short, for buttons and the format picker. */
   label: string;
+  /**
+   * Shorter still, where the context says the rest: a random format's tile on the Random Battle page and
+   * the home menu's Random Battle button ("Gen 9", "Monotype"); else the label.
+   */
+  short?: string;
   /** Teams are handed out at random: no team of the player's is needed. */
   randomTeams: boolean;
   /** The heading it's listed under in the format picker, as Showdown groups its formats. */
@@ -45,8 +50,11 @@ export const BO3_TEAM_FORMAT = 'gen9championsvgc2026regmcbo3';
 
 /**
  * The formats the Battle page and the replay list offer: the teambuilder's VGC format (doubles), as
- * single games and as best-of-3 sets, its Battle Stadium Singles format, and the most played random formats (IDs checked against the
- * server's `|formats|`, 2026-09-30). The format picker lists them by category, in this order.
+ * single games and as best-of-3 sets, its Battle Stadium Singles format, the most played random formats
+ * (IDs checked against the server's `|formats|`, 2026-09-30), and the ladder's randomized metas that
+ * play with the usual mechanics: no 4-player battles, Shared Power, custom Pokémon or drafts (checked
+ * 2026-11-24; their team preview picks come from the request's maxChosenTeamSize). The Battle page offers
+ * the team formats, the Random Battle page the random ones; each lists them by category, in this order.
  */
 export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
   {
@@ -81,6 +89,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: RANDOM_BATTLE_FORMAT,
     name: '[Gen 9] Random Battle',
     label: 'Gen 9 Random Battle',
+    short: 'Gen 9',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random teams',
@@ -90,6 +99,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9randomdoublesbattle',
     name: '[Gen 9] Random Doubles Battle',
     label: 'Gen 9 Random Doubles',
+    short: 'Gen 9 Doubles',
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random teams',
@@ -99,6 +109,7 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9championsrandombattle',
     name: '[Gen 9 Champions] Random Battle',
     label: 'Champions Random Battle',
+    short: 'Champions',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Champions teams',
@@ -108,21 +119,154 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     id: 'gen9championsrandomdoublesbattle',
     name: '[Gen 9 Champions] Random Doubles Battle',
     label: 'Champions Random Doubles',
+    short: 'Champions Doubles',
     randomTeams: true,
     category: 'Random',
     detail: 'Doubles · random Champions teams',
     rules: 'Random Champions sets',
   },
   {
+    id: 'gen1randombattle',
+    name: '[Gen 1] Random Battle',
+    label: 'Gen 1 Random Battle',
+    short: 'Gen 1',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Red/Blue teams',
+    rules: 'Random Gen 1 sets · no items or abilities',
+  },
+  {
+    id: 'gen2randombattle',
+    name: '[Gen 2] Random Battle',
+    label: 'Gen 2 Random Battle',
+    short: 'Gen 2',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Gold/Silver teams',
+    rules: 'Random Gen 2 sets · no abilities',
+  },
+  {
     id: 'gen3randombattle',
     name: '[Gen 3] Random Battle',
     label: 'Gen 3 Random Battle',
+    short: 'Gen 3',
     randomTeams: true,
     category: 'Random',
     detail: 'Singles · random Ruby/Sapphire teams',
     rules: 'Random Gen 3 sets',
   },
+  {
+    id: 'gen4randombattle',
+    name: '[Gen 4] Random Battle',
+    label: 'Gen 4 Random Battle',
+    short: 'Gen 4',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Diamond/Pearl teams',
+    rules: 'Random Gen 4 sets',
+  },
+  {
+    id: 'gen9randombattleblitz',
+    name: '[Gen 9] Random Battle (Blitz)',
+    label: 'Gen 9 Random Battle (Blitz)',
+    short: 'Blitz',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random teams · fast timer',
+    rules: 'Random Battle sets · short turn timer',
+  },
+  {
+    id: 'gen9monotyperandombattle',
+    name: '[Gen 9] Monotype Random Battle',
+    label: 'Monotype Random Battle',
+    short: 'Monotype',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · random teams of one type',
+    rules: 'Every Pokémon shares a type',
+  },
+  {
+    id: 'gen9babyrandombattle',
+    name: '[Gen 9] Baby Random Battle',
+    label: 'Baby Random Battle',
+    short: 'Baby',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · random teams of baby Pokémon',
+    rules: 'Unevolved Pokémon only',
+  },
+  {
+    id: 'gen9battlefactory',
+    name: '[Gen 9] Battle Factory',
+    label: 'Battle Factory',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · competitive sets of a random tier',
+    rules: 'Team preview · Smogon tier sets',
+  },
+  {
+    id: 'gen91v1factory',
+    name: '[Gen 9] 1v1 Factory',
+    label: '1v1 Factory',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · pick 1 · competitive sets',
+    rules: 'Team preview · pick 1',
+  },
+  {
+    id: 'gen9challengecup1v1',
+    name: '[Gen 9] Challenge Cup 1v1',
+    label: 'Challenge Cup 1v1',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · pick 1 · any legal moves and item',
+    rules: 'Team preview · pick 1',
+  },
+  {
+    id: 'gen9challengecup2v2',
+    name: '[Gen 9] Challenge Cup 2v2',
+    label: 'Challenge Cup 2v2',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Doubles · pick 2 · any legal moves and item',
+    rules: 'Team preview · pick 2',
+  },
+  {
+    id: 'gen9hackmonscup',
+    name: '[Gen 9] Hackmons Cup',
+    label: 'Hackmons Cup',
+    randomTeams: true,
+    category: 'Randomized Metas',
+    detail: 'Singles · any ability, moves and item',
+    rules: 'Anything goes, level-balanced',
+  },
 ];
+
+/** The Battle page's formats: those played with the player's own teams. */
+export const TEAM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.filter((format) => !format.randomTeams);
+
+/** The Random Battle page's formats: teams handed out at random. */
+export const RANDOM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.filter((format) => format.randomTeams);
+
+/**
+ * Random formats the app doesn't play yet, shown on the Random Battle page as coming soon (not
+ * pickable): the generations between Gen 4 and Gen 9, whose battles need their own gimmicks first.
+ */
+export const UPCOMING_RANDOM_FORMATS: readonly PlayableFormat[] = [
+  { gen: 8, games: 'Sword/Shield', extra: 'Dynamax' },
+  { gen: 7, games: 'Sun/Moon', extra: 'Z-Moves, Megas' },
+  { gen: 6, games: 'X/Y', extra: 'Megas' },
+  { gen: 5, games: 'Black/White', extra: '' },
+].map(({ gen, games, extra }) => ({
+  id: `gen${gen}randombattle`,
+  name: `[Gen ${gen}] Random Battle`,
+  label: `Gen ${gen} Random Battle`,
+  short: `Gen ${gen}`,
+  randomTeams: true,
+  category: 'Random',
+  detail: `Singles · random ${games} teams`,
+  rules: `Random Gen ${gen} sets${extra ? ` · ${extra}` : ''}`,
+}));
 
 /** The display name of a format ID; unknown IDs (e.g. from an imported team) are shown as they are. */
 export function formatName(id: string): string {

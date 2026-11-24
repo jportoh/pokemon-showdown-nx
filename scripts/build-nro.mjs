@@ -69,7 +69,7 @@ const TARGETS = {
     entry: () => appEntry(),
     // main.js is the loader (native/loader/main.ts), the app goes in app.mjs: see docs/updates.md.
     loader: true,
-    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await showdownGen3Sprites()), ...(await renderedAudio())],
+    files: async () => [...staticFiles(), ...(await showdownSprites()), ...(await showdownCries()), ...(await showdownPokemonSprites()), ...(await renderedAudio())],
   },
   probe: {
     output: 'psb-native-x1.nro',
@@ -402,15 +402,22 @@ async function showdownCries() {
 }
 
 /**
- * The Ruby/Sapphire sprites Gen 3 battles show (~845 files, under 1 MiB), bundled like the cries:
- * each was its own https request, so a battle's dozen sprites cost ~65 ms of handshake apiece on the
- * console's main thread. They never change, so a copy once downloaded is kept.
+ * The Pokémon sprites battles show outside the bundled Champions sheets, bundled like the cries: each
+ * was its own https request, so a battle's dozen sprites cost ~65 ms of handshake apiece on the
+ * console's main thread. Black/White's (every species: ~2650 files once the sheets' ~700 are left
+ * out, ~2.5 MiB) for any format with species outside Champions (Gen 9 Random Battle…), and
+ * Red/Blue's (~310 files), Gold/Silver's (~555), Ruby/Sapphire's (~845) and Diamond/Pearl's (~1360),
+ * under 1 MiB each, for Gens 1 to 4. A copy once downloaded is kept; new species come with Showdown's directory index.
  */
-const GEN3_SPRITE_DIRS = ['sprites/gen3/', 'sprites/gen3-back/'];
+const SPRITE_DIRS = ['sprites/gen5/', 'sprites/gen5-back/', 'sprites/gen3/', 'sprites/gen3-back/', 'sprites/gen4/', 'sprites/gen4-back/', 'sprites/gen1/', 'sprites/gen1-back/', 'sprites/gen2/', 'sprites/gen2-back/'];
+const SPRITE_MAP = path.join(root, 'src/app/core/dex/sprite-sheets.json');
 
-async function showdownGen3Sprites() {
-  const wanted = (await Promise.all(GEN3_SPRITE_DIRS.map((dir) => showdownDirectory(dir, '.png')))).flat();
-  return cachedShowdownFiles(wanted, Infinity);
+async function showdownPokemonSprites() {
+  // The sheets' sprites never reach Showdown's URLs (gl-sprites.ts draws them from the sheets).
+  const map = JSON.parse(fs.readFileSync(SPRITE_MAP, 'utf8'));
+  const inSheets = new Set([...Object.keys(map.front).map((id) => `sprites/gen5/${id}.png`), ...Object.keys(map.back).map((id) => `sprites/gen5-back/${id}.png`)]);
+  const listed = (await Promise.all(SPRITE_DIRS.map((dir) => showdownDirectory(dir, '.png')))).flat();
+  return cachedShowdownFiles(listed.filter((file) => !inSheets.has(file)), Infinity);
 }
 
 /**
