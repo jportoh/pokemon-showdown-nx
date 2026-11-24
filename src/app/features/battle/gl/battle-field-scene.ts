@@ -1465,9 +1465,10 @@ export class BattleFieldScene {
 
   /**
    * A banner just over a Pokémon's head (its picture's top, not its sprite box's: mostly empty above a
-   * small or a back sprite, bugs L92). `level` 0 is the first of `levels` (a move's, with an item's or
-   * ability's after it): the next goes over it, or, with no room above (a Pokémon high on the field),
-   * beside it, towards the field's middle, rather than down over the head.
+   * small or a back sprite, bugs L92). `level` 0 is the lowest of a stack of `levels` (a move's, with an
+   * item's or ability's over it), always in one column: a stack with no room above (a Pokémon high on
+   * the field) comes down whole, over the head for the moment it shows (banners moving sideways read
+   * worse, the player found).
    */
   private bannerPosition(slot: SlotKey, level: number, levels: number, now: number): { left: number; top: number } {
     const from = this.slotData(slot);
@@ -1475,10 +1476,8 @@ export class BattleFieldScene {
     const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
     const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
     const step = BANNER_HEIGHT + BANNER_STACK_GAP;
-    const first = Math.max(4, Math.round(this.headTop(slot, now)) - BANNER_GAP - BANNER_HEIGHT);
-    if (level === 0 || first - (levels - 1) * step >= 4) return { left, top: first - level * step };
-    const aside = left + (own ? 1 : -1) * level * (BANNER_WIDTH + BANNER_STACK_GAP * 2);
-    return { left: Math.max(8, Math.min(FIELD_W - 8 - BANNER_WIDTH, aside)), top: first };
+    const first = Math.max(4 + (levels - 1) * step, Math.round(this.headTop(slot, now)) - BANNER_GAP - BANNER_HEIGHT);
+    return { left, top: first - level * step };
   }
 
   private label(text: string, style: TextStyle): Texture | null {
