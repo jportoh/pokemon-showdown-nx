@@ -14,7 +14,8 @@
 //   node scripts/build-nro.mjs --nro-probe      the in-app .nro update probe (native/poc/nro-probe.ts).
 // Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/. The app's build also
 // writes its online update to dist/nro/update/ (docs/updates.md); `--baseline=<assets json>|none`
-// replaces the baseline release named in native/baseline.json.
+// replaces the baseline release named in native/baseline.json. `--strict` (always on CI's tag builds)
+// fails the build when a Showdown file can't be bundled, instead of leaving it to the network.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -55,6 +56,8 @@ const REPO = process.env.GITHUB_REPOSITORY || 'jportoh/pokemon-showdown-nx';
 /** An asset pack is downloaded and checked in blocks this big (src/app/core/update). */
 const PACK_BLOCK = 4 * 1024 * 1024;
 const PACK_MAGIC = 'PSBPACK1';
+/** A release must bundle every Showdown file: an outage while CI builds it must not ship a .nro without them. */
+const STRICT = process.argv.includes('--strict') || process.env.GITHUB_REF_TYPE === 'tag';
 const packageVersion = option('app-version') ?? JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 
 // Homebrew title ids outside Nintendo's application range (high byte 0x05, as homebrew forwarders use).
@@ -250,7 +253,10 @@ async function writeUpdate(app, index, assets) {
   if (baseline && baseline.engine !== index.engine) {
     throw new Error(`The baseline ${baseline.version} has another engine: this release needs a new baseline (native/baseline.json, docs/updates.md).`);
   }
-  const packed = baseline ? Object.keys(index.files).filter((name) => baseline.files[name] !== index.files[name]) : [];
+  // Players may have the baseline's .nro or any later release's: the pack brings every asset that
+  // differs from any of them (a Showdown file that changed in one release and back in the next too).
+  const released = baseline ? [baseline, ...(await laterReleases(baseline.version, version))] : [];
+  const packed = Object.keys(index.files).filter((name) => released.some((nro) => nro.files[name] !== index.files[name]));
   const file = `app-${version}.mjs`;
   fs.writeFileSync(path.join(dir, file), app);
   const indexFile = `assets-${version}.json`;
@@ -272,7 +278,7 @@ async function writeUpdate(app, index, assets) {
     const blocks = [];
     for (let at = 0; at < pack.length; at += PACK_BLOCK) blocks.push(sha256(pack.subarray(at, at + PACK_BLOCK)));
     manifest.pack = { file: packFile, size: pack.length, blockSize: PACK_BLOCK, blocks };
-    console.log(`Asset pack over the baseline ${baseline.version}: ${packed.length} files, ${(pack.length / 1048576).toFixed(1)} MiB (${packFile})`);
+    console.log(`Asset pack over ${released.map((nro) => `v${nro.version}`).join(', ')}: ${packed.length} files, ${(pack.length / 1048576).toFixed(1)} MiB (${packFile})`);
   } else {
     console.log(baseline ? `No asset differs from the baseline ${baseline.version}: no pack.` : 'No baseline: this build is one (no pack).');
   }
@@ -308,16 +314,41 @@ async function loadBaseline(version) {
   if (forced) return JSON.parse(fs.readFileSync(forced, 'utf8'));
   const { tag } = JSON.parse(fs.readFileSync(path.join(root, 'native/baseline.json'), 'utf8'));
   if (!tag || tag === `v${version}`) return null;
-  const name = `assets-${tag.replace(/^v/, '')}.json`;
+  return releaseAssets(tag.replace(/^v/, ''));
+}
+
+/** A published release's asset list (assets-<version>.json), kept in dist/nro-cache once downloaded (a release never changes). */
+async function releaseAssets(version) {
+  const name = `assets-${version}.json`;
   const cached = path.join(cacheDir, 'baselines', name);
   if (fs.existsSync(cached)) return JSON.parse(fs.readFileSync(cached, 'utf8'));
-  const url = `https://github.com/${REPO}/releases/download/${tag}/${name}`;
+  const url = `https://github.com/${REPO}/releases/download/v${version}/${name}`;
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`The baseline's asset list ${url}: HTTP ${response.status} (or build with --baseline=none)`);
+  if (!response.ok) throw new Error(`The asset list ${url}: HTTP ${response.status} (or build with --baseline=none)`);
   const text = await response.text();
   fs.mkdirSync(path.dirname(cached), { recursive: true });
   fs.writeFileSync(cached, text);
   return JSON.parse(text);
+}
+
+/** The asset lists of the releases published after the baseline and before this version (vX.Y.Z tags). */
+async function laterReleases(baseline, version) {
+  const headers = { accept: 'application/vnd.github+json' };
+  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  if (token) headers.authorization = `Bearer ${token}`;
+  const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`, { headers });
+  if (!response.ok) throw new Error(`The releases list: HTTP ${response.status}`);
+  const versions = (await response.json())
+    .filter((release) => !release.draft && !release.prerelease && /^vd+.d+.d+$/.test(release.tag_name))
+    .map((release) => release.tag_name.slice(1))
+    .filter((v) => compareVersions(v, baseline) > 0 && compareVersions(v, version) < 0);
+  return Promise.all(versions.map(releaseAssets));
+}
+
+function compareVersions(a, b) {
+  const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
 }
 
 /** Angular's production build, run after the native shims (they must exist before any app code). */
@@ -435,6 +466,7 @@ async function showdownDirectory(dir, extension) {
   } catch (error) {
     const cached = path.join(cacheDir, 'showdown', dir);
     names = fs.existsSync(cached) ? fs.readdirSync(cached).filter((name) => name.endsWith(extension)) : [];
+    if (STRICT && !names.length) throw new Error(`Showdown's ${dir} index failed (${error instanceof Error ? error.message : error}) and nothing is cached: build again when Showdown answers.`);
     console.warn(`Showdown's ${dir} index failed (${error instanceof Error ? error.message : error}): bundling the ${names.length} cached files`);
   }
   return [...new Set(names)].map((name) => dir + name);
@@ -469,6 +501,7 @@ async function cachedShowdownFiles(wanted, maxAgeMs) {
     }
   };
   await Promise.all(Array.from({ length: 8 }, worker));
+  if (missing.length && STRICT) throw new Error(`Showdown files not bundled (${missing.length}): ${missing.slice(0, 5).join(', ')}. Build again when Showdown answers.`);
   if (missing.length) console.warn(`Showdown files not bundled (${missing.length}): ${missing.slice(0, 5).join(', ')}`);
   return list.sort(([a], [b]) => a.localeCompare(b));
 }
