@@ -122,6 +122,11 @@ const BANNER_WIDTH = 300;
 const BANNER_HEIGHT = 52;
 /** The player's banners stay clear of their status boxes; the opponent's, of the right edge. */
 const OWN_BANNER_MAX_LEFT = OWN_BOX_LEFT - 8 - BANNER_WIDTH;
+/** Between a banner and the head it's over; and between banners stacked (a move's, an item's or ability's over it). */
+const BANNER_GAP = 10;
+const BANNER_STACK_GAP = 4;
+/** Where a sprite's picture starts when its texture doesn't say (a share of its box): Black/White's usual. */
+const DEFAULT_PICTURE_TOP = 0.2;
 const FOE_BANNER_MAX_LEFT = FIELD_W - 8 - BANNER_WIDTH;
 const LABEL_HEIGHT = 40;
 const HP_LABEL_WIDTH = 96;
@@ -1262,8 +1267,13 @@ export class BattleFieldScene {
     this.statusLabels = this.statusLabels.filter((s) => s.until > now);
     this.statLabels = this.statLabels.filter((s) => s.until > now);
 
+    // A move's banner is over its user's head; an item's or ability's pops in over it then (or in its place).
+    const action = this.store.action();
+    const banner = this.banner;
+    const moving = action && banner?.id === action.id ? action : null;
     for (const { item, born } of this.popups) {
-      const { left, top } = this.bannerPosition(item.slot, BANNER_HEIGHT + 4);
+      const stacked = moving?.attacker === item.slot;
+      const { left, top } = this.bannerPosition(item.slot, stacked ? 1 : 0, stacked ? 2 : 1, now);
       const border = item.kind === 'item' ? rgba('#2dd4bf') : item.kind === 'notice' ? rgba('#9ca3af') : rgba('#facc15');
       const nameColor = item.kind === 'item' ? rgba('#99f6e4') : item.kind === 'notice' ? WHITE : rgba('#fde68a');
       this.card(renderer, now - born, left, top, BANNER_WIDTH, BANNER_HEIGHT, PANEL, border, [
@@ -1272,7 +1282,7 @@ export class BattleFieldScene {
       ]);
     }
     for (const { item, born } of this.hpLabels) {
-      const top = this.hpLabelPosition(item.slot);
+      const top = this.hpLabelPosition(item.slot, now);
       const left = item.crit ? this.centredOver(item.slot, HP_LABEL_WIDTH + CRIT_LABEL_GAP + CRIT_LABEL_WIDTH) : this.centredOver(item.slot, HP_LABEL_WIDTH);
       const rise = Math.min(1, (now - born) / 600) * -10;
       this.card(renderer, now - born, left, top + rise, HP_LABEL_WIDTH, LABEL_HEIGHT, item.change < 0 ? HP_LOST : HP_RESTORED, WHITE, [
@@ -1287,24 +1297,25 @@ export class BattleFieldScene {
     for (const { item, born } of this.statusLabels) {
       const info = STATUS[item.status];
       const name = info?.name ?? item.status;
-      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, rgba(info?.color ?? '#374151'), WHITE, [
+      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot, now) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, rgba(info?.color ?? '#374151'), WHITE, [
         { text: `${name[0].toUpperCase()}${name.slice(1)}!`, size: 20, bold: true, color: WHITE, y: 20 },
       ]);
     }
     for (const { item, born } of this.statLabels) {
-      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, item.amount > 0 ? STAT_UP : STAT_DOWN, WHITE, [
+      this.card(renderer, now - born, this.centredOver(item.slot, STATUS_LABEL_WIDTH), this.hpLabelPosition(item.slot, now) + STATUS_LABEL_DROP, STATUS_LABEL_WIDTH, LABEL_HEIGHT, item.amount > 0 ? STAT_UP : STAT_DOWN, WHITE, [
         { text: `${STAT_NAMES[item.stat] ?? item.stat} ${item.amount > 0 ? '+' : ''}${item.amount}`, size: 20, bold: true, color: WHITE, y: 20 },
       ]);
     }
 
-    const action = this.store.action();
-    if (action && this.banner?.id === action.id) {
+    if (moving) {
+      const action = moving;
       const name = (slot: SlotKey) => this.pokemonAt(slot)?.name ?? '';
       const targets = action.targets.filter((t) => t !== action.attacker).map(name).filter(Boolean);
       const detail = targets.length > 0 ? `${name(action.attacker)} → ${targets.join(' & ')}` : name(action.attacker);
-      const { left, top } = this.bannerPosition(action.attacker, 0);
+      const stack = this.popups.some(({ item }) => item.slot === action.attacker) ? 2 : 1;
+      const { left, top } = this.bannerPosition(action.attacker, 0, stack, now);
       const color = rgba(typeColor(action.type) || '#374151');
-      const age = now - this.banner.born;
+      const age = now - (banner?.born ?? now);
       this.card(renderer, age, left, top, BANNER_WIDTH, BANNER_HEIGHT, color, WHITE, [
         { text: action.move, size: 20, bold: true, color: WHITE, y: 16 },
         { text: detail, size: 15, color: WHITE, y: 37 },
@@ -1432,10 +1443,19 @@ export class BattleFieldScene {
     return { left: data.left, top: data.top, size: data.size };
   }
 
-  private hpLabelPosition(slot: SlotKey): number {
+  /** Where a Pokémon's picture starts (its head), in field pixels: its sprite's first row that shows. */
+  private headTop(slot: SlotKey, now: number): number {
+    const from = this.slotData(slot);
+    if (!from) return 0;
+    return from.top + from.size * (this.spriteOf(from, now)?.top ?? DEFAULT_PICTURE_TOP);
+  }
+
+  /** An HP change's label: across the upper body, never above the head (a small or old sprite's is low in its box). */
+  private hpLabelPosition(slot: SlotKey, now: number): number {
     const share = slot.startsWith('p1') ? 0.36 : 0.43;
     const from = this.slotData(slot);
-    return Math.round((from?.top ?? 0) + (from?.size ?? 0) * share);
+    const head = this.headTop(slot, now);
+    return Math.round(Math.max((from?.top ?? 0) + (from?.size ?? 0) * share, head + (from?.size ?? 0) * 0.12));
   }
 
   private centredOver(slot: SlotKey, width: number): number {
@@ -1443,13 +1463,22 @@ export class BattleFieldScene {
     return Math.round((from?.left ?? 0) + (from?.size ?? 0) / 2 - width / 2);
   }
 
-  private bannerPosition(slot: SlotKey, drop: number): { left: number; top: number } {
+  /**
+   * A banner just over a Pokémon's head (its picture's top, not its sprite box's: mostly empty above a
+   * small or a back sprite, bugs L92). `level` 0 is the first of `levels` (a move's, with an item's or
+   * ability's after it): the next goes over it, or, with no room above (a Pokémon high on the field),
+   * beside it, towards the field's middle, rather than down over the head.
+   */
+  private bannerPosition(slot: SlotKey, level: number, levels: number, now: number): { left: number; top: number } {
     const from = this.slotData(slot);
     const own = slot.startsWith('p1');
     const centred = (from?.left ?? 0) + (from?.size ?? 0) / 2 - BANNER_WIDTH / 2;
     const left = Math.max(8, Math.min(own ? OWN_BANNER_MAX_LEFT : FOE_BANNER_MAX_LEFT, Math.round(centred)));
-    const top = from?.top ?? 0;
-    return { left, top: (own ? top - 40 : Math.max(4, top - 18)) + drop };
+    const step = BANNER_HEIGHT + BANNER_STACK_GAP;
+    const first = Math.max(4, Math.round(this.headTop(slot, now)) - BANNER_GAP - BANNER_HEIGHT);
+    if (level === 0 || first - (levels - 1) * step >= 4) return { left, top: first - level * step };
+    const aside = left + (own ? 1 : -1) * level * (BANNER_WIDTH + BANNER_STACK_GAP * 2);
+    return { left: Math.max(8, Math.min(FIELD_W - 8 - BANNER_WIDTH, aside)), top: first };
   }
 
   private label(text: string, style: TextStyle): Texture | null {
