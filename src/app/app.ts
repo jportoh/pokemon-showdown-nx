@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
-import { Router, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { nativeTrace } from '@core/runtime/native-trace';
 import { GlStageHost } from '@core/gl/gl-stage-host';
 import { BattleSession } from '@features/battle/state/battle-session';
 import { BattleRooms } from '@features/connection/battle-rooms';
@@ -21,6 +22,8 @@ export class App {
   constructor() {
     const router = inject(Router);
     const session = inject(BattleSession);
+    // The screens gone through, in the console's native log: what was open when it closed (bugs L86).
+    router.events.subscribe((event) => event instanceof NavigationEnd && nativeTrace(`[nav] ${event.urlAfterRedirects}`));
     // Nothing connects until the player asks (on the home screen), or asked in Settings to log in
     // when the app starts. From then on other players can challenge us whichever page is open: the
     // name and the challenges are tracked app-wide.
