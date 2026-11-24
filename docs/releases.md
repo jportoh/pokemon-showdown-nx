@@ -37,7 +37,10 @@ version lives in `package.json`.
 To release:
 
 1. Open a PR that bumps `version` in `package.json` and `package-lock.json`
-   (`npm version <x.y.z> --no-git-tag-version`), titled "Release x.y.z". Merge it.
+   (`npm version <x.y.z> --no-git-tag-version`), titled "Release x.y.z".
+   To make this release a new **baseline** for the online updates' asset packs (a new engine,
+   or packs grown big; see [updates.md](updates.md#baselines-and-asset-packs)), set `tag` in
+   `native/baseline.json` to `vx.y.z` in the same PR. Merge it.
 2. Tag the merge commit on `main` and push the tag:
 
    ```bash
@@ -46,7 +49,8 @@ To release:
    git push origin vX.Y.Z
    ```
 
-3. CI builds `pokemon-showdown-vX.Y.Z.nro` and publishes the release.
+3. CI builds `pokemon-showdown-vX.Y.Z.nro`, signs the online update and publishes the release with
+   both: players' apps download the code (and the asset pack) by themselves.
 
 The repository's Releases page lists every version with its notes and `.nro`. Releases up to v0.3.0
 also shipped a zip for the Brewser browser; that build lives on in the `brewser-support` branch.
