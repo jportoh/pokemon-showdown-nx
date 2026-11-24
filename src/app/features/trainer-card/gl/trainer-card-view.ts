@@ -24,6 +24,8 @@ const PER_PAGE = COLUMNS * ROWS;
 const TILE = 92;
 const GAP = 6;
 const PAGE_COUNT = Math.ceil(AVATAR_CHOICES.length / PER_PAGE);
+/** Random avatar presses closer together than this are ignored. */
+const RANDOM_COOLDOWN_MS = 500;
 /** Ratings from here up are amber; the bars go from 1000 to 2000. */
 const HIGH_RATING = 1500;
 /** The results' fixed colours, the same in every theme (white on them passes AA). */
@@ -40,14 +42,15 @@ const PICKER = { x: 96, y: 96, w: 1088, h: 592 };
 export const CARD_CLOSE_ID = 'card-close';
 export const CARD_AVATAR_ID = 'card-avatar';
 export const CARD_HISTORY_ID = 'card-history';
+export const CARD_RANDOM_ID = 'card-random';
 
 /**
  * A Trainer Card: the player's own, or someone else's (a challenger's, by name: their avatar from the
  * server, and no picker). Both show the totals across every ladder (battles, wins and losses, win
  * rate) as three big numbers, the latest results as W/L tiles (from their public replays), and the
  * best ladder ratings as rows with a bar. Our own is drawn beside the menu's trainer, who stays where
- * the menu has them (A on them opens the avatar picker), with Battle history (ROLE_KEYS.cardHistory,
- * or its button) and Close; someone else's is a licence over the page, their avatar framed. B or Close
+ * the menu has them (A on them opens the avatar picker), with Random avatar (ROLE_KEYS.randomAvatar,
+ * or its button), Battle history (ROLE_KEYS.cardHistory, or its button) and Close; someone else's is a licence over the page, their avatar framed. B or Close
  * closes it (L too, from the menu). The picker shows Showdown's avatars 10x4 a page: the d-pad turns
  * the page past its top or bottom row, L/R turn pages too, A picks, B goes back to the card.
  */
@@ -134,6 +137,23 @@ export class TrainerCardView {
     this.focus.focus(CARD_AVATAR_ID);
   }
 
+  /**
+   * Y or a Random avatar button (our own card only): a random avatar, and in the picker its page,
+   * with it focused. Presses closer than RANDOM_COOLDOWN_MS are used but ignored, so holding or
+   * mashing Y doesn't flood the server with /avatar.
+   */
+  randomize(): boolean {
+    if (!this.isSelf()) return false;
+    const now = performance.now();
+    if (now - this.lastRandom < RANDOM_COOLDOWN_MS) return true;
+    this.lastRandom = now;
+    this.login.randomizeAvatar();
+    if (this.picking()) this.startPicking();
+    return true;
+  }
+
+  private lastRandom = -Infinity;
+
   private startPicking(): void {
     this.picking.set(true);
     const index = AVATAR_CHOICES.indexOf(this.current());
@@ -161,6 +181,7 @@ export class TrainerCardView {
     if (focused) label(ctx, 'A · CHANGE AVATAR', 240, 104, { size: 14, bold: true }, p.accentText, { align: 'center' });
     const best = this.ratings()[0];
     drawNamePlate(ctx, { name: this.name(), status: '● Online', chips: [...(best ? [{ text: `★ ${best.elo}`, tone: 'muted' as const }] : []), { text: 'Registered', tone: 'muted' }] }, 1);
+    drawKeyButton(ctx, CARD_RANDOM_ID, { x: 48, y: 650, w: 236, h: 44 }, ROLE_KEYS.randomAvatar.label, 'Random avatar', () => this.randomize(), false);
 
     drawKeyButton(ctx, CARD_CLOSE_ID, { x: 1104, y: 26, w: 128, h: 44 }, 'B', 'Close', close, false);
     const plate = HOME_MENU_ITEMS.find((item) => item.id === 'random')?.plate[p.appearance];
@@ -170,7 +191,7 @@ export class TrainerCardView {
     this.drawStats(ctx, PANEL.x + 28, PANEL.y + 74, PANEL.w - 56);
     this.drawResults(ctx, PANEL.x + 28, PANEL.y + 204);
     this.drawLadder(ctx, PANEL.x + 20, PANEL.y + 252, PANEL.w - 40);
-    this.drawLegend(ctx, [['A', focused ? 'Change avatar' : 'Select'], [ROLE_KEYS.cardHistory.label, 'Battle history'], ['B', 'Close']]);
+    this.drawLegend(ctx, [['A', focused ? 'Change avatar' : 'Select'], [ROLE_KEYS.randomAvatar.label, 'Random'], [ROLE_KEYS.cardHistory.label, 'Battle history'], ['B', 'Close']]);
   }
 
   /** Someone else's: a licence over the dimmed page, their avatar framed, the numbers beside it. */
@@ -288,6 +309,7 @@ export class TrainerCardView {
     menuModal(ctx, box, undefined, 0.6);
     const x = box.x + 32;
     label(ctx, 'Choose an avatar', x, box.y + 40, { size: 32, bold: true }, p.ink);
+    drawKeyButton(ctx, 'picker-random', { x: box.x + box.w - 408, y: box.y + 18, w: 236, h: 44 }, ROLE_KEYS.randomAvatar.label, 'Random avatar', () => this.randomize());
     drawKeyButton(ctx, 'picker-back', { x: box.x + box.w - 160, y: box.y + 18, w: 136, h: 44 }, 'B', 'Back', () => this.stopPicking());
 
     const page = this.page();
@@ -325,7 +347,7 @@ export class TrainerCardView {
     });
     const cy = box.y + box.h - 30;
     const width = pill(ctx, 'L', x, cy);
-    label(ctx, `/ R turn pages · Page ${page + 1} of ${PAGE_COUNT} · A choose · B back to the card`, x + width + 8, cy, { size: 18 }, p.muted, { fast: true });
+    label(ctx, `/ R turn pages · Page ${page + 1} of ${PAGE_COUNT} · A choose · ${ROLE_KEYS.randomAvatar.label} random · B back to the card`, x + width + 8, cy, { size: 18 }, p.muted, { fast: true });
   }
 }
 
