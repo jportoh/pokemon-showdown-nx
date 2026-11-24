@@ -14,7 +14,7 @@ import { ServerStats } from '@features/connection/server-stats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { ShowdownSearch } from '@features/connection/showdown-search';
 import { BALL } from '@features/home/gl/logo-ball';
-import { HOME_LOGO } from '@features/home/gl/logo-layout';
+import { HOME_LOGO, logoMark } from '@features/home/gl/logo-layout';
 import { Chip, NamePlate, TRAINER, drawGround, drawNamePlate, drawPlatformTrainer, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { RegisterView } from '@features/home/gl/login-view';
 import { HOME_MENU_ITEMS, HomeMenu, HomeMenuItem } from '@features/home/state/home-menu';
@@ -410,11 +410,12 @@ export class HomeScene {
     this.drawFooter(ctx, intro(300));
   }
 
-  /** The logo: the menu icons' Poké Ball and POKÉMON SHOWDOWN!. */
+  /** The logo: the gold "o!" (the app icon's) and POKÉMON SHOWDOWN!. */
   private drawLogo(ctx: UiContext, alpha: number): void {
     const p = ctx.palette;
     const logo = HOME_LOGO;
-    if (this.ball) ctx.renderer.image(this.ball, logo.ballX, logo.ballY, logo.ballScale, [1, 1, 1, alpha]);
+    const mark = logoMark(ctx.images, logo.markSize);
+    if (mark) ctx.renderer.rect(logo.markX, logo.markY, logo.markSize, logo.markSize, { fill: [1, 1, 1, alpha], texture: mark });
     const width = label(ctx, 'POKÉMON', logo.textX, logo.textCy, logo.style, withAlpha(p.logoInk, alpha));
     label(ctx, 'SHOWDOWN!', logo.textX + width + logo.gap, logo.textCy, logo.style, withAlpha(p.logo, alpha));
   }
