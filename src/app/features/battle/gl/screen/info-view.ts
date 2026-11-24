@@ -6,7 +6,7 @@ import { FieldCondition, SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
 import { PokemonInspection } from '@features/battle/state/pokemon-inspection';
-import { PokemonSheet, SheetContext, ownSheet, seenSheet } from '@features/battle/state/pokemon-sheet';
+import { PokemonSheet, SheetContext, ownSheet, seenSheet, stageText } from '@features/battle/state/pokemon-sheet';
 import { spriteSetOf } from '@shared/utils/sprite-id';
 import { foeInk } from './header-view';
 import { LogView } from './overlay-views';
@@ -23,6 +23,7 @@ const GRID_X = 16;
 const GAP_X = 16;
 const GAP_Y = 8;
 const COLUMN_W = 405;
+const WHITE: Rgba = [1, 1, 1, 1];
 const ROW_H = 76;
 /** The field view (Y): the opponent's side's conditions, their cards, the whole field's, ours, our side's (rows' middles; cards' tops). */
 const FIELD_ROWS = { foe: 110, foeCards: 130, field: 346, ownCards: 366, own: 584 };
@@ -81,8 +82,19 @@ export class InfoView {
 
   private readonly sheet = computed<PokemonSheet | null>(() => {
     const target = this.sheetTarget();
-    if (!target) return null;
-    const { side, index } = target;
+    return target ? this.sheetOf(target.side, target.index) : null;
+  });
+
+  /** In singles, the sheet of each side's Pokémon on the field: the field view's glance beside its card. */
+  private readonly glances = computed<Record<SideId, PokemonSheet | null>>(() => {
+    const actives = this.actives();
+    const singles = this.store.gameType() === 'singles';
+    const of = (side: SideId): PokemonSheet | null => (singles && actives[side].length === 1 ? this.sheetOf(side, actives[side][0]) : null);
+    return { p2: of('p2'), p1: of('p1') };
+  });
+
+  /** A team member's whole sheet: ours exact (in our own battles), theirs as far as it's been seen. */
+  private sheetOf(side: SideId, index: number): PokemonSheet | null {
     const sides = this.store.sides();
     const ctx: SheetContext = {
       gen: this.store.gen(),
@@ -104,7 +116,7 @@ export class InfoView {
     }
     const member = this.inspection.teams()[side][index];
     return member ? seenSheet(member, sprite, ctx) : null;
-  });
+  }
 
   private readonly teams = computed<Record<SideId, TeamCard[]>>(() => {
     const teams = this.inspection.teams();
@@ -262,8 +274,62 @@ export class InfoView {
         const focused = ctx.focus.control({ id: `${CARD_PREFIX}${side}-${index}`, x: cx, y: cy, w: CARD_W, h: CARD_H, accept: () => this.openSheet(side, index) });
         drawTeamCard(ctx, cx, cy, card, { side, dim: card.fainted, focused });
       });
+      const glance = this.glances()[side];
+      if (glance && !glance.fainted) this.drawGlance(ctx, glance, GRID_X + CARD_W + GAP_X, row === 0 ? FIELD_ROWS.foeCards : FIELD_ROWS.ownCards);
     });
     write(ctx, "The opponent's show only what the battle has revealed.", GRID_X, 698, { size: 15 }, p.muted, 'left', 800);
+  }
+
+  /**
+   * Singles' room beside a card in the field view: what the whole sheet tells that matters turn by turn,
+   * its stat stages, its Speed (ours against the foe, theirs as the range it can have) and its volatile
+   * conditions (confusion, Leech Seed, Substitute…).
+   */
+  private drawGlance(ctx: ScreenContext, sheet: PokemonSheet, x: number, y: number): void {
+    const p = ctx.palette;
+    const { renderer } = ctx;
+    const w = 1264 - x;
+    renderer.rect(x, y, w, CARD_H, { fill: withAlpha(p.panel, 0.7), stroke: p.rim, radius: 12, border: 1 });
+    const labelX = x + 16;
+    const valueX = x + 132;
+    const valueW = w - 148;
+    const label = (text: string, cy: number): void => void write(ctx, text, labelX, cy, { size: 13, bold: true }, p.muted);
+    const chips = (items: { text: string; color: Rgba }[], cy: number, none: string): void => {
+      if (items.length === 0) {
+        write(ctx, none, valueX, cy, { size: 16 }, p.muted);
+        return;
+      }
+      let cx = valueX;
+      for (const item of items) {
+        const tw = ctx.text.measure(item.text, { size: 15, bold: true }) + 20;
+        if (cx + tw > x + w - 12) break;
+        renderer.rect(cx, cy - 13, tw, 26, { fill: item.color, radius: 13 });
+        write(ctx, item.text, cx + tw / 2, cy, { size: 15, bold: true }, WHITE, 'center');
+        cx += tw + 6;
+      }
+    };
+
+    const stagesY = y + 36;
+    label('STAGES', stagesY);
+    const stages = sheet.stats.filter((stat) => stat.label !== 'HP' && stat.stage !== 0);
+    chips(stages.map((stat) => ({ text: `${stat.label} ${stageText(stat.stage)}`, color: rgba(stat.stage > 0 ? '#15803d' : '#b91c1c') })), stagesY, 'No stat changes');
+
+    const speedY = y + 92;
+    label('SPEED', speedY);
+    const speed = sheet.speed;
+    if (!speed) write(ctx, 'Unknown', valueX, speedY, { size: 16 }, p.muted);
+    else if (speed.kind === 'range') {
+      const nowW = write(ctx, speed.now, valueX, speedY, { size: 19, bold: true }, speed.change > 0 ? rgba('#15803d') : speed.change < 0 ? rgba('#b91c1c') : p.ink);
+      write(ctx, speed.reasons || 'Possible range at its level', valueX + nowW + 14, speedY, { size: 15 }, p.muted, 'left', valueW - nowW - 14);
+    } else {
+      const ownW = write(ctx, `${speed.own}`, valueX, speedY, { size: 19, bold: true }, p.ink);
+      const verdicts = speed.rivals.map((rival) => `${rival.verdict === 'slower' ? 'Faster than' : rival.verdict === 'faster' ? 'Slower than' : 'Maybe faster than'} ${rival.name} (${rival.range})`);
+      write(ctx, verdicts.join(' · ') || speed.note, valueX + ownW + 14, speedY, { size: 15 }, p.ink, 'left', valueW - ownW - 14);
+    }
+
+    const conditionsY = y + 148;
+    label('CONDITIONS', conditionsY);
+    chips(sheet.conditions.map((look) => ({ text: look.name, color: rgba(look.color) })), conditionsY, 'None');
   }
 
   /** A row of the field view: the group's name, then each condition as a chip (its colour, name, turns left), as many as fit. */
