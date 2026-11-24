@@ -97,6 +97,15 @@ latest release's manifest (a pre-release's, say); it still needs a valid signatu
   `.nro` (`assets-X.Y.Z.json`, downloaded from its release once and kept in `dist/nro-cache`). Packs
   are cumulative: each one has everything changed since the baseline, so a player only needs the
   latest. A release whose own tag is the baseline's is the baseline (no pack).
+  Players may also have the `.nro` of a release published after the baseline, so the pack brings
+  too every asset that differs from any of those (the build lists them from the repository's
+  releases): CI fetches Showdown's files fresh, and one that changed in a release and back in the
+  next (v0.4.1's `winona.png`) would otherwise leave that `.nro` asking for a new one (v0.5.0).
+
+A release's CI build is **strict** (`--strict`, on by itself for tags): if Showdown doesn't answer
+and a file it should bundle can't be downloaded, the build fails instead of shipping a `.nro`
+without it (v0.5.0 was built during an outage and bundled none of the Gen 1–5 sprites). Run the
+job again once Showdown is back.
 
 **Cutting a new baseline:** in the release's PR, set `tag` to that release (`"v0.5.0"` for 0.5.0).
 Do it when the engine changes (the build refuses a pack over a baseline with another engine), and
