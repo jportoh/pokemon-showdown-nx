@@ -1,5 +1,6 @@
 import { Service, inject, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
+import { codeSource } from '@core/runtime/code-source';
 import { ON_CONSOLE } from '@core/runtime/platform';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { randomFreshItem, randomInt } from '@core/runtime/random';
@@ -87,6 +88,9 @@ const RECLAIM_DELAY_MS = 5000;
  * The login server only allows CORS from Showdown's own site, so a regular browser can't read its
  * answer; the console's engine doesn't enforce CORS, so there it works.
  */
+/** The update gate started the app offline (no update check): no logging in until it's opened again. */
+const offlineMode = (): boolean => codeSource()?.offline === true;
+
 @Service()
 export class ShowdownLogin {
   private readonly connection = inject(ShowdownConnection);
@@ -173,7 +177,7 @@ export class ShowdownLogin {
 
   /** Connects with a random name (the server's challenge brings it). */
   connectAsGuest(): void {
-    if (this.busy()) return;
+    if (this.busy() || offlineMode()) return;
     this.credentials = null;
     // Another round of names: a try after a failed one gets its own.
     this.tries = 0;
@@ -186,7 +190,7 @@ export class ShowdownLogin {
 
   /** Connects to log in: once the server's challenge is here (`ready`), `logIn()` claims the name. */
   startLogin(): void {
-    if (this.busy()) return;
+    if (this.busy() || offlineMode()) return;
     this.credentials = null;
     this.setState({ mode: 'login', status: 'connecting', error: null, loginError: null });
     if (this.challstr) this.onChallenge();
@@ -199,7 +203,7 @@ export class ShowdownLogin {
    */
   logInSaved(): boolean {
     const credentials = this.saved.credentials();
-    if (!credentials || this.stateSignal().mode) return false;
+    if (!credentials || this.stateSignal().mode || offlineMode()) return false;
     this.credentials = credentials;
     this.setState({ mode: 'login', status: 'connecting', error: null, loginError: null });
     this.connection.connect();

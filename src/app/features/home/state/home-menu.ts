@@ -1,5 +1,6 @@
 import { Service, signal } from '@angular/core';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
+import { codeSource } from '@core/runtime/code-source';
 import { Appearance } from '@core/settings/app-settings';
 
 export interface HomeMenuItem {
@@ -91,7 +92,7 @@ export class HomeMenu {
    * The player chose to play offline on the entry screen: the menu opens without a connection (the
    * Teambuilder and Settings work offline). Otherwise the menu needs a connection asked for first.
    */
-  readonly offlineChosen = signal(false);
+  readonly offlineChosen = signal(codeSource()?.offline === true);
   /** The menu opens from the entry screen (same trainer, same lit side): it doesn't bring them in again. */
   readonly fromEntry = signal(false);
 }

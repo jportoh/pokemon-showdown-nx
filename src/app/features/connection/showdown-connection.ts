@@ -1,5 +1,6 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
 import { GlDiagnostics } from '@core/gl/gl-diagnostics';
+import { codeSource } from '@core/runtime/code-source';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { Observable, Subject } from 'rxjs';
 import { ConnectionAttempt, ConnectionState } from './connection.model';
@@ -91,6 +92,12 @@ export class ShowdownConnection {
   /** Opens the connection if it isn't already open or opening. */
   connect(): void {
     if (this.socket) return;
+    const code = codeSource();
+    if (code?.offline) {
+      // The update gate couldn't make sure this is the latest version: no playing online with it.
+      this.setState({ status: 'error', error: `Offline mode (${code.offlineReason ?? 'no update check'}): open the app again to go online.` });
+      return;
+    }
     if (typeof WebSocket === 'undefined') {
       this.setState({ status: 'error', error: 'WebSocket is not available in this browser.' });
       return;

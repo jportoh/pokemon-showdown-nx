@@ -8,7 +8,6 @@ import { ReplayAutoSave } from '@features/connection/replay-auto-save';
 import { ShowdownChallenges } from '@features/connection/showdown-challenges';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
-import { UpdatePrompt } from '@core/update/update-prompt';
 
 @Component({
   imports: [GlStageHost, RouterOutlet],
@@ -33,8 +32,6 @@ export class App {
     inject(ShowdownFormats);
     // Our battles' replays are saved as they end, for the battle history.
     inject(ReplayAutoSave);
-    // On the console, newer code is looked for once per start; the player is told when it's ready (docs/updates.md).
-    inject(UpdatePrompt);
     // An accepted challenge opens its battle, unless one is already open.
     inject(BattleRooms).started.subscribe((roomId) => {
       if (session.active()) return;

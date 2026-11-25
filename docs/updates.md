@@ -1,91 +1,163 @@
 # Online updates
 
-The `.nro` can run a newer version of the app that it downloads by itself: its code (~2 MB) and the
+The `.nro` runs the latest version of the app, which it downloads by itself: its code (~2 MB) and the
 assets that changed since a **baseline** `.nro` (an **asset pack**: say, a sprite sheet with a new
 regulation's Pokémon). So a bug fix, a format, a regulation's new Pokémon or a gimmick don't need
-everyone to copy a new `.nro`. Only a new engine needs one, or a new baseline now and then. The
-engine features this relies on were checked on a console first
+everyone to copy a new `.nro`. Only a new engine or loader needs one, or a new baseline now and then,
+and the app downloads that too ("A new .nro", below).
+The engine features this relies on were checked on a console first
 ([native.md](native.md#online-updates-probe-test-u1-2026-11-23)); the app can't replace its own
 `.nro` (test u4), so assets come this way too.
 
-**Status:** the loader (test u2), the updater and its prompt (test u3) and asset packs (test u5: a
-packed asset served, a lost pack fetched again, going back to the .nro) are confirmed on a console.
+**Updates are mandatory.** Before any of the app's code runs, the **update gate** checks the latest
+release and installs it, on its own screen; then the app starts with it, in the same start (no
+restart). Nobody plays online with an older version: when the gate can't make sure (no connection,
+GitHub not answering, a version that needs a new `.nro`), the player can try again or play offline.
+
+**Status:** the loader (test u2) and asset packs (test u5) are confirmed on a console; the gate
+drawing before the app and handing the screen over was probed in test u6 (2026-11-25: the app gets
+the same WebGL2 context and runs normally after it). The gate itself (v0.6.0) is pending its test.
 
 ## The loader
 
 The RomFS holds the loader, the app and the app's asset list:
 
-- `main.js`: the loader (`native/loader/main.ts`), a few KiB that import nothing of the app.
+- `main.js`: the loader (`native/loader/`), with the update gate, and nothing of the app.
 - `app.mjs`: the app itself (the native shims, Angular's bundle, `after-app.ts`).
-- `assets.json`: every asset's sha256 by its RomFS path, the engine's, and the build's fingerprint
-  (assets id).
+- `assets.json`: every asset's sha256 by its RomFS path, the engine's fingerprint (the engine and
+  the loader's generation, `LOADER_GENERATION` in `scripts/build-nro.mjs`), and the build's
+  fingerprint (assets id).
 
 An update lives in `sdmc:/switch/pokemon-showdown-nx/update/` (`native/update/boot-state.ts`): the
 bundle `app-<version>.mjs` (the engine's `import()` takes no `?query`, so the version goes in the
-name), the folder `assets-<hash>/` with its pack's files at their RomFS paths, and `state.json`,
-which says which bundle to run and which assets it brought. The loader runs the update when:
+name), its pack `assets-<hash>.pack`, kept whole, and `state.json`, which says which bundle and pack
+to run. A start goes:
 
-- the updater checked it against **this `.nro`** (`state.json`'s assets id is this `.nro`'s): a
-  newer `.nro` copied over doesn't run an update checked against the old one;
-- it is **newer** than the `.nro`'s own code (semver), so installing a newer `.nro` makes it obsolete;
-- it hasn't **failed** before, and hasn't started `MAX_BOOT_ATTEMPTS` (2) times without confirming;
-- every file of its pack is on the SD card.
+1. **The gate** (`native/loader/gate.ts`, its screen `gate-screen.ts`, the work in
+   `native/update/updater.ts`) checks the latest release (below) and installs it when it's newer
+   than the code this console has.
+2. **The loader** (`native/loader/main.ts`) runs the update when:
+   - the updater installed it for **this `.nro`** (`state.json`'s assets id is this `.nro`'s): a
+     newer `.nro` copied over doesn't run an update checked against the old one;
+   - it is **newer** than the `.nro`'s own code (semver), so installing a newer `.nro` makes it
+     obsolete;
+   - it hasn't **failed** before, and hasn't started `MAX_BOOT_ATTEMPTS` (2) times without
+     confirming;
+   - its pack is on the SD card.
 
-Then it wraps `fetch` (`native/loader/asset-redirect.ts`) so the app's relative URLs for the packed
-files read the SD card's copies, and imports the bundle. Otherwise it runs `app.mjs`, and removes an
-update that can never run here. It leaves `globalThis.psbBoot` (which code runs, its version and
-source); the L3 + R3 HUD and Settings (More › App version) show it.
+   Then it reads the pack's table of contents and wraps `fetch` (`native/loader/asset-pack.ts`) so
+   the app's relative URLs for the packed files get their bytes out of the pack, and imports the
+   bundle. Otherwise it runs `app.mjs`, and removes an update that can never run here.
+
+The loader leaves `globalThis.psbBoot`: which code runs, its version and source, and whether it runs
+**offline** (and why); the L3 + R3 HUD and Settings (More › App version) show it. Offline,
+`ShowdownConnection` doesn't connect and says why.
+
+## The gate's screen
+
+It looks like the start of the app's title: the theme the player chose (read from Settings' file),
+the stage's dotted backdrop, the gold "o!", POKÉMON SHOWDOWN! and the edition sticker where the title
+has them, and under them the app's retro box, buttons and controller pills. It shares the app's
+palettes (`src/app/core/gl/ui/palettes.ts`), backdrop shader (`backdrop-shader.ts`), Poké Ball and
+faux bold, modules with no dependencies, so it keeps in step with the app. Its texts are in
+`native/loader/gate-views.ts`; `node scripts/gate-preview.mjs` shows every state in a browser
+(light and dark, `--theme=…`), with the real screen code.
+
+The gate draws on the screen's WebGL2 context before the app does (test u6: drawing with a 2D
+context first leaves the screen without WebGL2, so the app couldn't start). Its texts go on one
+texture, drawn on an `OffscreenCanvas` and uploaded when they change (a download's line at most 4
+times a second, as a band); the progress bar and the spinning ball are drawn on top each frame. It
+never sets a bold font on the console (each one loads another copy of the system font, which is
+never freed: `native/app/bold-font.ts`). When it's done it deletes everything it made, unbinds and
+clears, and the app takes the same context over. It reads A and B from the controller
+(`navigator.getGamepads()`).
+
+- **Checking for updates…**: ~1.5 s at each start (two https requests), on a quiet black screen
+  with a small spinning Poké Ball and the line in the bottom right corner, like a console's saving
+  icon. The themed screen only comes when there's something to see: a check that finds nothing
+  doesn't flash it by (test u10).
+- **Downloading version x.y.z**, with MB and a bar, then **Installing**, then the app starts.
+- **Couldn't check for updates** (no connection, a timeout, an invalid signature): A Try again, B
+  Play offline. GitHub not answering counts too, even when Showdown would.
+- **Downloading the new app, version x.y.z**, then **Version x.y.z is ready**: a new `.nro` (below);
+  A Close, nothing else.
+- **Version x.y.z needs a new .nro** (a release without its `.nro` in the manifest): where to get
+  it; A Check again, B Play offline.
+- **Version x.y.z didn't start**: an update that failed to start on this console (below); A Download
+  again, B Play offline with the newest code that works.
+
+Offline runs the newest code the console has that can run, and Showdown stays unreached until the
+app is opened again.
 
 ## Starting safely
 
 - Each start of an update counts one attempt in `state.json`. Once Angular has bootstrapped
   (`src/main.ts` sets `psbAppBooted`) and 6 s pass with no uncaught error,
   `native/app/boot-confirm.ts` confirms it and the counter goes back to 0. A start that crashes,
-  freezes or kills the engine never confirms: after two, the loader goes back to the `.nro`'s code.
+  freezes or kills the engine never confirms: after two, the loader marks it failed and the gate
+  offers to download it again.
 - If the update's file can't be loaded (missing, a syntax error), the loader marks it failed and runs
-  `app.mjs` in the same start.
+  `app.mjs` in the same start; if its pack can't be read, it's removed (the next gate downloads it).
 - If it fails after it started running (`native/app/boot-start.ts`, the bundle's first module, sets
   `psbBoot.evaluating`), part of it already ran, so a second copy on top isn't safe: the loader marks
   it failed and closes the app (`Switch.exit()` takes effect after the current task, so the loader
-  returns right after it); the next start runs the `.nro`'s code.
-- Settings › More › App version: while an update runs, A goes back to the `.nro`'s version (that
-  update isn't downloaded again; a newer one is). Under it, Check for updates says what the updater
-  found and A runs the check again now. A manual check also takes back an update the player set
-  aside: the one running keeps going, and one no longer running is downloaded again (its pack, if
-  still on the SD card, isn't). An update that failed to start stays declined until a newer one.
+  returns right after it).
 
 ## The updater
 
-`AppUpdater` (`src/app/core/update/app-updater.ts`, SD card work in `update-files.ts`) runs once per
-start, a second after the loading screen (the entry screen leaves the main thread mostly idle for its
-TLS handshakes), on the console only:
+`checkAndUpdate` (`native/update/updater.ts`, SD card work in `update-files.ts`), run by the gate:
 
 1. It reads the latest release's `update.json` and `update.json.sig`
-   (`github.com/<repo>/releases/latest/download/…`; pre-releases are never "latest") and checks the
-   ECDSA P-256 signature with the public key in `update-config.ts`. Ed25519 would be smaller, but
-   the engine's `crypto.subtle` doesn't have it.
-2. Nothing to do when the version isn't newer than the running code, or it is already downloaded
-   (or failed, or was set aside) for this `.nro`. A check the player asks for (Settings) takes a
-   set-aside update back.
+   (`github.com/<repo>/releases/latest/download/…`; pre-releases are never "latest"), 10 s at most
+   each, and checks the ECDSA P-256 signature with the public key in `update-config.ts`. Ed25519
+   would be smaller, but the engine's `crypto.subtle` doesn't have it.
+2. Nothing to do when the version isn't newer than the newest code the console can run. If it's the
+   update on the SD card that failed to start, the player chooses (above).
 3. It reads the release's asset list (`assets-<version>.json`, checked against the manifest) and
-   compares it with the `.nro`'s own `assets.json`: the update can run here when the engine is the
-   same and each asset its code expects is in this RomFS with the same hash, or in its pack.
-   Otherwise the player is told once per version to get the new `.nro`, with the releases page. A
-   `.nro` from before asset packs (no `assets.json`) only takes a release with exactly its assets.
-4. It downloads the pack straight to the SD card, checking each 4 MiB block against the manifest's
-   hashes as it arrives (a pack never sits whole in memory; ~1.7 MiB/s), unpacks it into
-   `assets-<hash>.part/` and renames that folder; a pack already unpacked (the same one as the last
-   update's) isn't downloaded again.
+   compares it with the `.nro`'s own `assets.json`: the update can run here when the engine
+   fingerprint is the same (the engine and the loader's generation) and each asset its code expects
+   is in this RomFS with the same hash, or in its pack. Otherwise the gate says to get the new `.nro`.
+4. It downloads the pack straight to the SD card as `.part`, checking each 4 MiB block against the
+   manifest's hashes as it arrives (a pack never sits whole in memory; ~1.7 MiB/s), renames it, and
+   checks its table of contents lists exactly the asset list's packed files. A pack already there
+   (named after its hash) isn't downloaded again. It is never unpacked: writing v0.5.1's 5,744 small
+   files to the SD card one by one took minutes.
 5. It downloads `app-<version>.mjs`, checks its size and sha256, writes it as `.part`, renames it,
-   points `state.json` at it and its assets, and removes the previous update's files.
+   points `state.json` at it and its pack, and removes the previous update's files.
 
-`UpdatePrompt` (`update-prompt.ts`) then opens a box over the entry screen or the home menu (never a
-battle or an editor, and never over the on-screen keyboard): "Update ready". The app can't restart
-itself (nx.js has no relaunch), so A closes it, to be opened again with the update, and B keeps
-playing: the update runs at the next start. Each step goes to `native.log` (`[update]`).
+Each step goes to `native.log` (`[update]`, the gate's own lines as `[ loader]`).
 
-For testing, an https URL in `sdmc:/switch/pokemon-showdown-nx/update-channel.txt` replaces the
-latest release's manifest (a pre-release's, say); it still needs a valid signature.
+For testing, a URL in `sdmc:/switch/pokemon-showdown-nx/update-channel.txt` replaces the latest
+release's manifest: a pre-release's, or a PC on the local network serving a test build over plain
+http (`node scripts/serve-update.mjs <folder>`). It still needs a valid signature, and the signed
+manifest holds the hashes of everything it points to, so http doesn't weaken it.
+
+## A new .nro
+
+A release whose code can't run on the player's `.nro` (another engine or loader generation, assets
+its pack doesn't bring) brings its own `.nro`: `update.json`'s `nro` names
+`pokemon-showdown-v<version>.nro` (as CI publishes it) with its size and 4 MiB blocks' sha256
+(`scripts/build-nro.mjs`, `addNroToManifest`). The app can't replace the `.nro` it runs from (test
+u4), and a HOME menu forwarder always opens the same path (test u8: `Switch.argv[0]` is the
+forwarder's `.nro`, `sdmc:/switch/pokemon-showdown.nro`), so the handover goes
+(`native/update/nro-files.ts`, state in `sdmc:/switch/pokemon-showdown-nx/nro.json`):
+
+1. **The old `.nro`'s gate** downloads the new one next to itself, to
+   `sdmc:/switch/pokemon-showdown-v<version>.nro` (as `.part`, each block checked, renamed when
+   complete: the Homebrew Menu never lists half of one; 128 MiB in ~50–60 s), and notes the path
+   the forwarder opens (its own). Then, and at every later start (a newer versioned `.nro` on the SD
+   card is enough, no network needed), it only says to close and open the new version once from
+   the Homebrew Menu: **A Close**, no playing offline.
+2. **The new `.nro`, opened from its versioned name**, renames the old one to
+   `pokemon-showdown.nro.old` and copies itself over `pokemon-showdown.nro` (as `.part`, read back
+   and checked, ~20 s), then starts as usual. If the copy fails, the old one goes back in place.
+3. **Opened from the forwarder again**, once it started well (`native/app/boot-confirm.ts`), it
+   removes its versioned copy, the `.old` and any older versioned `.nro`. Without a forwarder (the
+   app opened from a versioned name), there's nothing to copy over and only older versions go.
+
+Test u9 (2026-11-25) went through all of it on a console: the download kept native memory flat
+(390–460 MiB) once the gate stopped redrawing its whole texture for each chunk (the first try ran
+the engine out of native memory half way: a null pointer in nx.js).
 
 ## Baselines and asset packs
 
@@ -108,8 +180,9 @@ without it (v0.5.0 was built during an outage and bundled none of the Gen 1–5 
 job again once Showdown is back.
 
 **Cutting a new baseline:** in the release's PR, set `tag` to that release (`"v0.5.0"` for 0.5.0).
-Do it when the engine changes (the build refuses a pack over a baseline with another engine), and
-when the packs grow big. Players on an older `.nro` are told to get the new one.
+Do it when the engine or the loader's generation changes (the build refuses a pack over a baseline
+with another engine fingerprint), and when the packs grow big. Players on an older `.nro` are told
+to get the new one. v0.6.0 is one: loader generation 2 (the gate, packs read in place).
 
 **Sprites for a new regulation:** `npm run update:sprites` only appends: the sheets already made stay
 byte for byte as they are and the new species go on new sheets, so a pack carries just those.

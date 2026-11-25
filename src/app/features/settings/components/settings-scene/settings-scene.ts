@@ -12,8 +12,6 @@ import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { codeSource } from '@core/runtime/code-source';
-import { AppUpdater, UpdateStatus } from '@core/update/app-updater';
-import { RELEASES_PAGE } from '@core/update/update-config';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
 import { HOME_MENU_ITEMS } from '@features/home/state/home-menu';
@@ -35,8 +33,7 @@ type SettingId =
   | 'autoLogin'
   | 'history'
   | 'replays'
-  | 'appVersion'
-  | 'checkUpdates';
+  | 'appVersion';
 
 interface SettingRow {
   id: SettingId;
@@ -61,7 +58,7 @@ const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconN
   { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
   { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
   { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
-  { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion', 'checkUpdates'] },
+  { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion'] },
 ];
 const GROUP = { x: 40, y: 98, w: 420, h: 94, step: 106 };
 const PANEL = { x: 500, y: 98, w: 732, h: 518 };
@@ -96,7 +93,6 @@ export class SettingsScene {
   private readonly appSettings = inject(AppSettings);
   private readonly login = inject(ShowdownLogin);
   private readonly saved = inject(SavedLogin);
-  private readonly updater = inject(AppUpdater);
 
   private readonly focus = new CanvasFocus();
   /** The group whose settings the panel shows: the focused one, or the one last focused. */
@@ -230,8 +226,7 @@ export class SettingsScene {
         value: 'Open',
         kind: 'link',
       },
-      versionRow(this.updater.status()),
-      checkRow(this.updater.status(), this.updater.canCheck),
+      versionRow(),
     ];
   });
 
@@ -310,9 +305,6 @@ export class SettingsScene {
 
   private activate(row: SettingRow): void {
     if (row.kind === 'action') {
-      if (row.disabled) return;
-      if (row.id === 'appVersion') this.updater.setAside();
-      else if (row.id === 'checkUpdates') this.updater.checkNow();
       return;
     }
     if (row.kind === 'link') {
@@ -585,66 +577,19 @@ export class SettingsScene {
 
 
 /**
- * The app's version (MORE): which code runs (the .nro's or an online update). While an update runs,
- * A goes back to the .nro's code (from the next start). What the updater found is under it (checkRow).
+ * The app's version (MORE): which code runs (the .nro's or an online update). The update gate
+ * installs each new version before the app starts (docs/updates.md), so there's nothing to do here.
  */
-function versionRow(status: UpdateStatus): SettingRow {
+function versionRow(): SettingRow {
   const code = codeSource();
-  const row = { id: 'appVersion', label: 'App version', kind: 'action' } as const;
-  if (!code) return { ...row, value: 'Web', detail: 'The web version is always the latest.', disabled: true };
-  if (status.kind === 'set-aside') return { ...row, value: code.version, detail: `From the next start, the .nro's own ${code.builtInVersion}.`, disabled: true };
-  if (code.source === 'update' && status.kind !== 'ready') {
-    return {
-      ...row,
-      value: code.version,
-      detail: `An online update over the .nro's ${code.builtInVersion}. A goes back to the .nro's version.`,
-      actionText: `Use ${code.builtInVersion}`,
-    };
-  }
-  return { ...row, value: code.version, detail: code.source === 'update' ? `An online update over the .nro's ${code.builtInVersion}.` : "The .nro's own version.", disabled: true };
-}
-
-/**
- * Check for updates (MORE, under the version): what the updater found, and A looks again now, also
- * bringing back an update the player set aside (they no longer get its prompt).
- */
-function checkRow(status: UpdateStatus, canCheck: boolean): SettingRow {
-  const row = { id: 'checkUpdates', label: 'Check for updates', kind: 'action' } as const;
-  if (!codeSource()) return { ...row, value: '—', detail: 'Only the console app updates itself.', disabled: true };
-  const busy = status.kind === 'checking' || status.kind === 'downloading';
+  const row = { id: 'appVersion', label: 'App version', kind: 'action', disabled: true } as const;
+  if (!code) return { ...row, value: 'Web', detail: 'The web version is always the latest.' };
+  if (code.offline) return { ...row, value: code.version, detail: `Offline: ${code.offlineReason ?? 'not checked'}. Open the app again to update.` };
   return {
     ...row,
-    value: busy ? 'Checking…' : 'Check now',
-    detail: updateNews(status) ?? 'New versions download by themselves; A looks now.',
-    actionText: 'Check now',
-    disabled: !canCheck,
+    value: code.version,
+    detail: code.source === 'update' ? `The latest, an online update over the .nro's ${code.builtInVersion}.` : "The latest: the .nro's own version.",
   };
-}
-
-/** What the updater is doing or found, in a sentence; null when there's nothing to say. */
-function updateNews(status: UpdateStatus): string | null {
-  switch (status.kind) {
-    case 'checking':
-      return 'Looking for updates…';
-    case 'downloading':
-      return `Downloading ${status.version}… ${Math.round((status.received / Math.max(1, status.total)) * 100)}%`;
-    case 'ready':
-      return `${status.version} is downloaded: it starts the next time you open the app.`;
-    case 'needs-nro':
-      return `${status.version} is out: it needs a new .nro, from ${RELEASES_PAGE}.`;
-    case 'failed':
-      return "Couldn't look for updates this time.";
-    case 'up-to-date':
-      return 'Up to date.';
-    case 'declined':
-      return status.why === 'set-aside'
-        ? `${status.version} was set aside: A downloads it again.`
-        : `${status.version} didn't start well on this console: the next version will be tried.`;
-    case 'set-aside':
-      return 'A brings the online update back.';
-    default:
-      return null;
-  }
 }
 
 /** The volumes to step through: 0 (Off) to 100. */

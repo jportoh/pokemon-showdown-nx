@@ -2,11 +2,10 @@ import { Service, signal } from '@angular/core';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { BATTLEFIELD_CHOICES, BattlefieldChoice } from '@shared/data/battlefields';
 import { TEAM_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
+import type { Appearance, ThemeId } from '@core/gl/ui/palettes';
 
-export type ThemeId = 'zafiro' | 'noche' | 'grafito' | 'esmeralda' | 'pokeball' | 'ocaso';
-
-/** Light (the default) or dark colours: each theme has both. */
-export type Appearance = 'light' | 'dark';
+/** The themes (palettes.ts) and the appearances: light (the default) or dark colours, each theme has both. */
+export type { Appearance, ThemeId };
 
 /** The appearances, in the order Settings steps through them. */
 export const APPEARANCES: readonly { id: Appearance; name: string }[] = [
@@ -55,6 +54,7 @@ export interface Settings {
 /** The volumes Settings steps through: off, 10 %, 20 % … 100 %. */
 export const VOLUME_STEP = 10;
 
+/** Its file on the console (device-storage); the update gate reads the theme from it too (native/loader/gate-screen.ts). */
 const STORAGE_KEY = 'psb.settings.v1';
 
 const DEFAULTS: Settings = {

@@ -8,13 +8,15 @@ const REPO = 'jportoh/pokemon-showdown-nx';
 const LATEST_MANIFEST_URL = `https://github.com/${REPO}/releases/latest/download/update.json`;
 
 /**
- * For testing on a console: an https URL in this SD file replaces the latest release's manifest
- * (say, a pre-release's). Its updates still need a valid signature.
+ * For testing on a console: a URL in this SD file replaces the latest release's manifest (say, a
+ * pre-release's, or a PC on the local network serving a test build over plain http, as during
+ * test u9 while GitHub's uploads failed). Its updates still need a valid signature, and the signed manifest
+ * holds the hashes of everything else, so the transport adds nothing to their safety.
  */
 export const CHANNEL_OVERRIDE_PATH = 'sdmc:/switch/pokemon-showdown-nx/update-channel.txt';
 
 export function manifestUrl(override: string | null): string {
-  return override && /^https:\/\/[^\s]+$/.test(override) ? override : LATEST_MANIFEST_URL;
+  return override && /^https?:\/\/[^\s]+$/.test(override) ? override : LATEST_MANIFEST_URL;
 }
 
 /** A file next to the manifest (its signature, the code bundle). */

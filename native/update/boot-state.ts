@@ -1,17 +1,20 @@
-// Shared by the loader (native/loader/main.ts) and the app (native/app/boot-confirm.ts): where an
-// online update of the app's code lives on the SD card, and the record of which one to run.
+// Shared by the loader (native/loader) and the app (native/app/boot-confirm.ts): where an online
+// update of the app's code lives on the SD card, and the record of which one to run.
 //
 //   sdmc:/switch/pokemon-showdown-nx/update/
-//     app-<version>.mjs   the app's code bundle for that version (import() can't take a ?query, so
-//                         the version goes in the name)
-//     assets-<hash>/      the assets its pack brought, at their RomFS paths (docs/updates.md)
-//     state.json          UpdateState: the bundle to run, its assets and how its starts went
+//     app-<version>.mjs     the app's code bundle for that version (import() can't take a ?query, so
+//                           the version goes in the name)
+//     assets-<hash>.pack    the assets its pack brought, read in place (native/loader/asset-pack.ts)
+//     state.json            UpdateState: the bundle to run, its pack and how its starts went
 //
-// The updater (src/app/core/update) writes and checks the files, then state.json; the loader reads it.
+// The update gate (native/loader/gate.ts, with native/update/updater.ts) writes and checks the files,
+// then state.json, before the app starts; the loader then runs the newest code.
 
-export const UPDATE_DIR = 'sdmc:/switch/pokemon-showdown-nx/update/';
+/** The app's folder on the SD card (its data, logs and updates). */
+export const SD_DIR = 'sdmc:/switch/pokemon-showdown-nx/';
+export const UPDATE_DIR = `${SD_DIR}update/`;
 export const STATE_PATH = `${UPDATE_DIR}state.json`;
-export const LOG_PATH = 'sdmc:/switch/pokemon-showdown-nx/native.log';
+export const LOG_PATH = `${SD_DIR}native.log`;
 
 /**
  * Starts an update gets without confirming one: a start that didn't reach the app's first screen and
@@ -27,13 +30,12 @@ export interface UpdateState {
   file: string;
   /**
    * The fingerprint (engine and assets) of the .nro the updater checked it against: every asset its
-   * code expects is in that .nro's RomFS or in `assetsDir`. Another .nro (a newer one copied over)
+   * code expects is in that .nro's RomFS or in `pack`. Another .nro (a newer one copied over)
    * doesn't run it.
    */
   assetsId: string;
-  /** The folder in UPDATE_DIR with the assets its pack brought; `packed` lists their RomFS paths. */
-  assetsDir?: string;
-  packed?: string[];
+  /** The asset pack in UPDATE_DIR ('assets-<hash>.pack') with the assets that differ from the RomFS. */
+  pack?: string;
   /** Starts tried since the last confirmed one. */
   bootAttempts: number;
   /** Set when the loader gave up on it: never tried again (a newer version replaces it). */
@@ -49,6 +51,13 @@ export interface BootInfo {
   /** The .nro's own version and assets fingerprint. */
   builtInVersion: string;
   assetsId: string;
+  /**
+   * The update gate couldn't confirm this is the latest version (no connection, GitHub not
+   * answering, a new .nro needed): the app runs without connecting to Showdown.
+   */
+  offline: boolean;
+  /** Why it's offline, for the app to say (null when online). */
+  offlineReason: string | null;
   /** Set by the app bundle's first module: from then on a failed import can't fall back. */
   evaluating?: boolean;
   /** The app calls it once it has started well: the update's start counter goes back to 0. */
@@ -77,6 +86,9 @@ export function assetKey(input: unknown): string | null {
   return /^[a-z][a-z0-9+.-]*:/i.test(path) ? null : decodeURIComponent(path);
 }
 
+/** An asset pack's file name, as update.json names it. */
+export const PACK_FILE = /^assets-[0-9a-f]+\.pack$/;
+
 export const nxFiles = (globalThis as unknown as { Switch?: NxFiles }).Switch;
 
 export function readState(): UpdateState | null {
@@ -86,8 +98,7 @@ export function readState(): UpdateState | null {
     const state = JSON.parse(new TextDecoder().decode(raw)) as Partial<UpdateState>;
     if (typeof state.version !== 'string' || typeof state.file !== 'string' || typeof state.assetsId !== 'string') return null;
     if (!/^app-[\w.+-]+\.mjs$/.test(state.file)) return null;
-    if (state.assetsDir !== undefined && !/^assets-[0-9a-f]+$/.test(state.assetsDir)) return null;
-    if (state.packed !== undefined && (!Array.isArray(state.packed) || !state.packed.every(isAssetPath))) return null;
+    if (state.pack !== undefined && !PACK_FILE.test(state.pack)) return null;
     return { ...state, bootAttempts: Number(state.bootAttempts) || 0 } as UpdateState;
   } catch {
     return null;
