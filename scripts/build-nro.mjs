@@ -339,7 +339,7 @@ async function laterReleases(baseline, version) {
   const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`, { headers });
   if (!response.ok) throw new Error(`The releases list: HTTP ${response.status}`);
   const versions = (await response.json())
-    .filter((release) => !release.draft && !release.prerelease && /^vd+.d+.d+$/.test(release.tag_name))
+    .filter((release) => !release.draft && !release.prerelease && /^v\d+\.\d+\.\d+$/.test(release.tag_name))
     .map((release) => release.tag_name.slice(1))
     .filter((v) => compareVersions(v, baseline) > 0 && compareVersions(v, version) < 0);
   return Promise.all(versions.map(releaseAssets));
