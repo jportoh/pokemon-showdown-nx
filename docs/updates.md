@@ -55,13 +55,27 @@ The loader leaves `globalThis.psbBoot`: which code runs, its version and source,
 
 ## The gate's screen
 
+It looks like the start of the app's title: the theme the player chose (read from Settings' file),
+the stage's dotted backdrop, the gold "o!", POKÉMON SHOWDOWN! and the edition sticker where the title
+has them, and under them the app's retro box, buttons and controller pills. It shares the app's
+palettes (`src/app/core/gl/ui/palettes.ts`), backdrop shader (`backdrop-shader.ts`), Poké Ball and
+faux bold, modules with no dependencies, so it keeps in step with the app. Its texts are in
+`native/loader/gate-views.ts`; `node scripts/gate-preview.mjs` shows every state in a browser
+(light and dark, `--theme=…`), with the real screen code.
+
 The gate draws on the screen's WebGL2 context before the app does (test u6: drawing with a 2D
 context first leaves the screen without WebGL2, so the app couldn't start). Its texts go on one
-texture, drawn on an `OffscreenCanvas` and uploaded when they change; the progress bar is drawn as
-rectangles each frame. When it's done it deletes everything it made, unbinds and clears, and the app
-takes the same context over. It reads A and B from the controller (`navigator.getGamepads()`).
+texture, drawn on an `OffscreenCanvas` and uploaded when they change (a download's line at most 4
+times a second, as a band); the progress bar and the spinning ball are drawn on top each frame. It
+never sets a bold font on the console (each one loads another copy of the system font, which is
+never freed: `native/app/bold-font.ts`). When it's done it deletes everything it made, unbinds and
+clears, and the app takes the same context over. It reads A and B from the controller
+(`navigator.getGamepads()`).
 
-- **Checking for updates…** (a sliding bar): ~1.5 s at each start (two https requests).
+- **Checking for updates…**: ~1.5 s at each start (two https requests), on a quiet black screen
+  with a small spinning Poké Ball and the line in the bottom right corner, like a console's saving
+  icon. The themed screen only comes when there's something to see: a check that finds nothing
+  doesn't flash it by (test u10).
 - **Downloading version x.y.z**, with MB and a bar, then **Installing**, then the app starts.
 - **Couldn't check for updates** (no connection, a timeout, an invalid signature): A Try again, B
   Play offline. GitHub not answering counts too, even when Showdown would.
