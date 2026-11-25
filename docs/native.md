@@ -290,3 +290,37 @@ Could the app download a whole new `.nro` and put it in place of its own? `nativ
   checking every block took 2.9 s. Renaming and removing a 54 MiB file that isn't open is instant.
 
 So assets come through the online updates instead (see [updates.md](updates.md)).
+
+## Update gate probe (test u6, 2026-11-25)
+
+Can a module draw its own screen before the app, use the network, and then let the app start in the
+same process (the update gate, applying an update without closing the app)? A copy of the app whose
+loader first imported a probe module, which drew ~7 s, fetched the release manifest and let go:
+
+- **WebGL2 works and hands over**: the probe drew with the screen's WebGL2 context (texts from an
+  `OffscreenCanvas` uploaded as a texture every frame: ~42 fps, worst frame 122 ms), deleted what it
+  made and unbound; the app's `getContext('webgl2')` then returned **the same context**, with no GL
+  error, and the app ran normally (menus, teambuilder, Watch Live, a battle).
+- **2D doesn't**: after drawing with the screen's 2D context, `getContext('webgl2')` returns null,
+  so the app couldn't draw.
+- **The network before the app**: the manifest arrived over https in 1.4–1.9 s.
+
+So the gate draws with WebGL2 (`native/loader/gate-screen.ts`).
+
+## .nro handover probe (test u8, 2026-11-25)
+
+Can a new `.nro` reach the path a HOME menu forwarder opens, with no PC? `native/poc/forwarder-probe.ts`
+(`node scripts/build-nro.mjs --forwarder-probe`) on the console:
+
+- **`Switch.argv[0]` is the `.nro`'s path**: from the Homebrew Menu, the file opened; from a
+  forwarder, the `.nro` it points to (`sdmc:/switch/pokemon-showdown.nro`).
+- **The running `.nro` can copy itself**: read in 4 MiB blocks while its RomFS is in use and written
+  elsewhere (54 MiB in 4–6 s, checked); the copy opens from the Homebrew Menu. It can't go over its
+  own path (`File exists (rename)`: a rename never replaces a file, and the running one can't be
+  removed).
+- **A 128 MiB `.nro` downloads to `sdmc:/switch/`** at 2.1 MiB/s (61 s, every block checked) and opens
+  from the Homebrew Menu; copying one takes 14 s (20 s with the read-back check), and removing a
+  `.nro` that isn't running 8 ms.
+
+So the new `.nro` comes next to the old one under a versioned name and, opened once from the Homebrew
+Menu, copies itself where the forwarder opens ([updates.md](updates.md#a-new-nro)).

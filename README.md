@@ -26,12 +26,14 @@ You can also install a forwarder to the `.nro` to open it from the HOME menu (se
 
 ## Updates
 
-The app keeps itself up to date. A few seconds after it starts, it checks for a new version and
-downloads it in the background (the code and any new sprites, a few MB). When it's ready, it offers to
-close so the next start runs the new version; you can also keep playing and get it next time. If a
-new version ever fails to start, the app goes back to the one it had.
+The app keeps itself up to date. Each time it starts, it checks for a new version before the menu,
+and downloads and installs it right there (the code and any new sprites, a few MB), then carries on
+with it: you always play the latest version. Without a connection to check, you can still play
+offline (no Showdown). If a new version ever fails to start, the app offers to download it again.
 
-Copying a new `.nro` is only needed now and then (a new engine, a new icon); the app tells you when.
+Now and then a version needs a new `.nro` (a new engine). The app downloads that too, next to the
+old one, and asks you to open the new version once from the Homebrew Menu (hold R): it then puts
+itself where your HOME menu forwarder opens and cleans up the old one.
 Your teams, settings and saved login stay on the SD card, in `sdmc:/switch/pokemon-showdown-nx/`.
 
 ## Features

@@ -12,6 +12,7 @@
 //   npm run build:nro:probe   the phase 0 engine probe (native/poc/main.ts).
 //   node scripts/build-nro.mjs --update-probe   the online updates probe (native/poc/update-probe.ts).
 //   node scripts/build-nro.mjs --nro-probe      the in-app .nro update probe (native/poc/nro-probe.ts).
+//   node scripts/build-nro.mjs --forwarder-probe the .nro update probe (native/poc/forwarder-probe.ts).
 // Output: dist/nro/<name>.nro, to copy to the SD card under sdmc:/switch/. The app's build also
 // writes its online update to dist/nro/update/ (docs/updates.md); `--baseline=<assets json>|none`
 // replaces the baseline release named in native/baseline.json. `--strict` (always on CI's tag builds)
@@ -53,7 +54,7 @@ const browserDir = path.join(root, 'dist/pokemon-showdown-nx/browser');
 // `--app-version=x.y.z` overrides package.json's version, e.g. to build a test online update.
 /** The repository whose releases carry the online updates (CI sets GITHUB_REPOSITORY). */
 const REPO = process.env.GITHUB_REPOSITORY || 'jportoh/pokemon-showdown-nx';
-/** An asset pack is downloaded and checked in blocks this big (src/app/core/update). */
+/** An asset pack is downloaded and checked in blocks this big (native/update/update-files.ts). */
 const PACK_BLOCK = 4 * 1024 * 1024;
 const PACK_MAGIC = 'PSBPACK1';
 /** A release must bundle every Showdown file: an outage while CI builds it must not ship a .nro without them. */
@@ -115,7 +116,34 @@ const TARGETS = {
       ['probe-b.bin', probeBytes('b')],
     ],
   },
+  // Can a new .nro be downloaded, copied over the forwarder's one and old ones removed? (native/poc/forwarder-probe.ts)
+  forwarderProbe: {
+    output: 'psb-u8-probe.nro',
+    title: 'PSB Forwarder Probe',
+    version: '0.0.1',
+    titleId: 0x05f5d0c0de000005n,
+    entry: () => ({ entryPoints: [path.join(root, 'native/poc/forwarder-probe.ts')], define: u8Defines }),
+    files: () => [],
+  },
 };
+
+/** The forwarder probe's download: a real release .nro, its size and 4 MiB blocks' sha256 (set in main). */
+const U8_URL = `https://github.com/${REPO}/releases/download/v0.5.1/pokemon-showdown-v0.5.1.nro`;
+let u8Defines = {};
+
+async function loadU8Defines() {
+  const cached = path.join(cacheDir, 'u8-v0.5.1.nro');
+  if (!fs.existsSync(cached)) {
+    const response = await fetch(U8_URL);
+    if (!response.ok) throw new Error(`${U8_URL}: HTTP ${response.status}`);
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(cached, Buffer.from(await response.arrayBuffer()));
+  }
+  const bytes = fs.readFileSync(cached);
+  const blocks = [];
+  for (let at = 0; at < bytes.length; at += PACK_BLOCK) blocks.push(sha256(bytes.subarray(at, at + PACK_BLOCK)));
+  return { __U8_URL__: JSON.stringify(U8_URL), __U8_SIZE__: String(bytes.length), __U8_BLOCKS__: JSON.stringify(blocks) };
+}
 
 /** 1 MiB of bytes that are the same in every build (the .nro probe's RomFS files). */
 function probeBytes(seed) {
@@ -142,7 +170,9 @@ async function main() {
   const sleepMode = option('sleep-probe');
   const target = sleepMode
     ? sleepProbe(sleepMode)
-    : process.argv.includes('--nro-probe')
+    : process.argv.includes('--forwarder-probe')
+      ? TARGETS.forwarderProbe
+      : process.argv.includes('--nro-probe')
       ? TARGETS.nroProbe
       : process.argv.includes('--update-probe')
       ? TARGETS.updateProbe
@@ -156,7 +186,8 @@ async function main() {
   if (!engineFile && !ENGINES[engineName]) throw new Error(`Unknown engine "${engineName}" (${Object.keys(ENGINES).join(', ')})`);
   const label = engineFile ? path.basename(engineFile) : `nx.js_extended ${ENGINES[engineName].version}`;
   typecheck();
-  const engine = engineFile ? fs.readFileSync(engineFile) : await loadEngine(ENGINES[engineName]);
+  if (target === TARGETS.forwarderProbe) u8Defines = await loadU8Defines();
+  const engine =engineFile ? fs.readFileSync(engineFile) : await loadEngine(ENGINES[engineName]);
   const base = await NRO.decode(new Blob([engine]));
   if (!base.nacp) throw new Error('The engine NRO has no NACP section.');
 
@@ -180,13 +211,14 @@ async function main() {
   }
   let assetsId = null;
   if (target.loader) {
-    // The fingerprint an online update must match to run on this .nro: the engine and every asset.
-    assetsId = sha256(Buffer.from([sha256(engine), ...assetHashes.sort()].join('\n'))).slice(0, 16);
+    // The fingerprint an online update must match to run on this .nro: the engine (and loader) and every asset.
+    const fingerprint = engineFingerprint(engine);
+    assetsId = sha256(Buffer.from([fingerprint, ...assetHashes.sort()].join('\n'))).slice(0, 16);
     const defines = { __PSB_VERSION__: JSON.stringify(target.version), __PSB_ASSETS_ID__: JSON.stringify(assetsId) };
     const app = await bundle({ ...target.entry(), define: defines }, bundledShowdownDefine(files));
     romfs['app.mjs'] = new Blob([app]);
     romfs['main.js'] = new Blob([await bundle({ entryPoints: [path.join(root, 'native/loader/main.ts')], define: defines })]);
-    const index = assetIndex(target.version, sha256(engine), assetsId, assets);
+    const index = assetIndex(target.version, fingerprint, assetsId, assets);
     // The .nro's own list of its assets: the updater checks an update's against it.
     romfs['assets.json'] = new Blob([JSON.stringify(index)]);
     await writeUpdate(app, index, assets);
@@ -217,12 +249,25 @@ async function main() {
   });
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, suffix ? target.output.replace(/.nro$/, `-${suffix}.nro`) : target.output);
-  fs.writeFileSync(outPath, Buffer.from(await nro.arrayBuffer()));
+  const nroBytes = Buffer.from(await nro.arrayBuffer());
+  fs.writeFileSync(outPath, nroBytes);
+  if (target.loader) addNroToManifest(target.version, nroBytes);
   console.log(`Engine ${label}`);
   if (romfs['app.mjs']) console.log(`app.mjs ${(romfs['app.mjs'].size / 1024).toFixed(0)} KiB, version ${target.version}, assets id ${assetsId}`);
   console.log(`main.js ${(romfs['main.js'].size / 1024).toFixed(0)} KiB, assets ${(assetBytes / 1048576).toFixed(1)} MiB`);
   console.log(`NRO written to ${path.relative(root, outPath)} (${(nro.size / 1048576).toFixed(1)} MiB)`);
   console.log('Copy it to sdmc:/switch/ and open it from hbmenu in application mode (hold R on a game).');
+}
+
+/**
+ * The loader's generation, part of the engine fingerprint an update must match (update.json's and
+ * assets.json's `engine`): a .nro whose loader can't run an update's code or read its pack finds it
+ * needs a new .nro. 2: the update gate, packs read in place (v0.6.0).
+ */
+const LOADER_GENERATION = 2;
+
+function engineFingerprint(engine) {
+  return sha256(Buffer.concat([engine, Buffer.from(`\nloader ${LOADER_GENERATION}`)]));
 }
 
 /** Every asset's sha256 by its RomFS path, with the engine's and the build's fingerprint. */
@@ -283,6 +328,20 @@ async function writeUpdate(app, index, assets) {
     console.log(baseline ? `No asset differs from the baseline ${baseline.version}: no pack.` : 'No baseline: this build is one (no pack).');
   }
   fs.writeFileSync(path.join(dir, 'update.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/**
+ * The .nro itself in update.json (`nro`: its release file name, size and 4 MiB blocks' sha256), for
+ * a .nro whose loader can't run this release's code: its update gate downloads the new .nro next to
+ * itself (docs/updates.md, "A new .nro"). CI publishes it as pokemon-showdown-v<version>.nro.
+ */
+function addNroToManifest(version, bytes) {
+  const file = path.join(outDir, 'update', 'update.json');
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const blocks = [];
+  for (let at = 0; at < bytes.length; at += PACK_BLOCK) blocks.push(sha256(bytes.subarray(at, at + PACK_BLOCK)));
+  manifest.nro = { file: `pokemon-showdown-v${version}.nro`, size: bytes.length, blockSize: PACK_BLOCK, blocks };
+  fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 /**

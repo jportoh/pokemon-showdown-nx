@@ -1,7 +1,7 @@
 // Signs the online update that `npm run build:nro` wrote to dist/nro/update/ (docs/updates.md):
 // update.json.sig is the ECDSA P-256 / SHA-256 signature (raw r||s, base64) of update.json's exact
 // bytes. The app only takes an update whose manifest verifies with the public key it ships with
-// (src/app/core/update/update-config.ts).
+// (native/update/update-config.ts).
 //
 //   UPDATE_SIGNING_KEY="<PEM>" node scripts/sign-update.mjs     (CI: a repository secret)
 //   node scripts/sign-update.mjs --key=<path to the PEM file>
@@ -35,7 +35,7 @@ try {
   process.exit(1);
 }
 const publicKey = crypto.createPublicKey(key).export({ type: 'spki', format: 'der' }).subarray(-65).toString('base64');
-const shipped = /UPDATE_PUBLIC_KEY = '([^']+)'/.exec(fs.readFileSync(path.join(root, 'src/app/core/update/update-config.ts'), 'utf8'))?.[1];
+const shipped = /UPDATE_PUBLIC_KEY = '([^']+)'/.exec(fs.readFileSync(path.join(root, 'native/update/update-config.ts'), 'utf8'))?.[1];
 if (publicKey !== shipped) {
   console.error(`The signing key (public ${publicKey.slice(0, 12)}…) isn't the pair of the app's UPDATE_PUBLIC_KEY (${shipped?.slice(0, 12)}…).`);
   process.exit(1);

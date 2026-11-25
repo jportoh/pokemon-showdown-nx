@@ -9,6 +9,7 @@ import { HOLD_FILL, HoldAction } from '@core/gl/ui/hold-action';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { HOME_SETTINGS_KEY, ROLE_KEYS } from '@core/input/console-keys';
+import { codeSource } from '@core/runtime/code-source';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ServerStats } from '@features/connection/server-stats';
 import { ShowdownConnection } from '@features/connection/showdown-connection';
@@ -126,7 +127,11 @@ export class HomeScene {
   /** The control the Trainer Card opens on. */
   private cardFocus = CARD_CLOSE_ID;
 
+  /** The update gate started the app offline: no logging in until it's opened again. */
+  private readonly offlineMode = codeSource()?.offline === true;
+
   private readonly zrLabel = computed(() => {
+    if (this.offlineMode) return 'Offline';
     if (this.login.state().mode === null) return 'Log in';
     return this.login.state().ownName ? 'Log out' : 'Disconnect';
   });
@@ -141,6 +146,7 @@ export class HomeScene {
   /** The name plate: who we are, and how we're doing. */
   private readonly plate = computed((): NamePlate & { chips: Chip[] } => {
     const login = this.login.state();
+    if (this.offlineMode) return { name: 'Trainer', status: 'Offline mode', chips: [{ text: 'Open the app again to go online', tone: 'muted' }] };
     if (login.mode === null) return { name: 'Trainer', status: 'Offline', chips: [{ text: 'ZR to log in', tone: 'muted' }] };
     // No name to be had (Showdown's login server out of reach, say): why, in red.
     if (login.status === 'unavailable') return { name: login.name || 'Trainer', status: 'No name', chips: [{ text: login.error ?? "Couldn't get a name", tone: 'error' }] };
@@ -294,12 +300,13 @@ export class HomeScene {
 
   /** The trainer: the Trainer Card, registering our name, or logging in while offline. */
   private pressTrainer(): void {
+    if (this.offlineMode) return;
     if (this.login.state().mode === null) this.toEntry();
     else this.toggleBox();
   }
 
   private pressZR(): boolean {
-    if (this.box()) return true;
+    if (this.box() || this.offlineMode) return true;
     if (this.login.state().mode === null) {
       this.toEntry();
       return true;
@@ -525,6 +532,7 @@ export class HomeScene {
   }
 
   private trainerHint(): string {
+    if (this.offlineMode) return `Offline: ${codeSource()?.offlineReason ?? 'no update check'}.`;
     if (this.login.state().mode === null) return 'Log in to battle, chat and get ratings.';
     if (this.canShowCard()) return 'Your card, ratings and battle history.';
     if (this.canRegister()) return 'Register your name to keep it and get ratings.';
@@ -532,6 +540,7 @@ export class HomeScene {
   }
 
   private trainerAction(): string | null {
+    if (this.offlineMode) return null;
     if (this.login.state().mode === null) return 'Log in';
     if (this.canShowCard()) return 'Trainer Card';
     if (this.canRegister()) return 'Register';
