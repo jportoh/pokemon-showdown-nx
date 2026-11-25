@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { BattleMusic } from '@core/audio/battle-music';
+import { Soundtrack } from '@core/audio/soundtrack';
 import { AssetPreload } from '@core/gl/asset-preload';
 import { GlRenderer, Rgba, Texture, withAlpha } from '@core/gl/gl-renderer';
 import { UPLOADS_PER_FRAME } from '@core/gl/gl-sprites';
@@ -25,7 +26,7 @@ const LOADING_UPLOADS = 8;
 const PRIMES_PER_FRAME = 2;
 /** Time per frame for synthesizing the sounds and the menu theme (AudioEngine.prepare). */
 const AUDIO_BUDGET_MS = 12;
-/** The longest the title waits for the battle music (offline, or a slow connection): the rest loads when a battle needs it. */
+/** The longest the title waits for the battle music and the menus' track (offline, or a slow connection): the rest loads when it's needed. */
 const MUSIC_WAIT_MS = 20000;
 const WHITE: Rgba = [1, 1, 1, 1];
 const STUDIO_INK: Rgba = [0.07, 0.07, 0.09, 1];
@@ -81,10 +82,12 @@ const PARADE_SCALE = 2;
  * categories and the bundled sheets of Champions sprites), downloading, decoding and becoming a
  * texture, so no screen waits for one later; a stutter costs nothing here, so decoding runs back to
  * back (SpriteBitmaps.rush) and more textures are made per frame. Meanwhile the interface's sounds and
- * the menu theme are synthesized, a slice each frame (AudioEngine.prepare), and the battle music
- * (bundled) decodes (BattleMusic.preload, up to MUSIC_WAIT_MS). Until all of that is done a small ball
- * spins in a corner; then the menu theme starts and PRESS START breathes in its capsule. Pressed, the
- * logo flies to its corner, where the entry screen and the menu both draw it, and that screen takes over.
+ * the menu theme are synthesized, a slice each frame (AudioEngine.prepare), and the battle music and
+ * the official soundtrack's tracks, if Settings picks one (bundled), decode (BattleMusic.preload,
+ * Soundtrack.preload, up to MUSIC_WAIT_MS). Until all of that is done a small ball spins in a corner;
+ * then the title screen's music starts (the soundtrack's) and PRESS START breathes in its capsule.
+ * Pressed, the menus' music takes over, the logo flies to its corner, where the entry screen and the
+ * menu both draw it, and that screen takes over.
  */
 @Component({
   selector: 'app-loading-scene',
@@ -98,6 +101,7 @@ export class LoadingScene {
   private readonly preload = inject(AssetPreload);
   private readonly audio = inject(AudioEngine);
   private readonly music = inject(BattleMusic);
+  private readonly soundtrack = inject(Soundtrack);
   private readonly diagnostics = inject(GlDiagnostics);
   private readonly keyboard = inject(CanvasKeyboard);
   private readonly connection = inject(ShowdownConnection);
@@ -144,6 +148,7 @@ export class LoadingScene {
     this.bitmaps.rush = true;
     // All at once from the start: waiting for the images first was no faster (test-m2/m3).
     this.music.preload();
+    this.soundtrack.preload();
     // The studio's logo first: the card waits for it.
     this.bitmaps.request(STUDIO_LOGO, ImagePriority.Screen);
     // The title's "o!" next (the entry screen and the menu draw it too).
@@ -176,6 +181,8 @@ export class LoadingScene {
     }
     if (!this.ready || now - this.titleAt < DROP_MS) return false;
     this.outroAt = now;
+    // The title screen's music gives way to the menus' as the logo flies.
+    this.soundtrack.playMenu();
     return true;
   }
 
@@ -265,17 +272,17 @@ export class LoadingScene {
   private loadStep(frame: StageFrame): void {
     if (this.waiting.length > 0) this.load(frame);
     const soundsReady = this.audio.prepare(AUDIO_BUDGET_MS);
-    const tracks = this.music.trackCount;
-    const tracksDone = frame.now - this.startedAt > MUSIC_WAIT_MS ? tracks : this.music.preloaded();
+    const musicDone =
+      frame.now - this.startedAt > MUSIC_WAIT_MS || (this.music.preloaded() === this.music.trackCount && this.soundtrack.preloaded());
     const pending = this.waiting.length + this.priming.length;
     if (pending === 0 && !this.imagesAt) this.imagesAt = performance.now();
-    const loaded = pending === 0 && soundsReady && tracksDone === tracks;
+    const loaded = pending === 0 && soundsReady && musicDone;
     if (loaded) this.warmTeambuilder();
     if (!this.ready && loaded && this.teambuilderWarm) {
       this.ready = true;
       this.restore();
       this.preload.finished.set(true);
-      this.audio.playMenuTheme();
+      this.soundtrack.playTitle();
       this.diagnostics.loading = this.timings();
     }
   }

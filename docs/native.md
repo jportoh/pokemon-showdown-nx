@@ -194,7 +194,7 @@ game runs. The `.nro` now does the same for what every session loaded or compute
   battle's `|init|` message), down from 708 ms.
 - `after-app.ts` logs `[boot]` marks: when the bundle has been evaluated and the first frames, to
   split the ~1.6 s start-up block.
-- **The battle music**, decoded here (`@wasm-audio-decoders/ogg-vorbis`, a dev dependency) into the
+- **The battle music** (and since then the official soundtracks' tracks, ~5 MiB each), decoded here (`@wasm-audio-decoders/ogg-vorbis`, a dev dependency) into the
   same raw format at the same paths. `AudioEngine.decode` reads it, which avoids the console's
   300–550 ms hand-overs after each decode. That adds ~20 MiB, for a ~112 MiB `.nro`.
 

@@ -1,4 +1,5 @@
 import { Service, signal } from '@angular/core';
+import { OFFICIAL_SOUNDTRACKS, OfficialSoundtrackId } from '@core/audio/official-music';
 import { readJson, writeJson } from '@core/persistence/device-storage';
 import { BATTLEFIELD_CHOICES, BattlefieldChoice } from '@shared/data/battlefields';
 import { TEAM_FORMATS, TEAM_PLAY_FORMATS } from '@shared/data/formats';
@@ -28,6 +29,18 @@ export const THEMES: readonly Theme[] = [
   { id: 'ocaso', name: 'Sunset' },
 ];
 
+/** The soundtrack (the menus', team preview's and a battle's end music): the app's own themes, or official tracks from the games (official-music.ts). */
+export type SoundtrackId = 'custom' | OfficialSoundtrackId;
+
+/** The soundtracks Settings steps through: the app's own, and each official one that has a menu track. Soundtrack plays them. */
+export const SOUNDTRACKS: readonly { id: SoundtrackId; name: string }[] = (
+  [
+    { id: 'custom', name: 'Custom' },
+    { id: 'champions', name: 'Champions' },
+    { id: 'classic', name: 'Classic' },
+  ] as const
+).filter((soundtrack) => soundtrack.id === 'custom' || OFFICIAL_SOUNDTRACKS[soundtrack.id].menu.length > 0);
+
 export interface Settings {
   theme: ThemeId;
   appearance: Appearance;
@@ -45,6 +58,8 @@ export interface Settings {
   rememberName: boolean;
   /** The app logs in to the saved registered name when it starts (its password saved on the SD card). */
   autoLogin: boolean;
+  /** The music of the menus, team preview and a battle's end (battles pick among every battle track). */
+  soundtrack: SoundtrackId;
   /** Music volume, 0 (off) to 100, in VOLUME_STEP steps. */
   musicVolume: number;
   /** Sound effects' and cries' volume, 0 (off) to 100, in VOLUME_STEP steps. */
@@ -67,6 +82,7 @@ const DEFAULTS: Settings = {
   saveReplays: true,
   rememberName: false,
   autoLogin: false,
+  soundtrack: 'custom',
   musicVolume: 60,
   soundVolume: 80,
 };
@@ -103,6 +119,7 @@ function loadSettings(): Settings {
     saveReplays: settings.saveReplays !== false,
     rememberName: settings.rememberName === true,
     autoLogin: settings.autoLogin === true,
+    soundtrack: SOUNDTRACKS.some((soundtrack) => soundtrack.id === settings.soundtrack) ? settings.soundtrack : DEFAULTS.soundtrack,
     musicVolume: validVolume(settings.musicVolume, DEFAULTS.musicVolume),
     soundVolume: validVolume(settings.soundVolume, DEFAULTS.soundVolume),
   };
