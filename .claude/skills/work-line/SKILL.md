@@ -1,6 +1,6 @@
 ---
 name: work-line
-description: Take one or more lines of the local work lists (bugs-and-improvements.txt, features.txt) from the request to a pushed branch. Use when the user names a list line to do, like "línea 87", "L87", "lines 54-57" or "features L22".
+description: Take one or more lines of the local work lists (bugs-and-improvements.txt, features.txt) from the request to a pushed branch with an open PR. Use when the user names a list line to do, like "línea 87", "L87", "lines 54-57" or "features L22".
 argument-hint: "<line(s)> [features] [--on <branch>]"
 ---
 
@@ -40,12 +40,12 @@ Done when the build is green and every line's described problem is gone in the b
 
 Done when every worked line is marked and every visible change has its pending test.
 
-## 6. Commit and push
+## 6. Commit, push and open the PR
 
 1. One commit (more only when the lines are unrelated), its subject a clear sentence like a PR title ("Battle: field view shows both Mega partners"). No attribution lines.
-2. `git push -u origin <branch>`. The user opens PRs by hand: open one only when asked.
-3. Save or refresh a project memory for the work: lines, branch, commit, "pushed, PR by hand, untested".
+2. `git push -u origin <branch>`, then open its PR with `gh pr create --base main` (a short body: the lines it covers and what changed; no attribution lines). Never merge it: the user does.
+3. Save or refresh a project memory for the work: lines, branch, commit, PR number, "untested".
 
 ## 7. Report
 
-A few lines: the lines done, the branch and commit, what to check on the console (the pending-tests entries), and anything left out or found along the way.
+A few lines: the lines done, the branch, commit and PR link, what to check on the console (the pending-tests entries), and anything left out or found along the way.
