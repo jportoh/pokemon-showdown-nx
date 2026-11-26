@@ -52,3 +52,17 @@ The UI is deliberately pure canvas (see [docs/rendering.md](docs/rendering.md)).
 - Use the `providedIn: 'root'` option for singleton services
 - Prefer the `@Service` decorator over `@Injectable({providedIn: 'root'})` for new singleton services (Angular v22+)
 - Use the `inject()` function instead of constructor injection
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live in GitHub Issues (`jportoh/pokemon-showdown-nx`), handled with the `gh` CLI, which is pinned to that account for this workspace. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` and `docs/adr/`, created when first needed. See `docs/agents/domain.md`.
