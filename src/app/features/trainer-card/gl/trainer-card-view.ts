@@ -26,8 +26,8 @@ const GAP = 6;
 const PAGE_COUNT = Math.ceil(AVATAR_CHOICES.length / PER_PAGE);
 /** Random avatar presses closer together than this are ignored. */
 const RANDOM_COOLDOWN_MS = 500;
-/** Ratings from here up are amber; the bars go from 1000 to 2000. */
-const HIGH_RATING = 1500;
+/** Win rates from here up fill the bar teal (more wins than losses). */
+const WINNING_RATE = 0.5;
 /** The results' fixed colours, the same in every theme (white on them passes AA). */
 const WON: Rgba = rgba('#1e7b3c');
 const LOST: Rgba = rgba('#b3261e');
@@ -258,7 +258,7 @@ export class TrainerCardView {
     }
   }
 
-  /** The best ladder ratings as rows: the format, the rating with a bar (1000 to 2000, amber from 1500), GXE and W–L. */
+  /** The best ladder ratings as rows: the format (its gen and GXE under it), the rating, the win rate as a bar and a figure, W–L. */
   private drawLadder(ctx: UiContext, x: number, y: number, width: number): void {
     const p = ctx.palette;
     const { renderer } = ctx;
@@ -276,15 +276,20 @@ export class TrainerCardView {
       const cy = ry + 28;
       const right = x + width - 18;
       label(ctx, `${rating.wins}–${rating.losses}`, right, cy, { size: 15 }, p.muted, { align: 'right' });
-      label(ctx, `${rating.gxe.toFixed(1)}%`, right - 90, cy, { size: 15 }, p.muted, { align: 'right' });
+      const played = rating.wins + rating.losses + rating.ties;
+      const winRate = played > 0 ? rating.wins / played : 0;
+      label(ctx, `${(winRate * 100).toFixed(1)}%`, right - 90, cy, { size: 15 }, p.muted, { align: 'right' });
       const barRight = right - 180;
       const barW = 130;
       const barX = barRight - barW;
       renderer.rect(barX, cy - 4, barW, 8, { fill: p.rim, radius: 4 });
-      const fill = Math.max(0.04, Math.min(1, (rating.elo - 1000) / 1000));
-      renderer.rect(barX, cy - 4, barW * fill, 8, { fill: rating.elo >= HIGH_RATING ? p.teal : p.accent, radius: 4 });
+      renderer.rect(barX, cy - 4, barW * Math.max(0.04, winRate), 8, { fill: winRate >= WINNING_RATE ? p.teal : p.accent, radius: 4 });
       label(ctx, String(rating.elo), barX - 12, cy, { size: 19, bold: true }, p.ink, { align: 'right' });
-      label(ctx, shortName(this.formats.name(rating.formatId)), x + 18, cy, { size: 17, bold: true }, p.ink, { maxWidth: barX - 80 - x - 18 });
+      const name = this.formats.name(rating.formatId);
+      const nameW = barX - 80 - x - 18;
+      label(ctx, shortName(name), x + 18, cy - 9, { size: 17, bold: true }, p.ink, { maxWidth: nameW });
+      const detail = [formatPrefix(name), `GXE ${rating.gxe.toFixed(1)}%`].filter(Boolean).join(' · ');
+      label(ctx, detail, x + 18, cy + 13, { size: 12 }, p.muted, { maxWidth: nameW });
     });
   }
 
@@ -349,6 +354,11 @@ export class TrainerCardView {
 /** "VGC 2026 Reg M-C": a format's name without its "[Gen 9 Champions]" prefix, so it fits. */
 function shortName(name: string): string {
   return name.replace(/^\[[^\]]*\]\s*/, '') || name;
+}
+
+/** "Gen 9 Champions" for "[Gen 9 Champions] VGC 2026 Reg M-C": what tells "Random Battle" rows apart. */
+function formatPrefix(name: string): string {
+  return /^\[([^\]]*)\]/.exec(name)?.[1] ?? '';
 }
 
 function sum(ratings: readonly LadderRating[], value: (rating: LadderRating) => number): number {

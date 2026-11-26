@@ -17,9 +17,23 @@ export interface PreviewMember {
  */
 export function previewTeam(side: BattleSide): PreviewMember[] {
   const species = side.preview.length > 0 ? side.preview : side.pokemon.map((p) => p.species);
-  return species.slice(0, 6).map((name) => {
-    const seen = side.pokemon.find((p) => p.species === name || p.species.startsWith(`${name}-`));
+  const names = species.slice(0, 6);
+  const direct = names.map((name) => side.pokemon.find((p) => p.species === name || p.species.startsWith(`${name}-`)));
+  // A forme the preview names doesn't prefix ("Floette-Eternal" Mega Evolved into "Floette-Mega"):
+  // the same base name, among the Pokémon no other member has claimed (Species Clause keeps it unique).
+  const claimed = new Set(direct.filter((p) => !!p).map((p) => p.ident));
+  return names.map((name, i) => {
+    let seen = direct[i];
+    if (!seen) {
+      seen = side.pokemon.find((p) => !claimed.has(p.ident) && baseName(p.species) === baseName(name));
+      if (seen) claimed.add(seen.ident);
+    }
     const active = !!seen && side.active.some((p) => p?.ident === seen.ident);
     return { species: name, seen, active };
   });
+}
+
+/** "Floette" for "Floette-Eternal" and "Floette-Mega" (only used after exact names have matched, so "Ho-Oh" is safe). */
+function baseName(species: string): string {
+  return species.split('-')[0];
 }
