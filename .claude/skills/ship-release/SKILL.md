@@ -34,7 +34,7 @@ Rules for the whole run:
 **Baseline.** The current one is `tag` in `native/baseline.json`. Recommend a new one when either is true, and ask:
 
 - The engine fingerprint changed since the baseline tag: `git diff <baseline-tag>..origin/main -- scripts/build-nro.mjs` touches `DEFAULT_ENGINE`, the `ENGINES` entries or `LOADER_GENERATION`. CI refuses to build a pack over a baseline with another engine, so a missed baseline fails the tag build.
-- The latest release's pack is big: `gh release view <last-tag> --json assets` and the `assets-*.pack` asset is over 20 MiB.
+- The latest release's pack is big: `gh release view <last-tag> --json assets` and the `assets-*.pack` asset is over 50 MB (50,000,000 bytes).
 
 With `--baseline`, don't ask. Otherwise, without either signal, keep the baseline and don't mention it. A new baseline means every player's app downloads the whole new `.nro` (about 170 MB) instead of a pack, and they open it once from the Homebrew Menu: say so when asking.
 
