@@ -1592,7 +1592,8 @@ export class BattleStore {
       this.fieldSignal.update((f) => ({ ...f, weather: null }));
       return ended ? this.say(weatherText(ended.id, true)) : 0;
     }
-    this.fieldSignal.update((f) => ({ ...f, weather: weatherCondition(weather, this.startTurn()) }));
+    const fromAbility = !!tags['from']?.startsWith('ability: ');
+    this.fieldSignal.update((f) => ({ ...f, weather: weatherCondition(weather, this.startTurn(), fromAbility, this.genSignal()) }));
     this.abilityFrom(tags);
     return this.say(weatherText(weather, false));
   }

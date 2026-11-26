@@ -166,6 +166,16 @@ export const PLAYABLE_FORMATS: readonly PlayableFormat[] = [
     rules: 'Random Gen 4 sets',
   },
   {
+    id: 'gen5randombattle',
+    name: '[Gen 5] Random Battle',
+    label: 'Gen 5 Random Battle',
+    short: 'Gen 5',
+    randomTeams: true,
+    category: 'Random',
+    detail: 'Singles · random Black/White teams',
+    rules: 'Random Gen 5 sets',
+  },
+  {
     id: 'gen9randombattleblitz',
     name: '[Gen 9] Random Battle (Blitz)',
     label: 'Gen 9 Random Battle (Blitz)',
@@ -250,13 +260,12 @@ export const RANDOM_PLAY_FORMATS: readonly PlayableFormat[] = PLAYABLE_FORMATS.f
 
 /**
  * Random formats the app doesn't play yet, shown on the Random Battle page as coming soon (not
- * pickable): the generations between Gen 4 and Gen 9, whose battles need their own gimmicks first.
+ * pickable): the generations between Gen 5 and Gen 9, whose battles need their own gimmicks first.
  */
 export const UPCOMING_RANDOM_FORMATS: readonly PlayableFormat[] = [
   { gen: 8, games: 'Sword/Shield', extra: 'Dynamax' },
   { gen: 7, games: 'Sun/Moon', extra: 'Z-Moves, Megas' },
   { gen: 6, games: 'X/Y', extra: 'Megas' },
-  { gen: 5, games: 'Black/White', extra: '' },
 ].map(({ gen, games, extra }) => ({
   id: `gen${gen}randombattle`,
   name: `[Gen ${gen}] Random Battle`,

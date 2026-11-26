@@ -4,11 +4,12 @@ import gen1 from './gen1.json';
 import gen2 from './gen2.json';
 import gen3 from './gen3.json';
 import gen4 from './gen4.json';
+import gen5 from './gen5.json';
 import data from './species.json';
 
 // What the spectator's Pokémon panel shows of every species, generated from Showdown's data by
 // `npm run update:species`: species of any format (Random Battle uses many the Champions data doesn't have).
-// What differs in Gens 1 to 4 comes from `npm run update:past-gens`.
+// What differs in Gens 1 to 5 comes from `npm run update:past-gens`.
 
 export interface SpeciesInfo {
   name: string;
@@ -22,7 +23,7 @@ const SPECIES = data as unknown as Readonly<Record<string, readonly [string, str
 type PastSpecies = Readonly<Record<string, readonly [string[], number[], string[]]>>;
 
 /** What differs in past generations, by generation. */
-const PAST_SPECIES: Readonly<Record<number, PastSpecies>> = Object.fromEntries([gen1, gen2, gen3, gen4].map((past, i) => [i + 1, past.species as unknown as PastSpecies]));
+const PAST_SPECIES: Readonly<Record<number, PastSpecies>> = Object.fromEntries([gen1, gen2, gen3, gen4, gen5].map((past, i) => [i + 1, past.species as unknown as PastSpecies]));
 
 /**
  * The base species of a cosmetic forme ("Vivillon-Marine" → "Vivillon", "Alcremie-Ruby-Swirl" →
