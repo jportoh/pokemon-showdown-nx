@@ -17,6 +17,7 @@ the replays; B goes back to the groups, then to the menu. The page header is `Pa
 | Setting | Values | Used by |
 | --- | --- | --- |
 | `theme` | Sapphire, Night, Graphite, Emerald, Poké Ball, Sunset (Plum, replaced by Graphite, loads as it) | `GlTheme` (every screen) |
+| `soundtrack` | Custom (the app's own themes), Champions, Classic (`SOUNDTRACKS`: an official one only once it has a menu track) | `Soundtrack` (the music of the title screen, the menus, team preview and a battle's end) |
 | `musicVolume`, `soundVolume` | 0–100 in steps of 10 | `AudioEngine` |
 | `battleFormat` | `PLAYABLE_FORMATS` | The Battle lobby's starting format, Watch Live |
 | `teamFormat` | `TEAM_FORMATS` | New teams |

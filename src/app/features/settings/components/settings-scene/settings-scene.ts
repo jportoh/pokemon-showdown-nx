@@ -1,5 +1,7 @@
 import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
+import { OFFICIAL_SOUNDTRACKS, OfficialTrack } from '@core/audio/official-music';
+import { Soundtrack } from '@core/audio/soundtrack';
 import { CanvasFocus, focusInput } from '@core/gl/canvas-ui';
 import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { GlStage, STAGE_W, StageFrame } from '@core/gl/gl-stage';
@@ -10,7 +12,7 @@ import { PageBar } from '@core/gl/ui/page-bar';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
 import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
-import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
+import { APPEARANCES, AppSettings, SOUNDTRACKS, SoundtrackId, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { codeSource } from '@core/runtime/code-source';
 import { SavedLogin } from '@features/connection/saved-login';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -23,6 +25,7 @@ type SettingId =
   | 'appearance'
   | 'theme'
   | 'battlefield'
+  | 'soundtrack'
   | 'musicVolume'
   | 'soundVolume'
   | 'battleFormat'
@@ -55,7 +58,7 @@ interface SettingRow {
 /** The settings' groups, as the slanted buttons on the left: each its rows, its colours (a menu item's) and its Pokémon. */
 const GROUPS: readonly { title: string; icon: PixelIconName; colours: PixelIconName; art: string; rows: readonly SettingId[] }[] = [
   { title: 'LOOK', icon: 'settings', colours: 'live', art: 'gardevoir', rows: ['appearance', 'theme', 'battlefield'] },
-  { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['musicVolume', 'soundVolume'] },
+  { title: 'SOUND', icon: 'chats', colours: 'chats', art: 'primarina', rows: ['soundtrack', 'musicVolume', 'soundVolume'] },
   { title: 'BATTLES', icon: 'battle', colours: 'battle', art: 'garchomp', rows: ['battleFormat', 'teamFormat', 'allowSpectators', 'saveReplays'] },
   { title: 'ACCOUNT', icon: 'teambuilder', colours: 'random', art: 'lucario', rows: ['rememberName', 'autoLogin'] },
   { title: 'MORE', icon: 'replays', colours: 'teambuilder', art: 'rotom', rows: ['history', 'replays', 'appVersion'] },
@@ -93,6 +96,7 @@ export class SettingsScene {
   private readonly appSettings = inject(AppSettings);
   private readonly login = inject(ShowdownLogin);
   private readonly saved = inject(SavedLogin);
+  private readonly soundtrack = inject(Soundtrack);
 
   private readonly focus = new CanvasFocus();
   /** The group whose settings the panel shows: the focused one, or the one last focused. */
@@ -131,9 +135,17 @@ export class SettingsScene {
         steppable: true,
       },
       {
+        id: 'soundtrack',
+        label: 'Soundtrack',
+        detail: soundtrackDetail(settings.soundtrack, this.soundtrack.current()),
+        value: soundtrackName(settings.soundtrack),
+        kind: 'cycle',
+        steppable: SOUNDTRACKS.length > 1,
+      },
+      {
         id: 'musicVolume',
         label: 'Music',
-        detail: settings.musicVolume ? 'The menus\' theme and the battle music.' : 'No music.',
+        detail: settings.musicVolume ? 'The soundtrack and the battle music.' : 'No music.',
         value: volumeLabel(settings.musicVolume),
         kind: 'cycle',
         steppable: true,
@@ -240,7 +252,7 @@ export class SettingsScene {
     const keep = settings.autoLogin ? 'automatic login' : settings.rememberName ? 'name remembered' : 'nothing kept';
     return [
       `${appearance} · ${theme}`,
-      `Music ${volumeLabel(settings.musicVolume)} · Effects ${volumeLabel(settings.soundVolume)}`,
+      `${soundtrackName(settings.soundtrack)} · Music ${volumeLabel(settings.musicVolume)} · Effects ${volumeLabel(settings.soundVolume)}`,
       `${formatLabel(settings.battleFormat)} · ${settings.allowSpectators ? 'spectators on' : 'invite only'}`,
       `${account} · ${keep}`,
       `Your battles · replays · ${codeSource()?.version ?? 'web'}`,
@@ -343,6 +355,10 @@ export class SettingsScene {
         break;
       case 'battlefield':
         this.appSettings.set('battlefield', cycle(BATTLEFIELD_CHOICES.map((f) => f.id), settings.battlefield, step));
+        break;
+      case 'soundtrack':
+        if (SOUNDTRACKS.length < 2) return false;
+        this.appSettings.set('soundtrack', cycle(SOUNDTRACKS.map((s) => s.id), settings.soundtrack, step));
         break;
       case 'musicVolume':
       case 'soundVolume': {
@@ -590,6 +606,17 @@ function versionRow(): SettingRow {
     value: code.version,
     detail: code.source === 'update' ? `The latest, an online update over the .nro's ${code.builtInVersion}.` : "The latest: the .nro's own version.",
   };
+}
+
+function soundtrackName(id: SoundtrackId): string {
+  return SOUNDTRACKS.find((soundtrack) => soundtrack.id === id)?.name ?? SOUNDTRACKS[0].name;
+}
+
+/** Where a soundtrack's music comes from, and its menu track playing when it has several (it changes as it's picked). */
+function soundtrackDetail(id: SoundtrackId, track: OfficialTrack | null): string {
+  if (id === 'custom') return SOUNDTRACKS.length > 1 ? "The app's own themes. It changes as you pick it." : "The app's own themes (the only ones for now).";
+  const playing = track && OFFICIAL_SOUNDTRACKS[id].menu.length > 1 ? ` Now: ${track.title}.` : '';
+  return id === 'champions' ? `From Pokémon Champions.${playing}` : `From Pokémon Emerald's Battle Frontier.${playing}`;
 }
 
 /** The volumes to step through: 0 (Off) to 100. */

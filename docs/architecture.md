@@ -135,7 +135,7 @@ Path aliases: `@core/*`, `@features/*` and `@shared/*` (see `tsconfig.json`).
 | Route | Scene | What it is |
 | --- | --- | --- |
 | `/` | `HomeScene` | Home menu. A launch goes through `/loading` first |
-| `/loading` | `LoadingScene` | Preloads sprite sheets, sounds, battle music and the keyboard's texts |
+| `/loading` | `LoadingScene` | Preloads sprite sheets, sounds, battle and menu music and the keyboard's texts |
 | `/play` | `PlayScene` | Battle lobby: format, team, ladder search, challenges |
 | `/battle` | `BattleScreen` | Battle (playing, spectating or a replay). Can't be left mid-battle |
 | `/teambuilder` | `TeambuilderScene` | Teams, Pokémon editor, damage calc |

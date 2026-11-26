@@ -16,12 +16,13 @@ const DUCK_LEVEL = 0.35;
 const DUCK_HOLD_S = 0.4;
 const DUCK_RELEASE_S = 0.35;
 
-/** A piece of music to loop: the whole buffer, or from loopStart to loopEnd (seconds) after the intro. */
+/** A piece of music to loop: the whole buffer, or from loopStart to loopEnd (seconds) after the intro; or, `once`, played through once. */
 export interface MusicTrack {
   id: string;
   buffer: AudioBuffer;
   loopStart?: number;
   loopEnd?: number;
+  once?: boolean;
 }
 
 interface Playing {
@@ -201,8 +202,8 @@ export class AudioEngine {
     this.stopMusic();
     const source = context.createBufferSource();
     source.buffer = track.buffer;
-    source.loop = true;
-    if (track.loopEnd) {
+    source.loop = !track.once;
+    if (track.loopEnd && !track.once) {
       source.loopStart = track.loopStart ?? 0;
       source.loopEnd = track.loopEnd;
     }
@@ -261,6 +262,17 @@ export class AudioEngine {
         done(null);
       }
     });
+  }
+
+  /** `first` then `second` (both mono, as `reduce` keeps them) in one buffer; null where their rates differ (or there's no Web Audio). */
+  join(first: AudioBuffer, second: AudioBuffer): AudioBuffer | null {
+    const context = this.context;
+    if (!context || first.sampleRate !== second.sampleRate) return null;
+    const joined = context.createBuffer(1, first.length + second.length, first.sampleRate);
+    const out = joined.getChannelData(0);
+    out.set(first.getChannelData(0));
+    out.set(second.getChannelData(0), first.length);
+    return joined;
   }
 
   /**

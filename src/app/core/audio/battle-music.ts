@@ -1,5 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { AudioEngine, MusicTrack } from '@core/audio/audio-engine';
+import { OFFICIAL_BATTLE_TRACKS } from '@core/audio/official-music';
+import { Soundtrack } from '@core/audio/soundtrack';
 
 interface BattleTrack {
   url: string;
@@ -9,15 +11,17 @@ interface BattleTrack {
 }
 
 /**
- * The battle music, bundled (public/audio/battle, made from Showdown's tracks by
- * scripts/update-battle-music.mjs: mono, 24 kHz, cut just past the loop's end): one picked at random
- * for each battle.
+ * The battle music, bundled, mono, 24 kHz, cut just past the loop's end: Showdown's tracks
+ * (public/audio/battle, made by scripts/update-battle-music.mjs) and the official ones that aren't
+ * Showdown's (public/audio/music, made by scripts/update-soundtracks.mjs). One is picked at random for
+ * each battle.
  */
 const TRACKS: readonly BattleTrack[] = [
   { url: 'audio/battle/hgss-johto-trainer.ogg', loopStart: 23731, loopEnd: 125086 },
   { url: 'audio/battle/bw-trainer.ogg', loopStart: 14629, loopEnd: 110109 },
   { url: 'audio/battle/xy-trainer.ogg', loopStart: 7802, loopEnd: 82469 },
   { url: 'audio/battle/sm-trainer.ogg', loopStart: 8323, loopEnd: 89230 },
+  ...OFFICIAL_BATTLE_TRACKS.map(({ url, loopStart, loopEnd }) => ({ url, loopStart: loopStart * 1000, loopEnd: loopEnd * 1000 })),
 ];
 
 /** The tracks are kept decoded in mono at about this rate: ~12 MB each in place of ~45 MB. */
@@ -29,17 +33,18 @@ const PRELOAD_DECODES = 2;
 
 /**
  * The music of battles (played, watched live or replayed). Every track is decoded while the loading
- * screen shows (preload), where a stutter costs nothing, and kept decoded (in mono at KEPT_RATE: ~45 MB
- * for the four, as the output decodes them at its own rate), so a battle's music starts with no work
+ * screen shows (preload), where a stutter costs nothing, and kept decoded (in mono at KEPT_RATE: ~10 MB
+ * a track, as the output decodes them at its own rate), so a battle's music starts with no work
  * at all. A battle picks among the tracks ready; one the preload missed (the loading screen gave up
  * waiting) is loaded when a battle needs it: at the search or the challenge (prepareNext), or as the
- * battle opens. The music before it is ready stays (the menu theme, or team preview's). Team preview
- * has a theme of its own, and every battle ends on the victory or the defeat theme (watched ones on
- * the victory's).
+ * battle opens. The music before it is ready stays (the menus', or team preview's). Team preview
+ * has music of its own, and every battle ends on the victory or the defeat music (watched ones on
+ * the victory's): the soundtrack's (Soundtrack), whose menu music comes back as the battle closes.
  */
 @Service()
 export class BattleMusic {
   private readonly audio = inject(AudioEngine);
+  private readonly soundtrack = inject(Soundtrack);
 
   /** Each track's reading and decoding, by URL (null if it failed: tried again next time). */
   private readonly loads = new Map<string, Promise<AudioBuffer | null>>();
@@ -101,6 +106,7 @@ export class BattleMusic {
     const battle = ++this.battle;
     this.phase = 'battle';
     this.track = null;
+    this.soundtrack.leave();
     // The track picked for it, unless it isn't ready and another is (the preload finished since).
     const next = this.next;
     this.next = null;
@@ -111,11 +117,12 @@ export class BattleMusic {
     if (this.phase === 'battle') this.audio.playMusic(this.track);
   }
 
-  /** Team preview: its own theme until the battle starts. */
+  /** Team preview: its own music (the soundtrack's) until the battle starts. */
   preview(): void {
     if (this.phase === 'over') return;
     this.phase = 'preview';
-    this.audio.playBattleTheme('preview');
+    this.soundtrack.leave();
+    this.soundtrack.playTheme('preview');
   }
 
   /** The battle starts (after team preview): its track, as soon as it's decoded. */
@@ -125,20 +132,21 @@ export class BattleMusic {
     if (this.track) this.audio.playMusic(this.track);
   }
 
-  /** The battle ended (in team preview too): the victory or the defeat theme, in place of its music. */
+  /** The battle ended (in team preview too): the soundtrack's victory or defeat music, in place of its music. */
   end(won: boolean): void {
     this.battle++;
     this.phase = 'over';
     this.track = null;
-    this.audio.playBattleTheme(won ? 'victory' : 'defeat');
+    this.soundtrack.playTheme(won ? 'victory' : 'defeat');
+    this.soundtrack.prepareNext();
   }
 
-  /** The battle closed: back to the menu theme. */
+  /** The battle closed: back to the menus' music, the soundtrack's next track. */
   stop(): void {
     this.battle++;
     this.phase = 'battle';
     this.track = null;
-    this.audio.playMenuTheme();
+    this.soundtrack.playMenu(true);
   }
 
   /** A track at random, among the ready ones if any is. */

@@ -51,13 +51,14 @@ Everything in `public/` is copied as-is into the build and the console zip.
 | `sprites/champions-*.png` | Front and back sprites of every Champions species and Mega, packed into sheets | `npm run update:sprites` |
 | `sprites/substitute*.png` | The substitute doll | — |
 | `audio/battle/*.ogg` | Four battle tracks, mono 24 kHz Vorbis, cut at their loop end | `npm run update:battle-music` (needs ffmpeg with libvorbis) |
+| `audio/music/*.ogg` | Official tracks beyond Showdown's: the soundtracks' (Champions, Classic) and two more battle tracks, mono 24 kHz Vorbis, cut at their loop end | `npm run update:soundtracks` from `references/music/` (needs ffmpeg with libvorbis; see [audio.md](features/audio.md#soundtracks)) |
 | `audio/*.wav`, `audio/*.mp3` | Battle sound effects (hits, stat changes) | — |
 | `categories/*.png` | Physical / Special / Status icons | `npm run update:moves` |
 
 Item icons, Pokémon cries, trainer avatars and the sprites of formats outside Champions are loaded
 from Showdown at runtime.
 
-UI sounds and the menu theme are **not files**: they're synthesized at launch (`core/audio/chip-synth.ts`,
+UI sounds and the app's own menu theme are **not files**: they're synthesized at launch (`core/audio/chip-synth.ts`,
 `sfx.ts`, `menu-theme.ts`) during the loading screen.
 
 ### Missing sprites

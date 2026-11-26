@@ -583,11 +583,12 @@ async function renderedAudio() {
 }
 
 /**
- * The battle music, decoded here into raw audio at the same paths (AudioEngine.decode tells it by
- * its header): the console decoded each track on a worker, but handing the result over held its main
- * thread for 300–550 ms at a time (test x11). Mono 24 kHz as the files are, so ~20 MiB for the four.
+ * The battle music and the official soundtracks' tracks, decoded here into raw audio at the same
+ * paths (AudioEngine.decode tells it by its header): the console decoded each track on a worker, but
+ * handing the result over held its main thread for 300–550 ms at a time (test x11). Mono 24 kHz as
+ * the files are: ~5 MiB a track of a minute and a half.
  */
-const DECODED_MUSIC = /^audio\/battle\/.*\.ogg$/;
+const DECODED_MUSIC = /^audio\/(battle|music)\/.*\.ogg$/;
 
 async function decodeMusic(bytes, name) {
   const [{ OggVorbisDecoder }, { encodeRawAudio }] = await Promise.all([

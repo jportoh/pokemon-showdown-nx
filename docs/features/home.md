@@ -12,7 +12,8 @@ says it's done. While a bar fills, the screen:
   (`SpriteBitmaps.rush`) and more textures are made per frame than on other screens, since a stutter
   costs nothing here;
 - synthesizes the UI sounds and the menu theme, a slice per frame (`AudioEngine.prepare`);
-- decodes the bundled battle music (`BattleMusic.preload`), waiting for it at most a few seconds;
+- decodes the bundled battle music (`BattleMusic.preload`) and the official soundtrack's tracks if
+  Settings picks one (`Soundtrack.preload`), waiting for them at most a few seconds;
 - makes the on-screen keyboard's texts ahead (`CanvasKeyboard.warm`).
 
 Then the logo flies to its place in the home screen's header and the entry screen (or the menu) takes over. It took about
