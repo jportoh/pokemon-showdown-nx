@@ -17,7 +17,7 @@ import { DetailsField, SetRowsView, cardId } from './set-rows-view';
 import { SpriteStage } from './sprite-stage';
 import { StatsView } from './stats-view';
 import { CalcsView } from './calcs-view';
-import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LegendEntry, TOP, WHITE, controlsLegend, keyPill, keyPillWidth, shortcutButton, tabStrip, tag, typeRgba } from './tb-draw';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, LegendEntry, TOP, WHITE, controlsLegend, keyPill, keyPillButton, keyPillWidth, shortcutButton, tabStrip, tag, typeRgba } from './tb-draw';
 
 type Tab = 'details' | 'stats' | 'calcs';
 /** The tabs in the order L/R go through them. */
@@ -294,7 +294,7 @@ export class SetEditorView {
     const p = ctx.palette;
     const sets = this.team()?.sets ?? [];
     const keys = sets.length > 1;
-    if (keys) right -= keyPill(ctx, 'ZR', right - keyPillWidth(ctx, 'ZR'), cy) + 8;
+    if (keys) right -= keyPillButton(ctx, 'slots-zr', 'ZR', right - keyPillWidth(ctx, 'ZR'), cy) + 8;
     const left = right - MAX_TEAM_SIZE * (SLOT + SLOT_GAP) + SLOT_GAP;
     for (let i = 0; i < MAX_TEAM_SIZE; i++) {
       const box = { x: left + i * (SLOT + SLOT_GAP), y: cy - SLOT / 2, w: SLOT, h: SLOT };
@@ -308,7 +308,7 @@ export class SetEditorView {
     }
     if (!keys) return left;
     const zlW = keyPillWidth(ctx, 'ZL');
-    keyPill(ctx, 'ZL', left - 8 - zlW, cy);
+    keyPillButton(ctx, 'slots-zl', 'ZL', left - 8 - zlW, cy);
     return left - 8 - zlW;
   }
 
@@ -420,6 +420,8 @@ export class SetEditorView {
     x -= 8 + label(ctx, 'Field', x - 8, cy, style, p.ink, { align: 'right' });
     x -= 8 + keyPillWidth(ctx, ROLE_KEYS.calcsField.label);
     keyPill(ctx, ROLE_KEYS.calcsField.label, x, cy);
+    // The field and its summary open the field's box with a tap too.
+    ctx.focus.control({ id: 'calcs-field', x: x - 4, y: cy - 22, w: EDIT_RIGHT - x + 4, h: 44, skip: true, keepFocus: true, accept: () => this.pressFieldOpen() });
     x -= 24;
     const segments = ['You attack', 'They attack'];
     const widths = segments.map((text) => ctx.text.measure(text, style) + 24);
@@ -430,9 +432,11 @@ export class SetEditorView {
       const on = (i === 0) === attack;
       if (on) ctx.renderer.rect(sx, cy - 14, widths[i], 28, { fill: i === 0 ? p.accent : p.danger, radius: 4 });
       label(ctx, text, sx + widths[i] / 2, cy, style, on ? (i === 0 ? WHITE : p.contrast) : p.muted, { align: 'center' });
+      // The other side, tapped: they swap (as the swap's button).
+      ctx.focus.control({ id: `calcs-side-${i}`, x: sx, y: cy - 22, w: widths[i], h: 44, skip: true, keepFocus: true, accept: () => !on && this.calcs.swap() });
       sx += widths[i];
     });
-    keyPill(ctx, ROLE_KEYS.calcsSwap.label, left - 10 - keyPillWidth(ctx, ROLE_KEYS.calcsSwap.label), cy);
+    keyPillButton(ctx, 'calcs-swap', ROLE_KEYS.calcsSwap.label, left - 10 - keyPillWidth(ctx, ROLE_KEYS.calcsSwap.label), cy);
   }
 
   /**

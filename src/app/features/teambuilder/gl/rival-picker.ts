@@ -3,7 +3,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, ListView, UiContext, label, modal, textField } from '@core/gl/ui/retro-kit';
+import { Box, ListView, UiContext, label, listPager, modal, textField } from '@core/gl/ui/retro-kit';
 import { menuFocus } from '@core/gl/ui/menu-kit';
 import { RivalSet, RivalSets, spreadText } from '@features/teambuilder/calc/rival-sets';
 import { toId } from '@shared/utils/to-id';
@@ -169,9 +169,9 @@ export class RivalPicker {
       () => this.toSets(),
       (_, direction) => direction === 'right' && this.toSets(),
     );
-    const more = this.speciesList.start + SPECIES_ROWS < results.length;
+    // Under the list, when it's longer than it shows: its pages (the d-pad scrolls; a finger taps these).
     const footY = SPECIES_Y + SPECIES_ROWS * (SPECIES_H + SPECIES_GAP) + 8;
-    if (more || this.speciesList.start > 0) label(ctx, more ? '▼ for more' : '▲ for the first ones', LIST_X + LIST_W / 2, footY, { size: 14 }, p.muted, { align: 'center' });
+    if (results.length > SPECIES_ROWS) listPager(ctx, 'rival-sp-pages', { x: LIST_X, y: footY - 14, w: LIST_W, h: 32 }, this.speciesList, results.length);
   }
 
   private drawSpeciesRow(ctx: UiContext, option: ChooserOption, box: Box, focused: boolean, chosen: boolean): void {

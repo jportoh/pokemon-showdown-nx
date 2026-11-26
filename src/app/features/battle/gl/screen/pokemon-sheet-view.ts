@@ -6,7 +6,7 @@ import { barColor } from '@features/battle/gl/hp-bar';
 import { PokemonSheet, SheetStat, stageText } from '@features/battle/state/pokemon-sheet';
 import { SpriteSet } from '@shared/utils/sprite-id';
 import { statColor } from './pokemon-info-view';
-import { ScreenContext, write } from './screen-context';
+import { ScreenContext, drawKeys, write } from './screen-context';
 
 const TOP = 44;
 const BAR_Y = 52;
@@ -76,7 +76,7 @@ export class PokemonSheetView {
     let x = 16 + write(ctx, team, 16, cy, { size: 20, bold: true }, side, 'left', 420);
     x += write(ctx, '  ›  ', x, cy, { size: 20 }, C.faint);
     write(ctx, sheet.name, x, cy, { size: 20, bold: true }, C.ink, 'left', 400);
-    write(ctx, '◀ ▶ Pokémon · B Back', 1264, cy, { size: 16 }, C.muted, 'right', 300);
+    drawKeys(ctx, [['◀▶', 'Pokémon'], ['B', 'Back']], 1264, cy);
 
     this.drawSummary(ctx, sheet, side, spriteSet);
     this.drawStats(ctx, sheet);

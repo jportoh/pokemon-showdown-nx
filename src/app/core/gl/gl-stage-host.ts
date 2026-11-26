@@ -1,4 +1,5 @@
 import { Component, DestroyRef, ElementRef, afterNextRender, inject, viewChild } from '@angular/core';
+import { KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { GlStage, STAGE_H, STAGE_W } from './gl-stage';
 import { PointerInput } from './pointer-input';
 
@@ -28,6 +29,7 @@ const SNAP = 0.02;
 })
 export class GlStageHost {
   protected readonly stage = inject(GlStage);
+  private readonly navigation = inject(KeyboardNavigation);
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   constructor() {
     const destroyRef = inject(DestroyRef);
@@ -43,6 +45,8 @@ export class GlStageHost {
       );
       pointer.listen();
       this.stage.pointer = pointer;
+      // Hold-to-confirm follows a finger held on its button (HoldAction).
+      this.navigation.pointer = pointer;
       const resized = () => this.layout(canvas);
       window.addEventListener('resize', resized);
       destroyRef.onDestroy(() => window.removeEventListener('resize', resized));

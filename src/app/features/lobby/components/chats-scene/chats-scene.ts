@@ -7,7 +7,7 @@ import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { Chip, drawChip, drawGround, drawKeyButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { Box, UiContext, label, paragraph, pill } from '@core/gl/ui/retro-kit';
+import { Box, UiContext, keysLegend, label, paragraph, pill } from '@core/gl/ui/retro-kit';
 import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { ServerStats, roomKey } from '@features/connection/server-stats';
@@ -156,7 +156,11 @@ export class ChatsScene {
 
   /** Joins the room (leaving the one joined, if another), or goes to its log if already in it. */
   private pickRoom(room: ChatRoom): void {
-    if (this.offline()) return;
+    // Offline, a room asks to log in first (as ZR does).
+    if (this.offline()) {
+      this.loginBox.pressZR();
+      return;
+    }
     const current = this.store.room();
     if (current?.id === room.id) {
       if (this.joined()) this.focus.focus(this.usersShown() ? 'users' : 'log');
@@ -458,14 +462,7 @@ export class ChatsScene {
     } else {
       keys = [['A', 'Select'], ['B', 'Menu']];
     }
-    let x = 1232;
-    for (const [key, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 18 });
-      label(ctx, text, x, FOOTER_Y, { size: 18 }, p.ink);
-      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
-      pill(ctx, key, x, FOOTER_Y, 28);
-      x -= 24;
-    }
+    const x = keysLegend(ctx, keys, 1232, FOOTER_Y);
     label(ctx, hint, 48, FOOTER_Y, { size: 16 }, p.muted, { maxWidth: x - 72 });
   }
 }

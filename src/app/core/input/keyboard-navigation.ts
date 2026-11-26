@@ -1,7 +1,7 @@
 import { Service, inject } from '@angular/core';
 import { AudioEngine } from '@core/audio/audio-engine';
 import { SoundId } from '@core/audio/sfx';
-import { GAMEPAD_BUTTONS, InputAction, PageButton, inputAction } from '@core/input/console-keys';
+import { GAMEPAD_BUTTONS, InputAction, PageButton, PressKey, inputAction } from '@core/input/console-keys';
 import { ON_CONSOLE } from '@core/runtime/platform';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 
@@ -23,6 +23,8 @@ const GAMEPAD_REPEAT_MIN_MS = 35;
 const STICK_THRESHOLD = 0.5;
 /** The same action from the keyboard and the controller this close together is one press. */
 const DUPLICATE_MS = 150;
+/** A tap is handled within this of its event (see fromTap). */
+const TAP_HANDLING_MS = 50;
 
 type Source = 'keyboard' | 'gamepad';
 
@@ -44,7 +46,7 @@ function actionSound(action: InputAction): SoundId {
   return action === 'accept' ? 'accept' : action === 'back' ? 'back' : isCanvasAction(action) ? 'move' : 'page';
 }
 
-function isCanvasAction(action: InputAction): action is CanvasAction {
+function isCanvasAction(action: InputAction | PressKey): action is CanvasAction {
   return action === 'up' || action === 'down' || action === 'left' || action === 'right' || action === 'accept' || action === 'back' || action === 'first' || action === 'last';
 }
 
@@ -138,6 +140,25 @@ export class KeyboardNavigation {
       const index = this.chords.indexOf(entry);
       if (index !== -1) this.chords.splice(index, 1);
     };
+  }
+
+  /**
+   * A button pressed from the screen (its pill tapped: "B Back", "L Filter"): the same as on the
+   * controller, to the same screen and handlers, but without its sound (the stage plays the tap's).
+   * Whether a screen used it.
+   */
+  press(key: PressKey): boolean {
+    const action: InputAction = isCanvasAction(key) ? key : buttonAction(key);
+    if (this.consumed.has(action)) return false;
+    return this.handle(action);
+  }
+
+  /** A finger on the touchscreen right now (or the mouse button down): the pointer's, set by GlStageHost. */
+  pointer: { readonly pressing: boolean; readonly lastTapAt: number } | null = null;
+
+  /** Whether what's being handled now is a tap (or a click), not the controller: some controls do more for a finger. */
+  fromTap(): boolean {
+    return performance.now() - (this.pointer?.lastTapAt ?? -Infinity) < TAP_HANDLING_MS;
   }
 
   /** Whether a page button is held down right now, on the controller or the keyboard (hold-to-confirm). */

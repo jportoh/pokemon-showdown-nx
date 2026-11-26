@@ -2,6 +2,7 @@ import { computed, inject, signal } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
 import { Rgba, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { ROLE_KEYS } from '@core/input/console-keys';
+import { pillTarget } from '@core/gl/canvas-ui';
 import { FieldCondition, SideId } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { conditionColor, conditionTurns } from '@features/battle/state/field-conditions';
@@ -11,7 +12,7 @@ import { spriteSetOf } from '@shared/utils/sprite-id';
 import { foeInk } from './header-view';
 import { LogView } from './overlay-views';
 import { PokemonSheetView } from './pokemon-sheet-view';
-import { ScreenContext, keyChip, write } from './screen-context';
+import { ScreenContext, keyChip, write, drawKeys } from './screen-context';
 import { CARD_H, CARD_W, TeamCard, drawTeamCard, ownCard, seenCard } from './team-card';
 
 const TOP = 44;
@@ -44,18 +45,6 @@ interface ConditionRow {
   pips: { on: boolean }[];
 }
 
-/** A legend at the right of a row, from `right` leftwards: each key's chip and its action. */
-export function drawKeys(ctx: ScreenContext, keys: readonly (readonly [string, string])[], right: number, cy: number): number {
-  let x = right;
-  for (const [key, text] of [...keys].reverse()) {
-    x -= ctx.text.measure(text, { size: 16 });
-    write(ctx, text, x, cy, { size: 16 }, ctx.palette.ink);
-    x -= 8 + Math.max(26, ctx.text.measure(key, { size: 13, bold: true }) + 12);
-    keyChip(ctx, key, x, cy, 26);
-    x -= 20;
-  }
-  return x;
-}
 
 /**
  * Battle info (ZR), over the whole stage under the top bar, in the menu's style: tabs for each side's
@@ -261,6 +250,7 @@ export class InfoView {
     const p = ctx.palette;
     this.drawGround(ctx);
     const keyW = keyChip(ctx, ROLE_KEYS.fieldView.label, GRID_X, TOP + 32, 30);
+    pillTarget(ctx, 'field-key', { x: GRID_X - 4, y: TOP + 17, w: keyW + 8, h: 30 }, ROLE_KEYS.fieldView.label);
     const titleW = write(ctx, 'FIELD', GRID_X + keyW + 12, TOP + 32, { size: 24, bold: true }, p.ink);
     write(ctx, `Turn ${this.store.turn()}`, GRID_X + keyW + titleW + 28, TOP + 33, { size: 16 }, p.muted);
     drawKeys(ctx, [['A', 'Whole sheet'], ['B', 'Close']], 1264, TOP + 32);

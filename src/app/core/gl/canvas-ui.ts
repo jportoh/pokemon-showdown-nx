@@ -1,3 +1,4 @@
+import { PressKey, pillKeys } from '@core/input/console-keys';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { GlRenderer, Rgba, rgba, withAlpha } from './gl-renderer';
 import { TEXT_PAD, TextStyle, TextTextures } from './gl-textures';
@@ -96,6 +97,11 @@ export interface UiControl {
   /** Pressed with a click only: the d-pad never lands on it. */
   skip?: boolean;
   /**
+   * A click presses it without taking the focus (a legend's pill: "B" or "◀▶" then work on what has
+   * the focus, as on the controller); the mouse over it doesn't take it either.
+   */
+  keepFocus?: boolean;
+  /**
    * The d-pad while it has the focus, before moving away: true when it used it (an option picker's
    * left/right change its value; a list's row past the shown ones pages the list).
    */
@@ -113,6 +119,8 @@ export const FOCUS_RING: Rgba = rgba('#facc15');
  */
 export class CanvasFocus {
   focused: string | null = null;
+  /** A click (or a tap) is pressing a control right now: some do less for a first click than A does (it focuses them first). */
+  clicking = false;
   private building: UiControl[] = [];
   private controls: UiControl[] = [];
   private lastBox: UiControl | null = null;
@@ -197,9 +205,14 @@ export class CanvasFocus {
   click(x: number, y: number): boolean {
     const control = this.controlAt(x, y);
     if (!control) return false;
-    this.focused = control.id;
+    if (!control.keepFocus) this.focused = control.id;
     if (!control.accept) return false;
-    control.accept();
+    this.clicking = true;
+    try {
+      control.accept();
+    } finally {
+      this.clicking = false;
+    }
     return true;
   }
 
@@ -215,8 +228,28 @@ export class CanvasFocus {
   /** The mouse over a control (web): it takes the focus. */
   hover(x: number, y: number): void {
     const control = this.controlAt(x, y);
-    if (control) this.focused = control.id;
+    if (control && !control.keepFocus) this.focused = control.id;
   }
+}
+
+/** The least height a tap target gets (a legend's pill is drawn smaller): what a finger hits reliably. */
+export const TAP_MIN_H = 44;
+
+/**
+ * A legend's pill (its box: the pill, and its text too when it has one key), tappable: a tap presses
+ * the button it names as the controller would, on whatever has the focus ("B" goes back, "L" turns
+ * the filter, "◀▶" splits into left and right halves). Click only, it never takes the focus. Nothing
+ * for what a tap can't stand for (the d-pad, a held button).
+ */
+export function pillTarget(ctx: { focus: CanvasFocus; press: (key: PressKey) => boolean }, id: string, box: { x: number; y: number; w: number; h: number }, label: string): void {
+  const keys = pillKeys(label);
+  if (keys.length === 0) return;
+  const h = Math.max(box.h, TAP_MIN_H);
+  const y = box.y + box.h / 2 - h / 2;
+  const w = box.w / keys.length;
+  keys.forEach((key, i) => {
+    ctx.focus.control({ id: keys.length > 1 ? `${id}-${i}` : id, x: box.x + i * w, y, w, h, skip: true, keepFocus: true, accept: () => void ctx.press(key) });
+  });
 }
 
 /** Whether an action is a direction. */

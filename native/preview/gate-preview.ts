@@ -44,7 +44,8 @@ async function main(): Promise<void> {
   const { GateScreen } = await import('../loader/gate-screen');
   const screen = new GateScreen('Version 0.6.0');
   const view = PREVIEW_VIEWS[params.get('view') ?? 'checking'] ?? PREVIEW_VIEWS['checking'];
-  if (view.actions) void screen.choose(view);
+  // The choice (the controller's A/B, or a tap on a button) shows in the tab's title.
+  if (view.actions) void screen.choose(view).then((choice) => (document.title = `chose ${choice}`));
   else screen.show(view);
 }
 

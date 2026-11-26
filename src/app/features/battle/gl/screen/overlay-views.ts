@@ -5,7 +5,7 @@ import { BattleLogEntry } from '@features/battle/models/battle';
 import { BattleStore } from '@features/battle/state/battle-store';
 import { TextStyle } from '@core/gl/gl-textures';
 import { CARD, FaceSide, SLOTS, TOP, drawHalves, drawHero, drawIcon, heroFromRow, iconBox } from './face-off';
-import { ScreenContext, write } from './screen-context';
+import { ScreenContext, drawKeys, write } from './screen-context';
 import { foeInk } from './header-view';
 
 /** A log line's colour, as a role of the theme's palette. */
@@ -111,8 +111,15 @@ export class LogView {
       }
       y += lines.length * look.lineHeight + look.after;
     }
-    if (start > 0) write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 16, { size: 16 }, p.accentText, 'center');
-    if (this.end !== null) write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 16, { size: 16 }, p.accentText, 'center');
+    // ▲ ▼ at the right; a finger taps that half of the right edge to scroll (the d-pad does too).
+    if (start > 0) {
+      write(ctx, '▲', LOG_X + LOG_W - 16, LOG_Y + 16, { size: 16 }, p.accentText, 'center');
+      ctx.focus.control({ id: 'log-up', x: LOG_X + LOG_W - 48, y: LOG_Y, w: 48, h: LOG_H / 2, skip: true, keepFocus: true, accept: () => this.page('up', ctx) });
+    }
+    if (this.end !== null) {
+      write(ctx, '▼', LOG_X + LOG_W - 16, LOG_Y + LOG_H - 16, { size: 16 }, p.accentText, 'center');
+      ctx.focus.control({ id: 'log-down', x: LOG_X + LOG_W - 48, y: LOG_Y + LOG_H / 2, w: 48, h: LOG_H / 2, skip: true, keepFocus: true, accept: () => this.page('down', ctx) });
+    }
   }
 
   /** A chat message: a sky-blue mark by its lines, its author's name in sky blue; the server's notices grey. */
@@ -231,7 +238,8 @@ export class TeamsOverviewView {
 
     const dots = '.'.repeat(1 + (Math.floor(ctx.now / 500) % 3));
     write(ctx, `The players are picking their Pokémon${dots}`, 640, 640, { size: 20, bold: true }, p.teal, 'center', 760);
-    write(ctx, '▲▼ team · ◀▶ sides · ZR battle info · B leave', 640, 680, { size: 15 }, p.muted, 'center', 760);
+    // Tappable, as every legend (a finger taps a Pokémon to show it, and B here to leave).
+    drawKeys(ctx, [['▲▼', 'Team'], ['◀▶', 'Sides'], ['ZR', 'Battle info'], ['B', 'Leave']], 1264, 684);
   }
 
   /** The side and Pokémon shown follow the focus: a new one slides in. */

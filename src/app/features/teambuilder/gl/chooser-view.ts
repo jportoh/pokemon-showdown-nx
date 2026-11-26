@@ -2,11 +2,11 @@ import { inject } from '@angular/core';
 import { ROLE_KEYS } from '@core/input/console-keys';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
-import { Box, ListView, UiContext, label, textField } from '@core/gl/ui/retro-kit';
+import { Box, ListView, UiContext, label, listPager, textField } from '@core/gl/ui/retro-kit';
 import { menuFocus } from '@core/gl/ui/menu-kit';
 import { toId } from '@shared/utils/to-id';
 import { CATEGORY_ICON_W } from '@core/gl/ui/category-icons';
-import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, keyPillWidth, typeRgba } from './tb-draw';
+import { BESIDE_COMPACT_X, EDIT_BODY_BOTTOM, EDIT_BODY_Y, EDIT_RIGHT, WHITE, WrapCache, categoryBadge, keyPill, keyPillButton, keyPillWidth, typeRgba } from './tb-draw';
 
 export interface ChooserOption {
   id: string;
@@ -58,6 +58,8 @@ const ROW_GAP = 4;
 const VISIBLE_SEARCHABLE = 7;
 const VISIBLE_PLAIN = 8;
 const LIST_W = 540;
+/** The list's pages under the panel beside it (when it's longer than it shows). */
+const PAGER_H = 44;
 /** Names the canvas keyboard lists while searching, under its text. */
 const HINT_NAMES = 4;
 const MAX_QUERY_LENGTH = 24;
@@ -158,8 +160,11 @@ export class ChooserView {
       (index) => picked(results[index].id),
     );
 
-    // Beside the list: the focused option (the current choice while the search box has the focus).
-    const panel = { x: x + LIST_W + 20, y: EDIT_BODY_Y, w: EDIT_RIGHT - (x + LIST_W + 20), h: EDIT_BODY_BOTTOM - EDIT_BODY_Y };
+    // Beside the list: the focused option (the current choice while the search box has the focus);
+    // under it, when the list is longer than it shows, its pages for a finger (the d-pad scrolls).
+    const pages = list.canPage(-1, results.length) || list.canPage(1, results.length);
+    const panel = { x: x + LIST_W + 20, y: EDIT_BODY_Y, w: EDIT_RIGHT - (x + LIST_W + 20), h: EDIT_BODY_BOTTOM - EDIT_BODY_Y - (pages ? PAGER_H + 8 : 0) };
+    if (pages) listPager(ctx, 'chooser-pages', { x: panel.x, y: panel.y + panel.h + 8, w: panel.w, h: PAGER_H }, list, results.length);
     renderer.rect(panel.x, panel.y, panel.w, panel.h, { fill: p.panel, stroke: p.outline, radius: 10, border: 2 });
     const focusedIndex = this.focusedIndex(list);
     const shown = focusedIndex !== null ? results[focusedIndex] : spec.options.find((option) => option.id === spec.selectedId);
@@ -305,7 +310,7 @@ export function filterChips(ctx: UiContext, box: Box, names: readonly string[], 
   while (last + 1 < widths.length && used + 6 + widths[last + 1] <= room) used += 6 + widths[++last];
   while (first > 0 && used + 6 + widths[first - 1] <= room) used += 6 + widths[--first];
 
-  keyPill(ctx, 'L', box.x, cy);
+  keyPillButton(ctx, 'filter-l', 'L', box.x, cy);
   let x = box.x + keyW + 8;
   for (let i = first; i <= last; i++) {
     const lit = i === on;
@@ -313,7 +318,7 @@ export function filterChips(ctx: UiContext, box: Box, names: readonly string[], 
     label(ctx, names[i], x + widths[i] / 2, cy, style, lit ? WHITE : p.muted, { align: 'center' });
     x += widths[i] + 6;
   }
-  keyPill(ctx, 'R', x + 2, cy);
+  keyPillButton(ctx, 'filter-r', 'R', x + 2, cy);
 }
 /** Inside a search box's right end: the search key's chip (Y), which opens the keyboard from the list, after `range`. */
 export function searchKey(ctx: UiContext, field: Box, range: string): void {

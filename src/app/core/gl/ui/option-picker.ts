@@ -2,7 +2,7 @@ import { CanvasAction } from '@core/input/keyboard-navigation';
 import { CanvasFocus } from '../canvas-ui';
 import { ImagePriority } from '../sprite-bitmaps';
 import { drawKeyButton, menuModal } from './menu-kit';
-import { Box, UiContext, label } from './retro-kit';
+import { Box, UiContext, arrowButton, label } from './retro-kit';
 import { maskOf } from './masks';
 
 /** One choice in the picker. */
@@ -127,8 +127,11 @@ export class OptionPickerView {
     const options = this.optionIndexes();
     const selectedAt = options.findIndex((i) => (this.rows[i] as { option: PickerOption }).option.id === this.selected);
     if (options.length > 1 && selectedAt >= 0) label(ctx, `${selectedAt + 1} of ${options.length}`, BOX.x + 988, BOX.y + 38, { size: 18 }, p.muted, { align: 'right' });
-    const arrows = `${this.start > 0 ? '▲' : ''} ${this.start + this.layout.visible < this.rows.length ? '▼' : ''}`.trim();
-    if (arrows) label(ctx, arrows, BOX.x + 700, BOX.y + 38, { size: 18 }, p.muted);
+    // More than it shows: ▲ ▼ page it (L/R on the controller).
+    if (this.rows.length > this.layout.visible) {
+      arrowButton(ctx, 'picker-up', { x: BOX.x + 704, y: BOX.y + 16, w: 52, h: 44 }, '▲', this.start > 0, () => this.page(-1));
+      arrowButton(ctx, 'picker-down', { x: BOX.x + 764, y: BOX.y + 16, w: 52, h: 44 }, '▼', this.start + this.layout.visible < this.rows.length, () => this.page(1));
+    }
     drawKeyButton(ctx, 'picker-close', { x: BOX.x + BOX.w - 160, y: BOX.y + 16, w: 136, h: 44 }, 'B', 'Close', () => this.close());
 
     const { visible, height } = this.layout;

@@ -1,5 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { AudioEngine } from '@core/audio/audio-engine';
+import { SoundId } from '@core/audio/sfx';
+import { PressKey } from '@core/input/console-keys';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { RenderScheduler } from '@core/runtime/render-scheduler';
 import { GlDiagnostics } from './gl-diagnostics';
@@ -27,6 +29,11 @@ export interface StageResources {
   images: GlSprites;
   /** A soft white disc: ellipses, shadows. */
   disc: Texture;
+  /**
+   * Presses a controller button as the controller would (a tapped pill: "B Back", "L Filter"), so a
+   * touch player reaches whatever the legends promise; whether a screen used it.
+   */
+  press: (key: PressKey) => boolean;
 }
 
 /** One frame of a scene. */
@@ -82,6 +89,8 @@ export class GlStage {
   private releaseInput: (() => void) | null = null;
   /** The touchscreen and the mouse (set by the host): its last raw events show in the diagnostics. */
   pointer: PointerInput | null = null;
+  /** The sound of the tap being handled: the button its pill pressed (null: it did nothing), or A's (undefined). */
+  private tapSound: SoundId | null | undefined = undefined;
   /** L3 + R3, on any screen: the frame-time diagnostics, with the shown scene's own lines and the last touches. */
   private readonly hud = new PerfHud(() => [...(this.top()?.diagnostics?.() ?? []), ...(this.pointer?.log ?? [])]);
 
@@ -125,7 +134,14 @@ export class GlStage {
     text.onUpload = (ms) => this.diagnostics.record('text', ms);
     images.onUpload = (ms) => this.diagnostics.record('sprite', ms);
     this.bitmaps.onArrival = () => this.diagnostics.record('arrival', 0);
-    this.resources = { renderer, text, overlayText: new TextTextures(renderer, this.scale, family, OVERLAY_PAGES), images, disc: discTexture(renderer) };
+    this.resources = {
+      renderer,
+      text,
+      overlayText: new TextTextures(renderer, this.scale, family, OVERLAY_PAGES),
+      images,
+      disc: discTexture(renderer),
+      press: (key) => this.press(key),
+    };
     this.waiting.splice(0).forEach((ready) => ready(this.resources!));
     if (this.scenes.length > 0) this.start();
   }
@@ -169,11 +185,23 @@ export class GlStage {
 
   /** A tap or a click: the overlay's, else the top scene's. */
   click(x: number, y: number): void {
-    // The controller's presses sound in KeyboardNavigation; a tap that presses a control sounds the same.
+    // The controller's presses sound in KeyboardNavigation; a tap that presses a control sounds the
+    // same (A), or as the button its pill stands for (B's back, a page button's page), or not at all
+    // when that button did nothing there.
+    this.tapSound = undefined;
     if ((this.overlay ?? this.top())?.click?.(x, y)) {
-      this.audio.play('accept');
+      const sound = this.tapSound === undefined ? 'accept' : this.tapSound;
+      if (sound) this.audio.play(sound);
       this.renderScheduler.request();
     }
+  }
+
+  /** A pill tapped (StageResources.press): its button, pressed; the tap then sounds as that button. */
+  private press(key: PressKey): boolean {
+    const used = this.navigation.press(key);
+    this.tapSound = used ? pressSound(key) : null;
+    if (used) this.renderScheduler.request();
+    return used;
   }
 
   hover(x: number, y: number): void {
@@ -220,4 +248,10 @@ export class GlStage {
     };
     this.frame = requestAnimationFrame(loop);
   }
+}
+
+/** The sound of a button a tapped pill pressed, as the controller's press of it makes. */
+function pressSound(key: PressKey): SoundId {
+  if (key === 'accept' || key === 'back') return key;
+  return key === 'up' || key === 'down' || key === 'left' || key === 'right' ? 'move' : 'page';
 }

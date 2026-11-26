@@ -132,10 +132,12 @@ export class StatsView {
   private drawRow(ctx: UiContext, box: Box, stat: StatId, used: number): void {
     const p = ctx.palette;
     const model = this.model!;
+    const wasFocused = this.focusedStat() === stat;
     const focused = ctx.focus.control({
       id: rowId(stat),
       ...box,
-      accept: () => this.setPoints(stat, this.isFilled(stat) ? 0 : MAX_STAT_POINTS),
+      // A: full or empty. A tap on a row that hadn't the focus only focuses it (its arrows show), so it doesn't jump.
+      accept: () => (ctx.focus.clicking && !wasFocused ? undefined : this.setPoints(stat, this.isFilled(stat) ? 0 : MAX_STAT_POINTS)),
       move: (direction) => {
         if (direction !== 'left' && direction !== 'right') return false;
         this.setPoints(stat, pointsOf(this.spread(), stat) + (direction === 'right' ? 1 : -1));
@@ -277,7 +279,9 @@ export class StatsView {
 
   /** A click-only pixel arrow (a point less or more). */
   private clickArrow(ctx: UiContext, id: string, box: Box, rows: readonly string[], accept: () => void): void {
-    const focused = ctx.focus.control({ id, ...box, accept, skip: true });
+    // Drawn small, but a finger's size to tap (44 square round it).
+    // The focus stays on the row, so the legend's ◀▶ go on working on it.
+    const focused = ctx.focus.control({ id, x: box.x - (44 - box.w) / 2, y: box.y - (44 - box.h) / 2, w: 44, h: 44, accept, skip: true, keepFocus: true });
     arrow(ctx, rows, box.x + 4, box.y + 2, 4, focused ? ctx.palette.accentText : ctx.palette.ink);
   }
 

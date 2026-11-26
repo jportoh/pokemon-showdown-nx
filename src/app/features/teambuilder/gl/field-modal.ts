@@ -4,7 +4,7 @@ import { menuFocus } from '@core/gl/ui/menu-kit';
 import { CalcMode } from '@features/teambuilder/calc/calc-state';
 import { CalcField, CalcOutcome, CalcSide, TerrainChoice, WeatherChoice } from '@features/teambuilder/calc/damage-calc';
 import { PokemonSet } from '@features/teambuilder/models/team';
-import { WrapCache, keyPill, keyPillWidth } from './tb-draw';
+import { WrapCache, keyPillButton, keyPillWidth } from './tb-draw';
 
 const WEATHERS: readonly WeatherChoice[] = ['auto', 'none', 'Sun', 'Rain', 'Sand', 'Snow'];
 const TERRAINS: readonly TerrainChoice[] = ['auto', 'none', 'Electric', 'Grassy', 'Psychic', 'Misty'];
@@ -198,8 +198,8 @@ export class FieldModal {
     const valueX = box.x + 226;
     const valueW = box.w - 226 - 10;
     if (focused) {
-      keyPill(ctx, 'L', valueX, cy);
-      keyPill(ctx, 'R', valueX + valueW - keyPillWidth(ctx, 'R'), cy);
+      keyPillButton(ctx, 'field-l', 'L', valueX, cy);
+      keyPillButton(ctx, 'field-r', 'R', valueX + valueW - keyPillWidth(ctx, 'R'), cy);
     }
     label(ctx, row.value, valueX + valueW / 2, cy, { size: 19, bold: !row.plain }, row.plain ? p.muted : p.accentText, { align: 'center', maxWidth: valueW - 84 });
     if (focused) menuFocus(ctx, box, 8);

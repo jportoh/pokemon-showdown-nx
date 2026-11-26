@@ -2,6 +2,7 @@ import { computed, inject } from '@angular/core';
 import { Rgba, withAlpha } from '@core/gl/gl-renderer';
 import { Palette } from '@core/gl/ui/gl-theme';
 import { BATTLE_SHORTCUTS, ROLE_KEYS } from '@core/input/console-keys';
+import { pillTarget } from '@core/gl/canvas-ui';
 import { BattleStore, timerSecondsLeft } from '@features/battle/state/battle-store';
 import { INK, ScreenContext, hint, keyChip, write } from './screen-context';
 
@@ -29,6 +30,8 @@ export interface HeaderActions {
   toggleField: (() => void) | null;
   /** The last turn's log (L held): whether it's held now; null where there's none to show. */
   logHeld: boolean | null;
+  /** The Last turn button tapped: its peek lasts while the finger stays on it (as L held). */
+  peekLog: () => void;
   forfeitState: ForfeitState;
   toggleTimer: () => void;
 }
@@ -92,7 +95,7 @@ export class HeaderView {
 
     // The round buttons, from the right: Menu, Info, Field, Last turn (held: a click does nothing).
     const buttons: { id: string; key: string; label: string; active: boolean; press: () => void }[] = [
-      ...(actions.logHeld !== null ? [{ id: 'header-log', key: BATTLE_SHORTCUTS.log.label, label: 'Last turn', active: actions.logHeld, press: () => undefined }] : []),
+      ...(actions.logHeld !== null ? [{ id: 'header-log', key: BATTLE_SHORTCUTS.log.label, label: 'Last turn', active: actions.logHeld, press: actions.peekLog }] : []),
       ...(actions.toggleField ? [{ id: 'header-field', key: ROLE_KEYS.fieldView.label, label: 'Field', active: actions.fieldOpen, press: actions.toggleField }] : []),
       { id: 'header-info', key: 'ZR', label: 'Info', active: actions.infoOpen, press: actions.toggleInfo },
       { id: 'header-menu', key: ROLE_KEYS.battleMenu.label, label: 'Menu', active: actions.menuOpen, press: actions.toggleMenu },
@@ -169,8 +172,10 @@ export class HeaderView {
   }
 }
 
-/** A key chip and its action, for legends drawn by the battle's panels; returns the width used. */
+/** A key chip and its action, for legends drawn by the battle's panels, tappable (pillTarget); returns the width used. */
 export function legendItem(ctx: ScreenContext, key: string, text: string, x: number, cy: number, color?: Rgba): number {
   const width = keyChip(ctx, key, x, cy, 26);
-  return width + 8 + write(ctx, text, x + width + 8, cy, { size: 16 }, color ?? withAlpha(ctx.palette.ink, 1));
+  const used = width + 8 + write(ctx, text, x + width + 8, cy, { size: 16 }, color ?? withAlpha(ctx.palette.ink, 1));
+  pillTarget(ctx, `legend-${key}-${Math.round(x)}-${Math.round(cy)}`, { x: x - 6, y: cy - 13, w: used + 12, h: 26 }, key);
+  return used;
 }
