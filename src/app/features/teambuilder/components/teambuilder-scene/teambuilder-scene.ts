@@ -10,12 +10,12 @@ import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { GlTheme } from '@core/gl/ui/gl-theme';
 import { drawGround } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
-import { UiContext, label } from '@core/gl/ui/retro-kit';
+import { UiContext, arrowButton, label } from '@core/gl/ui/retro-kit';
 import { CanvasAction, KeyboardNavigation } from '@core/input/keyboard-navigation';
 import { AppSettings } from '@core/settings/app-settings';
 import { SetEditorView } from '@features/teambuilder/gl/set-editor-view';
 import { SpriteStage } from '@features/teambuilder/gl/sprite-stage';
-import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend, keyPill } from '@features/teambuilder/gl/tb-draw';
+import { EDIT_RIGHT, LEGEND_H, LegendEntry, controlsLegend, keyPillButton } from '@features/teambuilder/gl/tb-draw';
 import { NEW_TEAM_ID, TeamGridView, inGridOrder } from '@features/teambuilder/gl/team-grid-view';
 import { MAX_TEAM_NAME_LENGTH, TEAM_FORMAT_ID, TEAM_RENAME_ID, TeamView, slotId } from '@features/teambuilder/gl/team-view';
 import { VALIDATION_BACK_ID, ValidationView } from '@features/teambuilder/gl/validation-view';
@@ -375,7 +375,19 @@ export class TeambuilderScene {
     } else {
       const count = this.store.teams().length;
       const text = `${count} team${count === 1 ? '' : 's'}`;
-      this.bar.drawHeader(ctx, { ...page, trailing: (c, right, cy) => right - label(c, text, right, cy, { size: 20 }, c.palette.muted, { align: 'right' }) });
+      this.bar.drawHeader(ctx, {
+        ...page,
+        trailing: (c, right, cy) => {
+          let left = right - label(c, text, right, cy, { size: 20 }, c.palette.muted, { align: 'right' });
+          // More rows than show: ▲ ▼ for a finger (the d-pad scrolls past the edge).
+          if (this.grid.canPage(-1, count) || this.grid.canPage(1, count)) {
+            arrowButton(c, 'grid-down', { x: left - 68, y: cy - 20, w: 52, h: 40 }, '▼', this.grid.canPage(1, count), () => this.grid.page(1, count));
+            arrowButton(c, 'grid-up', { x: left - 128, y: cy - 20, w: 52, h: 40 }, '▲', this.grid.canPage(-1, count), () => this.grid.page(-1, count));
+            left -= 128;
+          }
+          return left;
+        },
+      });
     }
   }
 
@@ -386,10 +398,10 @@ export class TeambuilderScene {
     if (teams.length < 2) return right - label(ctx, text, right, cy, { size: 20 }, ctx.palette.muted, { align: 'right' });
     const rW = Math.max(34, ctx.text.measure('R', { size: 16, bold: true }) + 14);
     let x = right - rW;
-    keyPill(ctx, 'R', x, cy);
+    keyPillButton(ctx, 'place-r', 'R', x, cy);
     x -= 12 + label(ctx, text, x - 12, cy, { size: 20 }, ctx.palette.ink, { align: 'right' });
     x -= 12 + rW;
-    keyPill(ctx, 'L', x, cy);
+    keyPillButton(ctx, 'place-l', 'L', x, cy);
     return x;
   }
 

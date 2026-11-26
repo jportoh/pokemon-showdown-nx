@@ -1,7 +1,7 @@
 import { drawWaiting } from '@core/gl/ui/waiting';
 import { inject } from '@angular/core';
 import { ChampionsDex } from '@core/dex/champions-dex';
-import { CanvasFocus } from '@core/gl/canvas-ui';
+import { CanvasFocus, pillTarget } from '@core/gl/canvas-ui';
 import { mixRgba, withAlpha } from '@core/gl/gl-renderer';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
@@ -145,7 +145,8 @@ export class ChallengePopupView {
     drawRoundButton(ctx, 'popup-reject', { x: left, y: buttonsY + 84, w: half, h: 52 }, 'Reject', () => this.challenges.reject(challenge));
     drawRoundButton(ctx, POPUP_CARD_ID, { x: left + half + 16, y: buttonsY + 84, w: half, h: 52 }, 'Trainer Card', model.viewCard);
     const width = pill(ctx, 'B', left, y + PANEL.h - 30, 24);
-    label(ctx, 'Answer later', left + width + 8, y + PANEL.h - 30, { size: 16 }, p.muted);
+    const laterW = label(ctx, 'Answer later', left + width + 8, y + PANEL.h - 30, { size: 16 }, p.muted);
+    pillTarget(ctx, 'popup-later', { x: left - 6, y: y + PANEL.h - 42, w: width + 8 + laterW + 12, h: 24 }, 'B');
   }
 
   /** "2/5" and the L/R pills, clickable. */

@@ -118,8 +118,20 @@ class LineList {
         x += label(ctx, part.text, x, cy, style, withAlpha(color, line.dim ? 0.6 : 1), part.maxWidth ? { fast: true, maxWidth: part.maxWidth } : { fast: true });
       }
     });
-    if (this.start > 0) label(ctx, '▲', box.x + box.w - 14, box.y + 14, { size: 14 }, p.accentText, { align: 'center' });
-    if (this.start < max) label(ctx, '▼', box.x + box.w - 14, box.y + box.h - 14, { size: 14 }, p.accentText, { align: 'center' });
+    // ▲ ▼ in the gutter at the right; a finger taps that half of it for a page (the d-pad scrolls a line).
+    const page = (by: 1 | -1) => {
+      const next = Math.max(0, Math.min(max, this.start + by * Math.max(1, visible - 1)));
+      this.start = next;
+      this.anchor = this.follow && next === max ? null : (lines[next]?.key ?? null);
+    };
+    if (this.start > 0) {
+      label(ctx, '▲', box.x + box.w - 14, box.y + 14, { size: 14 }, p.accentText, { align: 'center' });
+      ctx.focus.control({ id: `${this.id}-up`, x: box.x + box.w - 44, y: box.y, w: 44, h: box.h / 2, skip: true, keepFocus: true, accept: () => page(-1) });
+    }
+    if (this.start < max) {
+      label(ctx, '▼', box.x + box.w - 14, box.y + box.h - 14, { size: 14 }, p.accentText, { align: 'center' });
+      ctx.focus.control({ id: `${this.id}-down`, x: box.x + box.w - 44, y: box.y + box.h / 2, w: 44, h: box.h / 2, skip: true, keepFocus: true, accept: () => page(1) });
+    }
     if (focused) menuFocus(ctx, { x: box.x - 6, y: box.y - 6, w: box.w + 12, h: box.h + 12 });
   }
 }

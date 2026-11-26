@@ -1,3 +1,4 @@
+import { pillTarget } from '@core/gl/canvas-ui';
 import { Texture, mixRgba, withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_W } from '@core/gl/gl-stage';
 import { SLANT } from '@core/gl/ui/menu-kit';
@@ -170,6 +171,11 @@ export class FormatGridView {
       const cy = top + layout.headings[0].y + HEADING_H / 2;
       pill(ctx, 'ZR', x - 36, cy, 24);
       pill(ctx, 'ZL', x - 80, cy, 24);
+      // Only while the heading shows (it scrolls away with the grid).
+      if (cy > VIEW.y && cy < VIEW.y + VIEW.h) {
+        pillTarget(ctx, 'grid-zr', { x: x - 38, y: cy - 12, w: 40, h: 24 }, 'ZR');
+        pillTarget(ctx, 'grid-zl', { x: x - 82, y: cy - 12, w: 40, h: 24 }, 'ZL');
+      }
     }
     for (const tile of layout.tiles) this.drawTile(ctx, model, tile, top + tile.y);
     renderer.clip(null);
@@ -180,7 +186,29 @@ export class FormatGridView {
       const thumbH = Math.max(32, (track.h * VIEW.h) / layout.height);
       renderer.rect(track.x, track.y, track.w, track.h, { fill: withAlpha(p.rim, 0.5), radius: 2 });
       renderer.rect(track.x, track.y + ((track.h - thumbH) * this.scroll) / maxScroll, track.w, thumbH, { fill: p.accentText, radius: 2 });
+      // A finger can't scroll: the bar's halves page the grid (its ▲ ▼ ends say so).
+      const half = VIEW.h / 2;
+      if (this.target > 0) {
+        label(ctx, '▲', STAGE_W - 12, VIEW.y - 2, { size: 12 }, p.muted, { align: 'center' });
+        ctx.focus.control({ id: 'grid-page-up', x: STAGE_W - 34, y: VIEW.y, w: 34, h: half, skip: true, accept: () => this.page(ctx, -1) });
+      }
+      if (this.target < maxScroll) {
+        label(ctx, '▼', STAGE_W - 12, VIEW.y + VIEW.h + 2, { size: 12 }, p.muted, { align: 'center' });
+        ctx.focus.control({ id: 'grid-page-down', x: STAGE_W - 34, y: VIEW.y + half, w: 34, h: half, skip: true, accept: () => this.page(ctx, 1) });
+      }
     }
+  }
+
+  /**
+   * About a view's height up or down: the focus goes to the first open tile of the row that comes into
+   * view there, and the scroll follows it.
+   */
+  private page(ctx: UiContext, by: 1 | -1): void {
+    const tiles = (this.layout?.tiles ?? []).filter((tile) => !tile.soon);
+    const edge = this.target + (by > 0 ? VIEW.h * 0.75 : VIEW.h * 0.25 - TILE_H);
+    const next = by > 0 ? tiles.find((tile) => tile.y >= edge) : [...tiles].reverse().find((tile) => tile.y <= edge);
+    const to = next ?? (by > 0 ? tiles[tiles.length - 1] : tiles[0]);
+    if (to) ctx.focus.focus(to.id);
   }
 
   /**

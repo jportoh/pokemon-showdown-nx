@@ -79,7 +79,10 @@ const ctx: UiContext = { ...frame, focus: this.focus, palette: this.theme.palett
 | `paragraph(ctx, text, x, top, maxWidth, lineHeight, style, color, maxLines?)` | Wrapped text |
 | `retroBox(ctx, box)` | The Gen 3 style panel (outline, rim, panel) |
 | `button(ctx, id, box, text, { accept, primary?, disabled?, shortcut?, skip? })` | A button. `shortcut: 'ZR'` draws the controller button that does the same |
-| `pill(ctx, 'ZR', x, cy)` | A controller button's name in a pill (legends, shortcuts) |
+| `pill(ctx, 'ZR', x, cy)` | A controller button's name in a pill (shortcuts; legends use `keysLegend`) |
+| `keysLegend(ctx, keys, right, cy)` | A right-aligned legend (`[['A', 'Open'], ['B', 'Back']]`), each entry tappable: a tap presses its button |
+| `arrowButton(ctx, id, box, '▲', enabled, accept)` | A small click-only arrow button, for what a finger can't scroll or step |
+| `listPager(ctx, id, box, list, count)` | ▲ ▼ and the range, paging a `ListView` (for lists that show no arrows) |
 | `stepper(ctx, id, box, name, value, step)` | A setting with a few values; left/right or A change it |
 | `tabs(ctx, id, box, names, active, select)` | A row of tabs |
 | `textField(ctx, id, box, value, { edit, placeholder?, masked? })` | A text field; `edit` opens the keyboard |
@@ -123,6 +126,9 @@ Useful details:
 - `focus.focus(id)` sets the focus (when a screen opens, or after an action).
 - `skip: true` makes a control click-only: the d-pad never lands on it (the bar's Back button, whose
   controller equivalent is B).
+- `keepFocus: true` makes a click press it without taking the focus (a legend's pill, an arrow beside
+  a row): what it does then works on what had the focus, as the controller's button would.
+- `focus.clicking` is true while a click presses a control (a stat row's first tap only focuses it).
 - A control's `move(direction)` handles the d-pad itself before the focus moves (a stepper uses
   left/right, a list row past the edge scrolls the list).
 - `focus.trap()` (called by `modal`) makes only the controls declared after it reachable.
@@ -142,7 +148,8 @@ this.list.draw(ctx, x, y, width, teams.length,
 
 Rows are controls `${id}-${index}`. The d-pad walks them and scrolls a row past the edges; call
 `list.page(±1, count, focus)` from L/R to move a page, and `list.range(count)` gives
-"11–18 of 120".
+"11–18 of 120". Its ▲ ▼ (with `arrows`, the default) are tappable, a page each; a list without them
+needs a `listPager` somewhere a finger can reach.
 
 ## Typing text: `CanvasKeyboard`
 
@@ -257,11 +264,19 @@ and views. `features/play/gl` and `features/teambuilder/gl` are good examples.
 
 ## Patterns used across the app
 
-- **Legends.** Pages list their controller buttons at the bottom with `pill`s ("ZR Search · L Teams").
-  If a button does something on the page, say so on screen.
+- **Legends.** Pages list their controller buttons at the bottom ("ZR Search · L Teams"). If a
+  button does something on the page, say so on screen, and draw it with a tappable legend
+  (`keysLegend`, `controlsLegend`, `drawKeys`, or `pillTarget` for your own): a tap on an entry
+  presses that button (`StageResources.press` → `KeyboardNavigation.press`), so a touch player can do
+  whatever the legend promises. "◀▶" and "ZL ZR" split into halves.
+- **Everything by touch.** Every screen must be usable with the touchscreen alone: a way back from
+  everywhere (a Back button or a legend's B), lists a finger can page (`listPager`, tappable ▲ ▼),
+  values a finger can step (tappable ◀ ▶), and nothing only a held or a shoulder button reaches.
 - **Hold to confirm.** Irreversible actions (delete a team, forfeit, disconnect) use `HoldAction`
   instead of a confirmation dialog: call `press()` from the button handler and `step(now)` every
-  frame; it returns `true` on the frame the hold completes.
+  frame; it returns `true` on the frame the hold completes. Pressed with a tap, it fills while the
+  finger stays down; where a screen tells only a finger's lift, a first tap fills it halfway and a
+  second one confirms.
 - **Animate with `dt`.** Ease with `1 - Math.exp(-dt * speed)` so animations run the same at any frame
   rate.
 - **Leave with a fade.** Pages fade out before navigating (`leaving` in `SettingsScene`), and ignore

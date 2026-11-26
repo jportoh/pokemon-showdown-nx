@@ -3,8 +3,7 @@ import { ChampionsDex } from '@core/dex/champions-dex';
 import { withAlpha } from '@core/gl/gl-renderer';
 import { BattleChoices } from '@features/battle/state/battle-choices';
 import { BattleStore } from '@features/battle/state/battle-store';
-import { drawKeys } from './info-view';
-import { ScreenContext, write } from './screen-context';
+import { ScreenContext, drawKeys, write } from './screen-context';
 import { CARD_H, CARD_W, drawTeamCard, ownCard } from './team-card';
 
 const TOP = 44;

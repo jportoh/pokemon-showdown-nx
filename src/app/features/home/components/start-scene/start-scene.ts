@@ -6,7 +6,7 @@ import { GlStage, StageFrame } from '@core/gl/gl-stage';
 import { iconTexture, pixelTexture } from '@core/gl/gl-textures';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
 import { GlTheme } from '@core/gl/ui/gl-theme';
-import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { UiContext, keysLegend, label } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { AppSettings } from '@core/settings/app-settings';
 import { connectingText, connectionNotice, troubleChip } from '@features/connection/connection-notice';
@@ -495,14 +495,7 @@ export class StartScene {
     const keys: [string, string][] = [['A', focused.endsWith('-name') || focused.endsWith('-password') ? 'Type' : 'Select']];
     if (this.step() === 'form') keys.push(['B', 'Back']);
     // Right-aligned, the last one at the edge.
-    let x = 1232;
-    for (const [key, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 18 });
-      label(ctx, text, x, y, { size: 18 }, withAlpha(p.ink, alpha));
-      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
-      pill(ctx, key, x, y, 28);
-      x -= 24;
-    }
+    keysLegend(ctx, keys, 1232, y, { color: withAlpha(p.ink, alpha) });
   }
 }
 

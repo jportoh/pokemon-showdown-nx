@@ -310,6 +310,11 @@ export class CalcsView {
     arrow(ctx, LEFT, left, setY - 7, 2, p.accentText);
     const titleW = label(ctx, rival.title, left + 20, setY, { size: 20, bold: true }, p.ink, { maxWidth: Math.min(340, editBox.x - 12 - whereW - 30 - (left + 20)) });
     arrow(ctx, RIGHT, left + 28 + titleW, setY - 7, 2, p.accentText);
+    // For a finger: each arrow, the set before or after (the d-pad's left and right on the card).
+    if (sets.length > 1) {
+      ctx.focus.control({ id: `${RIVAL_ID}-less`, x: left - 14, y: setY - 22, w: 36, h: 44, skip: true, keepFocus: true, accept: () => this.stepSet(-1) });
+      ctx.focus.control({ id: `${RIVAL_ID}-more`, x: left + 18 + titleW, y: setY - 22, w: 36, h: 44, skip: true, keepFocus: true, accept: () => this.stepSet(1) });
+    }
     label(ctx, whereText, left + 50 + titleW, setY, { size: 15 }, p.muted, { fast: true });
 
     const set = rival.set;

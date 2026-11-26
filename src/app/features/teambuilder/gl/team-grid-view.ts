@@ -159,6 +159,22 @@ export class TeamGridView {
     this.focus.focus(teamCardId(card));
   }
 
+  /** Whether the grid has rows past the ones shown that way (`teamCount`: the teams, without New). */
+  canPage(by: 1 | -1, teamCount: number): boolean {
+    const rows = Math.ceil((teamCount + 1) / COLUMNS);
+    return by < 0 ? this.firstRow > 0 : this.firstRow + ROWS_SHOWN < rows;
+  }
+
+  /** A page of rows up or down (the ▲ ▼ a finger taps; the d-pad scrolls a row), the focus on the first card shown. */
+  page(by: 1 | -1, teamCount: number): void {
+    const rows = Math.ceil((teamCount + 1) / COLUMNS);
+    const first = Math.max(0, Math.min(this.firstRow + by * ROWS_SHOWN, rows - ROWS_SHOWN));
+    if (first === this.firstRow) return;
+    this.scroll = { from: this.scrollOffset(performance.now()), at: performance.now() };
+    this.firstRow = first;
+    this.focus.focus(teamCardId(first * COLUMNS));
+  }
+
   /** Whether the focus is on a card. */
   hasFocus(): boolean {
     return (this.focus.focused ?? '').startsWith('team-card-');

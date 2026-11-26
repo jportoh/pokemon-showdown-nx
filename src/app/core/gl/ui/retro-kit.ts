@@ -1,4 +1,5 @@
-import { Align, CanvasFocus, drawText } from '../canvas-ui';
+import { PressKey, pillKeys } from '@core/input/console-keys';
+import { Align, CanvasFocus, drawText, pillTarget } from '../canvas-ui';
 import { GlRenderer, Rgba, Texture, withAlpha } from '../gl-renderer';
 import { GlSprites } from '../gl-sprites';
 import { TextStyle, TextTextures } from '../gl-textures';
@@ -13,6 +14,8 @@ export interface UiContext {
   focus: CanvasFocus;
   palette: Palette;
   now: number;
+  /** Presses a controller button as the controller would (StageResources.press: a tapped pill). */
+  press: (key: PressKey) => boolean;
 }
 
 export interface Box {
@@ -55,6 +58,34 @@ export function pill(ctx: UiContext, key: string, x: number, cy: number, height 
   ctx.renderer.rect(x, cy - height / 2, width, height, { fill: ctx.palette.select, radius: 3 });
   label(ctx, key, x + width / 2, cy, { size: 14, bold: true }, ctx.palette.ink, { align: 'center' });
   return width;
+}
+
+/**
+ * A legend along a row, right-aligned at `right`: each button's pill and what it does, each one
+ * tappable (pillTarget: "B Back" goes back, "◀▶" splits into its halves), so whatever a legend
+ * promises a touch player can do too. Returns where it starts (its left edge).
+ */
+export function keysLegend(
+  ctx: UiContext,
+  keys: readonly (readonly [string, string])[],
+  right: number,
+  cy: number,
+  options: { size?: number; color?: Rgba } = {},
+): number {
+  const size = options.size ?? 18;
+  let x = right;
+  [...keys].reverse().forEach(([key, text], i) => {
+    const end = x;
+    x -= ctx.text.measure(text, { size });
+    label(ctx, text, x, cy, { size }, options.color ?? ctx.palette.ink);
+    const width = Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
+    x -= 8 + width;
+    pill(ctx, key, x, cy, 28);
+    const box = pillKeys(key).length > 1 ? { x: x - 4, y: cy - 14, w: width + 8, h: 28 } : { x: x - 6, y: cy - 14, w: end - x + 12, h: 28 };
+    pillTarget(ctx, `keys-${Math.round(cy)}-${i}`, box, key);
+    x -= 24;
+  });
+  return x;
 }
 
 export interface ButtonOptions {
@@ -174,7 +205,8 @@ export class ListView {
   constructor(
     readonly id: string,
     private readonly rowHeight: number,
-    private readonly visible: number,
+    /** Rows shown at once (a page). */
+    readonly visible: number,
     private readonly gap = 8,
     /** ▲ ▼ over and under the rows when there's more (off when the page says where it is otherwise). */
     private readonly arrows = true,
@@ -247,12 +279,46 @@ export class ListView {
       });
       drawRow({ box, index, focused });
     }
-    // Arrows when there's more above or below.
+    // Arrows when there's more above or below: tapped, a page that way.
     if (!this.arrows) return;
     const p = ctx.palette;
-    if (this.start > 0) label(ctx, '▲', x + width - 14, y - 12, { size: 14 }, p.muted, { align: 'center' });
-    if (end < count) label(ctx, '▼', x + width - 14, y + this.visible * (this.rowHeight + this.gap) + 4, { size: 14 }, p.muted, { align: 'center' });
+    const below = y + this.visible * (this.rowHeight + this.gap) + 4;
+    if (this.start > 0) {
+      label(ctx, '▲', x + width - 14, y - 12, { size: 14 }, p.muted, { align: 'center' });
+      ctx.focus.control({ id: `${this.id}-up`, x: x + width - 50, y: y - 34, w: 72, h: 44, skip: true, accept: () => this.page(-1, count, ctx.focus) });
+    }
+    if (end < count) {
+      label(ctx, '▼', x + width - 14, below, { size: 14 }, p.muted, { align: 'center' });
+      ctx.focus.control({ id: `${this.id}-down`, x: x + width - 50, y: below - 22, w: 72, h: 44, skip: true, accept: () => this.page(1, count, ctx.focus) });
+    }
   }
+
+  /** Whether there are rows past the window that way. */
+  canPage(by: 1 | -1, count: number): boolean {
+    return by < 0 ? this.start > 0 : this.start + this.visible < count;
+  }
+}
+
+/**
+ * A small square button with an arrow (▲ ▼ ◀ ▶) for what a finger can't scroll or step with the d-pad:
+ * click only (the controller has its own way), faded and inert when there's nothing that way.
+ */
+export function arrowButton(ctx: UiContext, id: string, box: Box, arrow: string, enabled: boolean, accept: () => void): void {
+  const p = ctx.palette;
+  const focused = enabled && ctx.focus.control({ id, ...box, skip: true, accept });
+  ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: enabled ? (focused ? p.select : p.button) : withAlpha(p.button, 0.4), stroke: enabled ? p.outline : withAlpha(p.outline, 0.4), radius: 8, border: 2 });
+  label(ctx, arrow, box.x + box.w / 2, box.y + box.h / 2, { size: 18, bold: true }, enabled ? p.ink : withAlpha(p.ink, 0.35), { align: 'center' });
+}
+
+/**
+ * For a list a finger can't scroll: ▲ and ▼ buttons (a page each, the focus on its first row) at the
+ * ends of `box`, and the list's range between them ("9–16 of 120").
+ */
+export function listPager(ctx: UiContext, id: string, box: Box, list: ListView, count: number): void {
+  const w = Math.min(96, box.w / 3);
+  arrowButton(ctx, `${id}-up`, { x: box.x, y: box.y, w, h: box.h }, '▲', list.canPage(-1, count), () => list.page(-1, count, ctx.focus));
+  arrowButton(ctx, `${id}-down`, { x: box.x + box.w - w, y: box.y, w, h: box.h }, '▼', list.canPage(1, count), () => list.page(1, count, ctx.focus));
+  label(ctx, list.range(count), box.x + box.w / 2, box.y + box.h / 2, { size: 16, bold: true }, ctx.palette.muted, { align: 'center', maxWidth: box.w - 2 * w - 16 });
 }
 
 /**

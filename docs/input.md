@@ -107,6 +107,20 @@ or `GlStage.hover`. The stage passes them to the top scene, which usually forwar
 `focus.click(x, y)` / `focus.hover(x, y)`: a click focuses and presses the control under it, exactly
 like moving there and pressing A.
 
+The whole app works with the touchscreen alone:
+
+- **Legends are buttons.** A tap on a legend's pill ("B Back", "L Filter", "◀▶ Change") presses that
+  button: `StageResources.press(key)` → `KeyboardNavigation.press(key)`, the same handlers as the
+  controller's, without taking the focus (`keepFocus`), and the tap sounds as that button. See
+  `pillTarget` and `keysLegend` in [ui-kit.md](ui-kit.md#patterns-used-across-the-app).
+- **Holds.** `PointerInput.pressing` tells a finger is down (from its press to its lift), so a
+  hold-to-confirm pressed by a tap fills while the finger stays on it (`HoldAction`), and Last turn's
+  peek lasts while it's held. `KeyboardNavigation.fromTap()` tells a tap from the controller.
+- **Lists and values.** Lists page with tappable ▲ ▼ (`ListView`, `listPager`, the pickers, the grids'
+  arrows or scroll bar), values step with tappable ◀ ▶, volumes set with a tap on a bar.
+- **The update gate** (`native/loader/gate-screen.ts`) takes a tap on its A/B buttons too, on the
+  finger's lift.
+
 The console's touchscreen sends events in **bursts** and in several families at once (touch, pointer
 and mouse for one tap); `PointerInput` folds each burst into a single tap. With the L3 + R3 HUD open, the
 last raw events are listed and a dot marks where the last tap landed.

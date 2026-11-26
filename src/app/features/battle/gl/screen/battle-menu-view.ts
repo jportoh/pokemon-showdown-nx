@@ -3,7 +3,8 @@ import { Rgba, withAlpha } from '@core/gl/gl-renderer';
 import { HOLD_FILL } from '@core/gl/ui/hold-action';
 import { menuModal } from '@core/gl/ui/menu-kit';
 import { APPEARANCES, AppSettings, VOLUME_STEP } from '@core/settings/app-settings';
-import { ROLE_KEYS } from '@core/input/console-keys';
+import { ROLE_KEYS, pillKeys } from '@core/input/console-keys';
+import { pillTarget } from '@core/gl/canvas-ui';
 import { BATTLEFIELDS, BattlefieldChoice } from '@shared/data/battlefields';
 import { ScreenContext, keyChip, write } from './screen-context';
 
@@ -74,10 +75,15 @@ export class BattleMenuView {
           : [['A', 'Select'], ['B', 'Close']];
     let x = BOX.x + 26;
     const y = top + h - 32;
-    for (const [key, text] of keys) {
-      x += keyChip(ctx, key, x, y, 28) + 8;
-      x += write(ctx, text, x, y, { size: 17 }, p.ink) + 22;
-    }
+    keys.forEach(([key, text], i) => {
+      const start = x;
+      const chipW = keyChip(ctx, key, x, y, 28);
+      x += chipW + 8;
+      x += write(ctx, text, x, y, { size: 17 }, p.ink);
+      // Tappable: "◀▶" as its two halves (on the row last tapped), "B" closes.
+      pillTarget(ctx, `menu-key-${i}`, pillKeys(key).length > 1 ? { x: start - 4, y: y - 14, w: chipW + 8, h: 28 } : { x: start - 6, y: y - 14, w: x - start + 12, h: 28 }, key);
+      x += 22;
+    });
   }
 
   private drawRow(ctx: ScreenContext, row: MenuRow, state: MenuState, y: number): void {
@@ -131,18 +137,34 @@ export class BattleMenuView {
     if (detail) write(ctx, detail, box.x + 18, cy + 13, { size: 13 }, p.muted, 'left', 330);
 
     const right = box.x + box.w - 18;
+    /** For a finger: a tap on part of the row's value, the row focused first (as the d-pad leaves it). */
+    const tapTarget = (id: string, target: { x: number; y: number; w: number; h: number }, accept: () => void): void => {
+      ctx.focus.control({ id: `${MENU_PREFIX}${row}-${id}`, ...target, skip: true, keepFocus: true, accept: () => (ctx.focus.focus(`${MENU_PREFIX}${row}`), accept()) });
+    };
+    /** "◀  value  ▶", its arrows each a step that way. */
+    const stepper = (value: string): void => {
+      const text = `◀  ${value}  ▶`;
+      const w = ctx.text.measure(text, { size: 19, bold: true });
+      write(ctx, text, right, cy, { size: 19, bold: true }, p.accentText, 'right');
+      tapTarget('less', { x: right - w - 14, y: cy - 22, w: 44, h: 44 }, () => step(-1));
+      tapTarget('more', { x: right - 30, y: cy - 22, w: 44, h: 44 }, () => step(1));
+    };
     if (row === 'music' || row === 'sound') {
       const volume = row === 'music' ? settings.musicVolume : settings.soundVolume;
       write(ctx, volume ? `${volume}%` : 'Off', right, cy, { size: 17, bold: true }, p.ink, 'right');
+      const key = row === 'music' ? 'musicVolume' : 'soundVolume';
       for (let i = 0; i < BARS; i++) {
         const bh = 10 + i * 2;
-        renderer.rect(right - 62 - (BARS - i) * 15, cy + 12 - bh, 11, bh, { fill: i < volume / 10 ? p.accent : p.rim, radius: 3 });
+        const x = right - 62 - (BARS - i) * 15;
+        renderer.rect(x, cy + 12 - bh, 11, bh, { fill: i < volume / 10 ? p.accent : p.rim, radius: 3 });
+        // A bar tapped sets the volume to it; the top lit one again, a step down (to Off from the first).
+        const level = (i + 1) * VOLUME_STEP;
+        tapTarget(`bar-${i}`, { x: x - 2, y: cy - 22, w: 15, h: 44 }, () => this.settings.set(key, volume === level ? level - VOLUME_STEP : level));
       }
     } else if (row === 'appearance') {
-      const name = APPEARANCES.find((a) => a.id === settings.appearance)?.name ?? '';
-      write(ctx, `◀  ${name}  ▶`, right, cy, { size: 19, bold: true }, p.accentText, 'right');
+      stepper(APPEARANCES.find((a) => a.id === settings.appearance)?.name ?? '');
     } else if (row === 'field') {
-      write(ctx, `◀  ${fieldName(settings.battlefield)}  ▶`, right, cy, { size: 19, bold: true }, p.accentText, 'right');
+      stepper(fieldName(settings.battlefield));
     } else if (row === 'timer' && state.timer) {
       const on = state.timer.on;
       renderer.rect(right - 54, cy - 15, 54, 30, { fill: on ? p.accent : p.rim, radius: 15 });

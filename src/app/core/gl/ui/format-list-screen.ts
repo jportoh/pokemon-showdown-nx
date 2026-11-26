@@ -11,7 +11,7 @@ import { ImagePriority } from '../sprite-bitmaps';
 import { SLANT, drawGround, drawKeyButton, menuModal, menuPanel } from './menu-kit';
 import { OptionPickerView, PickerOption } from './option-picker';
 import { PageBar, PageBarInfo } from './page-bar';
-import { ListView, UiContext, label, pill } from './retro-kit';
+import { ListView, UiContext, keysLegend, label } from './retro-kit';
 
 /** One row of the list: its title on the left, a detail (rating, age…) further right. */
 export interface FormatListRow {
@@ -71,6 +71,8 @@ export interface PageOverlay {
   back(): boolean;
   /** The box is open (the page's jumps wait). */
   isOpen(): boolean;
+  /** Offline: ZR (and its button, then "Log in") opens the box. */
+  offline?(): boolean;
   draw(ctx: UiContext): void;
 }
 
@@ -211,6 +213,19 @@ export class FormatListScreen {
     return focusInput(this.focus, action) ?? false;
   }
 
+  /**
+   * A row pressed: its battle opens. Tapped where the details come in a box (Watch Live), the box
+   * comes first, its A to open it: a finger has no other way to see them.
+   */
+  private openRow(index: number): void {
+    if (this.model.details?.mode === 'popup' && this.navigation.fromTap()) {
+      this.popup = index;
+      this.model.details.request(index);
+      return;
+    }
+    this.model.open(index);
+  }
+
   /** The details' key (Watch Live): the focused row's battle in a box over the list, or the box closed. */
   private pressDetails(): boolean {
     if (this.popup !== null) {
@@ -318,7 +333,9 @@ export class FormatListScreen {
     label(ctx, this.model.formatLabel(), selector.x + 104, selector.y + 32, { size: 21, bold: true }, p.ink, { maxWidth: 300 });
     label(ctx, '▼', selector.x + selector.w - 34, selector.y + 32, { size: 16, bold: true }, p.accentText, { align: 'center' });
 
-    drawKeyButton(ctx, 'refresh', { x: 540, y: TOP + 10, w: 150, h: 44 }, 'ZR', 'Refresh', () => this.model.refresh(), true, !this.model.canRefresh());
+    // ZR's button does what ZR does: offline, it opens the login box.
+    const logIn = this.overlay?.offline?.() ?? false;
+    drawKeyButton(ctx, 'refresh', { x: 540, y: TOP + 10, w: 150, h: 44 }, 'ZR', logIn ? 'Log in' : 'Refresh', () => void ctx.press('buttonZR'), true, !logIn && !this.model.canRefresh());
     const count = this.model.rows().length;
     if (this.rowsShown()) label(ctx, this.list.range(count), 712, TOP + 32, { size: 16, bold: true }, p.muted, { maxWidth: 180 });
     const atStart = this.list.start === 0;
@@ -368,7 +385,7 @@ export class FormatListScreen {
           label(ctx, title, left, cy, { size: 19, bold: true }, withAlpha(p.ink, a), { maxWidth: right - left - 16 });
         }
       },
-      (index) => this.model.open(index),
+      (index) => this.openRow(index),
     );
     const from = this.list.start;
     const to = Math.min(rows.length, from + ROWS);
@@ -425,18 +442,10 @@ export class FormatListScreen {
 
   /** Watch Live's box over the list: the battle's details, and what A and B do. */
   private drawPopup(ctx: UiContext, index: number): void {
-    const p = ctx.palette;
     menuModal(ctx, POPUP, undefined, 0.6);
     this.drawDetails(ctx, { x: POPUP.x + 20, y: POPUP.y + 20, w: POPUP.w - 40, h: POPUP.h - 90 }, this.model.details?.get(index) ?? null, false);
     const keys: [string, string][] = [['A', this.model.openLabel ?? 'Open'], ['B', 'Close']];
-    let x = POPUP.x + POPUP.w - 28;
-    for (const [key, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 17 });
-      label(ctx, text, x, POPUP.y + POPUP.h - 36, { size: 17 }, p.ink);
-      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
-      pill(ctx, key, x, POPUP.y + POPUP.h - 36, 28);
-      x -= 24;
-    }
+    keysLegend(ctx, keys, POPUP.x + POPUP.w - 28, POPUP.y + POPUP.h - 36, { size: 17 });
   }
 
   /** A battle's details in a panel: the players facing each other, their ratings, both teams, how it stands. */
@@ -496,19 +505,11 @@ export class FormatListScreen {
 
   /** The buttons along the bottom: A, the details' key (Watch Live), B. */
   private drawLegend(ctx: UiContext): void {
-    const p = ctx.palette;
     const keys: [string, string][] = [];
     if (this.rowsShown()) keys.push(['A', this.model.openLabel ?? 'Open']);
     const key = this.model.details?.mode === 'popup' ? this.model.details.key : undefined;
     if (key && this.rowsShown()) keys.push([key.label, 'View details']);
     keys.push(['B', 'Back']);
-    let x = 1232;
-    for (const [k, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 18 });
-      label(ctx, text, x, LEGEND_Y, { size: 18 }, p.ink);
-      x -= 8 + Math.max(36, ctx.text.measure(k, { size: 14, bold: true }) + 14);
-      pill(ctx, k, x, LEGEND_Y, 28);
-      x -= 24;
-    }
+    keysLegend(ctx, keys, 1232, LEGEND_Y);
   }
 }

@@ -56,6 +56,8 @@ export class PointerInput {
   readonly log: string[] = [];
   /** Where the last tap landed, in stage coordinates (the diagnostics draw a dot there). */
   lastTap: Point | null = null;
+  /** When the last tap came (performance.now): a hold-to-confirm pressed by it follows the finger (HoldAction). */
+  lastTapAt = -Infinity;
   /** The family whose events count as the presses; the others' are copies while it goes on. */
   private leader: Family | null = null;
   private leaderAt = 0;
@@ -74,6 +76,11 @@ export class PointerInput {
     private readonly onTap: (x: number, y: number) => void,
     private readonly onHover: (x: number, y: number) => void,
   ) {}
+
+  /** A finger is on the screen (or the mouse button down), from its press until it lifts; false where only lifts are told. */
+  get pressing(): boolean {
+    return this.held !== null;
+  }
 
   /** Starts listening; returns the function that stops. */
   listen(): () => void {
@@ -121,6 +128,7 @@ export class PointerInput {
     }
     if (!tap || !point) return;
     this.lastTap = point;
+    this.lastTapAt = now;
     this.onTap(point.x, point.y);
   }
 

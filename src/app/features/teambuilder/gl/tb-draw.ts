@@ -1,6 +1,7 @@
+import { pillKeys } from '@core/input/console-keys';
 import { Rgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { STAGE_H, STAGE_W } from '@core/gl/gl-stage';
-import { textSkeleton } from '@core/gl/canvas-ui';
+import { pillTarget, textSkeleton } from '@core/gl/canvas-ui';
 import { PAGE_BAR_H } from '@core/gl/ui/page-bar';
 import { Box, UiContext, label } from '@core/gl/ui/retro-kit';
 import { menuFocus } from '@core/gl/ui/menu-kit';
@@ -134,16 +135,35 @@ export function menuCard(ctx: UiContext, box: Box, lit = false): void {
   ctx.renderer.rect(box.x, box.y, box.w, box.h, { fill: p.panel, stroke: lit ? p.accentText : p.rim, border: lit ? 3 : 1, radius: 18 });
 }
 
-/** The legend at the bottom of the page, on the backdrop as the menu's: each control's buttons, and what it does. */
+/**
+ * The legend at the bottom of the page, on the backdrop as the menu's: each control's buttons, and
+ * what it does. Each entry is tappable (pillTarget): one button's pill and text, or each of two pills.
+ */
 export function controlsLegend(ctx: UiContext, entries: readonly LegendEntry[]): void {
   const p = ctx.palette;
   const top = STAGE_H - LEGEND_H;
   const cy = top + LEGEND_H / 2 + 1;
   let x = EDIT_X;
-  for (const entry of entries) {
-    for (const key of entry.keys) x += keyPill(ctx, key, x, cy) + 6;
-    x += label(ctx, entry.text, x + 2, cy, { size: 18 }, p.muted) + 32;
-  }
+  entries.forEach((entry, i) => {
+    const start = x;
+    // One button takes its text too; two ("L R", or "◀▶" split in halves) each their own pill.
+    const single = entry.keys.length === 1 && pillKeys(entry.keys[0]).length === 1;
+    for (const [k, key] of entry.keys.entries()) {
+      const width = keyPill(ctx, key, x, cy);
+      if (!single) pillTarget(ctx, `legend-${i}-${k}`, { x: x - 3, y: cy - 14, w: width + 6, h: 28 }, key);
+      x += width + 6;
+    }
+    x += label(ctx, entry.text, x + 2, cy, { size: 18 }, p.muted);
+    if (single) pillTarget(ctx, `legend-${i}`, { x: start - 6, y: cy - 14, w: x - start + 14, h: 28 }, entry.keys[0]);
+    x += 32;
+  });
+}
+
+/** keyPill, tappable: a tap presses its button (pillTarget). */
+export function keyPillButton(ctx: UiContext, id: string, key: string, x: number, cy: number): number {
+  const width = keyPill(ctx, key, x, cy);
+  pillTarget(ctx, id, { x: x - 4, y: cy - 14, w: width + 8, h: 28 }, key);
+  return width;
 }
 
 /** A controller button's name in a box (A, ZL…), 28 high and centred on `cy`; returns its width. */
@@ -180,7 +200,7 @@ export function tabStrip(ctx: UiContext, tabs: readonly TabSpec[], keys: boolean
   const line = y + TAB_H;
   const cy = y + TAB_H / 2;
   let x = EDIT_X;
-  if (keys) x += keyPill(ctx, 'L', x, cy) + 10;
+  if (keys) x += keyPillButton(ctx, 'tabs-l', 'L', x, cy) + 10;
   for (const tab of tabs) {
     const box = { x, y, w: TAB_W, h: TAB_H };
     const focused = !tab.disabled && ctx.focus.control({ id: tab.id, ...box, accept: tab.accept, skip: true });
@@ -189,7 +209,7 @@ export function tabStrip(ctx: UiContext, tabs: readonly TabSpec[], keys: boolean
     label(ctx, tab.text, x + TAB_W / 2, cy + 1, { size: 20, bold: true }, tab.on ? p.ink : tab.disabled ? p.rim : p.muted, { align: 'center', maxWidth: TAB_W - 16 });
     x += TAB_W + 8;
   }
-  if (keys) x += 2 + keyPill(ctx, 'R', x + 2, cy);
+  if (keys) x += 2 + keyPillButton(ctx, 'tabs-r', 'R', x + 2, cy);
   return x;
 }
 

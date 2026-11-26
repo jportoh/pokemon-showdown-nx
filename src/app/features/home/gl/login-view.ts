@@ -2,6 +2,7 @@ import { computed, inject, signal } from '@angular/core';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { ImagePriority } from '@core/gl/sprite-bitmaps';
 import { CanvasKeyboard } from '@core/gl/ui/canvas-keyboard';
+import { drawKeyButton } from '@core/gl/ui/menu-kit';
 import { Box, UiContext, button, label, retroBox, textField } from '@core/gl/ui/retro-kit';
 import { SavedLogin } from '@features/connection/saved-login';
 import { connectingText, connectionNotice } from '@features/connection/connection-notice';
@@ -94,6 +95,8 @@ export class LoginView {
     const p = ctx.palette;
     retroBox(ctx, BOX);
     label(ctx, 'Connect to Showdown', INNER_X + 48, INNER_Y + 56, { size: 40, bold: true }, p.ink);
+    // Close (B on the controller, which the page handles): for taps, top right.
+    drawKeyButton(ctx, 'login-close', { x: BOX.x + BOX.w - 160, y: INNER_Y + 34, w: 136, h: 44 }, 'B', 'Close', () => void ctx.press('back'));
     const x = INNER_X + 48;
     const y = INNER_Y + 112;
     const retry = this.canRetry();
@@ -193,6 +196,8 @@ export class RegisterView {
     retroBox(ctx, BOX);
     const x = INNER_X + 48;
     label(ctx, 'Register your name', x, INNER_Y + 52, { size: 40, bold: true }, p.ink);
+    // Close (B on the controller, which the menu handles): for taps, top right.
+    drawKeyButton(ctx, 'register-close', { x: BOX.x + BOX.w - 160, y: INNER_Y + 30, w: 136, h: 44 }, 'B', 'Close', () => void ctx.press('back'));
     label(ctx, `Keep "${state.name}" as yours: choose a password for it.`, x, INNER_Y + 102, { size: 20 }, p.muted, { maxWidth: 986 });
 
     textField(ctx, 'register-password', { x, y: INNER_Y + 136, w: 482, h: 64 }, this.password(), {

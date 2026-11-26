@@ -204,3 +204,38 @@ export const BATTLE_SHORTCUTS = {
 
 /** The home menu's Settings, straight from anywhere on it (X, its chip on the button). On the Trainer Card, X is its history. */
 export const HOME_SETTINGS_KEY: RoleKey = { button: 'buttonX', label: 'X' };
+
+/**
+ * What a tapped pill presses (KeyboardNavigation.press): a page button, or what the d-pad, A and B
+ * send. The legends' pills ("B Back", "L Filter", "◀▶ Change") are buttons too, for touch players.
+ */
+export type PressKey = PageButton | 'up' | 'down' | 'left' | 'right' | 'accept' | 'back';
+
+const PILL_KEYS: Readonly<Record<string, PressKey>> = {
+  A: 'accept',
+  B: 'back',
+  L: 'buttonL',
+  R: 'buttonR',
+  ZL: 'buttonZL',
+  ZR: 'buttonZR',
+  X: 'buttonX',
+  Y: 'buttonY',
+  '+': 'buttonPlus',
+  '-': 'buttonMinus',
+  '−': 'buttonMinus',
+  R3: 'buttonR3',
+  '◀': 'left',
+  '▶': 'right',
+  '▲': 'up',
+  '▼': 'down',
+};
+
+/**
+ * The buttons a pill's label stands for, left to right: "B" one, "◀▶" and "ZL ZR" two (the pill's
+ * halves); none for what a tap can't stand for (the d-pad, L3, a held A).
+ */
+export function pillKeys(label: string): PressKey[] {
+  const parts = label.includes(' ') ? label.split(/\s+/) : /^[◀▶▲▼]+$/.test(label) ? [...label] : [label];
+  const keys = parts.map((part) => PILL_KEYS[part]);
+  return keys.every((key) => key !== undefined) ? keys : [];
+}

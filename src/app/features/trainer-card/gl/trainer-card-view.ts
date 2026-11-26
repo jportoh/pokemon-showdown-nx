@@ -2,7 +2,7 @@ import { computed, inject, signal } from '@angular/core';
 import { CanvasFocus } from '@core/gl/canvas-ui';
 import { Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { drawKeyButton, drawNamePlate, drawPlatformTrainer, menuFocus, menuModal, menuPanel } from '@core/gl/ui/menu-kit';
-import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { UiContext, arrowButton, keysLegend, label } from '@core/gl/ui/retro-kit';
 import { ROLE_KEYS } from '@core/input/console-keys';
 import { ShowdownFormats } from '@features/connection/showdown-formats';
 import { ShowdownLogin } from '@features/connection/showdown-login';
@@ -290,16 +290,8 @@ export class TrainerCardView {
 
   /** The buttons along the bottom, right-aligned. */
   private drawLegend(ctx: UiContext, keys: readonly (readonly [string, string])[]): void {
-    const p = ctx.palette;
     const cy = 684;
-    let x = 1232;
-    for (const [key, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 18 });
-      label(ctx, text, x, cy, { size: 18 }, p.ink);
-      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
-      pill(ctx, key, x, cy, 28);
-      x -= 24;
-    }
+    keysLegend(ctx, keys, 1232, cy);
   }
 
   /** The avatars, a page at a time, over the card. */
@@ -346,8 +338,11 @@ export class TrainerCardView {
       if (focused) menuFocus(ctx, tile, 14);
     });
     const cy = box.y + box.h - 30;
-    const width = pill(ctx, 'L', x, cy);
-    label(ctx, `/ R turn pages · Page ${page + 1} of ${PAGE_COUNT} · A choose · ${ROLE_KEYS.randomAvatar.label} random · B back to the card`, x + width + 8, cy, { size: 18 }, p.muted, { fast: true });
+    // The pages: ◀ ▶ for a finger (L/R, or the d-pad past an edge, on the controller).
+    arrowButton(ctx, 'picker-prev', { x, y: cy - 20, w: 52, h: 40 }, '◀', page > 0, () => this.turn(-1));
+    const pageW = label(ctx, `Page ${page + 1} of ${PAGE_COUNT}`, x + 66, cy, { size: 18, bold: true }, p.ink, { fast: true });
+    arrowButton(ctx, 'picker-next', { x: x + 80 + pageW, y: cy - 20, w: 52, h: 40 }, '▶', page < PAGE_COUNT - 1, () => this.turn(1));
+    label(ctx, `L/R turn pages · A choose · ${ROLE_KEYS.randomAvatar.label} random · B back to the card`, x + 148 + pageW, cy, { size: 18 }, p.muted);
   }
 }
 

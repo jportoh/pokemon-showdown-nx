@@ -144,6 +144,9 @@ export class GateScreen {
   private running = true;
   private choice: ((button: 'a' | 'b') => void) | null = null;
   private held = new Set<number>();
+  /** When the last tap chose (a lift comes as several events: touchend, pointerup, mouseup, click). */
+  private tappedAt = -Infinity;
+  private readonly onTap = (event: Event) => this.tap(event as TapEvent);
   private mark: CanvasImageSource | null = null;
   private readonly colours: Colours;
   private readonly gl: WebGL2RenderingContext;
@@ -192,6 +195,8 @@ export class GateScreen {
     this.whiteTexture = this.texture(1, 1, new Uint8Array([255, 255, 255, 255]));
     this.ballTexture = this.texture(24, 24, ballPixels());
     void this.loadMark();
+    // A finger on a button chooses it too (on its lift, which the console always tells).
+    for (const type of TAP_EVENTS) window.addEventListener(type, this.onTap, { passive: true });
     requestAnimationFrame((time) => this.frame(time));
   }
 
@@ -216,6 +221,7 @@ export class GateScreen {
   close(): void {
     if (!this.running) return;
     this.running = false;
+    for (const type of TAP_EVENTS) window.removeEventListener(type, this.onTap);
     const gl = this.gl;
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -480,18 +486,23 @@ export class GateScreen {
     this.view.detail.split('\n').forEach((line, i) => this.say(line, W / 2, place.detailCy + i * LINE, 18, this.colours.muted, false, width));
   }
 
+  /** Where the view's buttons are, side by side under the box's text: A's, then B's when it has one. */
+  private buttonBoxes(view: GateView, place: Layout): { choice: 'a' | 'b'; x: number; y: number }[] {
+    if (!view.actions) return [];
+    const choices: ('a' | 'b')[] = view.actions.b ? ['a', 'b'] : ['a'];
+    const total = choices.length * BUTTON.w + (choices.length - 1) * BUTTON.gap;
+    const left = (W - total) / 2;
+    return choices.map((choice, i) => ({ choice, x: left + i * (BUTTON.w + BUTTON.gap), y: place.buttonsY }));
+  }
+
   /** The app's buttons (retro-kit `button`, with its controller pill): A the main one, in the accent. */
   private paintButtons(place: Layout): void {
     const actions = this.view.actions;
     if (!actions) return;
     const c = this.context;
     const p = this.colours;
-    const buttons: { key: string; label: string; primary: boolean }[] = [{ key: 'A', label: actions.a, primary: true }];
-    if (actions.b) buttons.push({ key: 'B', label: actions.b, primary: false });
-    const total = buttons.length * BUTTON.w + (buttons.length - 1) * BUTTON.gap;
-    let x = (W - total) / 2;
-    const y = place.buttonsY;
-    for (const button of buttons) {
+    for (const { choice, x, y } of this.buttonBoxes(this.view, place)) {
+      const button = choice === 'a' ? { key: 'A', label: actions.a, primary: true } : { key: 'B', label: actions.b ?? '', primary: false };
       c.fillStyle = button.primary ? p.accent : p.button;
       roundRect(c, x, y, BUTTON.w, BUTTON.h, 6);
       c.strokeStyle = button.primary ? p.bar : p.outline;
@@ -507,7 +518,6 @@ export class GateScreen {
       this.say(button.key, pillX + pillW / 2, cy, 14, p.ink, true);
       const labelX = pillX + pillW + (BUTTON.w - 20 - pillW) / 2;
       this.say(button.label, labelX, cy, 18, button.primary ? '#ffffff' : p.ink, true, BUTTON.w - pillW - 30);
-      x += BUTTON.w + BUTTON.gap;
     }
   }
 
@@ -516,6 +526,25 @@ export class GateScreen {
     const c = this.context;
     c.font = this.font(QUIET.size, false);
     return QUIET.right - c.measureText(this.view.status).width - QUIET.gap - QUIET.ball;
+  }
+
+  // --- The touchscreen ---------------------------------------------------------------------------
+
+  /** A lift on one of the view's buttons, while it asks: that choice (the rest of the lift's events are copies). */
+  private tap(event: TapEvent): void {
+    if (!this.choice) return;
+    const now = performance.now();
+    if (now - this.tappedAt < TAP_COPIES_MS) return;
+    const source = event.changedTouches?.[0] ?? event;
+    if (typeof source.clientX !== 'number' || typeof source.clientY !== 'number') return;
+    // The screen is the stage (720p), but a browser window may be another size.
+    const scale = W / (window.innerWidth || W);
+    const x = source.clientX * scale;
+    const y = source.clientY * scale;
+    const hit = this.buttonBoxes(this.view, layout(this.view)).find((box) => x >= box.x && x < box.x + BUTTON.w && y >= box.y && y < box.y + BUTTON.h);
+    if (!hit) return;
+    this.tappedAt = now;
+    this.choice(hit.choice);
   }
 
   // --- The controller ----------------------------------------------------------------------------
@@ -542,6 +571,17 @@ export class GateScreen {
       return;
     }
   }
+}
+
+/** The events a lift comes as (several at once on the console); the first one chooses. */
+const TAP_EVENTS = ['touchend', 'pointerup', 'mouseup', 'click'] as const;
+/** Later events of the same lift come within this. */
+const TAP_COPIES_MS = 400;
+
+interface TapEvent {
+  clientX?: number;
+  clientY?: number;
+  changedTouches?: ArrayLike<{ clientX?: number; clientY?: number }>;
 }
 
 /** The controller's A and B (navigator.getGamepads()' standard order on the console). */

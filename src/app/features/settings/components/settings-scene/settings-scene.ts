@@ -8,7 +8,7 @@ import { GlTheme, themeSwatch } from '@core/gl/ui/gl-theme';
 import { Chip, drawGround, drawSlantedButton, drawSprite } from '@core/gl/ui/menu-kit';
 import { PageBar } from '@core/gl/ui/page-bar';
 import { PixelIconName } from '@core/gl/ui/pixel-icons';
-import { UiContext, label, pill } from '@core/gl/ui/retro-kit';
+import { UiContext, keysLegend, label } from '@core/gl/ui/retro-kit';
 import { CanvasAction } from '@core/input/keyboard-navigation';
 import { APPEARANCES, AppSettings, THEMES, VOLUME_STEP } from '@core/settings/app-settings';
 import { codeSource } from '@core/runtime/code-source';
@@ -510,10 +510,18 @@ export class SettingsScene {
     const right = box.x + box.w - 22;
     const cy = y + box.h / 2;
     const nudge = Math.max(0, Math.sin((now / 1000) * 6)) * 3 * f;
+    /** For a finger: a tap on part of the row's control, focusing the row first (its footer then says what's what). */
+    const tapTarget = (id: string, box: { x: number; y: number; w: number; h: number }, accept: () => void): void => {
+      if (row.disabled) return;
+      ctx.focus.control({ id: `row-${row.id}-${id}`, ...box, skip: true, keepFocus: true, accept: () => (ctx.focus.focus(`row-${row.id}`), accept()) });
+    };
     const arrows = (left: number, rightEdge: number): void => {
       const color = a(mixRgba(p.muted, p.accentText, f));
       if (this.leftArrow) renderer.image(this.leftArrow, left - nudge, cy - 10.5, 3, color);
       if (this.rightArrow) renderer.image(this.rightArrow, rightEdge - 12 + nudge, cy - 10.5, 3, color);
+      // Each arrow steps the value its way (the d-pad's left and right).
+      tapTarget('less', { x: left - 16, y: cy - 22, w: 44, h: 44 }, () => this.change(row, -1));
+      tapTarget('more', { x: rightEdge - 28, y: cy - 22, w: 44, h: 44 }, () => this.change(row, 1));
     };
     const settings = this.appSettings.settings();
     if (row.id === 'theme') {
@@ -525,6 +533,8 @@ export class SettingsScene {
         renderer.rect(sx, cy - 15, 30, 30, { fill: a(swatch.accent), radius: 8 });
         renderer.rect(sx, cy - 15, 30, 18, { fill: a(swatch.hue), radius: 8 });
         renderer.rect(sx, cy - 5, 30, 8, { fill: a(swatch.hue) });
+        // A swatch tapped picks its theme.
+        tapTarget(`swatch-${i}`, { x: sx - 5, y: cy - 22, w: 40, h: 44 }, () => this.appSettings.set('theme', theme.id));
       });
     } else if (row.id === 'musicVolume' || row.id === 'soundVolume') {
       // Ten bars rising left to right, lit up to the volume.
@@ -533,6 +543,10 @@ export class SettingsScene {
       for (let i = 0; i < 10; i++) {
         const bh = 12 + i * 2;
         renderer.rect(right - 70 - (10 - i) * 18, cy + 15 - bh, 14, bh, { fill: a(i < volume / 10 ? p.accent : p.rim), radius: 3 });
+        // A bar tapped sets the volume to it; the top lit one tapped again goes a step down (to Off from the first).
+        const level = (i + 1) * VOLUME_STEP;
+        const id = row.id;
+        tapTarget(`bar-${i}`, { x: right - 72 - (10 - i) * 18, y: cy - 22, w: 18, h: 44 }, () => this.appSettings.set(id, volume === level ? level - VOLUME_STEP : level));
       }
     } else if (row.kind === 'toggle') {
       const on = row.on ?? false;
@@ -564,14 +578,7 @@ export class SettingsScene {
     const row = focused.startsWith('row-') ? this.rows().find((r) => `row-${r.id}` === focused) : null;
     label(ctx, row ? row.detail : 'Right or A to change these settings.', 48, y, { size: 16 }, p.muted, { maxWidth: 720 });
     const keys: [string, string][] = row ? [...this.rowKeys(row), ['B', 'Groups']] : [['A', 'Open'], ['B', 'Menu']];
-    let x = 1232;
-    for (const [key, text] of [...keys].reverse()) {
-      x -= ctx.text.measure(text, { size: 18 });
-      label(ctx, text, x, y, { size: 18 }, p.ink);
-      x -= 8 + Math.max(36, ctx.text.measure(key, { size: 14, bold: true }) + 14);
-      pill(ctx, key, x, y, 28);
-      x -= 24;
-    }
+    keysLegend(ctx, keys, 1232, y);
   }
 }
 

@@ -1,4 +1,5 @@
-import { Align, CanvasFocus, drawText } from '@core/gl/canvas-ui';
+import { PressKey, pillKeys } from '@core/input/console-keys';
+import { Align, CanvasFocus, drawText, pillTarget } from '@core/gl/canvas-ui';
 import { GlRenderer, Rgba, Texture, mixRgba, rgba, withAlpha } from '@core/gl/gl-renderer';
 import { TextStyle, TextTextures } from '@core/gl/gl-textures';
 import { GlSprites } from '@core/gl/gl-sprites';
@@ -16,6 +17,8 @@ export interface ScreenContext {
   disc: Texture;
   palette: Palette;
   now: number;
+  /** Presses a controller button as the controller would (a tapped pill: StageResources.press). */
+  press: (key: PressKey) => boolean;
 }
 
 /**
@@ -136,4 +139,21 @@ export function hint(
   const cy = box.y + box.h / 2;
   const keyW = keyChip(ctx, key, box.x + 5, cy, box.h - 8, look ? withAlpha(mixRgba(fill, [0, 0, 0, 1], 0.3), 1) : undefined, look ? ink : undefined);
   write(ctx, label, box.x + keyW + 13, cy, { size: 14, bold: true }, ink, 'left', box.w - keyW - 22);
+}
+
+/** A legend at the right of a row, from `right` leftwards: each key's chip and its action, tappable (pillTarget). */
+export function drawKeys(ctx: ScreenContext, keys: readonly (readonly [string, string])[], right: number, cy: number): number {
+  let x = right;
+  [...keys].reverse().forEach(([key, text], i) => {
+    const end = x;
+    x -= ctx.text.measure(text, { size: 16 });
+    write(ctx, text, x, cy, { size: 16 }, ctx.palette.ink);
+    const chipW = Math.max(26, ctx.text.measure(key, { size: 13, bold: true }) + 12);
+    x -= 8 + chipW;
+    keyChip(ctx, key, x, cy, 26);
+    // Two keys ("ZL ZR", "◀▶") split the chip; one takes its text too.
+    pillTarget(ctx, `keys-${Math.round(cy)}-${i}`, pillKeys(key).length > 1 ? { x: x - 4, y: cy - 13, w: chipW + 8, h: 26 } : { x: x - 6, y: cy - 13, w: end - x + 12, h: 26 }, key);
+    x -= 20;
+  });
+  return x;
 }

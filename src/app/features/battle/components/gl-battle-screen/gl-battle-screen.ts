@@ -135,6 +135,8 @@ export class GlBattleScreen {
   private partyWasShown = false;
   /** The battle drawn last: a new one (a rematch, a set's next game) closes what was open over the old. */
   private shownBattle: unknown = null;
+  /** The Last turn button held by a finger (its peek, as L held). */
+  private logByFinger = false;
   /** The chat message popped up over the field, and since when. */
   private chatPop: { id: number; since: number } | null = null;
 
@@ -167,7 +169,7 @@ export class GlBattleScreen {
 
     this.stage.whenReady((resources) => {
       this.field.attach(resources.renderer, resources.text, resources.images, resources.disc);
-      this.ctx = { renderer: resources.renderer, text: resources.text, images: resources.images, focus: this.focus, disc: resources.disc, palette: this.theme.palette(), now: 0 };
+      this.ctx = { renderer: resources.renderer, text: resources.text, images: resources.images, focus: this.focus, disc: resources.disc, palette: this.theme.palette(), now: 0, press: resources.press };
     });
     const hide = this.stage.show({
       draw: (frame) => this.draw(frame),
@@ -245,7 +247,8 @@ export class GlBattleScreen {
       // The field view once the battle is on (not during team preview).
       toggleField: this.store.started() && !picking ? () => this.pressField() : null,
       // L held: the last turn's log, once there's a turn to look back on.
-      logHeld: this.store.turn() > 0 && !covered && !party ? this.navigation.isHeld(BATTLE_SHORTCUTS.log.button) : null,
+      logHeld: this.store.turn() > 0 && !covered && !party ? this.logPeeked() : null,
+      peekLog: () => (this.logByFinger = this.navigation.pointer?.pressing === true),
       forfeitState: this.forfeitState(),
       toggleTimer: () => this.toggleTimer.emit(),
     });
@@ -304,7 +307,7 @@ export class GlBattleScreen {
     } else if (this.fieldOpen) {
       this.focus.begin();
       this.info.drawActive(ctx);
-    } else if (!covered && !party && this.navigation.isHeld(BATTLE_SHORTCUTS.log.button)) {
+    } else if (!covered && !party && this.logPeeked()) {
       this.drawLogPeek(ctx);
     }
     if (this.cardOpen) {
@@ -363,6 +366,12 @@ export class GlBattleScreen {
    * L held: the last turn's log over the field, in a panel at its top, to read again what
    * happened (the bar only shows the latest message). While a turn plays, that turn so far.
    */
+  /** The last turn's log is asked for: L held, or a finger still on the Last turn button. */
+  private logPeeked(): boolean {
+    if (this.logByFinger && !this.navigation.pointer?.pressing) this.logByFinger = false;
+    return this.logByFinger || this.navigation.isHeld(BATTLE_SHORTCUTS.log.button);
+  }
+
   private drawLogPeek(ctx: ScreenContext): void {
     const p = ctx.palette;
     const log = this.store.log().filter((entry) => entry.kind !== 'chat');
