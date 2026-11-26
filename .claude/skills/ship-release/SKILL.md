@@ -49,7 +49,7 @@ Ask the version and baseline questions together in one message.
 
 ## 4. Merge
 
-1. Wait for the required check: `gh pr checks <n> --watch --required`. If `build` fails, read the log (`gh run view <run> --log-failed`), report and stop: don't merge.
+1. Wait for the `build` check. It isn't marked required on `main`, so `gh pr checks --required` finds nothing: find the PR's run (`gh run list --branch chore/release-<x.y.z> --limit 1 --json databaseId`; wait a few seconds if it hasn't appeared) and `gh run watch <id> --exit-status`, then confirm `gh pr checks <n>` shows `build` as `pass`. If it fails, read the log (`gh run view <id> --log-failed`), report and stop: don't merge.
 2. `gh pr merge <n> --squash --delete-branch --subject "Release <x.y.z> (#<n>)"`.
 3. Merge commit: `gh pr view <n> --json mergeCommit --jq .mergeCommit.oid`. `git switch main && git pull --ff-only`, and check `git show <sha>:package.json` has version `<x.y.z>`.
 
@@ -68,7 +68,7 @@ If it fails: `gh run view <id> --log-failed`, report the cause and stop. Known o
 
 ## 7. Verify
 
-1. `gh release view v<x.y.z> --json tagName,isLatest,assets`: it's the latest, and its assets include `pokemon-showdown-v<x.y.z>.nro`, `update.json`, `update.json.sig`, `app-<x.y.z>.mjs` and `assets-<x.y.z>.json` (and an `assets-*.pack` unless it's the baseline).
+1. `gh release view v<x.y.z> --json tagName,isDraft,assets`: it isn't a draft, and its assets include `pokemon-showdown-v<x.y.z>.nro`, `update.json`, `update.json.sig`, `app-<x.y.z>.mjs` and `assets-<x.y.z>.json` (and an `assets-*.pack` unless it's the baseline). It's the latest: `gh api repos/{owner}/{repo}/releases/latest --jq .tag_name` prints `v<x.y.z>` (`gh release view` has no `isLatest` field).
 2. Download `update.json` (`gh release download v<x.y.z> -p update.json -D <scratchpad>`) and check its `version` is `<x.y.z>`.
 
 ## 8. Report
