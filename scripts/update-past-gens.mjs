@@ -1,5 +1,5 @@
 // Builds what differs in past generations (Gen 1: Red/Blue/Yellow, Gen 2: Gold/Silver/Crystal, Gen 3:
-// Ruby/Sapphire/Emerald, Gen 4: Diamond/Pearl/Platinum, for their Random Battles) from the moves and species the battle screen shows (moves.json,
+// Ruby/Sapphire/Emerald, Gen 4: Diamond/Pearl/Platinum, Gen 5: Black/White, for their Random Battles) from the moves and species the battle screen shows (moves.json,
 // species.json), into one file per generation, src/app/core/dex/gen<N>.json:
 //
 //   { "moves": { "flamethrower": ["Fire", "S", 95, 100], … },
@@ -39,6 +39,14 @@ const GENS = [
     formes: /^(Attack|Defense|Speed|Sunny|Rainy|Snowy|Sandy|Trash|Heat|Wash|Frost|Fan|Mow|Origin|Sky)$/,
     allFormes: ['Arceus'],
   },
+  {
+    gen: 5,
+    lastMove: 559,
+    lastSpecies: 649,
+    formes:
+      /^(Attack|Defense|Speed|Sunny|Rainy|Snowy|Sandy|Trash|Heat|Wash|Frost|Fan|Mow|Origin|Sky|Blue-Striped|Zen|Therian|Black|White|Resolute|Pirouette|Douse|Shock|Burn|Chill)$/,
+    allFormes: ['Arceus'],
+  },
 ];
 
 /**
@@ -76,6 +84,16 @@ const CHECKS = {
     [species.clefairy?.[0].join(), 'Normal'],
     [species.gengar?.[2].join(), 'Levitate'],
     [species.rotomwash?.[0].join(), 'Electric,Ghost'],
+  ],
+  5: (moves, species) => [
+    [moves.thunderbolt?.join(), 'Electric,S,95,100'],
+    [moves.crunch, undefined],
+    [species.clefairy?.[0].join(), 'Normal'],
+    [species.gengar?.[2].join(), 'Levitate'],
+    [species.butterfree?.[1].join(), '60,45,50,80,80,70'],
+    // Hidden abilities came in Gen 5: Ninetales keeps Drought, so it's as now (not listed).
+    [species.ninetales, undefined],
+    [species.tornadustherian?.[0].join(), undefined],
   ],
 };
 
@@ -135,7 +153,7 @@ for (const { gen, lastMove, lastSpecies, formes, allFormes = [] } of GENS) {
     const o = speciesOverrides[id] ?? {};
     const slots = o.abilities ?? Object.fromEntries([...(/[{,]abilities:\{([^}]*)\}/.exec(body)?.[1] ?? '').matchAll(/"?(\w+)"?:"((?:[^"\\]|\\.)*)"/g)].map((m) => [m[1], JSON.parse(`"${m[2]}"`)]));
     // No hidden abilities before Gen 5, no abilities before Gen 3.
-    const oldAbilities = gen < 3 ? [] : ['0', '1'].map((slot) => slots[slot]).filter(Boolean);
+    const oldAbilities = gen < 3 ? [] : (gen < 5 ? ['0', '1'] : ['0', '1', 'H']).map((slot) => slots[slot]).filter(Boolean);
     const oldTypes = o.types ?? types;
     const oldStats = o.baseStats ? STATS.map((stat) => o.baseStats[stat]) : stats;
     const entry = [oldTypes, oldStats, oldAbilities];

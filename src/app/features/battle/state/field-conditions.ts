@@ -50,9 +50,21 @@ const DEFAULT_COLOR = '#374151';
 
 export const emptyField = (): BattleFieldState => ({ weather: null, terrain: null, rooms: [], sides: { p1: [], p2: [] } });
 
-export function weatherCondition(id: string, start: number): FieldCondition {
+/**
+ * A weather. Up to Gen 5 a weather an ability set (Drizzle, Drought, Sand Stream, Snow Warning) stays
+ * until another replaces it, so it has no turn count.
+ */
+export function weatherCondition(id: string, start: number, fromAbility = false, gen = 9): FieldCondition {
   const info = WEATHER[id];
-  return { id, name: info?.name ?? id, start, duration: info?.duration, extendable: info?.extendable, layers: 1 };
+  const permanent = fromAbility && gen <= 5;
+  return {
+    id,
+    name: info?.name ?? id,
+    start,
+    duration: permanent ? undefined : info?.duration,
+    extendable: permanent ? undefined : info?.extendable,
+    layers: 1,
+  };
 }
 
 /** A terrain, room or side condition, from its name without "move: ". */
