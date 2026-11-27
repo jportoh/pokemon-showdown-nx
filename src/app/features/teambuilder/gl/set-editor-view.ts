@@ -335,7 +335,7 @@ export class SetEditorView {
       this.drawRivalHeader(ctx);
       return;
     }
-    tabStrip(
+    const tabsEnd = tabStrip(
       ctx,
       [
         { id: 'editor-details', text: 'Details', on: tab === 'details', accept: () => this.switchTab('details') },
@@ -345,7 +345,7 @@ export class SetEditorView {
       !spec && !!pokemon && !(tab === 'calcs' && this.calcs.isOpen),
     );
     if (tab === 'calcs' && pokemon) {
-      this.drawCalcsHeader(ctx);
+      this.drawCalcsHeader(ctx, tabsEnd);
       return;
     }
 
@@ -406,15 +406,25 @@ export class SetEditorView {
     return entries;
   }
 
-  /** On Calcs, the header's right: who attacks (ZR swaps) as two segments, and the field (ZL) summed up. */
-  private drawCalcsHeader(ctx: UiContext): void {
+  /**
+   * On Calcs, the header's right: who attacks (the swap's key) as two segments, and the field (its
+   * key) summed up. `tabsEnd` is where the tab strip ends: the summary only takes the room left.
+   */
+  private drawCalcsHeader(ctx: UiContext, tabsEnd: number): void {
     const p = ctx.palette;
     const cy = HEADER_CY;
     const attack = this.calcState.mode() === 'attack';
     const style = { size: 16, bold: true };
-    // From the right: the field's summary, "Field", ZL; then the two segments and ZR.
+    const segments = ['You attack', 'They attack'];
+    const widths = segments.map((text) => ctx.text.measure(text, style) + 24);
+    // Everything left of the summary: "Field", its key, the segments and the swap's key, with their gaps.
+    const fieldKeyW = keyPillWidth(ctx, ROLE_KEYS.calcsField.label);
+    const swapKeyW = keyPillWidth(ctx, ROLE_KEYS.calcsSwap.label);
+    const fixedW = 8 + ctx.text.measure('Field', style) + 8 + fieldKeyW + 24 + widths[0] + widths[1] + 10 + swapKeyW;
+    // From the right: the field's summary, "Field", its key; then the two segments and the swap's key.
     const summary = this.calcs.fieldSummary(this.team()?.format ?? '');
-    const summaryW = Math.min(300, ctx.text.measure(summary, { size: 16 }));
+    const room = EDIT_RIGHT - tabsEnd - 16 - fixedW;
+    const summaryW = Math.max(0, Math.min(300, room, ctx.text.measure(summary, { size: 16 })));
     let x = EDIT_RIGHT - summaryW;
     label(ctx, summary, x, cy, { size: 16 }, p.muted, { maxWidth: summaryW });
     x -= 8 + label(ctx, 'Field', x - 8, cy, style, p.ink, { align: 'right' });
@@ -423,8 +433,6 @@ export class SetEditorView {
     // The field and its summary open the field's box with a tap too.
     ctx.focus.control({ id: 'calcs-field', x: x - 4, y: cy - 22, w: EDIT_RIGHT - x + 4, h: 44, skip: true, keepFocus: true, accept: () => this.pressFieldOpen() });
     x -= 24;
-    const segments = ['You attack', 'They attack'];
-    const widths = segments.map((text) => ctx.text.measure(text, style) + 24);
     const left = x - widths[0] - widths[1];
     ctx.renderer.rect(left - 2, cy - 16, widths[0] + widths[1] + 4, 32, { fill: p.bg, stroke: p.outline, radius: 6, border: 2 });
     let sx = left;
